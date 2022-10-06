@@ -59,6 +59,9 @@ std::string generate_definition_src(
     const std::map<std::string, std::string>& defines
 ){
     std::stringstream ss;
+#if 0
+    ss << "#extension GL_EXT_debug_printf : enable\n";
+#endif
     for(auto& pair: defines)
         ss  << "#define " << pair.first << " "
             << remove_newlines(pair.second) << std::endl;

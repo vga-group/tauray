@@ -20,6 +20,7 @@ public:
         size_t active_viewport_count = 1;
         int samples_per_pixel = 1;
         camera::projection_type projection = camera::PERSPECTIVE;
+        bool transparent_background = false;
     };
 
     static void get_common_defines(

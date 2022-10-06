@@ -149,6 +149,7 @@ class glTF2ExportUserExtension:
         transmission_input = None
         emission_input = None
         emission_strength = None
+        ior_input = None
         for inp in principled_bsdf.inputs:
             if inp.identifier == 'Transmission':
                 transmission_input = inp.default_value
@@ -156,11 +157,16 @@ class glTF2ExportUserExtension:
                 emission_input = list(inp.default_value)
             if inp.identifier == 'Emission Strength':
                 emission_strength = inp.default_value
+            if inp.identifier == 'IOR':
+                ior_input = inp.default_value
 
         data = {}
 
         if transmission_input is not None:
             data["transmission"] = transmission_input
+
+        if ior_input is not None:
+            data["ior"] = ior_input
 
         if emission_input is not None:
             if emission_strength is not None:

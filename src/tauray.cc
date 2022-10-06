@@ -23,6 +23,7 @@
 #include "gltf.hh"
 #include "ply.hh"
 #include "misc.hh"
+#include "load_balancer.hh"
 #include <chrono>
 #include <iostream>
 #include <thread>
@@ -226,6 +227,11 @@ scene_data load_scenes(context& ctx, const options& opt)
         );
         if(opt.fov)
             s.s->get_camera()->set_fov(opt.fov);
+
+        if(opt.camera_clip_range.near > 0)
+            s.s->get_camera()->set_near(opt.camera_clip_range.near);
+        if(opt.camera_clip_range.far > 0)
+            s.s->get_camera()->set_far(opt.camera_clip_range.far);
     }
 
     if(opt.animation_flag)
@@ -331,6 +337,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     tonemap.tonemap_operator = opt.tonemap;
     tonemap.exposure = opt.exposure;
     tonemap.gamma = opt.gamma;
+    tonemap.alpha_grid_background = opt.headless == "";
     tonemap.post_resolve = opt.tonemap_post_resolve;
 
     scene_update_stage::options scene_options;
@@ -347,6 +354,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.samples_per_pixel = opt.samples_per_pixel;
     rc_opt.rng_seed = opt.rng_seed;
     rc_opt.local_sampler = opt.sampler;
+    rc_opt.transparent_background = opt.transparent_background;
 
     s.auto_shadow_maps(
         opt.shadow_map_resolution,
@@ -565,6 +573,7 @@ std::vector<camera> generate_cameras(camera& tracked, options& opt)
 void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 {
     scene& s = *sd.s;
+    load_balancer lb(ctx, opt.workload);
     camera cam;
     if(s.get_camera())
     {
@@ -676,7 +685,12 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                     cam.set_global_orientation();
                     camera_moved = true;
                 }
-                if(event.key.keysym.sym == SDLK_F1) camera_locked = !camera_locked;
+                if(event.key.keysym.sym == SDLK_F1)
+                {
+                    camera_locked = !camera_locked;
+                    SDL_SetWindowGrab(SDL_GetWindowFromID(event.key.windowID), (SDL_bool)!camera_locked);
+                    SDL_SetRelativeMouseMode((SDL_bool)!camera_locked);
+                }
                 if(event.key.keysym.sym == SDLK_F5)
                 {
                     shader_source::clear_binary_cache();
@@ -777,6 +791,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         if(opt.timing) ctx.print_timing();
 
         throttle.step();
+        lb.update(*rr);
 
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> elapsed = end-start;
@@ -797,6 +812,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 void replay_viewer(context& ctx, scene_data& sd, options& opt)
 {
     scene& s = *sd.s;
+    load_balancer lb(ctx, opt.workload);
     camera default_cam;
     if(s.get_camera() == nullptr)
     {
@@ -852,6 +868,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
         {
             rr.reset(create_renderer(ctx, opt, s));
             rr->set_scene(&s);
+            lb.update(*rr);
             ctx.set_displaying(false);
             for(int i = 0; i < opt.warmup_frames; ++i)
             {
@@ -859,6 +876,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
                 {
                     s.update(0);
                     rr->render();
+                    lb.update(*rr);
                 }
             }
             ctx.set_displaying(true);
@@ -891,6 +909,8 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
                 xr->recreate_swapchains();
             else break;
         }
+
+        lb.update(*rr);
     }
 
     if(opt.camera_log != "")

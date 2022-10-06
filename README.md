@@ -44,3 +44,30 @@ build/tauray test/test.glb
 ```
 
 [See the user manual for more detailed usage documentation.](docs/MANUAL.md)
+
+## Benchmarking with Tauray
+
+To measure representative benchmarks with Tauray, please build a release build
+and **disable validation**:
+
+1. Delete your existing build directory (if applicable)
+2. `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
+3. `cmake --build build`
+4. `build/tauray --validation=off -t my_scene.glb`
+
+You may also want to set `--force-double-sided` for better performance if your
+scene does not require single-sided surfaces. Also, remember to set
+`--max-ray-depth` appropriately for the type of benchmark, the default is quite
+high.
+
+By default, Tauray will use all GPUs with support for the required extensions.
+If you wish to use a specific GPU on a multi-GPU system, use `--devices=0` (or
+any other index; the first thing Tauray prints is the devices it picked.)
+
+In the output with the `-t` flag, lines starting with `HOST: ` are total
+frametimes, which you most likely want to measure. The first few frametimes of
+a run can be weird as in-flight frames haven't been queued properly and some
+initialization still runs, so please exclude those if possible.
+`--warmup-frames` can also be used for this purpose.
+
+[See the user manual for more detailed info on configuring Tauray for you benchmark setup.](docs/MANUAL.md)

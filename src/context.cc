@@ -885,7 +885,7 @@ float context::get_timing(size_t device_index, const std::string& name) const
     float total_time = 0.0f;
     for(const time_info& ti: t.times)
     {
-        if(name.compare(0, name.length(), ti.name) == 0)
+        if(ti.name.compare(0, name.length(), name) == 0)
         {
             uint64_t delta = ti.end - ti.start;
             total_time += delta * devices[device_index].props.limits.timestampPeriod;

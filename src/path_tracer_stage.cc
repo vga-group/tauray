@@ -30,6 +30,9 @@ namespace path_tracer
         if(opt.hide_lights)
             defines["HIDE_LIGHTS"];
 
+        if(opt.transparent_background)
+            defines["USE_TRANSPARENT_BACKGROUND"];
+
 #define TR_GBUFFER_ENTRY(name, ...)\
         if(gbuf.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
         TR_GBUFFER_ENTRIES

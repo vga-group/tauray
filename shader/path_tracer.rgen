@@ -123,9 +123,15 @@ void main()
 
     uint prev_samples = distribution.samples_accumulated + control.previous_samples;
 
-    accumulate_gbuffer_color(vec4(color, 1), p, 1, prev_samples);
-    accumulate_gbuffer_direct(vec4(direct, 1), p, 1, prev_samples);
-    accumulate_gbuffer_diffuse(vec4(diffuse, 1), p, 1, prev_samples);
+#ifdef USE_TRANSPARENT_BACKGROUND
+    const float alpha = first_hit_material.albedo.a;
+#else
+    const float alpha = 1.0;
+#endif
+
+    accumulate_gbuffer_color(vec4(color, alpha), p, 1, prev_samples);
+    accumulate_gbuffer_direct(vec4(direct, alpha), p, 1, prev_samples);
+    accumulate_gbuffer_diffuse(vec4(diffuse, alpha), p, 1, prev_samples);
 
     if(prev_samples == 0)
     { // Only write gbuffer for the first sample.

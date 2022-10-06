@@ -87,6 +87,7 @@ void main()
         directional_light dl = directional_lights.lights[i];
         vec3 d, s;
         ggx_brdf(-dl.dir * tbn, shading_view, mat, d, s);
+        d *= mat.albedo.rgb;
         vec3 c = (d + s) * dl.color;
         // This essentially increases shadow precision (but also further
         // enforces the shadow terminator issue :/) It helps to avoid some odd
@@ -105,6 +106,7 @@ void main()
         get_point_light_info(pl, v.pos, light_dir, light_dist, light_color);
         vec3 d, s;
         ggx_brdf(light_dir * tbn, shading_view, mat, d, s);
+        d *= mat.albedo.rgb;
         vec3 c = (d + s) * light_color;
         c = dot(v.hard_normal, light_dir) > 0 ? c : vec3(0);
         if(any(greaterThan(c, vec3(0.0001f))))
@@ -120,6 +122,7 @@ void main()
         );
         vec3 d, s;
         sharp_brdf(refl_dir * tbn, shading_view, mat, d, s);
+        d *= mat.albedo.rgb;
         color.rgb += (d + s) * refl_color.rgb;
     }
 
@@ -133,6 +136,7 @@ void main()
             vec4 refr_color = secondary_ray(v.pos-refr_dir*0.001f, 0.0f, refr_dir, RAY_MAX_DIST);
             vec3 d, s;
             sharp_btdf(refr_dir * tbn, shading_view, mat, d, s);
+            d *= mat.albedo.rgb;
             color.rgb += (d + s) * refr_color.rgb;
         }
     }

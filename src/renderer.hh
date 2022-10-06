@@ -14,6 +14,7 @@ public:
     virtual void set_scene(scene* s) = 0;
     virtual void reset_accumulation() {};
     virtual void render() = 0;
+    virtual void set_device_workloads(const std::vector<double>&) {}
 
 private:
 };

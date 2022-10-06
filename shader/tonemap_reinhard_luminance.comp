@@ -7,6 +7,7 @@
 layout(binding = 0, scalar) uniform tonemap_info_buffer
 {
     ivec2 size;
+    int alpha_grid_background;
     float exposure;
     float gamma;
 } info;

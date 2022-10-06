@@ -47,9 +47,7 @@ public:
     void set_scene(scene* s) override;
     void reset_accumulation() override;
     void render() override;
-
-    // You can set the workload ratios during runtime with this function.
-    void set_device_workloads(const std::vector<double>& ratios);
+    void set_device_workloads(const std::vector<double>& ratios) override;
 
 private:
     void init_device_resources(size_t device_index);
@@ -59,6 +57,7 @@ private:
     options opt;
     post_processing_renderer post_processing;
     bool use_raster_gbuffer = true;
+    unsigned accumulated_frames = 0;
 
     struct transfer_buffer
     {
