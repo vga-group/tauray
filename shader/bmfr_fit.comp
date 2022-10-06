@@ -1,0 +1,414 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_shader_16bit_storage : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_control_flow_attributes : enable
+#include "gbuffer.glsl"
+#include "random_sampler.glsl"
+#include "bmfr.glsl"
+#include "math.glsl"
+
+#ifdef DIFFUSE_ONLY
+#define R_SIZE ((11) * (11))
+#else
+#define R_SIZE ((12) * (12))
+#endif
+
+#define X_ITERS 2
+#define Y_ITERS 2
+
+layout (local_size_x = LOCAL_SIZE, local_size_y = LOCAL_SIZE) in;
+
+layout(binding = 0, set = 0) buffer mins_maxs
+{
+    float16_t minmax[];
+} mins_maxs_buffer;
+
+layout(binding = 1, set = 0) buffer tmp_buffer_t
+{
+    float16_t data[];
+} tmp_buffer;
+
+layout(binding = 2, set = 0) buffer weight_buffer_t
+{
+    vec3 weights[];
+} weights_buffer;
+
+layout(binding = 3, set = 0) uniform uniform_buffer_t
+{
+    uint frame_counter;
+} uniform_buffer;
+
+layout(binding = 4, set = 0, rgba16f) uniform image2DArray in_color;
+
+shared float sum_vec[8];    // Assuming subgroup size of 32, if it's actually larger it's fine. 
+                            // If it's smaller this is a problem.
+#ifdef DIFFUSE_ONLY
+shared vec3 divider;
+#endif
+shared float block_min_f, block_max_f, vec_length, u_length_squared, v_dot_a;
+shared float16_t u_vec[BLOCK_SIZE * BLOCK_SIZE];
+shared vec3 r_mat[R_SIZE];
+
+
+int get_linear_id()
+{
+    return int(gl_LocalInvocationID.y * gl_WorkGroupSize.x + gl_LocalInvocationID.x);
+}
+
+int get_linear_group_id()
+{
+    return int(gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x);
+}
+
+#define NOISE_AMOUNT 1e-2
+
+float add_random(float value, inout random_sampler s)
+{
+    return value + NOISE_AMOUNT * 2.f * (generate_uniform_random(s).x - 0.5);
+}
+
+#define LOOP_REDUCE
+void parallel_reduction_max()
+{
+    const int id = get_linear_id();
+
+    if (id == 0)
+    {
+#ifndef LOOP_REDUCE
+        block_max_f = max(max(max(max(max(max(max(sum_vec[0], sum_vec[1]), sum_vec[2]),
+            sum_vec[3]), sum_vec[4]), sum_vec[5]), sum_vec[6]), sum_vec[7]);
+#else
+        float max_value = -FLT_MAX;
+        [[unroll]]for (int i = 0; i < gl_NumSubgroups; ++i)
+        {
+            max_value = max(sum_vec[i], max_value);
+        }
+        block_max_f = max_value;
+#endif
+    }
+}
+
+void parallel_reduction_min()
+{
+    const int id = get_linear_id();
+    if (id == 0)
+    {
+#ifndef LOOP_REDUCE
+        block_min_f = min(min(min(min(min(min(min(sum_vec[0], sum_vec[1]), sum_vec[2]),
+            sum_vec[3]), sum_vec[4]), sum_vec[5]), sum_vec[6]), sum_vec[7]);
+#else
+        float min_value = FLT_MAX;
+        [[unroll]]for (int i = 0; i < gl_NumSubgroups; ++i)
+        {
+            min_value = min(sum_vec[i], min_value);
+        }
+        block_min_f = min_value;
+#endif
+    }
+}
+
+void parallel_reduction_sum()
+{
+    const int id = get_linear_id();
+    if (id == 0)
+    {
+#ifndef LOOP_REDUCE
+        vec_length = sum_vec[0] + sum_vec[1] + sum_vec[2] + sum_vec[3] +
+            sum_vec[4] + sum_vec[5] + sum_vec[6] + sum_vec[7];
+#else
+        float sum = 0;
+        [[unroll]]for (int i = 0; i < gl_NumSubgroups; ++i)
+        {
+            sum += sum_vec[i];
+        }
+        vec_length = sum;
+#endif
+    }
+}
+
+void parallel_reduction_sum_dot()
+{
+    const int id = get_linear_id();
+    if (id == 0)
+    {
+#ifndef LOOP_REDUCE
+        v_dot_a = sum_vec[0] + sum_vec[1] + sum_vec[2] + sum_vec[3] +
+            sum_vec[4] + sum_vec[5] + sum_vec[6] + sum_vec[7];
+#else
+        float sum = 0;
+        [[unroll]]for (int i = 0; i < gl_NumSubgroups; ++i)
+        {
+            sum += sum_vec[i];
+        }
+        v_dot_a = sum;
+#endif
+    }
+}
+
+void main()
+{
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    uvec3 work_group_id = gl_WorkGroupID;
+    uvec3 local_id = gl_LocalInvocationID;
+
+    const int id = get_linear_id();
+    random_sampler rsampler = init_random_sampler(uvec4(p.xy, id, uniform_buffer.frame_counter), p.xyz);
+
+    const int linear_workgroup_id = int(work_group_id.y * gl_NumWorkGroups.x + work_group_id.x);
+
+    // Compute feature buffer indices
+    uvec4 indices;
+    for (int xx = 0; xx < X_ITERS; ++xx)
+    {
+        for (int yy = 0; yy < Y_ITERS; ++yy)
+        {
+            uvec3 in_p = uvec3(0.0, 0.0, p.z);
+
+            in_p.xy = work_group_id.xy * BLOCK_EDGE_LENGTH + uvec2(xx, yy) * gl_WorkGroupSize.xy + local_id.xy;
+            uvec2 in_block = in_p.xy % BLOCK_EDGE_LENGTH;
+            const uvec2 block = in_p.xy / BLOCK_EDGE_LENGTH;
+            uvec2 magic = block * BLOCK_PIXELS * BUFFER_COUNT;
+            magic.y *= control.workset_size.x;
+            uvec2 magic2 = uvec2(in_block.y, 0) * uvec2(BLOCK_EDGE_LENGTH, BLOCK_PIXELS);
+            magic2 += magic;
+            const uint index = magic2.x + magic2.y + in_block.x;
+            indices[yy + Y_ITERS * xx] = index;
+        }
+    }
+
+    const uint buffer_offset = BLOCK_SIZE * BLOCK_SIZE * control.workset_size.x * control.workset_size.y * BUFFER_COUNT * p.z;
+    indices += buffer_offset;
+
+    // Normalize world_pos and world_pos² 
+    for (int feature_buffer = 4; feature_buffer < FEATURE_COUNT; ++feature_buffer)
+    {
+        float tmp_max = -FLT_MAX;
+        float tmp_min = FLT_MAX;
+
+        for (int i = 0; i < 4; ++i)
+        {
+            float value = float(tmp_buffer.data[indices[i] + feature_buffer * BLOCK_PIXELS]);
+            tmp_max = max(tmp_max, value);
+            tmp_min = min(tmp_min, value);
+        }
+        
+        sum_vec[gl_SubgroupID] = subgroupMax(tmp_max);
+        barrier();
+        parallel_reduction_max();
+        barrier();
+
+        sum_vec[gl_SubgroupID] = subgroupMin(tmp_min);
+        barrier();
+        parallel_reduction_min();
+        barrier();
+
+
+        if (id == 0)
+        {
+            const int index = (get_linear_group_id() * 6 + feature_buffer - 4) * 2;
+            const uint offset = control.workset_size.x * control.workset_size.y * 6 * 2 * p.z;
+            mins_maxs_buffer.minmax[index + offset + 0] = float16_t(block_min_f);
+            mins_maxs_buffer.minmax[index + offset + 1] = float16_t(block_max_f);
+        }
+
+        barrier();
+        
+        for (int i = 0; i < 4; ++i)
+        {
+            float scaled_value = scale(float(tmp_buffer.data[indices[i] + feature_buffer * BLOCK_PIXELS]), block_min_f, block_max_f);
+            tmp_buffer.data[indices[i] + feature_buffer * BLOCK_PIXELS] = float16_t(scaled_value);
+        }
+    }
+
+    // Compute R
+    for (int col = 0; col < BUFFER_COUNT; ++col)
+    {
+        const uint col_limited = min(col, FEATURE_COUNT); 
+        uint feature_buffer = col;
+
+        float tmp_sum_value = 0.f;
+
+        for (int i = 0; i < 4; ++i)
+        {
+            float tmp = float(tmp_buffer.data[indices[i] + feature_buffer * BLOCK_PIXELS]);
+
+            const uint index = id + i * 256;
+            u_vec[index] = float16_t(tmp);
+            if (index >= col_limited + 1)
+            {
+                tmp_sum_value += tmp * tmp;
+            }        
+        }
+
+        sum_vec[gl_SubgroupID] = subgroupAdd(tmp_sum_value);
+        barrier();
+
+        // Calculate the sum of squared lengths for the portion under the diagonal entry along the column
+        parallel_reduction_sum();
+        barrier();
+    
+        // Compute the r value
+        float r_value;
+        if (id < col)
+        {
+            // Copy value as is for the upper triangular portion of the matrix
+            r_value = u_vec[id];
+        }
+        else if (id == col)
+        {
+            // The diagonal is the magnitude of the subvector below the diagonal, including the diagonal itself
+            u_length_squared = vec_length;
+            vec_length = sqrt(vec_length + u_vec[col_limited] * u_vec[col_limited]);
+            u_vec[col_limited] -= float16_t(vec_length);  // u_vec gets transformed into the Householder v vector
+            u_length_squared += float16_t(u_vec[col_limited]) * float16_t(u_vec[col_limited]);
+            r_value = vec_length;
+        }
+        else if(id > col)
+        {
+            // The bottom diagonal is always 0
+            r_value = 0.0f;
+        }
+        
+        const uint id_limited = min(id, FEATURE_COUNT);
+#ifdef DIFFUSE_ONLY
+        const uint r_access = 11 * col_limited + id_limited;
+#else
+        uint limit = col_limited;
+        if (col > 12) limit = 11;
+        const uint r_access = 12 * id_limited + limit;
+#endif
+        if (col < FEATURE_COUNT)
+        {
+            r_mat[r_access] = vec3(r_value); 
+        }
+        else
+        {
+            // Store 1 channel
+            r_mat[r_access][(col - BUFFER_COUNT + 6) % 3] = r_value;
+        }
+        barrier();
+
+        //float tmp_cache[BUFFER_COUNT];
+        // Apply transformation to the remaining submatrix
+        for (uint feature_buffer = col_limited + 1; feature_buffer < BUFFER_COUNT; ++feature_buffer)
+        {
+            // Compute the dot product v_k * a_j
+            float tmp_sum_value = 0.f;
+            float tmp_data_private_cache[(32 * 32) / 256];
+            
+            for (int i = 0; i < 4; ++i)
+            {
+                const uint index = id + i * 256;
+                // Upper part of v_k is only zeroes so they are skipped
+                if (index >= col_limited)
+                {
+                    float tmp = float(tmp_buffer.data[indices[i] + feature_buffer * BLOCK_PIXELS]);
+                    // float tmp = 0.69f;
+
+                    // On first iteration, add noise to the loaded values
+                    if (col == 0 && feature_buffer < FEATURE_COUNT)
+                    {
+                        tmp = add_random(tmp, rsampler);
+                        // tmp = add_random_(tmp, id, uint(i), feature_buffer);
+
+                    }
+                    tmp_data_private_cache[i] = tmp;
+                    tmp_sum_value += tmp * u_vec[index];
+                }
+            }
+            sum_vec[gl_SubgroupID] = subgroupAdd(tmp_sum_value);
+            barrier();
+
+            parallel_reduction_sum_dot();
+            barrier();
+
+            for (int i = 0; i < 4; ++i)
+            {
+                const uint index = id + i * 256;
+                // Upper part of v_k is only zeroes so they are skipped
+                if (index >= col_limited)
+                {
+                    float store_value = tmp_data_private_cache[i];
+                    store_value -= 2 * float(u_vec[index]) * v_dot_a / u_length_squared;
+
+                    tmp_buffer.data[indices[i] + feature_buffer * BLOCK_PIXELS] = float16_t(store_value);
+                }
+            }
+            barrier();
+        }
+    }
+
+    // Back substitution
+    if (id >= BUFFER_COUNT - 2) return;
+#ifdef DIFFUSE_ONLY
+
+    const uint r_edge = BUFFER_COUNT - 2;
+    for (int i = int(r_edge - 2); i >= 0; --i) // - 
+    {
+        if (id == 0)
+        {
+            const uint r_access = r_edge * i + i;
+            divider = r_mat[r_access];
+        }
+        barrier();
+
+        if (id < r_edge)
+        {
+            const uint r_access = r_edge * id + i;
+            r_mat[r_access] /= divider;
+        }
+        barrier();
+        if(id == 0)
+        {
+            for (int j = i + 1; j < r_edge - 1; ++j)
+            {
+                const vec3 value = r_mat[j * r_edge + i];
+                r_mat[(r_edge - 1) * r_edge + i] -= value;
+            }
+        }
+        barrier();
+        if (id < r_edge)
+        {
+            const vec3 value = r_mat[(r_edge - 1) * r_edge + i];
+            r_mat[i * r_edge + id] *= value;  
+        }
+        barrier();
+    }
+#else
+    vec3 x_s[10];
+    vec3 x_s2[10];
+    const int r_size = 12;
+    const int n = 10;
+    for (int i = n-1; i >=0; --i)
+    {
+        x_s[i] = r_mat[(r_size) * i + (r_size - 2)];
+        x_s2[i] = r_mat[(r_size) * i + (r_size - 1)];
+        for (int j = i + 1; j < n; ++j)
+        {
+            vec3 u_ij = r_mat[r_size * i + j];
+            x_s[i] = x_s[i] - u_ij * x_s[j];
+            x_s2[i] = x_s2[i] - u_ij * x_s2[j];
+        }
+        vec3 u_ii = r_mat[r_size * i + i];
+        x_s[i] = x_s[i] / u_ii;
+        x_s2[i] = x_s2[i] / u_ii;
+    }
+#endif
+
+    // Store weights
+    if (id < FEATURE_COUNT)
+    {
+        const uint index = get_linear_group_id() * (FEATURE_COUNT) * NUM_WEIGHTS_PER_FEATURE + id;
+        const uint offset = control.workset_size.x * control.workset_size.y * FEATURE_COUNT * NUM_WEIGHTS_PER_FEATURE * p.z; 
+#ifdef DIFFUSE_ONLY
+        const vec3 weight = r_mat[(r_edge - 1) * r_edge + id];
+        weights_buffer.weights[index + offset] = weight;
+#else
+        weights_buffer.weights[index + offset] = x_s[id];
+        weights_buffer.weights[index + offset + 10] = x_s2[id];
+#endif
+    }
+}

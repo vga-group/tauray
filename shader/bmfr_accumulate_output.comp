@@ -1,0 +1,115 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_shader_8bit_storage : enable
+
+#include "gbuffer.glsl"
+#include "bmfr.glsl"
+
+#define SQRD_DIST_LIMIT    0.01f
+#define COS_LIMIT    0.99f
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, set = 0, rgba16f) uniform image2DArray out_color;
+layout(binding = 1, set = 0, rgba16f) uniform readonly image2DArray in_albedo;
+layout(binding = 2, set = 0, rg32f) uniform readonly image2DArray in_screen_motion;
+layout(binding = 3, set = 0, rgba16f) uniform image2DArray filtered_hist[2];
+layout(binding = 4, set = 0, rgba16f) uniform readonly image2DArray weighted_in[2];
+layout(binding = 5, set = 0, rgba16f) uniform image2DArray tmp_hist[2];
+layout(binding = 6, set = 0, rgba16f) uniform image2DArray tmp_noisy[2];
+layout(binding = 7, set = 0) buffer accept_buf_t
+{
+    uint8_t accepts[];
+} accept_buffer;
+
+void main()
+{
+    const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+
+    if(all(lessThan(p.xy, control.size)))
+    {
+        vec4 diffuse_prev = vec4(0);
+#ifndef DIFFUSE_ONLY
+        vec4 specular_prev = vec4(0);
+#endif
+        uint offset = control.size.x * control.size.y * p.z;
+        uint accepts = uint(accept_buffer.accepts[offset + p.y * control.size.x + p.x]);
+
+        float sum_w = 0.0;
+        {
+            vec2 motion = vec2(imageLoad(in_screen_motion,p));
+            motion.y = 1.f - motion.y;
+            motion = motion * vec2(control.size) - vec2(0.5);
+
+            ivec3 tl_sample = ivec3(motion.x, motion.y, p.z);
+            ivec3 tr_sample = ivec3(tl_sample.x+1, tl_sample.y, p.z);
+            ivec3 bl_sample = ivec3(tl_sample.x, tl_sample.y+1, p.z);
+            ivec3 br_sample = ivec3(tl_sample.x+1, tl_sample.y+1, p.z);  
+            
+            bool keep_tl = (accepts & 0x01) != 0;
+            bool keep_tr = (accepts & 0x02) != 0;
+            bool keep_bl = (accepts & 0x04) != 0;
+            bool keep_br = (accepts & 0x08) != 0;
+
+            vec4 tl = keep_tl ? imageLoad(filtered_hist[0], tl_sample) : vec4(0);
+            vec4 tr = keep_tr ? imageLoad(filtered_hist[0], tr_sample) : vec4(0);
+            vec4 bl = keep_bl ? imageLoad(filtered_hist[0], bl_sample) : vec4(0);
+            vec4 br = keep_br ? imageLoad(filtered_hist[0], br_sample) : vec4(0);
+
+#ifndef DIFFUSE_ONLY
+            vec4 tl_spec = keep_tl ? imageLoad(filtered_hist[1], tl_sample) : vec4(0);
+            vec4 tr_spec = keep_tr ? imageLoad(filtered_hist[1], tr_sample) : vec4(0);
+            vec4 bl_spec = keep_bl ? imageLoad(filtered_hist[1], bl_sample) : vec4(0);
+            vec4 br_spec = keep_br ? imageLoad(filtered_hist[1], br_sample) : vec4(0);
+#endif
+
+            vec2 q = motion - vec2(tl_sample);
+
+            vec4 side_weights = vec4(1.0-q.x, q.x, 1.0-q.y, q.y);
+
+            vec4 corner_weights = side_weights.xyxy * side_weights.zzww;
+
+            corner_weights *= vec4(keep_tl, keep_tr, keep_bl, keep_br);
+            sum_w = dot(corner_weights, vec4(1));
+            if(sum_w > 1e-5)
+            {
+                corner_weights /= sum_w;
+
+                diffuse_prev =  mat4(tl,tr,bl,br) * corner_weights;
+#ifndef DIFFUSE_ONLY
+                specular_prev =  mat4(tl_spec,tr_spec,bl_spec,br_spec) * corner_weights;
+#endif
+            }
+        }
+        vec4 diffuse_curr = imageLoad(weighted_in[0], p);
+#ifdef DIFFUSE_ONLY
+        vec4 specular_curr = imageLoad(tmp_noisy[1], p);
+#else
+        vec4 specular_curr = imageLoad(weighted_in[1], p);
+#endif
+        if (sum_w > 0.001 && !any(isnan(diffuse_prev)))
+        {
+            float hist_len = diffuse_prev.a;
+            float alpha_color = max(0.01, 1.0 / hist_len);
+            hist_len = min(hist_len + 1.0, 255.0);
+            diffuse_curr.a = hist_len;
+            diffuse_curr.rgb = mix(diffuse_prev.rgb, diffuse_curr.rgb, alpha_color);
+#ifndef DIFFUSE_ONLY
+            specular_curr.rgb = mix(specular_prev.rgb, specular_curr.rgb, alpha_color);
+#endif      
+        }
+        // If 5th bit of accepts is set, it means world pos for current pixel was nan.
+        // In this case the output color is passed as is and not rewritten here.
+        // This applies to environment maps for example.
+        if ((accepts & (1 << 4)) == 0u)
+        {
+            vec4 color = imageLoad(in_albedo, p) * diffuse_curr + specular_curr;
+            imageStore(out_color, p, vec4(color.rgb, 1.0));
+        }
+
+        imageStore(tmp_hist[0], p, diffuse_curr);
+#ifndef DIFFUSE_ONLY
+        imageStore(tmp_hist[1], p, specular_curr);
+#endif
+    }
+}

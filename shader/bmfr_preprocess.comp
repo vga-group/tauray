@@ -1,0 +1,235 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_shader_16bit_storage : enable
+#extension GL_EXT_shader_8bit_storage : enable
+#extension GL_EXT_debug_printf : enable
+
+#include "gbuffer.glsl"
+#include "bmfr.glsl"
+
+#define SQRD_DIST_LIMIT    0.01f
+#define COS_LIMIT    0.90f
+#define DISCARD_LIMIT 0.50f
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, set = 0, rgba16f) uniform image2DArray in_color;
+layout(binding = 1, set = 0, rgba16f) uniform readonly image2DArray in_diffuse;
+layout(binding = 2, set = 0, rgba16f) uniform readonly image2DArray in_albedo;
+layout(binding = 3, set = 0, rgba16f) uniform image2DArray tmp_noisy[2];
+layout(binding = 4, set = 0, rgba16f) uniform image2DArray bmfr_diffuse_hist;
+layout(binding = 5, set = 0, rg16_snorm) uniform readonly image2DArray in_normal;
+layout(binding = 6, set = 0, rgba16f) uniform readonly image2DArray in_pos;
+layout(binding = 7, set = 0,rg16_snorm) uniform readonly image2DArray previous_normal;
+layout(binding = 8, set = 0, rgba32f) uniform readonly image2DArray previous_pos;
+layout(binding = 9, set = 0, rg32f) uniform readonly image2DArray in_screen_motion;
+layout(binding = 10, set = 0, rg16f) uniform image2DArray prev_pixel;
+layout(binding = 11, set = 0, rgba16f) uniform readonly image2DArray bmfr_specular_hist;
+layout(binding = 12, set = 0) uniform uniform_buffer_t
+{
+    uint frame_counter;
+} uniform_buffer;
+
+layout(binding = 13, set = 0) buffer tmp_buffer_t
+{
+    float16_t data[];
+} tmp_buffer;
+
+layout(binding = 14, set = 0) buffer accept_buf_t
+{
+    uint8_t accepts[];
+} accept_buffer;
+
+vec3 get_specular(ivec3 p)
+{
+    return max(vec3(0.0), imageLoad(in_color, p).xyz - (imageLoad(in_albedo, p).xyz * imageLoad(in_diffuse, p).xyz));
+}
+
+int mirror(int index, int size)
+{
+    if (index < 0)
+        index = abs(index) - 1;
+    else if (index >= size)
+        index = 2 * size - index - 1;
+
+    return index;
+}
+
+ivec2 mirror(ivec2 index, ivec2 size)
+{
+    index.x = mirror(index.x, size.x);
+    index.y = mirror(index.y, size.y);
+
+    return index;
+}
+
+bool keep(ivec3 samplepos, vec3 current_normal, vec3 current_pos)
+{
+    vec3 pos_diff = current_pos - imageLoad(previous_pos, samplepos).xyz;
+    vec3 normal = unpack_gbuffer_normal(imageLoad(previous_normal, samplepos).xy);
+
+#if 1
+    float diffsquared = dot(pos_diff, pos_diff);
+    float w;
+    if (diffsquared < 0.001)
+        w = 1.0;
+    else
+    {
+        vec3 tangent = normalize(pos_diff);
+        w = clamp(1.0f-abs(dot(tangent, current_normal))*1.0f, 0.0, 1.0) *
+            clamp(dot(normal, current_normal), 0.0f, 1.0f);
+    }
+
+    bool keep =
+    all(lessThan(samplepos.xy, control.size))
+    && all(greaterThanEqual(samplepos.xy, ivec2(0)))
+    && dot(normal, current_normal) > COS_LIMIT
+    && w > DISCARD_LIMIT;
+#else
+    bool keep =
+    all(lessThan(samplepos.xy, control.size))
+    && all(greaterThanEqual(samplepos.xy, ivec2(0)))
+    && dot(normal, current_normal) > COS_LIMIT
+    && dot(pos_diff, pos_diff) < SQRD_DIST_LIMIT;
+#endif
+
+    return keep;
+}
+
+void main()
+{
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    const ivec2 offset = BLOCK_OFFSETS[uniform_buffer.frame_counter % BLOCK_OFFSETS_COUNT];
+    p.xy = p.xy - 16 + offset;
+    const ivec2 pixel_without_mirror = p.xy;
+    p.xy = mirror(p.xy, control.size.xy);
+
+    const ivec3 gid = ivec3(gl_GlobalInvocationID.xyz);
+
+    vec4 diffuse_prev = vec4(0);
+    vec4 specular_prev = vec4(0);
+    vec4 curr_color = imageLoad(in_color, p);
+    vec3 curr_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).xy);
+    vec3 curr_pos = imageLoad(in_pos, p).xyz;
+    float sum_w = 0.0;
+    {
+        vec2 motion = vec2(imageLoad(in_screen_motion,p));
+        motion.y = 1.f - motion.y;
+        motion = motion * vec2(control.size) - vec2(0.5);
+
+        ivec3 tl_sample = ivec3(floor(vec3(motion.x, motion.y, p.z)));
+        ivec3 tr_sample = ivec3(floor(vec3(tl_sample.x+1, tl_sample.y, p.z)));
+        ivec3 bl_sample = ivec3(floor(vec3(tl_sample.x, tl_sample.y+1, p.z)));
+        ivec3 br_sample = ivec3(floor(vec3(tl_sample.x+1, tl_sample.y+1, p.z)));
+        //Discard samples
+
+        bool keep_tl = keep(tl_sample, curr_normal, curr_pos);
+        bool keep_tr = keep(tr_sample, curr_normal, curr_pos);
+        bool keep_bl = keep(bl_sample, curr_normal, curr_pos);
+        bool keep_br = keep(br_sample, curr_normal, curr_pos);
+
+        vec4 tl = keep_tl ? imageLoad(bmfr_diffuse_hist, tl_sample) : vec4(0);
+        vec4 tr = keep_tr ? imageLoad(bmfr_diffuse_hist, tr_sample) : vec4(0);
+        vec4 bl = keep_bl ? imageLoad(bmfr_diffuse_hist, bl_sample) : vec4(0);
+        vec4 br = keep_br ? imageLoad(bmfr_diffuse_hist, br_sample) : vec4(0);
+
+        vec4 tl_spec = keep_tl ? imageLoad(bmfr_specular_hist, tl_sample) : vec4(0);
+        vec4 tr_spec = keep_tr ? imageLoad(bmfr_specular_hist, tr_sample) : vec4(0);
+        vec4 bl_spec = keep_bl ? imageLoad(bmfr_specular_hist, bl_sample) : vec4(0);
+        vec4 br_spec = keep_br ? imageLoad(bmfr_specular_hist, br_sample) : vec4(0);
+
+        if (all(lessThan(pixel_without_mirror, control.size.xy)))
+        {
+            uint accepts = 0;
+            ivec4 keep_vec = ivec4(keep_tl, keep_tr, keep_bl, keep_br);
+            uvec4 accepted = keep_vec * uvec4(1, 1 << 1, 1 << 2, 1 << 3);
+            accepts = accepted.x | accepted.y | accepted.z | accepted.w;
+
+            // Used for envmap in the accumulate phase
+            accepts |= (int(any(isnan(curr_pos)))) << 4;
+
+            uint offset = control.size.x * control.size.y * p.z;
+            accept_buffer.accepts[p.y * control.size.x + p.x + offset] = uint8_t(accepts);
+        }
+
+        vec2 q = motion - vec2(tl_sample);
+
+        vec4 side_weights = vec4(1.0-q.x, q.x, 1.0-q.y, q.y);
+        vec4 corner_weights = side_weights.xyxy * side_weights.zzww;
+
+        corner_weights *= vec4(keep_tl, keep_tr, keep_bl, keep_br);
+        sum_w = dot(corner_weights, vec4(1));
+        if(sum_w > 1e-5)
+        {
+            corner_weights /= sum_w;
+
+            diffuse_prev =  mat4(tl,tr,bl,br) * corner_weights;
+            specular_prev = mat4(tl_spec, tr_spec, bl_spec, br_spec) * corner_weights;
+        }
+    }
+    vec4 diffuse = imageLoad(in_diffuse, p);
+    vec4 specular = vec4(get_specular(p), 1.0);
+    if (sum_w > 0.001 && !any(isnan(diffuse_prev)))
+    {
+        float hist_len = diffuse_prev.a;
+        float alpha_color = max(0.01, 1.0/hist_len);
+
+        hist_len = min(hist_len + 1.0, 255.0);
+        diffuse.a = hist_len;
+        diffuse.rgb = mix(diffuse_prev.rgb, diffuse.rgb, alpha_color);
+        specular.rgb = mix(specular_prev.rgb, specular.rgb, alpha_color);
+    }
+    if (all(lessThan(p.xy, control.size.xy)))
+    {
+        imageStore(tmp_noisy[0], p, diffuse);
+        imageStore(tmp_noisy[1], p, specular);
+    }
+        
+
+    const float features[BUFFER_COUNT] = {
+        1.f,
+        curr_normal.x,
+        curr_normal.y,
+        curr_normal.z,
+        curr_pos.x,
+        curr_pos.y,
+        curr_pos.z,
+        curr_pos.x * curr_pos.x,
+        curr_pos.y * curr_pos.y,
+        curr_pos.z * curr_pos.z,
+        diffuse.r,
+        diffuse.g,
+        diffuse.b,
+#ifndef DIFFUSE_ONLY
+        specular.r,
+        specular.g,
+        specular.b
+#endif
+    };
+
+    const int block_edge_length = BLOCK_EDGE_LENGTH;
+    const int block_pixels = block_edge_length * block_edge_length;
+    const int block_count_total = control.workset_size.x * control.workset_size.y;
+
+    p = ivec3(gl_GlobalInvocationID.xyz);
+
+    for (int i = 0; i < BUFFER_COUNT; ++i)
+    {
+        const int x_in_block = gid.x % block_edge_length;
+        const int y_in_block = gid.y % block_edge_length;
+        const int x_block = gid.x / block_edge_length;
+        const int y_block = gid.y / block_edge_length;
+        const int linear_block_id = y_block * control.workset_size.x + x_block;
+
+        const uint buffer_offset = BLOCK_SIZE * BLOCK_SIZE * control.workset_size.x * control.workset_size.y * BUFFER_COUNT * p.z;
+        const uint location_in_data = y_block * control.workset_size.x * block_pixels * BUFFER_COUNT + x_block * block_pixels * BUFFER_COUNT +
+            y_in_block * block_edge_length + x_in_block + i * block_pixels;
+        
+        float store_value = features[i];
+
+        if(isnan(store_value))
+            store_value = 0.0f;
+        tmp_buffer.data[location_in_data + buffer_offset] = float16_t(store_value);
+    }
+
+}

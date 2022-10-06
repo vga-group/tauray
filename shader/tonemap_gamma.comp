@@ -1,0 +1,19 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(binding = 0, scalar) uniform tonemap_info_buffer
+{
+    ivec2 size;
+    float exposure;
+    float gamma;
+} info;
+
+vec4 tonemap(vec4 c)
+{
+    c.rgb *= info.exposure;
+    return c;
+}
+
+#include "tonemap.glsl"

@@ -1,0 +1,32 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#define USE_PUSH_CONSTANTS
+#define POINT_LIGHT_BUFFER_BINDING 6
+#include "path_tracer.glsl"
+
+hitAttributeEXT vec3 attribs;
+
+// Adapted from
+// https://viclw17.github.io/2018/07/16/raytracing-ray-sphere-intersection/
+float sphere_intersection(
+    vec3 sphere_pos, float sphere_radius, vec3 ray_origin, vec3 ray_direction
+){
+    vec3 oc = ray_origin - sphere_pos;
+    float a = dot(ray_direction, ray_direction);
+    float b = 2.0f * dot(oc, ray_direction);
+    float c = dot(oc, oc) - sphere_radius * sphere_radius;
+    float discriminant = b * b - 4.0f * a * c;
+    if(discriminant < 0) return -1.0f;
+    else return (-b - sqrt(discriminant)) / (2.0f * a);
+}
+
+void main()
+{
+    point_light pl = point_lights.lights[gl_PrimitiveID];
+    float hit = sphere_intersection(pl.pos, pl.radius, gl_WorldRayOriginEXT, gl_WorldRayDirectionEXT);
+    if(hit > 0)
+        reportIntersectionEXT(hit, 0);
+}

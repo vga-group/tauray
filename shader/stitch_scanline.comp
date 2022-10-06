@@ -1,0 +1,44 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, set = 0, rgba16f) uniform readonly image2DArray input_images[];
+layout(binding = 1, set = 0, rgba16f) uniform writeonly image2DArray output_images[];
+
+layout(push_constant) uniform push_constant_buffer
+{
+    uvec2 size;
+    int device_count;
+    int primary_index;
+    int subimage_count;
+    int subimage_index;
+} control;
+
+void main()
+{
+    uvec3 p = gl_GlobalInvocationID.xyz;
+    uint input_image_id = p.z%(control.device_count-1);
+    p.z = p.z/(control.device_count-1);
+
+    uint input_subimage_id =
+        input_image_id * control.subimage_count + control.subimage_index;
+    uint cur_index =
+        input_image_id + (input_image_id >= control.primary_index ? 1 : 0);
+
+    uvec2 input_image_size = uvec2(
+        control.size.x,
+        (control.size.y-cur_index+control.device_count-1)/control.device_count
+    );
+
+    uvec3 out_p = uvec3(p.x, p.y * control.device_count + cur_index, p.z);
+
+    if(all(lessThan(p.xy, input_image_size)))
+    {
+        vec4 color = imageLoad(
+            input_images[nonuniformEXT(input_subimage_id)], ivec3(p)
+        );
+        imageStore(output_images[control.subimage_index], ivec3(out_p), color);
+    }
+}

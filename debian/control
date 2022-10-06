@@ -1,0 +1,12 @@
+Source: tauray
+Section: graphics
+Priority: optional
+Maintainer: Julius Ikkala <julius.ikkala@tuni.fi>
+Build-Depends: debhelper (>= 11~)
+Standards-Version: 4.1.3
+
+Package: tauray
+Architecture: amd64
+Depends: ${shlibs:Depends}
+Description: A real-time physically based path tracer
+ Tauray is a physically based path tracing renderer, currently focusing on research problems.

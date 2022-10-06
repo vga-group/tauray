@@ -1,0 +1,100 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_scalar_block_layout : enable
+#include "gbuffer.glsl"
+
+#define SQRD_DIST_LIMIT    0.01f
+#define COS_LIMIT    0.99f
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform image2DArray current_color;
+layout(binding = 1, rg16_snorm) uniform readonly image2DArray current_normal;
+layout(binding = 2, rgba32f) uniform readonly image2DArray current_pos;
+layout(binding = 3, rg32f) uniform readonly image2DArray current_screen_motion;
+
+layout(binding = 4, rgba16f) uniform readonly image2DArray previous_color;
+layout(binding = 5, rg16_snorm) uniform readonly image2DArray previous_normal;
+layout(binding = 6, rgba32f) uniform readonly image2DArray previous_pos;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    ivec2 size;
+    float temporal_ratio;
+} control;
+
+void main()
+{
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+
+    if(all(lessThan(p.xy, control.size)))
+    {
+        vec2 motion = vec2(imageLoad(current_screen_motion,p));
+        motion.y = 1.f - motion.y;
+        motion = motion * vec2(control.size) - vec2(0.5);
+
+        ivec3 tl_sample = ivec3(floor(vec3(motion.x, motion.y, p.z)));
+        ivec3 tr_sample = ivec3(floor(vec3(tl_sample.x+1, tl_sample.y, p.z)));
+        ivec3 bl_sample = ivec3(floor(vec3(tl_sample.x, tl_sample.y+1, p.z)));
+        ivec3 br_sample = ivec3(floor(vec3(tl_sample.x+1, tl_sample.y+1, p.z)));
+
+        vec4 curr_color = imageLoad(current_color, p);
+
+        vec3 curr_normal = unpack_gbuffer_normal(imageLoad(current_normal, p).xy);
+        vec3 curr_pos = imageLoad(current_pos, p).xyz;
+
+        //Discard samples
+        vec3 prev_curr = curr_pos - imageLoad(previous_pos, tl_sample).xyz;
+        bool keep_tl =
+            all(lessThan(tl_sample.xy, control.size))
+            && all(greaterThanEqual(tl_sample.xy, ivec2(0)))
+            && dot(unpack_gbuffer_normal(imageLoad(previous_normal, tl_sample).xy), curr_normal) > COS_LIMIT
+            && dot(prev_curr, prev_curr) < SQRD_DIST_LIMIT;
+
+        prev_curr = curr_pos - imageLoad(previous_pos, tr_sample).xyz;
+        bool keep_tr =
+            all(lessThan(tr_sample.xy, control.size))
+            && all(greaterThanEqual(tr_sample.xy, ivec2(0)))
+            && dot(unpack_gbuffer_normal(imageLoad(previous_normal, tr_sample).xy), curr_normal) > COS_LIMIT
+            && dot(prev_curr, prev_curr) < SQRD_DIST_LIMIT;
+
+        prev_curr = curr_pos - imageLoad(previous_pos, bl_sample).xyz;
+        bool keep_bl =
+            all(lessThan(bl_sample.xy, control.size))
+            && all(greaterThanEqual(bl_sample.xy, ivec2(0)))
+            && dot(unpack_gbuffer_normal(imageLoad(previous_normal, bl_sample).xy), curr_normal) > COS_LIMIT
+            && dot(prev_curr, prev_curr) < SQRD_DIST_LIMIT;
+
+        prev_curr = curr_pos - imageLoad(previous_pos, br_sample).xyz;
+        bool keep_br =
+            all(lessThan(br_sample.xy, control.size))
+            && all(greaterThanEqual(br_sample.xy, ivec2(0)))
+            && dot(unpack_gbuffer_normal(imageLoad(previous_normal, br_sample).xy), curr_normal) > COS_LIMIT
+            && dot(prev_curr, prev_curr) < SQRD_DIST_LIMIT;
+
+        vec4 tl = keep_tl ? imageLoad(previous_color, tl_sample) : vec4(0);
+        vec4 tr = keep_tr ? imageLoad(previous_color, tr_sample) : vec4(0);
+        vec4 bl = keep_bl ? imageLoad(previous_color, bl_sample) : vec4(0);
+        vec4 br = keep_br ? imageLoad(previous_color, br_sample) : vec4(0);
+
+        vec2 q = motion - vec2(tl_sample);
+
+        vec4 side_weights = vec4(1.0-q.x, q.x, 1.0-q.y, q.y);
+
+        vec4 corner_weights = side_weights.xyxy * side_weights.zzww;
+
+        corner_weights *= vec4(keep_tl, keep_tr, keep_bl, keep_br);
+        float sum = dot(corner_weights, vec4(1));
+        if(sum > 1e-5)
+        {
+            corner_weights /= sum;
+
+            vec4 r = mat4(tl,tr,bl,br) * corner_weights;
+
+            vec4 color = mix(curr_color, r, control.temporal_ratio);
+            if(!any(isnan(color)))
+                imageStore(current_color, p, color);
+        }
+    }
+}
+

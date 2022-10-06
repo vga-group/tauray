@@ -1,0 +1,42 @@
+
+#version 460
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2DArray in_color;
+layout(binding = 1, rgba8) uniform writeonly image2D out_color;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    vec4 calibration_info;
+    uvec2 output_size;
+    uvec2 viewport_size;
+    uint viewport_count;
+} control;
+
+vec3 sample_viewport(vec2 uv, int viewport_index)
+{
+    return texture(in_color, vec3(uv.x, 1.0-uv.y, viewport_index)).rgb;
+}
+
+void main()
+{
+    uvec2 p = gl_GlobalInvocationID.xy;
+
+    if(any(greaterThanEqual(p, control.output_size)))
+        return;
+
+    vec2 uv = (vec2(p)+0.5f)/vec2(control.output_size);
+    uv.y = 1.0f - uv.y;
+    vec3 color = vec3(0);
+    for(int channel = 0; channel < 3; ++channel)
+    {
+        float horizontal = fract(dot(vec4(uv, channel, 1.0f), control.calibration_info));
+        int viewport_index = clamp(
+            int(floor(horizontal * control.viewport_count)), 0, int(control.viewport_count)-1
+        );
+        color[channel] = sample_viewport(uv, viewport_index)[channel];
+    }
+
+    imageStore(out_color, ivec2(p), vec4(color, 1.0f));
+}

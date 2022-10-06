@@ -1,0 +1,180 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#include "gbuffer.glsl"
+
+#define SQRD_DIST_LIMIT    0.01f
+#define COS_LIMIT    0.99f
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    vec4 default_value;
+    ivec2 viewport_size;
+    uint source_count;
+} control;
+
+layout(binding = 0, rgba16f) uniform image2DArray color_tex;
+layout(binding = 1, rg16_snorm) uniform readonly image2DArray normal_tex;
+layout(binding = 2, rgba32f) uniform readonly image2DArray position_tex;
+
+layout(binding = 3) buffer camera_data_buffer
+{
+    mat4 view_proj[];
+} camera_data;
+
+float reproject(
+    uint source_index,
+    vec3 dst_normal,
+    vec3 dst_position,
+    bool skybox,
+    float skip_score,
+    inout vec4 color
+){
+    ivec3 p = ivec3(gl_GlobalInvocationID.xy, int(source_index));
+
+    if(skybox)
+    {
+        // TODO: Doesn't work when cameras don't have the same view
+        // vector.
+        bool also_skybox = all(isnan(imageLoad(position_tex, p).xyz));
+        if(also_skybox)
+        {
+            color = imageLoad(color_tex, p);
+            return 0.0f;
+        }
+    }
+    else
+    {
+        vec4 projected_pos = camera_data.view_proj[source_index] * vec4(dst_position, 1.0f);
+        vec2 motion = projected_pos.xy / projected_pos.w;
+        float depth = projected_pos.z / projected_pos.w;
+        motion = motion * 0.5 + 0.5;
+        motion.y = 1.f - motion.y;
+        motion = motion * vec2(control.viewport_size) - vec2(0.5);
+
+        float score = depth;
+        if(score >= skip_score)
+            return 1.0f;
+
+        ivec3 tl_sample = ivec3(motion.x, motion.y, p.z);
+        ivec3 tr_sample = ivec3(tl_sample.x+1, tl_sample.y, p.z);
+        ivec3 bl_sample = ivec3(tl_sample.x, tl_sample.y+1, p.z);
+        ivec3 br_sample = ivec3(tl_sample.x+1, tl_sample.y+1, p.z);
+
+        vec3 delta = dst_position - imageLoad(position_tex, tl_sample).xyz;
+        bool keep_tl =
+            all(lessThan(tl_sample.xy, control.viewport_size))
+            && all(greaterThanEqual(tl_sample.xy, ivec2(0)))
+            && dot(unpack_gbuffer_normal(imageLoad(normal_tex, tl_sample).xy), dst_normal) > COS_LIMIT
+            && dot(delta, delta) < SQRD_DIST_LIMIT;
+
+        delta = dst_position - imageLoad(position_tex, tr_sample).xyz;
+        bool keep_tr =
+            all(lessThan(tr_sample.xy, control.viewport_size))
+            && all(greaterThanEqual(tr_sample.xy, ivec2(0)))
+            && dot(unpack_gbuffer_normal(imageLoad(normal_tex, tr_sample).xy), dst_normal) > COS_LIMIT
+            && dot(delta, delta) < SQRD_DIST_LIMIT;
+
+        delta = dst_position - imageLoad(position_tex, bl_sample).xyz;
+        bool keep_bl =
+            all(lessThan(bl_sample.xy, control.viewport_size))
+            && all(greaterThanEqual(bl_sample.xy, ivec2(0)))
+            && dot(unpack_gbuffer_normal(imageLoad(normal_tex, bl_sample).xy), dst_normal) > COS_LIMIT
+            && dot(delta, delta) < SQRD_DIST_LIMIT;
+
+        delta = dst_position - imageLoad(position_tex, br_sample).xyz;
+        bool keep_br =
+            all(lessThan(br_sample.xy, control.viewport_size))
+            && all(greaterThanEqual(br_sample.xy, ivec2(0)))
+            && dot(unpack_gbuffer_normal(imageLoad(normal_tex, br_sample).xy), dst_normal) > COS_LIMIT
+            && dot(delta, delta) < SQRD_DIST_LIMIT;
+
+        vec4 tl = keep_tl ? imageLoad(color_tex, tl_sample) : vec4(0);
+        vec4 tr = keep_tr ? imageLoad(color_tex, tr_sample) : vec4(0);
+        vec4 bl = keep_bl ? imageLoad(color_tex, bl_sample) : vec4(0);
+        vec4 br = keep_br ? imageLoad(color_tex, br_sample) : vec4(0);
+
+        vec2 q = motion - vec2(tl_sample);
+
+        vec4 side_weights = vec4(1.0-q.x, q.x, 1.0-q.y, q.y);
+
+        vec4 corner_weights = side_weights.xyxy * side_weights.zzww;
+
+        corner_weights *= vec4(keep_tl, keep_tr, keep_bl, keep_br);
+        float denom = dot(corner_weights, vec4(1));
+        if(denom > 1e-5)
+        {
+            corner_weights /= denom;
+
+            color = mat4(tl,tr,bl,br) * corner_weights;
+            return score;
+        }
+    }
+    return 1.0f;
+}
+
+void main()
+{
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    p.z += int(control.source_count);
+    if(all(lessThan(p.xy, control.viewport_size)))
+    {
+        vec3 dst_normal = unpack_gbuffer_normal(imageLoad(normal_tex, p).xy);
+        vec3 dst_position = imageLoad(position_tex, p).xyz;
+        bool skybox = all(isnan(dst_position));
+
+        //vec4 sum_color = vec4(0);
+        //float sample_count = 0.0f;
+
+        vec4 best_color = control.default_value;
+        uint best_candidate = 0;
+        float best_score = 1.0f;
+
+        for(uint j = 0; j < control.source_count; ++j)
+        {
+            vec4 projected_pos = camera_data.view_proj[j] * vec4(dst_position, 1.0f);
+            float depth = projected_pos.z / projected_pos.w;
+            if(depth < best_score)
+            {
+                best_score = depth;
+                best_candidate = j;
+            }
+        }
+
+        best_score = 1.0f;
+        float score = reproject(
+            best_candidate,
+            dst_normal,
+            dst_position,
+            skybox,
+            best_score,
+            best_color
+        );
+        if(score == 1.0f)
+        {
+            for(uint j = 0; j < control.source_count; ++j)
+            {
+                if(j == best_candidate)
+                    continue;
+
+                float score = reproject(
+                    j,
+                    dst_normal,
+                    dst_position,
+                    skybox,
+                    best_score,
+                    best_color
+                );
+                best_score = min(best_score, score);
+            }
+        }
+        //imageStore(color_tex, p, sample_count == 0.0f ? control.default_value : sum_color / sample_count);
+        imageStore(color_tex, p, best_color);
+    }
+}
+

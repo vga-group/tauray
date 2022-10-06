@@ -1,0 +1,108 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define USE_PUSH_CONSTANTS
+#define TLAS_BINDING 0
+#define SCENE_DATA_BUFFER_BINDING 1
+#define VERTEX_BUFFER_BINDING 2
+#define INDEX_BUFFER_BINDING 3
+#define TEXTURE_ARRAY_BINDING 4
+#define DIRECTIONAL_LIGHT_BUFFER_BINDING 5
+#define POINT_LIGHT_BUFFER_BINDING 6
+#define ENVIRONMENT_MAP_BINDING 7
+#define SAMPLING_DATA_BINDING 8
+#define SCENE_METADATA_BUFFER_BINDING 9
+#define INDIRECT_CLAMP_FIRST_BOUNCE
+#define HIDE_LIGHTS
+#include "path_tracer.glsl"
+#include "spherical_harmonics.glsl"
+
+layout(binding = 10, set = 0, rgba32f) uniform image3D inout_data;
+layout(binding = 11, set = 0) uniform grid_data_buffer
+{
+    mat4 transform;
+    mat4 normal_transform;
+    uvec3 grid_size;
+    float rotation;
+    vec3 cell_scale;
+    float mix_ratio;
+} grid;
+
+void main()
+{
+    uvec3 probe_index = uvec3(gl_LaunchIDEXT.xyz);
+    const uint samples_per_invocation = control.previous_samples;
+    const uint total_samples = control.samples * control.previous_samples;
+    uint sample_index = (probe_index.z % control.samples) * samples_per_invocation;
+    probe_index.z /= uint(control.samples);
+
+    float coef_mult = 4*M_PI/float(total_samples);
+
+    sh_probe sum_probe;
+    for(uint i = 0; i < samples_per_invocation; ++i, ++sample_index)
+    {
+        local_sampler ls = init_local_sampler(uvec4(probe_index, sample_index));
+
+    #if defined(USE_POINT_FILTER)
+        vec3 pos_offset = vec3(0.0);
+    #elif defined(USE_BOX_FILTER)
+        vec3 pos_offset = generate_spatial_sample(ls) * 2.0f - 1.0f;
+    #elif defined(USE_BLACKMAN_HARRIS_FILTER)
+        vec3 pos_offset = sample_blackman_harris_ball(
+            generate_spatial_sample(ls)
+        );
+    #else
+    #error "Unknown filter type"
+    #endif
+
+        vec3 local_pos = ((vec3(probe_index) + pos_offset * control.film_radius + 0.5f)/vec3(grid.grid_size)) * 2.0f - 1.0f;
+        vec3 global_pos = (grid.transform * vec4(local_pos, 1.0f)).xyz;
+
+        // Random sampling the sphere may seem like a good idea, but it introduces
+        // so much noise that the result never seems stable.
+        vec3 local_ray_dir = even_sample_sphere(
+            int(sample_index), int(total_samples), grid.rotation
+        );
+
+        vec3 global_ray_dir = normalize(
+            (grid.normal_transform * vec4(local_ray_dir, 0.0f)).xyz
+        );
+
+        pt_vertex_data first_hit_vertex;
+        sampled_material first_hit_material;
+        vec3 color, direct, diffuse;
+
+        evaluate_ray(
+            ls, global_pos, global_ray_dir,
+            color, direct, diffuse, first_hit_vertex, first_hit_material
+        );
+
+        // There is no need to be able to represent distances further than one
+        // irradiance volume voxel, because probes cannot be used further than that.
+        float dist = clamp(
+            distance(first_hit_vertex.pos, global_pos) * length(local_ray_dir * grid.cell_scale),
+            0.0, SQRT3
+        );
+
+        vec4 coefs = vec4(color, dist) * coef_mult;
+        sh_probe local_probe = eval_sh_basis(local_ray_dir, coefs);
+        if(i == 0) sum_probe = local_probe;
+        else for(int l = 0; l < SH_COEF_COUNT; ++l)
+            sum_probe.coef[l] += local_probe.coef[l];
+    }
+
+    // Write coefficients
+    for(int l = 0; l < SH_COEF_COUNT; ++l)
+    {
+        ivec3 write_pos = ivec3(gl_LaunchIDEXT.xyz);
+        write_pos.y += l * int(grid.grid_size.y);
+        if(grid.mix_ratio < 1.0f)
+            sum_probe.coef[l] = mix(imageLoad(inout_data, write_pos), sum_probe.coef[l], grid.mix_ratio);
+        imageStore(inout_data, write_pos, sum_probe.coef[l]);
+    }
+}
+
