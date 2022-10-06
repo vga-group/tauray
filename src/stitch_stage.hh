@@ -29,9 +29,11 @@ public:
         const options& opt
     );
 
+    void set_blend_ratio(float blend_ratio);
     void set_distribution_params(
         const std::vector<distribution_params>& params
     );
+    void refresh_params();
 
 private:
     void record_commands();
@@ -39,6 +41,7 @@ private:
     compute_pipeline comp;
     options opt;
     uvec2 size;
+    float blend_ratio;
 
     std::vector<gbuffer_target> images;
     std::vector<distribution_params> params;

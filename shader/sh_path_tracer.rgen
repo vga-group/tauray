@@ -13,16 +13,17 @@
 #define TEXTURE_ARRAY_BINDING 4
 #define DIRECTIONAL_LIGHT_BUFFER_BINDING 5
 #define POINT_LIGHT_BUFFER_BINDING 6
-#define ENVIRONMENT_MAP_BINDING 7
-#define SAMPLING_DATA_BINDING 8
-#define SCENE_METADATA_BUFFER_BINDING 9
+#define UNSORTED_POINT_LIGHT_BUFFER_BINDING 7
+#define ENVIRONMENT_MAP_BINDING 8
+#define SAMPLING_DATA_BINDING 9
+#define SCENE_METADATA_BUFFER_BINDING 10
 #define INDIRECT_CLAMP_FIRST_BOUNCE
 #define HIDE_LIGHTS
 #include "path_tracer.glsl"
 #include "spherical_harmonics.glsl"
 
-layout(binding = 10, set = 0, rgba32f) uniform image3D inout_data;
-layout(binding = 11, set = 0) uniform grid_data_buffer
+layout(binding = 12, set = 0, rgba32f) uniform image3D inout_data;
+layout(binding = 13, set = 0) uniform grid_data_buffer
 {
     mat4 transform;
     mat4 normal_transform;

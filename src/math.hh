@@ -141,6 +141,8 @@ uint16_t float_to_half(float f);
 
 uint32_t next_power_of_two(uint32_t n);
 
+uint32_t align_up_to(uint32_t n, uint32_t align);
+
 uint32_t pcg(uint32_t seed);
 
 float halton(int index, int base);

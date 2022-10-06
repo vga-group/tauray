@@ -30,6 +30,8 @@ public:
 
     vec3 get_global_view_direction(vec3 local_view = vec3(0,0,-1)) const;
 
+    void set_near(float near);
+    void set_far(float far);
     float get_near() const;
     float get_far() const;
     vec2 get_range() const;

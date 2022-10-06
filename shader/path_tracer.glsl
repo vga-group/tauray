@@ -96,6 +96,7 @@ bool get_intersection_info(
         );
         light = vec3(0);
         mat = sample_material(payload.instance_id, vd);
+        mat.albedo.a = 1.0; // Alpha blending was handled by the any-hit shader!
         v.pos = vd.pos;
 #ifdef CALC_PREV_VERTEX_POS
         v.prev_pos = vd.prev_pos;
@@ -117,7 +118,7 @@ bool get_intersection_info(
         #endif
         v.mapped_normal = normalize(v.pos - pl.pos);
         v.instance_id = -1;
-        mat.albedo = vec4(0);
+        mat.albedo = vec4(0,0,0,1);
         mat.emission = vec3(0);
         return false;
     }
@@ -153,7 +154,7 @@ bool get_intersection_info(
     }
 }
 
-vec3 sample_explicit_light(inout vec3 u, vec3 pos, out vec3 out_dir, out float out_length)
+vec3 sample_explicit_light(inout vec3 u, vec3 pos, out vec3 out_dir, out float out_length, inout float ratio)
 {
     float point_directional_split = scene_metadata.directional_light_count > 0 ?
         (scene_metadata.point_light_count > 0 ? 0.5f : 0.0f) :
@@ -182,6 +183,7 @@ vec3 sample_explicit_light(inout vec3 u, vec3 pos, out vec3 out_dir, out float o
         vec3 color = get_spotlight_intensity(pl, out_dir) * pl.color;
         color /= pl.radius == 0.0f ? dist2 : pl.radius * pl.radius;
         if(pl.radius != 0.0f) color *= (1.0f - dir_cutoff) * 2.0f;
+        else ratio = 1.0f; // Punctual lights can only be sampled through NEE.
         return color * weight;
     }
     else
@@ -196,6 +198,8 @@ vec3 sample_explicit_light(inout vec3 u, vec3 pos, out vec3 out_dir, out float o
         vec3 dir = -dl.dir;
         out_length = RAY_MAX_DIST;
         out_dir = sample_cone(u.xy, dir, dl.dir_cutoff);
+        if(dl.dir_cutoff >= 1.0f)
+            ratio = 1.0f; // Punctual lights can only be sampled through NEE.
         return dl.color * weight;
     }
 }
@@ -210,7 +214,7 @@ void eval_explicit_lights(
     vec3 out_dir;
     float out_length = 0.0f;
     // Sample lights
-    vec3 contrib = sample_explicit_light(u, v.pos, out_dir, out_length);
+    vec3 contrib = sample_explicit_light(u, v.pos, out_dir, out_length, ratio);
 
     vec3 shading_light = out_dir * tbn;
     vec3 d, s;
@@ -288,14 +292,11 @@ void evaluate_ray(
 
         vec3 diffuse_radiance = vec3(0);
         vec3 specular_radiance = mat.emission + nee_light_ratio * light;
-        vec3 missing_albedo = vec3(1);
 
         if(bounce == 0)
         {
             first_hit_vertex = v;
             first_hit_material = mat;
-            missing_albedo = mat.albedo.rgb;
-            mat.albedo.rgb = vec3(1);
         }
 
         mat3 tbn = create_tangent_space(v.mapped_normal);
@@ -313,12 +314,15 @@ void evaluate_ray(
 
         // This heuristic lets NEE rays be less weighted for extremely smooth and
         // metallic materials.
-        nee_light_ratio = mix(mix(0.5, 1.0, mat.metallic), 0.0, 1.0f-(1.0f-mat.roughness)*(1.0f-mat.roughness));
+        nee_light_ratio = mix(0.0, mix(0.5, 1.0, mat.metallic), pow(1.0f-mat.roughness, 200.0f));
 
         // Calculate radiance from the intersection point (i.e. direct lighting
         // mostly, whenever that is applicable.)
-        if(!terminal)
-        {
+        if(
+            !terminal &&
+            (scene_metadata.directional_light_count > 0 ||
+            scene_metadata.point_light_count > 0)
+        ){
             // Do NEE ray
             eval_explicit_lights(
                 ray_sample.xyz, tbn, shading_view, mat, v, 1.0f - nee_light_ratio,
@@ -327,7 +331,7 @@ void evaluate_ray(
         }
 
         // Then, calculate contribution to pixel color from current bounce.
-        vec3 contribution = attenuation * (diffuse_radiance * missing_albedo + specular_radiance);
+        vec3 contribution = attenuation * (diffuse_radiance * mat.albedo.rgb + specular_radiance);
         if(
 #ifndef INDIRECT_CLAMP_FIRST_BOUNCE
             bounce != 0 &&
@@ -358,9 +362,14 @@ void evaluate_ray(
         if(ray_sample.w > qi) break;
         else visibility /= qi;
 #endif
-        attenuation *= (diffuse_weight * missing_albedo + specular_weight) * visibility;
+        attenuation *= (diffuse_weight * mat.albedo.rgb + specular_weight) * visibility;
         if(bounce == 0)
-            diffuse_attenuation_ratio = diffuse_weight / (diffuse_weight * missing_albedo + specular_weight);
+        {
+            diffuse_attenuation_ratio = diffuse_weight / (diffuse_weight * mat.albedo.rgb + specular_weight);
+            if(diffuse_weight.r < 1e-7) diffuse_attenuation_ratio.r = 0;
+            if(diffuse_weight.g < 1e-7) diffuse_attenuation_ratio.g = 0;
+            if(diffuse_weight.b < 1e-7) diffuse_attenuation_ratio.b = 0;
+        }
 
         if(max(attenuation.x, max(attenuation.y, attenuation.z)) <= 0.0f) break;
     }

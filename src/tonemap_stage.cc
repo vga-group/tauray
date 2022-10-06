@@ -9,6 +9,7 @@ using namespace tr;
 struct tonemap_info_buffer
 {
     pivec2 size;
+    int alpha_grid_background;
     float exposure;
     float gamma;
 };
@@ -122,6 +123,7 @@ void tonemap_stage::update(uint32_t frame_index)
     info.size = input_target.get_size();
     info.exposure = opt.exposure;
     info.gamma = opt.tonemap_operator == LINEAR ? 1.0 : opt.gamma;
+    info.alpha_grid_background = opt.alpha_grid_background ? 16 : 0;
 
     index_data.update(frame_index, &info);
 }

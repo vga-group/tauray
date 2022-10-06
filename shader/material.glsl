@@ -26,7 +26,6 @@ struct sampled_material
     float ior_in;
     float ior_out;
     float f0;
-    vec3 f0_m;
     bool double_sided;
     float shadow_terminator_mul;
 };

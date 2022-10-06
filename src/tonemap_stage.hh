@@ -31,6 +31,7 @@ public:
         int input_msaa = 1;
         bool post_resolve = false;
         bool transition_output_layout = true;
+        bool alpha_grid_background = false;
         std::vector<uint32_t> reorder = {};
     };
 

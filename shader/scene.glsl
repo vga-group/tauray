@@ -237,7 +237,6 @@ sampled_material sample_material(material mat, inout vertex_data v)
     float f0 = (res.ior_out-res.ior_in)/(res.ior_out+res.ior_in);
     f0 *= f0;
     res.f0 = f0;
-    res.f0_m = mix(vec3(f0), res.albedo.rgb, res.metallic);
     res.double_sided = mat.emission_factor_double_sided.a > 0.5f;
     res.shadow_terminator_mul = 1.0f;
     return res;

@@ -271,6 +271,12 @@ uint32_t next_power_of_two(uint32_t n)
     return n;
 }
 
+uint32_t align_up_to(uint32_t n, uint32_t align)
+{
+    if(align <= 1) return n;
+    return (n+(align-1))/align*align;
+}
+
 uint32_t pcg(uint32_t seed)
 {
     seed = seed * 747796405u + 2891336453u;

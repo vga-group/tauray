@@ -216,6 +216,16 @@ options parse_options(char** argv)
                         arg++; \
                     }\
                 }
+#define TR_VECFLOAT_OPT(name, description) \
+                else if(prefix(arg, DASHIFY(name)+"=")) \
+                {\
+                    while(true) \
+                    {\
+                        opt.name.push_back(parse_float(DASHIFY(name), arg, -FLT_MAX, FLT_MAX, ','));\
+                        if(*arg != ',') break;\
+                        arg++; \
+                    }\
+                }
 #define TR_STRUCT_OPT_INT(name, default, min, max) \
                 if(*arg != '\0') { \
                     s.name = parse_int(name_prefix+DASHIFY(name), arg, min, max, ','); \
@@ -249,6 +259,7 @@ options parse_options(char** argv)
 #undef TR_VEC3_OPT
 #undef TR_ENUM_OPT
 #undef TR_SETINT_OPT
+#undef TR_VECFLOAT_OPT
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT
@@ -262,6 +273,7 @@ options parse_options(char** argv)
 #define TR_VEC3_OPT(...)
 #define TR_ENUM_OPT(...)
 #define TR_SETINT_OPT(...)
+#define TR_VECFLOAT_OPT(...)
 #define TR_STRUCT_OPT(...)
                 else throw option_parse_error(
                     "Unknown long flag " + std::string(arg));
@@ -351,6 +363,7 @@ options parse_options(char** argv)
 #undef TR_VEC3_OPT
 #undef TR_ENUM_OPT
 #undef TR_SETINT_OPT
+#undef TR_VECFLOAT_OPT
 #undef TR_STRUCT_OPT
 }
 
@@ -393,6 +406,8 @@ Options:
         '\0', description, find_default_enum_string<type>(default, {__VA_ARGS__}));
 #define TR_SETINT_OPT(name, description) \
     lopt(#name, "int,int,...", '\0', description, "");
+#define TR_VECFLOAT_OPT(name, description) \
+    lopt(#name, "float,float,...", '\0', description, "");
 #define TR_STRUCT_OPT_INT(name, default, min, max) \
     type_tag += DASHIFY(name) + ","; \
     default_str += DASHIFY(name) + " = " + std::to_string(default) + ", ";
@@ -419,6 +434,7 @@ Options:
 #undef TR_VEC3_OPT
 #undef TR_ENUM_OPT
 #undef TR_SETINT_OPT
+#undef TR_VECFLOAT_OPT
 #undef TR_STRUCT_OPT
 #undef lopt
 #undef sopt

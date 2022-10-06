@@ -357,22 +357,64 @@ void gfx_pipeline::init_pipeline()
         pipeline = vkm(*dev, dev->dev.createRayTracingPipelineKHR({}, {}, pipeline_info).value);
 
         // Create shader binding table
-        uint32_t group_handle_size = dev->rt_props.shaderGroupHandleSize;
-        uint32_t base_alignment = dev->rt_props.shaderGroupBaseAlignment;
-        uint32_t sbt_size = rt_shader_groups.size() * base_alignment;
+        uint32_t group_handle_size = align_up_to(
+            dev->rt_props.shaderGroupHandleSize,
+            dev->rt_props.shaderGroupHandleAlignment
+        );
 
-        std::vector<uint8_t> shader_handles(sbt_size);
+        // Fetch handles
+        std::vector<uint8_t> shader_handles(rt_shader_groups.size() * dev->rt_props.shaderGroupHandleSize);
         (void)dev->dev.getRayTracingShaderGroupHandlesKHR(
             pipeline, 0, rt_shader_groups.size(),
-            sbt_size, shader_handles.data()
+            shader_handles.size(), shader_handles.data()
         );
-        std::vector<uint8_t> sbt_mem(sbt_size);
-        for(uint32_t g = 0; g < rt_shader_groups.size(); ++g)
+
+        // Put handles into memory with the correct alignments (yes, it's super
+        // annoying)
+        size_t offset = 0;
+        size_t group_index = 0;
+        std::vector<uint8_t> sbt_mem(group_handle_size);
+        rgen_sbt = vk::StridedDeviceAddressRegionKHR{
+            offset, group_handle_size, group_handle_size
+        };
+        memcpy(
+            sbt_mem.data(),
+            shader_handles.data() + group_index * dev->rt_props.shaderGroupHandleSize,
+            group_handle_size
+        );
+        group_index++;
+        offset += group_handle_size;
+        offset = align_up_to(offset, dev->rt_props.shaderGroupBaseAlignment);
+
+        rchit_sbt = vk::StridedDeviceAddressRegionKHR{
+            offset, group_handle_size, group_handle_size * hit_group_count
+        };
+        for(size_t g = 0; g < hit_group_count; ++g, ++group_index)
+        {
+            sbt_mem.resize(offset + group_handle_size);
             memcpy(
-                sbt_mem.data() + g * base_alignment,
-                shader_handles.data() + g * group_handle_size,
+                sbt_mem.data() + offset,
+                shader_handles.data() + group_index * dev->rt_props.shaderGroupHandleSize,
                 group_handle_size
             );
+            offset += group_handle_size;
+        }
+        offset = align_up_to(offset, dev->rt_props.shaderGroupBaseAlignment);
+
+        rmiss_sbt = vk::StridedDeviceAddressRegionKHR{
+            offset, group_handle_size, group_handle_size * state.src.rmiss.size()
+        };
+        for(size_t g = 0; g < state.src.rmiss.size(); ++g, ++group_index)
+        {
+            sbt_mem.resize(offset + group_handle_size);
+            memcpy(
+                sbt_mem.data() + offset,
+                shader_handles.data() + group_index * dev->rt_props.shaderGroupHandleSize,
+                group_handle_size
+            );
+            offset += group_handle_size;
+        }
+        offset = align_up_to(offset, dev->rt_props.shaderGroupBaseAlignment);
 
         sbt_buffer = create_buffer(
             *dev,
@@ -388,20 +430,9 @@ void gfx_pipeline::init_pipeline()
         );
 
         vk::DeviceAddress sbt_addr = sbt_buffer.get_address();
-
-        size_t offset = 0;
-        rgen_sbt = vk::StridedDeviceAddressRegionKHR{
-            sbt_addr + offset * base_alignment, base_alignment, base_alignment
-        };
-        offset++;
-        rchit_sbt = vk::StridedDeviceAddressRegionKHR{
-            sbt_addr + offset * base_alignment, base_alignment, base_alignment * hit_group_count
-        };
-        offset += hit_group_count;
-        rmiss_sbt = vk::StridedDeviceAddressRegionKHR{
-            sbt_addr + offset * base_alignment, base_alignment, base_alignment * state.src.rmiss.size()
-        };
-        offset += state.src.rmiss.size();
+        rgen_sbt.deviceAddress += sbt_addr;
+        rchit_sbt.deviceAddress += sbt_addr;
+        rmiss_sbt.deviceAddress += sbt_addr;
     }
 }
 

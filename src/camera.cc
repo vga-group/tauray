@@ -90,6 +90,38 @@ vec3 camera::get_global_view_direction(vec3 local_view) const
     return get_global_orientation() * local_view;
 }
 
+void camera::set_near(float near)
+{
+    switch(type)
+    {
+    case PERSPECTIVE:
+        pd.perspective.near = near;
+        break;
+    case ORTHOGRAPHIC:
+        pd.orthographic.near = near;
+        break;
+    default:
+        break;
+    }
+    refresh();
+}
+
+void camera::set_far(float far)
+{
+    switch(type)
+    {
+    case PERSPECTIVE:
+        pd.perspective.far = far;
+        break;
+    case ORTHOGRAPHIC:
+        pd.orthographic.far = far;
+        break;
+    default:
+        break;
+    }
+    refresh();
+}
+
 float camera::get_near() const
 {
     switch(type)
@@ -127,6 +159,15 @@ void camera::set_aspect(float aspect)
     {
     case PERSPECTIVE:
         pd.perspective.aspect = aspect;
+        break;
+    case ORTHOGRAPHIC:
+        {
+            float x_range = pd.orthographic.right - pd.orthographic.left;
+            float y_range = x_range / aspect;
+            float y_center = (pd.orthographic.bottom + pd.orthographic.top)*0.5f;
+            pd.orthographic.bottom = y_center - y_range*0.5f;
+            pd.orthographic.top = y_center + y_range*0.5f;
+        }
         break;
     default:
         break;

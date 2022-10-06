@@ -95,6 +95,7 @@ add_library(tauray-core STATIC
   src/heightfield.cc
   src/light.cc
   src/light_scene.cc
+  src/load_balancer.cc
   src/looking_glass.cc
   src/looking_glass_composition_stage.cc
   src/material.cc

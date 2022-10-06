@@ -28,7 +28,7 @@
 // ETA alone instead of both ior_in and ior_out.
 
 // Also known as F
-vec3 ggx_fresnel_schlick(float cos_d, vec3 f0)
+float ggx_fresnel_schlick(float cos_d, float f0)
 {
     return f0 + (1.0f - f0) * pow(max(1.0f - cos_d, 0.0f), 5.0f);
 }
@@ -44,14 +44,24 @@ vec3 ggx_fresnel(float cos_d, sampled_material mat)
             return vec3(1.0f);
         cos_d = sqrt(1.0f - sin_theta2);
     }
-    return ggx_fresnel_schlick(cos_d, mat.f0_m);
+    else if(mat.ior_in == mat.ior_out)
+        return vec3(0.0f);
+    return mix(
+        vec3(ggx_fresnel_schlick(cos_d, mat.f0)),
+        mat.albedo.rgb,
+        mat.metallic
+    );
 }
 
 // Only valid when refraction isn't possible. Faster than the generic
 // ggx_fresnel. Specular-only, has no diffuse component!
 vec3 ggx_fresnel_refl(float cos_d, sampled_material mat)
 {
-    return ggx_fresnel_schlick(cos_d, mat.f0_m);
+    return mix(
+        vec3(ggx_fresnel_schlick(cos_d, mat.f0)),
+        mat.albedo.rgb,
+        mat.metallic
+    );
 }
 
 // Also known as G1
@@ -68,8 +78,8 @@ float ggx_masking_shadowing(
 ){
     float a2 = a*a;
     return step(0.0f, v_dot_n * v_dot_h) * step(0.0f, l_dot_n * l_dot_h) * 4.0f /
-        ((1.0f + sqrt(1.0f + a2 / (v_dot_n * v_dot_n) - a2)) *
-         (1.0f + sqrt(1.0f + a2 / (l_dot_n * l_dot_n) - a2)));
+        ((1.0f + sqrt(1.0f + a2 / max(v_dot_n * v_dot_n, 1e-18) - a2)) *
+         (1.0f + sqrt(1.0f + a2 / max(l_dot_n * l_dot_n, 1e-18) - a2)));
 }
 
 // The above function, but pre-divided by 4.0 * cos_l * cos_v. In addition to
@@ -118,7 +128,7 @@ void ggx_brdf_inner(
     // This is not strictly part of the GGX brdf. It's an addition to use the
     // non-transmissive part that isn't reflected for diffuse lighting.
     vec3 kd = (vec3(1.0f) - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
-    vec3 diffuse = kd * mat.albedo.rgb / M_PI;
+    vec3 diffuse = kd / M_PI;
 
     cos_l = max(cos_l, 0.0f);
     diffuse_weight = diffuse * cos_l;
@@ -156,7 +166,7 @@ void ggx_bsdf(
     if(cos_l > 0)
         h = normalize(view_dir + out_dir);
     else
-        h = sign(mat.ior_in - mat.ior_out) * normalize(mat.ior_out * out_dir + mat.ior_in * view_dir);
+        h = (mat.ior_in > mat.ior_out ? 1 : -1) * normalize(mat.ior_out * out_dir + mat.ior_in * view_dir);
 
     float cos_h = h.z; // dot(normal, h)
     float cos_d = dot(view_dir, h);
@@ -173,7 +183,7 @@ void ggx_bsdf(
     { // BRDF
         vec3 specular = fresnel * geometry * distribution;
         vec3 kd = (1.0f - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
-        vec3 diffuse = kd * mat.albedo.rgb / M_PI;
+        vec3 diffuse = kd / M_PI;
 
         diffuse_weight = diffuse * cos_l;
         specular_weight = specular * cos_l;
@@ -185,7 +195,7 @@ void ggx_bsdf(
         float denom = mat.ior_in * cos_d + mat.ior_out * cos_o;
         // This should be the reciprocal form, which is necessary when the light
         // source is inside the volume...
-        diffuse_weight = mat.albedo.rgb * mat.transmittance * (1.0f - mat.metallic) * -cos_l *
+        diffuse_weight = mat.transmittance * (1.0f - mat.metallic) * -cos_l *
             abs(cos_d * cos_o) * mat.ior_in * mat.ior_in * (1.0f - fresnel) * geometry * distribution /
             (denom * denom);
         specular_weight = vec3(0.0f);
@@ -215,7 +225,7 @@ void sharp_btdf(
     out vec3 diffuse_weight,
     out vec3 specular_weight
 ){
-    diffuse_weight = (1.0f - ggx_fresnel(view_dir.z, mat)) * mat.transmittance * mat.albedo.rgb;
+    diffuse_weight = (1.0f - ggx_fresnel(view_dir.z, mat)) * mat.transmittance;
     specular_weight = vec3(0.0f);
 }
 
@@ -250,14 +260,6 @@ vec3 ggx_vndf_sample(
     return normalize(vec3(roughness * n.x, roughness * n.y, max(0.0, n.z)));
 }
 
-// Note that this is _not_ refract()! The contents of the square root differ!
-vec3 transmit(vec3 i, vec3 m, float eta)
-{
-    float i_dot_m = dot(i, m);
-    float k = 1.0f + eta * (i_dot_m * i_dot_m - 1.0f);
-    return normalize((eta * i_dot_m - sqrt(k)) * m - eta * i);
-}
-
 // https://hal.inria.fr/hal-00996995v1/document
 // http://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf
 void ggx_bsdf_sample(
@@ -268,17 +270,20 @@ void ggx_bsdf_sample(
     out vec3 diffuse_weight,
     out vec3 specular_weight
 ){
-    vec3 h = ggx_vndf_sample(view_dir, mat.roughness, uniform_random.x, uniform_random.y);
+    const bool zero_roughness = mat.roughness < 0.001f;
+    vec3 h = zero_roughness ? vec3(0,0,1) : ggx_vndf_sample(view_dir, mat.roughness, uniform_random.x, uniform_random.y);
     float cos_d = dot(view_dir, h);
     vec3 fresnel = ggx_fresnel(cos_d, mat);
 
     float cos_v = view_dir.z;
 
+    float max_albedo = max(mat.albedo.r, max(mat.albedo.g, mat.albedo.b));
+
     // This is arbitrary, but affects the PDF. Thus, handling it is part of the
     // normalization. I selected this one to have the number of rays somewhat
     // match the intensity of the reflection.
     float specular_cutoff = mix(
-        max(fresnel.r, max(fresnel.g, fresnel.b)), 1, mat.metallic
+        1, max(fresnel.r, max(fresnel.g, fresnel.b)), (1-mat.metallic) * max_albedo
     );
 
     // If the specular test fails, next up is the decision between diffuse /
@@ -297,7 +302,6 @@ void ggx_bsdf_sample(
         (1.0f - specular_cutoff) * (1.0f - diffuse_cutoff);
 
     float u = uniform_random.z;
-    const bool zero_roughness = mat.roughness < 0.001f;
 
     vec3 bsdf;
     float pdf;
@@ -341,14 +345,14 @@ void ggx_bsdf_sample(
         }
         else
         { // Transmissive
-            out_dir = transmit(view_dir, h, mat.ior_in/mat.ior_out);
+            out_dir = normalize(refract(-view_dir, h, mat.ior_in/mat.ior_out));
             float cos_l = out_dir.z;
             float cos_o = dot(out_dir, h);
             float G2 = ggx_masking_shadowing(cos_v, cos_d, cos_l, cos_o, mat.roughness);
             float G1 = ggx_masking(cos_v, cos_d, mat.roughness);
 
             pdf = G1 * transmissive_probability;
-            diffuse_weight = mat.albedo.rgb * mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * G2;
+            diffuse_weight = mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * G2;
             specular_weight = vec3(0.0f);
         }
     }
@@ -410,8 +414,8 @@ void lambert_bsdf_sample(
 ){
     out_dir = sample_cosine_hemisphere(uniform_random.xy);
     float pdf = pdf_cosine_hemisphere(out_dir);
-    vec3 brdf = out_dir.z * mat.albedo.rgb / M_PI;
-    diffuse_weight = brdf / pdf;
+    float brdf = out_dir.z / M_PI;
+    diffuse_weight = vec3(brdf / pdf);
     specular_weight = vec3(0.0f);
 }
 

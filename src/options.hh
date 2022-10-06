@@ -37,11 +37,13 @@
     )\
     TR_ENUM_OPT(distribution_strategy, tr::distribution_strategy, \
         "Set the the rendering distribution strategy", \
-        tr::distribution_strategy::DISTRIBUTION_SCANLINE, \
+        tr::distribution_strategy::DISTRIBUTION_SHUFFLED_STRIPS, \
         {"duplicate", tr::distribution_strategy::DISTRIBUTION_DUPLICATE}, \
         {"scanline", tr::distribution_strategy::DISTRIBUTION_SCANLINE}, \
         {"shuffled-strips", tr::distribution_strategy::DISTRIBUTION_SHUFFLED_STRIPS} \
     )\
+    TR_VECFLOAT_OPT(workload, \
+        "Specify initial workload ratios per device, default is even workload.") \
     TR_ENUM_OPT(format, headless::pixel_format, \
         "Data format for the pixels in captured frames.", \
         headless::RGB16, \
@@ -75,6 +77,11 @@
         TR_STRUCT_OPT_INT(h, 1, 1, INT_MAX) \
         TR_STRUCT_OPT_FLOAT(x, 0.02f, 0.0f, FLT_MAX) \
         TR_STRUCT_OPT_FLOAT(y, 0.02f, 0.0f, FLT_MAX) \
+    ) \
+    TR_STRUCT_OPT(camera_clip_range, \
+        "Overrides camera clip range. If set to negative, will not override.", \
+        TR_STRUCT_OPT_FLOAT(near, -1, 0.0f, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(far, -1, 0.0f, FLT_MAX) \
     ) \
     TR_FLOAT_OPT(camera_grid_roll, \
         "Rolls the camera grid along the z axis by the given angle.", \
@@ -179,7 +186,7 @@
         1.0f, 0.0f, FLT_MAX) \
     TR_FLOAT_OPT(russian_roulette, \
         "Enables russian roulette sampling with the given delta.", \
-        0.0f, 0.0f, FLT_MAX) \
+        0.0f, 1.000001f, FLT_MAX) \
     TR_FLOAT_OPT(indirect_clamping, \
         "Limits indirect light sample brightness, causing energy loss in " \
         "unlikely rays but reducing fireflies.", \
@@ -373,6 +380,11 @@
         "still. For offline rendering, the specified number samples is " \
         "reached by accumulating the same frame.", \
         false \
+    ) \
+    TR_BOOL_OPT(transparent_background, \
+        "Replaces background with alpha transparency, regardless of " \
+        "environment map usage.", \
+        false \
     )
 //==============================================================================
 // END OF OPTIONS
@@ -469,6 +481,7 @@ struct options
 #define TR_VEC3_OPT(name, description, default, min, max) vec3 name = default;
 #define TR_ENUM_OPT(name, type, description, default, ...) type name = default;
 #define TR_SETINT_OPT(name, description) std::set<int> name;
+#define TR_VECFLOAT_OPT(name, description) std::vector<double> name;
 #define TR_STRUCT_OPT(name, description, ...) struct { __VA_ARGS__ } name;
 #define TR_STRUCT_OPT_INT(name, default, min, max) int name = default;
 #define TR_STRUCT_OPT_FLOAT(name, default, min, max) float name = default;
@@ -483,6 +496,7 @@ struct options
 #undef TR_VEC3_OPT
 #undef TR_ENUM_OPT
 #undef TR_SETINT_OPT
+#undef TR_VECFLOAT_OPT
 #undef TR_STRUCT_OPT
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT

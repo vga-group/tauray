@@ -107,6 +107,9 @@ void rt_renderer<Pipeline>::reset_accumulation()
         if(per_device[i].ray_tracer)
             per_device[i].ray_tracer->reset_accumulated_samples();
     }
+    accumulated_frames = 0;
+    if(stitch)
+        stitch->set_blend_ratio(1.0f);
 }
 
 template<typename Pipeline>
@@ -172,10 +175,17 @@ void rt_renderer<Pipeline>::render()
 
     display_deps.concat(post_processing.get_gbuffer_write_dependencies());
 
-    if(stitch) display_deps = stitch->run(display_deps);
+    if(stitch)
+    {
+        stitch->refresh_params();
+        display_deps = stitch->run(display_deps);
+        // Reset temporary blending from stitching
+        stitch->set_blend_ratio(1.0f);
+    }
 
     display_deps = post_processing.render(display_deps);
     ctx->end_frame(display_deps);
+    accumulated_frames++;
 }
 
 template<typename Pipeline>
@@ -186,6 +196,8 @@ void rt_renderer<Pipeline>::set_device_workloads(const std::vector<double>& rati
         opt.distribution.strategy == DISTRIBUTION_SCANLINE ||
         opt.distribution.strategy == DISTRIBUTION_DUPLICATE
     ) return;
+
+    device_data& display_device = ctx->get_display_device();
 
     double cumulative = 0;
     for(size_t i = 0; i < per_device.size(); ++i)
@@ -204,6 +216,11 @@ void rt_renderer<Pipeline>::set_device_workloads(const std::vector<double>& rati
         );
         cumulative += ratio;
         per_device[i].ray_tracer->reset_distribution_params(r.dist);
+        // Only the primary device renders in-place, so it's the only device
+        // that can actually accumulate samples normally when workload ratio
+        // changes.
+        if(i != display_device.index)
+            per_device[i].ray_tracer->reset_accumulated_samples();
         uvec2 target_size = get_distribution_target_size(r.dist);
         for(size_t j = 0; j < MAX_FRAMES_IN_FLIGHT; ++j)
         {
@@ -218,6 +235,10 @@ void rt_renderer<Pipeline>::set_device_workloads(const std::vector<double>& rati
     for(per_device_data& r: per_device)
         dist.push_back(r.dist);
 
+    // Temporarily blend non-primary GPU accumulation from stitching stage
+    // instead.
+    if(opt.accumulate)
+        stitch->set_blend_ratio(1.0f/(accumulated_frames+1));
     stitch->set_distribution_params(dist);
 }
 

@@ -17,6 +17,7 @@ namespace scanline
         int primary_index;
         int subimage_count;
         int subimage_index;
+        float blend_ratio;
     };
 }
 
@@ -32,9 +33,8 @@ namespace shuffled_strips
         unsigned int input_img_id;
         unsigned int output_img_id;
         unsigned int shuffled_strips_b;
+        float blend_ratio;
     };
-}
-
 }
 
 shader_source load_source(distribution_strategy s)
@@ -56,40 +56,7 @@ shader_source load_source(distribution_strategy s)
     }
 }
 
-void record_shuffled_strips_commands(
-    uvec2 size,
-    unsigned int primary_index,
-    const std::vector<gbuffer_target>& images,
-    vk::CommandBuffer cb,
-    compute_pipeline &comp,
-    const std::vector<distribution_params>& params,
-    size_t active_viewports
-){
-    shuffled_strips::push_constant_buffer control;
-    control.size = size;
-    control.input_img_id = 0;
-    control.output_img_id = 0;
-    control.shuffled_strips_b = calculate_shuffled_strips_b(size);
-
-    for(size_t img_idx = 0; img_idx < images.size(); ++img_idx)
-    {
-        control.output_img_id = 0;
-        control.start_p_offset = params[img_idx].index;
-        control.count = params[img_idx].count;
-
-        if(img_idx != primary_index)
-        {
-            images[img_idx].visit([&](const render_target&){
-                comp.push_constants(cb, control);
-                unsigned int wg = (control.count+255)/256;
-                cb.dispatch(wg, 1, active_viewports);
-                control.input_img_id++;
-                control.output_img_id++;
-            });
-        }
-    }
 }
-
 
 namespace tr
 {
@@ -110,6 +77,7 @@ stitch_stage::stitch_stage(
     }),
     opt(opt),
     size(size),
+    blend_ratio(1),
     images(images),
     params(params),
     stitch_timer(dev, "stitch (" + std::to_string(opt.active_viewport_count) + " viewports)")
@@ -138,10 +106,19 @@ stitch_stage::stitch_stage(
     record_commands();
 }
 
+void stitch_stage::set_blend_ratio(float blend_ratio)
+{
+    this->blend_ratio = blend_ratio;
+}
+
 void stitch_stage::set_distribution_params(
     const std::vector<distribution_params>& params
 ){
     this->params = params;
+}
+
+void stitch_stage::refresh_params()
+{
     record_commands();
 }
 
@@ -164,11 +141,32 @@ void stitch_stage::record_commands()
         switch(opt.strategy)
         {
         case distribution_strategy::DISTRIBUTION_SHUFFLED_STRIPS:
-            record_shuffled_strips_commands(
-                size, primary_index,
-                images, cb, comp, params,
-                opt.active_viewport_count
-            );
+            {
+                shuffled_strips::push_constant_buffer control;
+                control.size = size;
+                control.input_img_id = 0;
+                control.output_img_id = 0;
+                control.shuffled_strips_b = calculate_shuffled_strips_b(size);
+                control.blend_ratio = blend_ratio;
+
+                for(size_t img_idx = 0; img_idx < images.size(); ++img_idx)
+                {
+                    control.output_img_id = 0;
+                    control.start_p_offset = params[img_idx].index;
+                    control.count = params[img_idx].count;
+
+                    if(img_idx != primary_index)
+                    {
+                        images[img_idx].visit([&](const render_target&){
+                            comp.push_constants(cb, control);
+                            unsigned int wg = (control.count+255)/256;
+                            cb.dispatch(wg, 1, opt.active_viewport_count);
+                            control.input_img_id++;
+                            control.output_img_id++;
+                        });
+                    }
+                }
+            }
             break;
         default :
             images[0].visit([&](const render_target&){
@@ -178,6 +176,7 @@ void stitch_stage::record_commands()
                 control.primary_index = primary_index;
                 control.subimage_count = images[0].entry_count();
                 control.subimage_index = subimage_index++;
+                control.blend_ratio = blend_ratio;
 
                 comp.push_constants(cb, control);
 

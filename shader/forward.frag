@@ -108,10 +108,9 @@ void eval_punctual_lights(
     POINT_LIGHT_FOR_END
 }
 
-vec3 fresnel_schlick_attenuated(float cos_d, vec3 f0, float roughness)
+float fresnel_schlick_attenuated(float cos_d, float f0, float roughness)
 {
-    return f0 + (max(vec3(1.0f - roughness), f0) - f0)
-        * pow(1.0f - cos_d, 5.0f);
+    return f0 + (max(1.0f - roughness, f0) - f0) * pow(1.0f - cos_d, 5.0f);
 }
 
 void brdf_indirect(
@@ -128,10 +127,14 @@ void brdf_indirect(
     // The fresnel value must be attenuated, because we are actually integrating
     // over all directions instead of just one specific direction here. This is
     // an approximated function, though.
-    vec3 fresnel = fresnel_schlick_attenuated(cos_v, mat.f0_m, mat.roughness);
+    vec3 fresnel = mix(
+        vec3(fresnel_schlick_attenuated(cos_v, mat.f0, mat.roughness)),
+        mat.albedo.rgb,
+        mat.metallic
+    );
 
     vec3 kd = (vec3(1.0f) - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
-    vec3 diffuse = kd * mat.albedo.rgb * incoming_diffuse;
+    vec3 diffuse = kd * incoming_diffuse;
 
     // The integration texture was generated with squared roughness, so we'll
     // have to make sure we don't square it twice!
@@ -190,12 +193,14 @@ void main()
     vec3 direct_specular;
 #if defined(COLOR_TARGET_LOCATION) || defined(DIRECT_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION)
     eval_punctual_lights(tbn, shading_view, mat, v, direct_diffuse, direct_specular);
+    direct_diffuse *= mat.albedo.rgb;
     direct_diffuse += mat.emission;
 #endif
     vec3 indirect_diffuse;
     vec3 indirect_specular;
 #if defined(COLOR_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION)
     eval_indirect_light(view, mat, v, indirect_diffuse, indirect_specular);
+    indirect_diffuse *= mat.albedo.rgb;
 #endif
 
     write_gbuffer_color(vec4(direct_diffuse + direct_specular + indirect_diffuse + indirect_specular, mat.albedo.a));
