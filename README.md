@@ -1,15 +1,14 @@
 Tauray
 =======
 
+|![Sponza and lots of teapots rendered in Tauray.](docs/images/teapot_sponza.png)                                                                          |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| The famous "Sponza" scene with teapots. 1920x1080 image (4096 spp, 4 bounces), rendered with Tauray in 18 seconds on a dual-GPU setup with RTX 3090 and RTX 2080 Ti. |
+
 Tauray is a real-time rendering framework, with a focus on distributed computing, scalability,
-portability and low latency. It uses C++17 and Vulkan, primarily relying on the `VK_KHR_ray_tracing` 
+portability and low latency. It uses C++17 and Vulkan, primarily relying on the `VK_KHR_ray_tracing`
 extension, but comes with a fallback rasterization mode that can be used on devices that
 do not have that extension.
-
-Shaders are built during runtime because this lets Tauray specialize the source.
-This is generally not a good practice in Vulkan, but here it can be used to
-implement several features, such as user-defined distance field objects and
-dynamically selecting the number of generated output buffers.
 
 ## License
 
@@ -17,7 +16,6 @@ Tauray is licensed under LGPL version 2.1. You can find the license text in
 [COPYING.LESSER](COPYING.LESSER). External dependencies in the `external`
 folder have their own licenses specified either at the start of each file or as
 separate license text files.
-
 
 ## Building
 
