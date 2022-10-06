@@ -1,0 +1,43 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+
+hitAttributeEXT vec2 attribs;
+
+#define SCENE_DATA_BUFFER_BINDING 1
+#define VERTEX_BUFFER_BINDING 2
+#define INDEX_BUFFER_BINDING 3
+#define TEXTURE_ARRAY_BINDING 4
+#include "rt.glsl"
+
+#include "ggx.glsl"
+
+layout(location = 1) rayPayloadInEXT float shadow_visibility;
+
+void main()
+{
+    vec3 view = gl_WorldRayDirectionEXT;
+    material mat = scene.o[gl_InstanceID].mat;
+    float visibility = 0.0f;
+
+    vec2 uv;
+    bool back_facing;
+    get_interpolated_vertex_light(view, attribs, gl_InstanceID, gl_PrimitiveID, uv, back_facing);
+
+    bool double_sided = mat.emission_factor_double_sided.a > 0.5f;
+    if(!double_sided && back_facing)
+        visibility = 1.0f;
+    else
+    {
+        float alpha = mat.albedo_factor.a;
+        if(mat.albedo_tex_id >= 0)
+            alpha *= texture(textures[nonuniformEXT(mat.albedo_tex_id)], uv).a;
+        visibility = 1.0f-alpha;
+    }
+
+    shadow_visibility *= visibility;
+    if(shadow_visibility == 0.0f) terminateRayEXT;
+    else ignoreIntersectionEXT;
+}

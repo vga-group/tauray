@@ -1,0 +1,55 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout (local_size_x = 256) in;
+
+layout(binding = 0, set = 0, rgba16f) uniform readonly image2DArray input_images[];
+layout(binding = 1, set = 0, rgba16f) uniform writeonly image2DArray output_images[];
+
+layout(push_constant) uniform push_constant_buffer
+{
+    uvec2 size;
+    int start_p_offset;
+    int count;
+    uint input_img_id;
+    uint output_img_id;
+    uint b;
+} control;
+
+//Permute region for the pixel i
+uint permute_region_id(uint i)
+{
+    uint region_size = ((control.size.x * control.size.y) + (1<<control.b) - 1) >> control.b;
+    uint region_id = i / region_size; //Get the id of the region
+    uint k = bitfieldReverse(region_id) >> (32 - control.b);
+    return k * region_size + i % region_size;
+}
+
+void main()
+{
+    uint p = gl_GlobalInvocationID.x + control.start_p_offset;
+    uint in_gpu_buffer_p = gl_GlobalInvocationID.x;
+    ivec2 in_buffer_pos = ivec2(in_gpu_buffer_p%control.size.x, in_gpu_buffer_p/control.size.x);
+
+    ivec2 pos = ivec2(p%control.size.x, p/control.size.x);
+
+    uint viewport_id = gl_GlobalInvocationID.z;
+
+    uint j = permute_region_id(p);
+    ivec2 shuffled_pos = ivec2(j%control.size.x, j/control.size.x);
+
+    vec4 output_color = vec4(0, 1, 0, 0);
+
+    if((j < control.size.x*control.size.y) && in_gpu_buffer_p < control.count)
+    {
+        output_color = imageLoad(
+            input_images[nonuniformEXT(control.input_img_id)],
+            ivec3(in_buffer_pos, viewport_id)
+        );
+        imageStore(
+            output_images[control.output_img_id],
+            ivec3(shuffled_pos, viewport_id),
+            output_color
+        );
+    }
+}

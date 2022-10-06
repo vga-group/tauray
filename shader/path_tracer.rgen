@@ -1,0 +1,147 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+// Flags:
+// USE_NEXT_EVENT_ESTIMATION:
+//   NEE makes the samples much better, but doubles the number of rays casted
+//   and is quite expensive in that way.
+// USE_RUSSIAN_ROULETTE:
+//   Enables russian roulette, which kills rays based on a user-defined factor,
+//   attenuation and luck.
+// USE_BOX_FILTER:
+//   Film is sampled with box filter.
+// USE_BLACKMAN_HARRIS_FILTER:
+//   Film is sampled with Blackman-Harris filter.
+
+#define USE_PUSH_CONSTANTS
+#define TLAS_BINDING 0
+#define SCENE_DATA_BUFFER_BINDING 1
+#define VERTEX_BUFFER_BINDING 2
+#define INDEX_BUFFER_BINDING 3
+#define TEXTURE_ARRAY_BINDING 4
+#define DIRECTIONAL_LIGHT_BUFFER_BINDING 5
+#define POINT_LIGHT_BUFFER_BINDING 6
+#define ENVIRONMENT_MAP_BINDING 7
+#define DISTRIBUTION_DATA_BINDING 8
+#define CAMERA_DATA_BINDING 9
+#define SCENE_METADATA_BUFFER_BINDING 10
+#define SAMPLING_DATA_BINDING 20
+
+#ifdef USE_COLOR_TARGET
+#define COLOR_TARGET_BINDING 11
+#endif
+
+#ifdef USE_DIRECT_TARGET
+#define DIRECT_TARGET_BINDING 12
+#endif
+
+#ifdef USE_DIFFUSE_TARGET
+#define DIFFUSE_TARGET_BINDING 13
+#endif
+
+#ifdef USE_ALBEDO_TARGET
+#define ALBEDO_TARGET_BINDING 14
+#endif
+
+#ifdef USE_MATERIAL_TARGET
+#define MATERIAL_TARGET_BINDING 15
+#endif
+
+#ifdef USE_NORMAL_TARGET
+#define NORMAL_TARGET_BINDING 16
+#endif
+
+#ifdef USE_POS_TARGET
+#define POS_TARGET_BINDING 17
+#endif
+
+#ifdef USE_SCREEN_MOTION_TARGET
+#define SCREEN_MOTION_TARGET_BINDING 18
+#endif
+
+#ifdef USE_INSTANCE_ID_TARGET
+#define INSTANCE_ID_TARGET_BINDING 19
+#endif
+
+#include "path_tracer.glsl"
+
+void main()
+{
+    pt_vertex_data first_hit_vertex;
+    sampled_material first_hit_material;
+    local_sampler lsampler = init_local_sampler(
+        uvec4(
+            get_pixel_pos(),
+            gl_LaunchIDEXT.z,
+            distribution.samples_accumulated + control.previous_samples
+        )
+    );
+    vec2 cam_offset = vec2(0.0);
+    if(control.antialiasing == 1)
+    {
+#if defined(USE_POINT_FILTER)
+        cam_offset = vec2(0.0);
+#elif defined(USE_BOX_FILTER)
+        cam_offset = generate_film_sample(lsampler) * 2.0f - 1.0f;
+#elif defined(USE_BLACKMAN_HARRIS_FILTER)
+        cam_offset = sample_blackman_harris_concentric_disk(
+            generate_film_sample(lsampler).xy
+        );
+#else
+#error "Unknown filter type"
+#endif
+        cam_offset *= 2.0f * control.film_radius;
+    }
+
+    vec3 origin;
+    vec3 dir;
+
+    const camera_data cam = get_camera();
+    get_screen_camera_ray(cam, cam_offset, origin, dir);
+    vec3 color, direct, diffuse;
+    evaluate_ray(
+        lsampler, origin, dir,
+        color, direct, diffuse, first_hit_vertex, first_hit_material
+    );
+
+#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
+    vec3 specular = color - diffuse * first_hit_material.albedo.rgb;
+    specular /= mix(vec3(1), first_hit_material.albedo.rgb, first_hit_material.metallic);
+    color = diffuse + specular;
+#endif
+
+    // Write all outputs
+    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+#if DISTRIBUTION_STRATEGY != 0
+    if(p == ivec3(-1))
+        return;
+#endif
+
+    uint prev_samples = distribution.samples_accumulated + control.previous_samples;
+
+    accumulate_gbuffer_color(vec4(color, 1), p, 1, prev_samples);
+    accumulate_gbuffer_direct(vec4(direct, 1), p, 1, prev_samples);
+    accumulate_gbuffer_diffuse(vec4(diffuse, 1), p, 1, prev_samples);
+
+    if(prev_samples == 0)
+    { // Only write gbuffer for the first sample.
+        ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+        write_gbuffer_albedo(first_hit_material.albedo, p);
+        write_gbuffer_material(
+            vec2(first_hit_material.metallic, first_hit_material.roughness), p
+        );
+        write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
+        write_gbuffer_pos(first_hit_vertex.pos, p);
+        #ifdef CALC_PREV_VERTEX_POS
+        write_gbuffer_screen_motion(
+            get_camera_projection(get_prev_camera(), first_hit_vertex.prev_pos),
+            p
+        );
+        #endif
+        write_gbuffer_instance_id(first_hit_vertex.instance_id, p);
+    }
+}

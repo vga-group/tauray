@@ -1,0 +1,48 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(local_size_x = 256) in;
+
+layout(binding = 0, set = 0, rgba32f) uniform readonly image3D input_sh;
+layout(binding = 1, set = 0, rgba16f) uniform writeonly image3D output_sh;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    int samples;
+    int samples_per_work_item;
+} control;
+
+shared vec4 coef[256];
+
+void main()
+{
+    ivec3 write_pos = ivec3(gl_WorkGroupID.xyz);
+
+    vec4 local_coef = vec4(0);
+    for(int i = 0; i < control.samples_per_work_item; ++i)
+    {
+        int sample_index = int(gl_LocalInvocationIndex) + int(gl_WorkGroupSize.x) * i;
+        if(sample_index >= control.samples) break;
+
+        ivec3 read_pos = ivec3(
+            write_pos.x,
+            write_pos.y,
+            write_pos.z * control.samples + sample_index
+        );
+        local_coef += imageLoad(input_sh, read_pos);
+    }
+
+    coef[gl_LocalInvocationIndex] = local_coef;
+    barrier();
+
+    uint j = gl_LocalInvocationIndex;
+    for(uint i = 1; i < 256; i <<= 1)
+    {
+        if((j & ((i<<1)-1)) == 0) coef[j] += coef[j+i];
+        barrier();
+    }
+
+    if(gl_LocalInvocationIndex == 0)
+        imageStore(output_sh, write_pos, coef[0]);
+}
+

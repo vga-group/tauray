@@ -1,0 +1,38 @@
+#version 460
+layout(local_size_x = 256) in;
+
+layout(binding = 0) readonly buffer input_buffer
+{
+    uint entries[];
+} input_data;
+
+layout(binding = 1) writeonly buffer output_buffer
+{
+    uint entries[];
+} output_data;
+
+layout(binding = 2) readonly buffer keyval_buffer
+{
+    uvec2 entries[];
+} keyval_data;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    uint item_size;
+    uint item_count;
+} control;
+
+void main()
+{
+    uint output_item_index = gl_GlobalInvocationID.x / control.item_size;
+    uint uint_index = gl_GlobalInvocationID.x % control.item_size;
+
+    if(output_item_index < control.item_count)
+    {
+        uint input_item_index = keyval_data.entries[output_item_index].x;
+        output_data.entries[gl_GlobalInvocationID.x] = input_data.entries[
+            input_item_index * control.item_size + uint_index
+        ];
+    }
+}
+

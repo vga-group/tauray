@@ -1,0 +1,23 @@
+{
+  "name": "tauray",
+  "version-string": "0.0.0",
+  "dependencies": [
+    "sdl2",
+    "glm",
+    "czmq",
+    "nng",
+    "libcbor",
+    {
+      "name": "sdl2",
+      "default-features": false,
+      "features": [ "x11", "vulkan" ],
+      "platform": "linux"
+    },
+    {
+      "name": "sdl2",
+      "default-features": false,
+      "features": ["vulkan"],
+      "platform": "windows"
+    }
+  ]
+}

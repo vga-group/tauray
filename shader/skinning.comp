@@ -1,0 +1,66 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#include "scene.glsl"
+
+layout (local_size_x = 32) in;
+
+struct skin
+{
+    uvec4 joints;
+    vec4 weights;
+};
+
+layout(binding = 0, scalar) readonly buffer source_buffer
+{
+    vertex vertices[];
+} source_data[];
+
+layout(binding = 1) readonly buffer skin_buffer
+{
+    skin skins[];
+} skin_data[];
+
+layout(binding = 2, scalar) buffer destination_buffer
+{
+    vertex vertices[];
+} destination_data[];
+
+layout(binding = 3) readonly buffer joint_buffer
+{
+    mat4 transforms[];
+} joint_data[];
+
+layout(push_constant) uniform push_constant_buffer
+{
+    uint mesh_id;
+    uint model_id;
+    uint vertex_count;
+} control;
+
+void main()
+{
+    uint i = gl_GlobalInvocationID.x;
+
+    if(i < control.vertex_count)
+    {
+        skin s = skin_data[control.mesh_id].skins[i];
+
+        mat4 skin_mat =
+            s.weights.x * joint_data[control.model_id].transforms[s.joints.x] +
+            s.weights.y * joint_data[control.model_id].transforms[s.joints.y] +
+            s.weights.z * joint_data[control.model_id].transforms[s.joints.z] +
+            s.weights.w * joint_data[control.model_id].transforms[s.joints.w];
+        mat4 it_skin_mat = transpose(inverse(skin_mat));
+
+        vertex src = source_data[control.mesh_id].vertices[i];
+        vertex dst = src;
+
+        dst.pos = vec3(skin_mat * vec4(src.pos, 1.0));
+        dst.normal = normalize(vec3(it_skin_mat * vec4(src.normal, 0.0)));
+        dst.tangent = vec4(normalize(vec3(it_skin_mat * vec4(src.tangent.xyz, 0.0))), src.tangent.w);
+
+        destination_data[control.mesh_id].vertices[i] = dst;
+    }
+}

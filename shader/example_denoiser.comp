@@ -1,0 +1,79 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#include "projection.glsl"
+#include "gbuffer.glsl"
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, set = 0, rgba16f) uniform readonly image2DArray in_color;
+layout(binding = 1, set = 0, rg16_snorm) uniform readonly image2DArray in_normal;
+layout(binding = 2, set = 0, rgba16f) uniform readonly image2DArray in_pos;
+layout(binding = 3, set = 0, rgba16f) uniform image2DArray inout_color[2];
+#ifdef USE_ALBEDO
+layout(binding = 4, set = 0, rgba16f) uniform readonly image2DArray in_albedo;
+#endif
+
+layout(push_constant) uniform push_constant_buffer
+{
+    ivec2 size;
+    int parity;
+    int kernel_radius;
+    int modulate_albedo;
+} control;
+
+vec4 sample_color(ivec3 p)
+{
+    if(control.parity == -1) return imageLoad(in_color, p);
+    else return imageLoad(inout_color[control.parity], p);
+}
+
+void write_color(ivec3 p, vec4 color)
+{
+    imageStore(inout_color[(control.parity+1)&1], p, color);
+}
+
+void main()
+{
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+
+    if(all(lessThan(p.xy, control.size)))
+    {
+        float sum_weight = 0.0001f;
+        vec4 sum_color = vec4(0);
+
+        vec3 normal = unpack_gbuffer_normal(
+            imageLoad(in_normal, p).xy
+        );
+        vec3 pos = imageLoad(in_pos, p).xyz;
+
+        for(int x = -control.kernel_radius; x <= control.kernel_radius; ++x)
+        for(int y = -control.kernel_radius; y <= control.kernel_radius; ++y)
+        {
+            ivec3 o = ivec3(
+                clamp(p.xy + ivec2(x, y), ivec2(0), control.size-1),
+                p.z
+            );
+
+            vec3 sample_normal = unpack_gbuffer_normal(
+                imageLoad(in_normal, o).xy
+            );
+            vec3 sample_pos = imageLoad(in_pos, o).xyz;
+            vec3 sample_tangent = normalize(pos - sample_pos);
+
+            float weight =
+                clamp(1.0f-abs(dot(sample_tangent, normal))*3.0f, 0.0, 1.0) *
+                clamp(dot(sample_normal, normal)*2.0f-1.0f, 0.0f, 1.0f);
+
+            sum_color += sample_color(o) * weight;
+            sum_weight += weight;
+        }
+
+        vec4 out_color = sum_color/sum_weight;
+#ifdef USE_ALBEDO
+        if(control.modulate_albedo != 0)
+            out_color *= imageLoad(in_albedo, p);
+#endif
+        write_color(p, out_color);
+    }
+}
+

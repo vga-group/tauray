@@ -1,0 +1,139 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#include "projection.glsl"
+#include "color.glsl"
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform image2DArray current_color;
+layout(binding = 1, rg32f) uniform readonly image2DArray current_screen_motion;
+layout(binding = 2) uniform sampler2DArray previous_color;
+
+layout(binding = 3) buffer jitter_info_buffer
+{
+    vec4 jitter[];
+} jitter_info;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    ivec2 size;
+    float blending_ratio;
+} control;
+
+void color_aabb(
+    ivec3 p,
+    vec4 center_color,
+    out vec4 color_min,
+    out vec4 color_max,
+    out vec4 clip_against_color
+){
+    const int count = 9;
+    vec4[count] nbh = vec4[count](
+        imageLoad(current_color, p + ivec3(-1,  1, 0)),
+        imageLoad(current_color, p + ivec3( 0,  1, 0)),
+        imageLoad(current_color, p + ivec3( 1,  1, 0)),
+        imageLoad(current_color, p + ivec3(-1,  0, 0)),
+        center_color,
+        imageLoad(current_color, p + ivec3( 1,  0, 0)),
+        imageLoad(current_color, p + ivec3(-1, -1, 0)),
+        imageLoad(current_color, p + ivec3( 0, -1, 0)),
+        imageLoad(current_color, p + ivec3( 1, -1, 0))
+    );
+    const float[count] nbh_weights = float[count](
+        0.07142857f, 0.14285714f, 0.07142857f,
+        0.14285714f, 0.14285714f, 0.14285714f,
+        0.07142857f, 0.14285714f, 0.07142857f
+    );
+
+    // Use variance clipping to find min, max and color to clip towards
+    vec4 mean = vec4(0);
+    vec4 m = vec4(0);
+    [[unroll]] for(int i = 0; i < count; ++i)
+    {
+        mean += nbh[i] * nbh_weights[i];
+        m += nbh[i] * nbh[i] * nbh_weights[i];
+    }
+    vec4 variance = sqrt(max(vec4(0), m - mean * mean));
+    color_min = mean - variance;
+    color_max = mean + variance;
+    clip_against_color = mean;
+}
+
+float intersect_aabb(
+    in vec4 orig,
+    in vec4 dir,
+    in vec4 aabb
+){
+    vec4 reciprocal_dir = 1.0f / dir;
+    vec4 pos = ((-aabb) - orig) * reciprocal_dir;
+    vec4 neg = (aabb - orig) * reciprocal_dir;
+
+    float min_x = min(neg.x, pos.x);
+    float min_y = min(neg.y, pos.y);
+    float min_z = min(neg.z, pos.z);
+
+    return max(max(min_x, min_y), min_z);
+}
+
+vec4 color_aabb_clamp(
+    vec4 aabb_min,
+    vec4 aabb_max,
+    vec4 clip_against_color,
+    vec4 color
+){
+    vec4 aabb_center = (aabb_min + aabb_max) * 0.5f;
+    vec4 dir = clip_against_color - color;
+    vec4 orig = color - aabb_center;
+    vec4 scale = aabb_max - aabb_center;
+    float clamp_blend_factor = clamp(intersect_aabb(orig, dir, scale), 0.0, 1.0);
+
+    return mix(color, clip_against_color, clamp_blend_factor);
+}
+
+void main()
+{
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    if(all(lessThan(p.xy, control.size)))
+    {
+        vec4 cur_col = imageLoad(current_color, p);
+        vec4 color_aabb_min = cur_col;
+        vec4 color_aabb_max = cur_col;
+        vec4 clip_against_color = cur_col;
+        color_aabb(p, cur_col, color_aabb_min, color_aabb_max, clip_against_color);
+
+        vec4 jitter_history = jitter_info.jitter[p.z];
+        vec2 cur_jitter = jitter_history.xy;
+        vec2 prev_jitter = jitter_history.zw;
+
+        if(all(equal(cur_jitter, prev_jitter)))
+            return;
+
+        vec2 motion = vec2(imageLoad(current_screen_motion, p));
+        motion -= (cur_jitter - prev_jitter)*0.5f;
+        motion.y = 1.f - motion.y;
+
+        ivec2 p_motion = ivec2(motion * vec2(control.size));
+
+        if(all(lessThan(motion, vec2(1))) && all(greaterThan(motion, vec2(0))))
+        {
+            vec4 prev_col = texture(previous_color, vec3(motion, p.z));
+            vec4 clamped_prev_col = color_aabb_clamp(color_aabb_min, color_aabb_max, clip_against_color, prev_col);
+
+            float blending_ratio = control.blending_ratio;
+
+            //Anti-flicker: reduce blending when near clamping
+            float color_min_lum  = rgb_to_luminance(color_aabb_min.rgb);
+            float color_max_lum  = rgb_to_luminance(color_aabb_max.rgb);
+            float prev_lum = rgb_to_luminance(prev_col.rgb);
+
+            float distance_to_edge = length(vec2(color_min_lum - prev_lum, color_max_lum - prev_lum));
+            float factor = distance_to_edge / (distance_to_edge + color_max_lum - color_min_lum);
+            blending_ratio = 1.0f - clamp((1.0f-blending_ratio) * factor, 0.0f, 1.0f);
+
+            if(!any(isnan(clamped_prev_col)))
+                cur_col = mix(cur_col, clamped_prev_col, blending_ratio);
+        }
+        imageStore(current_color, p, cur_col);
+    }
+}

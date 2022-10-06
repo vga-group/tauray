@@ -1,0 +1,90 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_shader_16bit_storage : enable
+#extension GL_EXT_debug_printf : enable
+#include "gbuffer.glsl"
+#include "bmfr.glsl"
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, set = 0, rgba16f) uniform image2DArray in_color;
+layout(binding = 1, set = 0, rg16_snorm) uniform readonly image2DArray in_normal;
+layout(binding = 2, set = 0, rgba16f) uniform readonly image2DArray in_pos;
+layout(binding = 3, set = 0, rgba16f) uniform image2DArray weighted_out[2];
+layout(binding = 4, set = 0, rgba16f) uniform image2DArray tmp_noisy[2];
+layout(binding = 5, set = 0) buffer weight_buffer_t
+{
+    vec3 weights[];
+} weights_buffer;
+layout(binding = 6, set = 0) buffer mins_maxs
+{
+    float16_t minmax[];
+} mins_maxs_buffer;
+layout(binding = 7, set = 0) uniform uniform_buffer_t
+{
+    uint frame_counter;
+} uniform_buffer;
+
+void main()
+{
+    const ivec3 p = ivec3(gl_GlobalInvocationID).xyz;
+
+    const ivec2 offset = BLOCK_OFFSETS[uniform_buffer.frame_counter % BLOCK_OFFSETS_COUNT];
+    const ivec2 offset_pixel = p.xy + 16 - offset;
+
+    if (any(greaterThanEqual(p.xy, control.size))) return;
+
+    const int x_block_id = (offset_pixel.x / BLOCK_EDGE_LENGTH);
+    const int y_block_id = (offset_pixel.y / BLOCK_EDGE_LENGTH);
+    const int group_index = x_block_id + y_block_id * control.workset_size.x;
+
+    vec3 curr_pos = imageLoad(in_pos, p).xyz;
+    vec3 curr_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).xy);
+
+    const float features[FEATURE_COUNT] = {
+        1.f,
+        curr_normal.x,
+        curr_normal.y,
+        curr_normal.z,
+        curr_pos.x,
+        curr_pos.y,
+        curr_pos.z,
+        curr_pos.x * curr_pos.x,
+        curr_pos.y * curr_pos.y,
+        curr_pos.z * curr_pos.z,
+    };
+
+    // Weighted sum of the feature buffers
+    vec3 color = vec3(0);
+#ifndef DIFFUSE_ONLY
+    vec3 color_spec = vec3(0);
+#endif
+    for (int feature_buffer = 0; feature_buffer < FEATURE_COUNT; ++feature_buffer)
+    {
+        float feature = features[feature_buffer];
+        if (feature_buffer >= 4)
+        {
+            const int min_max_index = (group_index * 6 + feature_buffer - 4) * 2;
+            const uint offset = control.workset_size.x * control.workset_size.y * 6 * 2 * p.z;
+            feature = scale(feature, float(mins_maxs_buffer.minmax[offset + min_max_index + 0]), float(mins_maxs_buffer.minmax[offset + min_max_index + 1]));
+        }
+
+        // Load weight and sum
+        const uint offset = control.workset_size.x * control.workset_size.y * FEATURE_COUNT * NUM_WEIGHTS_PER_FEATURE * p.z; 
+        vec3 weight = weights_buffer.weights[offset + group_index * FEATURE_COUNT * NUM_WEIGHTS_PER_FEATURE + feature_buffer];
+        color += weight * feature;
+#ifndef DIFFUSE_ONLY
+        vec3 weight_spec = weights_buffer.weights[offset + group_index * FEATURE_COUNT * NUM_WEIGHTS_PER_FEATURE + feature_buffer + 10];
+        color_spec += weight_spec * feature;
+#endif
+    }
+
+    color = max(color, vec3(0));
+#ifndef DIFFUSE_ONLY
+    color_spec = max(color_spec, vec3(0));
+#endif
+    imageStore(weighted_out[0], p, vec4(color.rgb, 1.0));
+#ifndef DIFFUSE_ONLY
+    imageStore(weighted_out[1], p, vec4(color_spec.rgb, 1.0));
+#endif
+}

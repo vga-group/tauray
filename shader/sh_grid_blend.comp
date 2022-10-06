@@ -1,0 +1,31 @@
+#version 460
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(binding = 0, set = 0, rgba16f) uniform readonly image3D input_sh;
+layout(binding = 1, set = 0, rgba16f) uniform image3D inout_sh;
+layout(binding = 2, set = 0, rgba16f) uniform writeonly image3D output_sh;
+
+layout(binding = 3) uniform blend_info_buffer
+{
+    float ratio;
+} info;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    ivec3 size;
+} control;
+
+void main()
+{
+    ivec3 pos = ivec3(gl_GlobalInvocationID.xyz);
+
+    if(all(lessThan(pos, control.size)))
+    {
+        vec4 a = imageLoad(input_sh, pos);
+        vec4 b = imageLoad(inout_sh, pos);
+        vec4 c = mix(b, a, info.ratio);
+        imageStore(inout_sh, pos, c);
+        imageStore(output_sh, pos, c);
+    }
+}
