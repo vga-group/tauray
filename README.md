@@ -11,7 +11,7 @@ extension, but comes with a fallback rasterization mode that can be used on devi
 do not have that extension.
 
 Tauray is developed by the [VGA research group](https://webpages.tuni.fi/vga/)
-in Tampere University. The project is described in a conference publication [],
+in Tampere University. The project is described in a conference publication ([DOI link](https://doi.org/10.1145/3550340.3564225)),
 which includes performance benchmarks and more information on Tauray.
 [A pre-print is available.](https://webpages.tuni.fi/vga/publications/Tauray2022.pdf)
 
