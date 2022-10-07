@@ -26,6 +26,26 @@ Tauray is licensed under LGPL version 2.1. You can find the license text in
 folder have their own licenses specified either at the start of each file or as
 separate license text files.
 
+## Features
+
+- Real-time path tracing (`--renderer=path-tracer`)
+  - Accumulation mode (`--accumulation`)
+  - Denoising (`--denoiser=svgf` or `--denoiser=bmfr`)
+- Offline rendering (`--headless=output_file`)
+  - Animations with (`--animation`)
+  - Output file type with (`--filetype=[png,exr]`)
+- DDISH-GI, as used in the [DDISH-GI publication](https://doi.org/10.1007/978-3-030-89029-2_34)) (`--renderer=dshgi`)
+  - Remote probe rendering (`--renderer=dshgi-server` and `--renderer=dshgi-client`)
+  - Note that scenes for DDISH-GI need to be authored to include the probe grid:
+    use the included Blender glTF export plugin and place an irradiance volume!
+- Multi-GPU rendering (real-time and offline!)
+  - All compatible GPUs are used by default (you can limit to one with `--devices=0`)
+- Light field rendering
+  - Real-time for Looking Glass displays: `--display=looking-glass`
+  - Offline: `--camera-grid=w,h,x,y` and `--camera-recentering-distance=distance`
+
+And more, [see the user manual for details.](docs/tauray_user_manual.pdf)
+
 ## Building
 
 Clone the repository recursively with
