@@ -11,11 +11,12 @@ extension, but comes with a fallback rasterization mode that can be used on devi
 do not have that extension.
 
 Tauray is developed by the [VGA research group](https://webpages.tuni.fi/vga/)
-in Tampere University. [The pre-print](https://webpages.tuni.fi/vga/publications/Tauray2022.pdf)
-includes performance benchmarks and more information on Tauray. All of the
-measurements in the pre-print publication are done with the
-[v1.0.0 release](https://github.com/vga-group/tauray/releases/tag/v1.0.0). For
-practical purposes however, we recommend always using the latest available
+in Tampere University. The project is described in a conference publication [],
+which includes performance benchmarks and more information on Tauray.
+[A pre-print is available.](https://webpages.tuni.fi/vga/publications/Tauray2022.pdf)
+
+measurements in the publication are done with the [v1.0.0 release](https://github.com/vga-group/tauray/releases/tag/v1.0.0).
+For practical purposes however, we recommend always using the latest available
 release instead, as there are bug fixes and additional features included.
 
 ## License
@@ -51,7 +52,7 @@ To launch a simple interactive path tracing session with the included test model
 build/tauray test/test.glb
 ```
 
-[See the user manual for more detailed usage documentation.](docs/MANUAL.md)
+[See the user manual for more detailed usage documentation.](docs/tauray_user_manual.pdf)
 
 ## Benchmarking with Tauray
 
@@ -78,7 +79,7 @@ a run can be weird as in-flight frames haven't been queued properly and some
 initialization still runs, so please exclude those if possible.
 `--warmup-frames` can also be used for this purpose.
 
-[See the user manual for more detailed info on configuring Tauray for you benchmark setup.](docs/MANUAL.md)
+[See the user manual for more detailed info on configuring Tauray for you benchmark setup.](docs/tauray_user_manual.pdf)
 
 ## Citation
 
