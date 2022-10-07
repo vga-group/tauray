@@ -32,9 +32,9 @@ separate license text files.
   - Accumulation mode (`--accumulation`)
   - Denoising (`--denoiser=svgf` or `--denoiser=bmfr`)
 - Offline rendering (`--headless=output_file`)
-  - Animations with (`--animation`)
-  - Output file type with (`--filetype=[png,exr]`)
-- DDISH-GI, as used in the [DDISH-GI publication](https://doi.org/10.1007/978-3-030-89029-2_34)) (`--renderer=dshgi`)
+  - Animations with `--animation`
+  - Output file type with `--filetype=[png,exr]`
+- DDISH-GI, as used in the [DDISH-GI publication](https://doi.org/10.1007/978-3-030-89029-2_34) (`--renderer=dshgi`)
   - Remote probe rendering (`--renderer=dshgi-server` and `--renderer=dshgi-client`)
   - Note that scenes for DDISH-GI need to be authored to include the probe grid:
     use the included Blender glTF export plugin and place an irradiance volume!
@@ -43,6 +43,7 @@ separate license text files.
 - Light field rendering
   - Real-time for Looking Glass displays: `--display=looking-glass`
   - Offline: `--camera-grid=w,h,x,y` and `--camera-recentering-distance=distance`
+- VR rendering (`--display=openxr`)
 
 And more, [see the user manual for details.](docs/tauray_user_manual.pdf)
 
