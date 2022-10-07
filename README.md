@@ -11,7 +11,7 @@ extension, but comes with a fallback rasterization mode that can be used on devi
 do not have that extension.
 
 Tauray is developed by the [VGA research group](https://webpages.tuni.fi/vga/)
-in Tampere University. [The pre-print](https://webpages.tuni.fi/vga/publications/Tauray_preprint.pdf)
+in Tampere University. [The pre-print](https://webpages.tuni.fi/vga/publications/Tauray2022.pdf)
 includes performance benchmarks and more information on Tauray. All of the
 measurements in the pre-print publication are done with the
 [v1.0.0 release](https://github.com/vga-group/tauray/releases/tag/v1.0.0). For
@@ -82,7 +82,8 @@ initialization still runs, so please exclude those if possible.
 
 ## Citation
 
-If you use Tauray in a research paper, please cite the project.
+If you use Tauray in a research paper, please cite our forthcoming paper with the
+format below:
 
 ```bibtex
 @inproceedings{Ikkala22,
@@ -90,12 +91,11 @@ If you use Tauray in a research paper, please cite the project.
     title={Tauray: A Scalable Real-Time Open-Source Path Tracer for Stereo and Light Field Displays},
     year={2022},
     booktitle={SIGGRAPH Asia 2022 Technical Communications},
-    note = {Forthcoming},
     series={SA '22 Technical Communications},
     location={Daegu, Republic of Korea},
     doi={10.1145/3550340.3564225},
     address={New York, NY, USA},
     publisher={Association for Computing Machinery},
-    url={https://webpages.tuni.fi/vga/publications/Tauray_preprint.pdf}
+    url={https://webpages.tuni.fi/vga/publications/Tauray2022.pdf}
 }
 ```
