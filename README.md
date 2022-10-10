@@ -10,12 +10,12 @@ portability and low latency. It uses C++17 and Vulkan, primarily relying on the 
 extension, but comes with a fallback rasterization mode that can be used on devices that
 do not have that extension.
 
-Tauray is developed by the [VGA research group](https://webpages.tuni.fi/vga/)
+Tauray development is led by the [VGA research group](https://webpages.tuni.fi/vga/)
 in Tampere University. The project is described in a conference publication ([DOI link](https://doi.org/10.1145/3550340.3564225)),
 which includes performance benchmarks and more information on Tauray.
 [A pre-print is available.](https://webpages.tuni.fi/vga/publications/Tauray2022.pdf)
 
-measurements in the publication are done with the [v1.0.0 release](https://github.com/vga-group/tauray/releases/tag/v1.0.0).
+Measurements in the publication are done with the [v1.0.0 release](https://github.com/vga-group/tauray/releases/tag/v1.0.0).
 For practical purposes however, we recommend always using the latest available
 release instead, as there are bug fixes and additional features included.
 
