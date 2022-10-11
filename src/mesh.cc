@@ -40,12 +40,10 @@ void build_acceleration_structure(
         vk::AccelerationStructureTypeKHR::eBottomLevel,
         {},
         vk::BuildAccelerationStructureModeKHR::eBuild,
-        {},
-        {},
+        VK_NULL_HANDLE,
+        VK_NULL_HANDLE,
         1,
-        &geom,
-        {},
-        {}
+        &geom
     );
 
     if(static_as)
