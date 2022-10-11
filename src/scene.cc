@@ -346,12 +346,10 @@ void scene::init_tlas(size_t i)
         vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace|
         vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
         vk::BuildAccelerationStructureModeKHR::eBuild,
-        {},
-        {},
+        VK_NULL_HANDLE,
+        VK_NULL_HANDLE,
         1,
-        &geom,
-        {},
-        {}
+        &geom
     );
 
     vk::AccelerationStructureBuildSizesInfoKHR size_info =

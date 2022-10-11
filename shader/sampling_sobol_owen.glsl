@@ -90,7 +90,7 @@ vec4 get_shuffled_scrambled_sobol_pt(sobol_sampler ssampler, uint bounce)
 sobol_sampler init_sobol_sampler(uvec4 seed)
 {
     sobol_sampler ssampler;
-    ssampler.seed = seed;
+    ssampler.seed = pcg4d(seed);
     return ssampler;
 }
 #endif

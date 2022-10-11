@@ -183,12 +183,10 @@ void aabb_scene::init_acceleration_structures(const char* timer_name)
             vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace|
             vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
             vk::BuildAccelerationStructureModeKHR::eBuild,
-            {},
-            {},
+            VK_NULL_HANDLE,
+            VK_NULL_HANDLE,
             1,
-            &geom,
-            {},
-            {}
+            &geom
         );
 
         vk::AccelerationStructureBuildSizesInfoKHR size_info =

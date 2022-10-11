@@ -7,6 +7,7 @@
 #include "render_target.hh"
 #include <set>
 #include <map>
+#include <memory>
 #include <chrono>
 #include <functional>
 
