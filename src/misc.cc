@@ -230,7 +230,7 @@ vkm<vk::Buffer> create_download_buffer(
     vk::Buffer res;
     VmaAllocation alloc;
     vk::BufferCreateInfo staging_info(
-        {}, size, vk::BufferUsageFlagBits::eTransferDst,
+        {}, size, vk::BufferUsageFlagBits::eTransferDst|vk::BufferUsageFlagBits::eStorageBuffer,
         vk::SharingMode::eExclusive
     );
     VmaAllocationCreateInfo alloc_info = {};
@@ -488,6 +488,20 @@ vkm<vk::Image> sync_create_gpu_image(
         staging_buffer.destroy();
     }
     return vkm<vk::Image>(dev, img, alloc);
+}
+
+void full_barrier(vk::CommandBuffer cb)
+{
+    vk::MemoryBarrier barrier(
+        vk::AccessFlagBits::eMemoryRead|vk::AccessFlagBits::eMemoryWrite,
+        vk::AccessFlagBits::eMemoryRead|vk::AccessFlagBits::eMemoryWrite
+    );
+
+    cb.pipelineBarrier(
+        vk::PipelineStageFlagBits::eAllCommands,
+        vk::PipelineStageFlagBits::eAllCommands,
+        {}, barrier, {}, {}
+    );
 }
 
 vk::SampleCountFlagBits get_max_available_sample_count(context& ctx)

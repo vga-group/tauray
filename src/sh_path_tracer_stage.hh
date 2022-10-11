@@ -19,6 +19,7 @@ public:
         float russian_roulette_delta = 0;
         float temporal_ratio = 0.02f;
         float indirect_clamping = 100.0f;
+        bool importance_sample_envmap = true;
 
         int sh_grid_index = 0;
         int sh_order = 2;

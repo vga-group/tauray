@@ -46,7 +46,12 @@ taa_stage::taa_stage(
         vk::SampleCountFlagBits::e1
     ),
     jitter_buffer(dev, sizeof(pvec4)*opt.active_viewport_count, vk::BufferUsageFlagBits::eStorageBuffer),
-    history_sampler(*dev.ctx, vk::Filter::eLinear, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest, 0, true, false),
+    history_sampler(
+        *dev.ctx, vk::Filter::eLinear, vk::Filter::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest, 0, true, false
+    ),
     stage_timer(dev, "temporal antialiasing (" + std::to_string(opt.active_viewport_count) + " viewports)")
 {
     init_resources();

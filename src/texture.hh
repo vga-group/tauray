@@ -81,12 +81,12 @@ protected:
     // the data.
     void resize(uvec2 size);
 
+    context* ctx;
+
 private:
     // Also creates mip chain.
     void load_from_file(const std::string& path);
     void create(size_t data_size, void* data);
-
-    context* ctx;
 
     // nullptr only if this is a single-device texture.
     device_data* dev;

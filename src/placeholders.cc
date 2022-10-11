@@ -36,7 +36,9 @@ placeholders::placeholders(context& ctx)
     ),
     default_sampler(
         ctx, vk::Filter::eNearest, vk::Filter::eNearest,
-        vk::SamplerAddressMode::eRepeat, vk::SamplerMipmapMode::eNearest, 0,
+        vk::SamplerAddressMode::eRepeat,
+        vk::SamplerAddressMode::eRepeat,
+        vk::SamplerMipmapMode::eNearest, 0,
         true, false
     )
 {
