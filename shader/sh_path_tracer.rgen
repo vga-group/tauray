@@ -19,6 +19,9 @@
 #define SCENE_METADATA_BUFFER_BINDING 10
 #define INDIRECT_CLAMP_FIRST_BOUNCE
 #define HIDE_LIGHTS
+#ifdef IMPORTANCE_SAMPLE_ENVMAP
+#define ENVIRONMENT_MAP_ALIAS_TABLE_BINDING 14
+#endif
 #include "path_tracer.glsl"
 #include "spherical_harmonics.glsl"
 

@@ -233,6 +233,9 @@ void scene::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_
             envmap ? envmap->get_image_view(dev->index) : vk::ImageView{},
             vk::ImageLayout::eShaderReadOnlyOptimal
         }},
+        {"environment_map_alias_table", {
+            envmap ? envmap->get_alias_table(dev->index) : vk::Buffer{}, 0, VK_WHOLE_SIZE
+        }},
         {"textures3d", dii_3d},
         {"sh_grids", {*sb.sh_grid_data, 0, VK_WHOLE_SIZE}}
     }, frame_index);
@@ -398,13 +401,16 @@ scene::scene_buffer::scene_buffer(device_data& dev)
     camera_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     envmap_sampler(
         *dev.ctx, vk::Filter::eLinear, vk::Filter::eLinear,
-        vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest,
+        vk::SamplerAddressMode::eRepeat,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest,
         0, true, false
     ),
     shadow_sampler(
         *dev.ctx,
         vk::Filter::eLinear,
         vk::Filter::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerMipmapMode::eNearest,
         0,
@@ -416,6 +422,7 @@ scene::scene_buffer::scene_buffer(device_data& dev)
         *dev.ctx,
         vk::Filter::eLinear,
         vk::Filter::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerMipmapMode::eNearest,
         0,

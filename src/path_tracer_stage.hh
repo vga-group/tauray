@@ -19,6 +19,7 @@ public:
         float film_radius = 1.0f; // 0.5 is "correct" for the box filter.
         float russian_roulette_delta = 0; // 0 disables russian roulette.
         float indirect_clamping = 0; // 0 disables indirect clamping.
+        bool importance_sample_envmap = true;
     };
 
     path_tracer_stage(

@@ -5,7 +5,9 @@ namespace tr
 
 sampler::sampler(
     context& ctx, vk::Filter min, vk::Filter mag,
-    vk::SamplerAddressMode extend, vk::SamplerMipmapMode mip,
+    vk::SamplerAddressMode extend_x,
+    vk::SamplerAddressMode extend_y,
+    vk::SamplerMipmapMode mip,
     int anisotropy, bool normalized, bool use_mipmaps,
     bool shadow, float mip_bias
 ): ctx(&ctx)
@@ -14,7 +16,7 @@ sampler::sampler(
     samplers.resize(devices.size());
     info = vk::SamplerCreateInfo{
         {},
-        min, mag, mip, extend, extend, extend, mip_bias,
+        min, mag, mip, extend_x, extend_y, extend_x, mip_bias,
         anisotropy > 0, (float)anisotropy,
         shadow, shadow ? vk::CompareOp::eLess : vk::CompareOp::eAlways,
         0.0f, use_mipmaps ? 1000.0f : 0.0f,

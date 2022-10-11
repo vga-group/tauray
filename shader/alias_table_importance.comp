@@ -1,0 +1,28 @@
+// Based on CC0 code from https://gist.github.com/juliusikkala/6c8c186f0150fe877a55cee4d266b1b0
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "alias_table.glsl"
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D environment;
+layout(binding = 1, scalar) writeonly buffer importance_buffer
+{
+    float array[];
+} importances;
+
+void main()
+{
+    ivec2 size = textureSize(environment, 0).xy;
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if(p.x < size.x && p.y < size.y)
+    {
+        int pixel_id = p.x + p.y * size.x;
+        vec3 color = texelFetch(environment, p, 0).rgb;
+        float importance = dot(color, vec3(0.2126, 0.7152, 0.0722)); // luminance
+        importance *= latlong_texel_solid_angle(p.xy, size);
+        importances.array[pixel_id] = importance;
+    }
+}

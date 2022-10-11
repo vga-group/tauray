@@ -33,6 +33,9 @@ namespace path_tracer
         if(opt.transparent_background)
             defines["USE_TRANSPARENT_BACKGROUND"];
 
+        if(opt.importance_sample_envmap)
+            defines["IMPORTANCE_SAMPLE_ENVMAP"];
+
 #define TR_GBUFFER_ENTRY(name, ...)\
         if(gbuf.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
         TR_GBUFFER_ENTRIES
