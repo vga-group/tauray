@@ -51,6 +51,7 @@ layout(push_constant, scalar) uniform push_constant_buffer
     int antialiasing;
     int environment_proj;
     vec4 environment_factor;
+    float regularization_gamma;
 } control;
 #endif
 
@@ -355,6 +356,7 @@ void evaluate_ray(
 
     // Used for implementing NEE
     float nee_light_ratio = 1.0f;
+    float regularization = 1.0f;
 
     payload.random_seed = pcg4d(lsampler.rs.seed).x;
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
@@ -381,6 +383,7 @@ void evaluate_ray(
         sampled_material mat;
         vec3 light;
         bool terminal = !get_intersection_info(pos, view, v, mat, light);
+
 #ifdef HIDE_LIGHTS
         if(bounce == 0) light = vec3(0);
 #endif
@@ -393,6 +396,13 @@ void evaluate_ray(
             first_hit_vertex = v;
             first_hit_material = mat;
         }
+
+#ifdef PATH_SPACE_REGULARIZATION
+        // Regularization strategy inspired by "Optimised Path Space Regularisation", 2021 Weier et al.
+        float original_roughness = mat.roughness;
+        mat.roughness = 1.0f - ((1.0f - mat.roughness) * regularization);
+        regularization *= max(1 - control.regularization_gamma * original_roughness, 0.0f);
+#endif
 
         mat3 tbn = create_tangent_space(v.mapped_normal);
         vec3 shading_view = -view * tbn;
