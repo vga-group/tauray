@@ -68,6 +68,15 @@ vec4 generate_ray_sample(inout local_sampler ls, uint bounce_index)
 #endif
 }
 
+uvec4 generate_ray_sample_uint(inout local_sampler ls, uint bounce_index)
+{
+#ifdef SOBOL_OWEN_SAMPLING
+    return get_shuffled_scrambled_sobol_pt_uint(ls.ss, bounce_index);
+#else
+    return generate_uniform_random_uint(ls.rs);
+#endif
+}
+
 // Uniformly samples a disk, but strategically mapped for preserving
 // stratification better.
 vec2 sample_concentric_disk(vec2 u)

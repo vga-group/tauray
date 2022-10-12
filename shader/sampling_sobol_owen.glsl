@@ -75,7 +75,7 @@ uvec4 nested_uniform_scramble_base2(uvec4 x, uvec4 seed)
     return x;
 }
 
-vec4 get_shuffled_scrambled_sobol_pt(sobol_sampler ssampler, uint bounce)
+uvec4 get_shuffled_scrambled_sobol_pt_uint(sobol_sampler ssampler, uint bounce)
 {
     uint index = ssampler.seed.w;
     ssampler.seed.w = bounce;
@@ -84,7 +84,12 @@ vec4 get_shuffled_scrambled_sobol_pt(sobol_sampler ssampler, uint bounce)
     ).x;
     ssampler.seed.w = index;
 
-    return nested_uniform_scramble_base2(sobol(shuffled_index), ssampler.seed.yzwx) / float(0xffffffffu);
+    return nested_uniform_scramble_base2(sobol(shuffled_index), ssampler.seed.yzwx);
+}
+
+vec4 get_shuffled_scrambled_sobol_pt(sobol_sampler ssampler, uint bounce)
+{
+    return ldexp(vec4(get_shuffled_scrambled_sobol_pt_uint(ssampler, bounce)), ivec4(-32));
 }
 
 sobol_sampler init_sobol_sampler(uvec4 seed)
