@@ -218,7 +218,7 @@ bool get_intersection_info(
     }
 }
 
-vec3 sample_explicit_light(inout local_sampler lsampler, vec3 pos, out vec3 out_dir, out float out_length, inout float ratio)
+vec3 sample_explicit_light(uvec3 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, inout float ratio)
 {
 #ifdef IMPORTANCE_SAMPLE_ENVMAP
     const float point_directional_split =
@@ -237,7 +237,8 @@ vec3 sample_explicit_light(inout local_sampler lsampler, vec3 pos, out vec3 out_
 
     const float envmap_directional_split = 0.0f;
 #endif
-    vec4 u = generate_uniform_random(lsampler.rs);
+
+    vec3 u = ldexp(vec3(rand_uint), ivec3(-32));
 
     if(u.z < point_directional_split)
     {
@@ -275,7 +276,7 @@ vec3 sample_explicit_light(inout local_sampler lsampler, vec3 pos, out vec3 out_
         if(u.z < envmap_directional_split)
         {
             float pdf = 1.0f;
-            vec3 color = sample_environment_map(lsampler.rs.seed.xy, out_dir, out_length, pdf);
+            vec3 color = sample_environment_map(rand_uint.xy, out_dir, out_length, pdf);
             pdf *= (1.0f-point_directional_split) * envmap_directional_split;
             return color / pdf;
         }
@@ -298,7 +299,7 @@ vec3 sample_explicit_light(inout local_sampler lsampler, vec3 pos, out vec3 out_
 }
 
 void eval_explicit_lights(
-    inout local_sampler lsampler,
+    uvec3 rand_uint,
     mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
     float ratio,
@@ -308,7 +309,7 @@ void eval_explicit_lights(
     vec3 out_dir;
     float out_length = 0.0f;
     // Sample lights
-    vec3 contrib = sample_explicit_light(lsampler, v.pos, out_dir, out_length, ratio);
+    vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, ratio);
 
     vec3 shading_light = out_dir * tbn;
     vec3 d, s;
@@ -421,8 +422,8 @@ void evaluate_ray(
         ){
             // Do NEE ray
             eval_explicit_lights(
-                lsampler, tbn, shading_view, mat, v, 1.0f - nee_light_ratio,
-                diffuse_radiance, specular_radiance
+                generate_ray_sample_uint(lsampler, bounce).xyz, tbn, shading_view,
+                mat, v, 1.0f - nee_light_ratio, diffuse_radiance, specular_radiance
             );
         }
 
@@ -443,9 +444,9 @@ void evaluate_ray(
         if(terminal) break;
 
         // Lastly, figure out the next ray and assign proper attenuation for it.
-        vec4 ray_sample = generate_ray_sample(lsampler, bounce);
         vec3 diffuse_weight = vec3(1.0f);
         vec3 specular_weight = vec3(1.0f);
+        vec4 ray_sample = generate_ray_sample(lsampler, bounce);
         ggx_bsdf_sample(ray_sample.xyz, shading_view, mat, view, diffuse_weight, specular_weight);
         view = tbn * view;
 
