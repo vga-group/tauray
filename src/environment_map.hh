@@ -25,10 +25,24 @@ public:
     vec3 get_factor() const;
 
     projection get_projection() const;
+    vk::Buffer get_alias_table(size_t device_index) const;
 
 private:
+    void generate_alias_table();
+
     vec3 factor;
     projection proj;
+
+    double average_luminance;
+    struct alias_table_entry
+    {
+        uint32_t alias_id;
+        uint32_t probability;
+        float pdf;
+        float alias_pdf;
+    };
+    std::vector<alias_table_entry> alias_table;
+    std::vector<vkm<vk::Buffer>> alias_table_buffers;
 };
 
 }

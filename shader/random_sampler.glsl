@@ -42,6 +42,11 @@ vec4 generate_uniform_random(inout random_sampler rsampler)
     return ldexp(vec4(pcg4d(rsampler.seed)), ivec4(-32));
 }
 
+uvec4 generate_uniform_random_uint(inout random_sampler rsampler)
+{
+    return pcg4d(rsampler.seed);
+}
+
 float generate_single_uniform_random(inout uint seed)
 {
     return ldexp(float(pcg(seed)), -32);

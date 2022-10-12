@@ -30,7 +30,9 @@ looking_glass_composition_stage::looking_glass_composition_stage(
     }),
     input_sampler(
         *dev.ctx, vk::Filter::eLinear, vk::Filter::eLinear,
-        vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest,
         0, true, false
     ),
     stage_timer(dev, "looking glass composition")

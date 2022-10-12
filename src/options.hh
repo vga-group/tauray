@@ -385,6 +385,12 @@
         "Replaces background with alpha transparency, regardless of " \
         "environment map usage.", \
         false \
+    ) \
+    TR_BOOL_OPT(importance_sample_envmap, \
+        "Importance sample the environment map, if present. Has a minor " \
+        "performance hit, and can make some rare scenes noisier, but " \
+        "generally reduces noise significantly.", \
+        false \
     )
 //==============================================================================
 // END OF OPTIONS

@@ -96,6 +96,9 @@ vkm<vk::Image> sync_create_gpu_image(
     void* data = nullptr
 );
 
+// The hammer for all problems (if you don't care about performance at all)
+void full_barrier(vk::CommandBuffer cb);
+
 vk::SampleCountFlagBits get_max_available_sample_count(context& ctx);
 
 std::string get_resource_path(const std::string& path);
