@@ -80,6 +80,65 @@ float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
     return shadow_visibility;
 }
 
+#ifdef ENVIRONMENT_MAP_ALIAS_TABLE_BINDING
+// Based on CC0 code from https://gist.github.com/juliusikkala/6c8c186f0150fe877a55cee4d266b1b0
+vec3 sample_environment_map(
+    uvec2 rand,
+    out vec3 shadow_ray_direction,
+    out float shadow_ray_length,
+    out float pdf
+){
+    vec3 color = control.environment_factor.rgb;
+    if(control.environment_proj >= 0)
+    {
+        uvec2 size = textureSize(environment_map_tex, 0).xy;
+        const uint pixel_count = size.x * size.y;
+        // Assuming pixel_count is a power of two or fairly small, this should
+        // be okay-ish to do.
+        int i = int(rand.x % pixel_count);
+        alias_table_entry at = environment_map_alias_table.entries[i];
+        pdf = at.pdf;
+        if(rand.y > at.probability)
+        {
+            i = int(at.alias_id);
+            pdf = at.alias_pdf;
+        }
+
+        // TODO: Uniformly sample texel instead of picking center like this!
+        // ... But that might not be worth the effort, since the individual texels
+        // would only be visible in very smooth surfaces, which this function can't
+        // sample well anyway (they need BRDF sampling instead).
+        shadow_ray_direction = pixel_id_to_latlong_direction(i, ivec2(size));
+
+        ivec2 p = ivec2(i % size.x, i / size.x);
+        vec2 uv = (vec2(p) + 0.5f)/vec2(size);
+
+        color *= texture(environment_map_tex, vec2(uv.x, uv.y)).rgb;
+    }
+    else
+    {
+        pdf = 4.0f * M_PI;
+        shadow_ray_direction = sample_sphere(ldexp(vec2(rand), ivec2(-32)));
+    }
+    shadow_ray_length = RAY_MAX_DIST;
+    return color;
+}
+
+float sample_environment_map_pdf(vec3 dir)
+{
+    if(control.environment_proj >= 0)
+    {
+        uvec2 size = textureSize(environment_map_tex, 0).xy;
+        const uint pixel_count = size.x * size.y;
+        uint i = latlong_direction_to_pixel_id(dir, ivec2(size));
+        alias_table_entry at = environment_map_alias_table.entries[i];
+        return at.pdf;
+    }
+    else return 4.0f * M_PI;
+}
+#endif
+
+
 bool get_intersection_info(
     vec3 origin,
     vec3 view,
@@ -128,8 +187,8 @@ bool get_intersection_info(
         if(control.environment_proj >= 0)
         {
             vec2 uv = vec2(0);
-            uv.y = asin(-view.y)/3.141592+0.5f;
-            uv.x = atan(view.z, view.x)/(2*3.141592)+0.5f;
+            uv.y = asin(-view.y)/M_PI+0.5f;
+            uv.x = atan(view.z, view.x)/(2*M_PI)+0.5f;
             color.rgb *= texture(environment_map_tex, uv).rgb;
         }
 
@@ -149,17 +208,39 @@ bool get_intersection_info(
         #endif
         v.mapped_normal = -view;
         mat.albedo = vec4(0);
+#ifdef IMPORTANCE_SAMPLE_ENVMAP
+        mat.emission = vec3(0);
+        light += color.rgb;
+#else
         mat.emission = color.rgb;
+#endif
         return false;
     }
 }
 
-vec3 sample_explicit_light(inout vec3 u, vec3 pos, out vec3 out_dir, out float out_length, inout float ratio)
+vec3 sample_explicit_light(uvec3 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, inout float ratio)
 {
-    float point_directional_split = scene_metadata.directional_light_count > 0 ?
+#ifdef IMPORTANCE_SAMPLE_ENVMAP
+    const float point_directional_split =
+        (scene_metadata.directional_light_count > 0 || control.environment_proj >= 0) ?
         (scene_metadata.point_light_count > 0 ? 0.5f : 0.0f) :
-        1.0f;
-    if(u.z < point_directional_split || scene_metadata.directional_light_count == 0)
+        1.00001f;
+
+    const float envmap_directional_split =
+        scene_metadata.directional_light_count > 0 ?
+        (control.environment_proj >= 0 ? 0.5f : 0.0f) :
+        1.00001f;
+#else
+    const float point_directional_split = scene_metadata.directional_light_count > 0 ?
+        (scene_metadata.point_light_count > 0 ? 0.5f : 0.0f) :
+        1.00001f;
+
+    const float envmap_directional_split = 0.0f;
+#endif
+
+    vec3 u = ldexp(vec3(rand_uint), ivec3(-32));
+
+    if(u.z < point_directional_split)
     {
         // Sample point light
         u.z = u.z / point_directional_split;
@@ -188,24 +269,38 @@ vec3 sample_explicit_light(inout vec3 u, vec3 pos, out vec3 out_dir, out float o
     }
     else
     {
-        // Sample directional light
+        // Sample directional light or envmap
         u.z = (u.z - point_directional_split)/(1-point_directional_split);
-        const int light_count = int(scene_metadata.directional_light_count);
-        int light_index = clamp(int(u.z*light_count), 0, light_count-1);
-        float weight = light_count / (1.0f - point_directional_split);
 
-        directional_light dl = directional_lights.lights[light_index];
-        vec3 dir = -dl.dir;
-        out_length = RAY_MAX_DIST;
-        out_dir = sample_cone(u.xy, dir, dl.dir_cutoff);
-        if(dl.dir_cutoff >= 1.0f)
-            ratio = 1.0f; // Punctual lights can only be sampled through NEE.
-        return dl.color * weight;
+#ifdef IMPORTANCE_SAMPLE_ENVMAP
+        if(u.z < envmap_directional_split)
+        {
+            float pdf = 1.0f;
+            vec3 color = sample_environment_map(rand_uint.xy, out_dir, out_length, pdf);
+            pdf *= (1.0f-point_directional_split) * envmap_directional_split;
+            return color / pdf;
+        }
+        else
+#endif
+        {
+            const int light_count = int(scene_metadata.directional_light_count);
+            int light_index = clamp(int(u.z*light_count), 0, light_count-1);
+            float weight = light_count / ((1.0f - point_directional_split) * (1.0f - envmap_directional_split));
+
+            directional_light dl = directional_lights.lights[light_index];
+            vec3 dir = -dl.dir;
+            out_length = RAY_MAX_DIST;
+            out_dir = sample_cone(u.xy, dir, dl.dir_cutoff);
+            if(dl.dir_cutoff >= 1.0f)
+                ratio = 1.0f; // Punctual lights can only be sampled through NEE.
+            return dl.color * weight;
+        }
     }
 }
 
 void eval_explicit_lights(
-    inout vec3 u, mat3 tbn, vec3 shading_view, sampled_material mat,
+    uvec3 rand_uint,
+    mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
     float ratio,
     inout vec3 diffuse_radiance,
@@ -214,7 +309,7 @@ void eval_explicit_lights(
     vec3 out_dir;
     float out_length = 0.0f;
     // Sample lights
-    vec3 contrib = sample_explicit_light(u, v.pos, out_dir, out_length, ratio);
+    vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, ratio);
 
     vec3 shading_light = out_dir * tbn;
     vec3 d, s;
@@ -310,8 +405,6 @@ void evaluate_ray(
 
         shading_view = normalize(shading_view);
 
-        vec4 ray_sample = generate_ray_sample(lsampler, bounce);
-
         // This heuristic lets NEE rays be less weighted for extremely smooth and
         // metallic materials.
         nee_light_ratio = mix(0.0, mix(0.5, 1.0, mat.metallic), pow(1.0f-mat.roughness, 200.0f));
@@ -321,12 +414,16 @@ void evaluate_ray(
         if(
             !terminal &&
             (scene_metadata.directional_light_count > 0 ||
-            scene_metadata.point_light_count > 0)
+            scene_metadata.point_light_count > 0
+#ifdef IMPORTANCE_SAMPLE_ENVMAP
+            || control.environment_proj >= 0
+#endif
+            )
         ){
             // Do NEE ray
             eval_explicit_lights(
-                ray_sample.xyz, tbn, shading_view, mat, v, 1.0f - nee_light_ratio,
-                diffuse_radiance, specular_radiance
+                generate_ray_sample_uint(lsampler, bounce).xyz, tbn, shading_view,
+                mat, v, 1.0f - nee_light_ratio, diffuse_radiance, specular_radiance
             );
         }
 
@@ -349,6 +446,7 @@ void evaluate_ray(
         // Lastly, figure out the next ray and assign proper attenuation for it.
         vec3 diffuse_weight = vec3(1.0f);
         vec3 specular_weight = vec3(1.0f);
+        vec4 ray_sample = generate_ray_sample(lsampler, bounce);
         ggx_bsdf_sample(ray_sample.xyz, shading_view, mat, view, diffuse_weight, specular_weight);
         view = tbn * view;
 

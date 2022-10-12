@@ -406,6 +406,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rt_opt.film_radius = opt.film_radius;
                 rt_opt.russian_roulette_delta = opt.russian_roulette;
                 rt_opt.indirect_clamping = opt.indirect_clamping;
+                rt_opt.importance_sample_envmap =
+                    s.get_environment_map() &&
+                    opt.importance_sample_envmap;
                 rt_opt.post_process.tonemap = tonemap;
                 if(opt.temporal_reprojection > 0.0f)
                     rt_opt.post_process.temporal_reprojection =
@@ -474,6 +477,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 sh.russian_roulette_delta = opt.russian_roulette;
                 sh.temporal_ratio = opt.dshgi_temporal_ratio;
                 sh.indirect_clamping = opt.indirect_clamping;
+                sh.importance_sample_envmap =
+                    s.get_environment_map() &&
+                    opt.importance_sample_envmap;
                 dr_opt.sh_source = sh;
                 dr_opt.sh_order = opt.sh_order;
                 dr_opt.use_probe_visibility = opt.use_probe_visibility;

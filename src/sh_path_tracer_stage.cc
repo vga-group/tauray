@@ -29,6 +29,9 @@ namespace sh_path_tracer
         if(opt.russian_roulette_delta > 0)
             defines["USE_RUSSIAN_ROULETTE"];
 
+        if(opt.importance_sample_envmap)
+            defines["IMPORTANCE_SAMPLE_ENVMAP"];
+
         switch(opt.film)
         {
         case film::POINT:

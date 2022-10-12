@@ -127,6 +127,7 @@ raster_stage::raster_stage(
         vk::Filter::eLinear,
         vk::Filter::eLinear,
         vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerMipmapMode::eNearest,
         0,
         true,

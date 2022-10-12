@@ -127,6 +127,14 @@ layout(binding = TLAS_BINDING, set = 0) uniform accelerationStructureEXT tlas;
 layout(binding = ENVIRONMENT_MAP_BINDING, set = 0) uniform sampler2D environment_map_tex;
 #endif
 
+#ifdef ENVIRONMENT_MAP_ALIAS_TABLE_BINDING
+#include "alias_table.glsl"
+layout(binding = ENVIRONMENT_MAP_ALIAS_TABLE_BINDING, set = 0) readonly buffer environment_map_alias_table_buffer
+{
+    alias_table_entry entries[];
+} environment_map_alias_table;
+#endif
+
 #ifdef SCENE_METADATA_BUFFER_BINDING
 layout(binding = SCENE_METADATA_BUFFER_BINDING, set = 0, scalar) uniform scene_metadata_buffer
 {
