@@ -20,6 +20,7 @@ public:
         float russian_roulette_delta = 0; // 0 disables russian roulette.
         float indirect_clamping = 0; // 0 disables indirect clamping.
         bool importance_sample_envmap = true;
+        float regularization_gamma = 0.0f; // 0 disables path regularization
     };
 
     path_tracer_stage(

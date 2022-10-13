@@ -409,6 +409,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rt_opt.importance_sample_envmap =
                     s.get_environment_map() &&
                     opt.importance_sample_envmap;
+                rt_opt.regularization_gamma = opt.regularization;
                 rt_opt.post_process.tonemap = tonemap;
                 if(opt.temporal_reprojection > 0.0f)
                     rt_opt.post_process.temporal_reprojection =
@@ -480,6 +481,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 sh.importance_sample_envmap =
                     s.get_environment_map() &&
                     opt.importance_sample_envmap;
+                sh.regularization_gamma = opt.regularization;
                 dr_opt.sh_source = sh;
                 dr_opt.sh_order = opt.sh_order;
                 dr_opt.use_probe_visibility = opt.use_probe_visibility;

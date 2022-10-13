@@ -32,6 +32,9 @@ namespace sh_path_tracer
         if(opt.importance_sample_envmap)
             defines["IMPORTANCE_SAMPLE_ENVMAP"];
 
+        if(opt.regularization_gamma != 0.0f)
+            defines["PATH_SPACE_REGULARIZATION"];
+
         switch(opt.film)
         {
         case film::POINT:
@@ -98,6 +101,7 @@ namespace sh_path_tracer
         // -1 for no environment map
         int environment_proj;
         pvec4 environment_factor;
+        float regularization_gamma;
     };
 
     // The minimum maximum size for push constant buffers is 128 bytes in vulkan.
@@ -233,6 +237,7 @@ void sh_path_tracer_stage::record_command_buffer_push_constants(
     control.russian_roulette_delta = opt.russian_roulette_delta;
     control.min_ray_dist = opt.min_ray_dist;
     control.indirect_clamping = opt.indirect_clamping;
+    control.regularization_gamma = opt.regularization_gamma;
 
     // We re-use the "previous samples" to mark how many samples to do in one
     // shader invocation. The name can't change on the shader side, since it is

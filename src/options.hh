@@ -391,6 +391,12 @@
         "performance hit, and can make some rare scenes noisier, but " \
         "generally reduces noise significantly.", \
         false \
+    ) \
+    TR_FLOAT_OPT(regularization, \
+        "Sets the path space regularization gamma. Path regularization " \
+        "reduces noise without clamping brightness. It still causes some " \
+        "bias, but is a much less noticeable method.", \
+        0.0f, 0.0f, 10.0f \
     )
 //==============================================================================
 // END OF OPTIONS
