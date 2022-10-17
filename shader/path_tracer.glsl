@@ -311,9 +311,11 @@ bool get_intersection_info(
             directional_light dl = directional_lights.lights[i];
             if(dl.dir_cutoff >= 1.0f)
                 continue;
-            light += step(dl.dir_cutoff, dot(view, -dl.dir)) * dl.color;
-            nee_pdf.directional_light_pdf += sample_directional_light_pdf(dl);
+            float visible = step(dl.dir_cutoff, dot(view, -dl.dir));
+            light += visible * dl.color;
+            nee_pdf.directional_light_pdf += visible * sample_directional_light_pdf(dl);
         }
+        nee_pdf.directional_light_pdf /= scene_metadata.directional_light_count;
         v.instance_id = -1;
         v.pos = origin;
         #ifdef CALC_PREV_VERTEX_POS
