@@ -26,10 +26,9 @@ int latlong_direction_to_pixel_id(vec3 dir, ivec2 size)
     return p.x + p.y * size.x;
 }
 
-vec3 pixel_id_to_latlong_direction(int pixel_id, ivec2 size)
+vec3 uv_to_latlong_direction(vec2 uv)
 {
-    ivec2 p = ivec2(pixel_id % size.x, pixel_id / size.x);
-    vec2 uv = ((vec2(p) + 0.5f)/vec2(size) - 0.5f) * M_PI;
+    uv = (uv - 0.5f) * M_PI;
     vec3 dir = vec3(cos(2.0f * uv.x), -sin(uv.y), sin(2.0f * uv.x));
     dir.xz *= sqrt(1 - dir.y*dir.y);
     return dir;

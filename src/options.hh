@@ -390,7 +390,7 @@
         "Importance sample the environment map, if present. Has a minor " \
         "performance hit, and can make some rare scenes noisier, but " \
         "generally reduces noise significantly.", \
-        false \
+        true \
     ) \
     TR_FLOAT_OPT(regularization, \
         "Sets the path space regularization gamma. Path regularization " \
