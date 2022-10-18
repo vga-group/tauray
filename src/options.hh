@@ -397,6 +397,14 @@
         "reduces noise without clamping brightness. It still causes some " \
         "bias, but is a much less noticeable method.", \
         0.0f, 0.0f, 10.0f \
+    ) \
+    TR_STRUCT_OPT(depth_of_field, \
+        "Sets depth of field parameters.", \
+        TR_STRUCT_OPT_FLOAT(f_stop, 0, 0.001f, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(distance, 1, 0, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(sensor_size, 0.036f, 0.0f, FLT_MAX) \
+        TR_STRUCT_OPT_INT(sides, 0, 3, INT_MAX) \
+        TR_STRUCT_OPT_FLOAT(angle, 0, 0, 360) \
     )
 //==============================================================================
 // END OF OPTIONS

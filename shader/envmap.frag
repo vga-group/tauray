@@ -26,6 +26,7 @@ void main()
             control.screen_size.y - gl_FragCoord.y
         ),
         control.screen_size,
+        vec2(0),
         origin,
         view_dir
     );

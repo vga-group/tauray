@@ -44,7 +44,7 @@ void camera::copy_projection(const camera& other)
 void camera::perspective(float fov, float aspect, float near, float far)
 {
     type = PERSPECTIVE;
-    pd.perspective = {{}, vec2(0), fov, aspect, near, far};
+    pd.perspective = {{}, vec2(0), fov, aspect, near, far, vec4(1,0,0,0)};
     refresh();
 }
 
@@ -151,6 +151,29 @@ float camera::get_far() const
 vec2 camera::get_range() const
 {
     return vec2(get_near(), get_far());
+}
+
+void camera::set_focus(
+    float f_stop,
+    float focus_distance,
+    int aperture_sides,
+    float aperture_angle,
+    float sensor_size
+){
+    switch(type)
+    {
+    case PERSPECTIVE:
+        pd.perspective.focus = vec4(
+            focus_distance,
+            f_stop == 0.0f ? 0.0f : sensor_size / f_stop,
+            glm::radians(aperture_angle),
+            aperture_sides
+        );
+        break;
+    default:
+        // No DoF for other projection types yet!
+        break;
+    }
 }
 
 void camera::set_aspect(float aspect)
@@ -351,7 +374,7 @@ void camera::refresh()
     {
     case PERSPECTIVE:
         {
-            auto& [projection, fov_offset, fov, aspect, near, far] = pd.perspective;
+            auto& [projection, fov_offset, fov, aspect, near, far, focus] = pd.perspective;
             float rad_fov = glm::radians(fov);
             if(far == INFINITY)
                 projection = glm::infinitePerspective(rad_fov, aspect, near);
@@ -386,6 +409,7 @@ struct matrix_camera_data_buffer
     mat4 view_proj;
     mat4 proj_inverse;
     vec4 origin;
+    vec4 dof_params;
 };
 
 struct equirectangular_camera_data_buffer
@@ -429,6 +453,7 @@ void camera::write_uniform_buffer(void* data) const
             buf.view_proj = projection * view;
             buf.proj_inverse = inv_projection;
             buf.origin = origin;
+            buf.dof_params = type == PERSPECTIVE ? pd.perspective.focus : vec4(0);
         }
         break;
     case EQUIRECTANGULAR:

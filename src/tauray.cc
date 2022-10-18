@@ -232,6 +232,15 @@ scene_data load_scenes(context& ctx, const options& opt)
             s.s->get_camera()->set_near(opt.camera_clip_range.near);
         if(opt.camera_clip_range.far > 0)
             s.s->get_camera()->set_far(opt.camera_clip_range.far);
+
+        if(opt.depth_of_field.f_stop != 0)
+            s.s->get_camera()->set_focus(
+                opt.depth_of_field.f_stop,
+                opt.depth_of_field.distance,
+                opt.depth_of_field.sides,
+                opt.depth_of_field.angle,
+                opt.depth_of_field.sensor_size
+            );
     }
 
     if(opt.animation_flag)
@@ -411,6 +420,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     opt.importance_sample_envmap;
                 rt_opt.regularization_gamma = opt.regularization;
                 rt_opt.post_process.tonemap = tonemap;
+                rt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
                 if(opt.temporal_reprojection > 0.0f)
                     rt_opt.post_process.temporal_reprojection =
                         temporal_reprojection_stage::options{opt.temporal_reprojection, {}};

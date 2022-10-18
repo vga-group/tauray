@@ -190,13 +190,20 @@ uvec2 get_screen_size()
 #endif
 }
 
-void get_screen_camera_ray(in camera_data cam, vec2 pixel_offset, out vec3 origin, out vec3 dir)
+// DoF version
+void get_screen_camera_ray(in camera_data cam, vec2 pixel_offset, vec2 dof_u, out vec3 origin, out vec3 dir)
 {
     vec2 p = vec2(get_pixel_pos()) + (pixel_offset*0.5f+0.5f);
     // Flip into OpenGL coordinates.
     uvec2 size = get_screen_size();
     p.y = size.y - p.y;
-    get_camera_ray(cam, p, vec2(size), origin, dir);
+    get_camera_ray(cam, p, vec2(size), dof_u, origin, dir);
+}
+
+// Pinhole version
+void get_screen_camera_ray(in camera_data cam, vec2 pixel_offset, out vec3 origin, out vec3 dir)
+{
+    get_screen_camera_ray(cam, pixel_offset, vec2(0.5), origin, dir);
 }
 #endif
 
