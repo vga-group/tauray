@@ -19,12 +19,14 @@ struct camera_data
     mat4 view_proj;
     mat4 proj_inverse;
     vec4 origin;
+    vec4 dof_params;
 };
 
 void get_camera_ray(
     in camera_data cam,
     vec2 pixel_coord,
     vec2 screen_size,
+    vec2 dof_u,
     out vec3 origin,
     out vec3 dir
 ){
@@ -32,12 +34,24 @@ void get_camera_ray(
     uv = uv * 2.0f - 1.0f;
 
 #if CAMERA_PROJECTION_TYPE == 0
+#ifdef USE_DEPTH_OF_FIELD
+    vec2 aperture_offset = cam.dof_params.w == 0 ?
+        sample_concentric_disk(dof_u) :
+        sample_regular_polygon(dof_u, cam.dof_params.z, uint(cam.dof_params.w));
+    vec3 view_origin = vec3(aperture_offset * cam.dof_params.y, 0);
+    vec3 view_dir = (cam.proj_inverse * vec4(uv.xy, 1, 1)).xyz * cam.dof_params.x;
+    view_dir = normalize(view_dir - view_origin);
+
+    origin = (cam.view_inverse * vec4(view_origin, 1.0f)).xyz;
+    dir = normalize(cam.view_inverse * vec4(view_dir.xyz, 0)).xyz;
+#else
     // Pinhole camera, so origin is always the same.
     origin = cam.origin.xyz;
 
     // World-space direction just derived from the projection and view matrices.
     vec4 t = cam.proj_inverse * vec4(uv.xy, 1, 1);
     dir = normalize(cam.view_inverse * vec4(t.xyz, 0)).xyz;
+#endif
 #elif CAMERA_PROJECTION_TYPE == 1
     origin = (cam.view_inverse * cam.proj_inverse * vec4(uv.xy, 0, 1)).xyz;
     dir = normalize(cam.view_inverse * vec4(0, 0, -1, 0)).xyz;
@@ -65,6 +79,7 @@ void get_camera_ray(
     in camera_data cam,
     vec2 pixel_coord,
     vec2 screen_size,
+    vec2 dof_u,
     out vec3 origin,
     out vec3 dir
 ){

@@ -39,6 +39,9 @@ namespace path_tracer
         if(opt.regularization_gamma != 0.0f)
             defines["PATH_SPACE_REGULARIZATION"];
 
+        if(opt.depth_of_field)
+            defines["USE_DEPTH_OF_FIELD"];
+
 #define TR_GBUFFER_ENTRY(name, ...)\
         if(gbuf.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
         TR_GBUFFER_ENTRIES

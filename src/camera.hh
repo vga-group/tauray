@@ -36,6 +36,14 @@ public:
     float get_far() const;
     vec2 get_range() const;
 
+    void set_focus(
+        float f_stop,
+        float focus_distance,
+        int aperture_sides, // 0 == circular, 1 and 2 are invalid, rest are regular polygons
+        float aperture_angle,
+        float sensor_size
+    );
+
     void set_aspect(float aspect);
     void set_fov(float fov);
     // This also sets the aspect ratio and an asymmetric image-space offset
@@ -77,6 +85,7 @@ private:
             mat4 projection;
             vec2 fov_offset;
             float fov, aspect, near, far;
+            vec4 focus;
         } perspective;
 
         struct

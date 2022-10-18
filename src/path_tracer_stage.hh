@@ -21,6 +21,7 @@ public:
         float indirect_clamping = 0; // 0 disables indirect clamping.
         bool importance_sample_envmap = true;
         float regularization_gamma = 0.0f; // 0 disables path regularization
+        bool depth_of_field = false; // false disregards camera focus parameters.
     };
 
     path_tracer_stage(

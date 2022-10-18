@@ -104,7 +104,15 @@ void main()
     vec3 dir;
 
     const camera_data cam = get_camera();
-    get_screen_camera_ray(cam, cam_offset, origin, dir);
+    get_screen_camera_ray(
+        cam, cam_offset,
+#ifdef USE_DEPTH_OF_FIELD
+        generate_film_sample(lsampler),
+#else
+        vec2(0.5f),
+#endif
+        origin, dir
+    );
     vec3 color, direct, diffuse;
     evaluate_ray(
         lsampler, origin, dir,
