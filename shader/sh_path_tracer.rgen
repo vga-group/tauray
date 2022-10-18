@@ -31,9 +31,10 @@ layout(binding = 13, set = 0) uniform grid_data_buffer
     mat4 transform;
     mat4 normal_transform;
     uvec3 grid_size;
-    float rotation;
-    vec3 cell_scale;
     float mix_ratio;
+    vec3 cell_scale;
+    float rotation_x;
+    float rotation_y;
 } grid;
 
 void main()
@@ -69,7 +70,7 @@ void main()
         // Random sampling the sphere may seem like a good idea, but it introduces
         // so much noise that the result never seems stable.
         vec3 local_ray_dir = even_sample_sphere(
-            int(sample_index), int(total_samples), grid.rotation
+            int(sample_index), int(total_samples), vec2(grid.rotation_x, grid.rotation_y)
         );
 
         vec3 global_ray_dir = normalize(
