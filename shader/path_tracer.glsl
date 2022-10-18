@@ -280,7 +280,7 @@ bool get_intersection_info(
     else if(payload.primitive_id >= 0)
     {
         point_light pl = point_lights.lights[payload.primitive_id];
-        light = get_spotlight_intensity(pl, view) * pl.color / M_PI;
+        light = get_spotlight_intensity(pl, view) * pl.color / (pl.radius * pl.radius * M_PI);
 
         nee_pdf.point_light_pdf = sample_point_light_pdf(pl, origin);
 
