@@ -239,11 +239,11 @@ float bsdf_mis_pdf(
     return (bsdf_pdf * bsdf_pdf + avg_nee_pdf * avg_nee_pdf) / bsdf_pdf;
 }
 
-float nee_mis_pdf(int sample_count, float nee_pdf, float bsdf_pdf)
+float nee_mis_pdf(float nee_pdf, float bsdf_pdf)
 {
     if(nee_pdf == 0.0f) return 1.0f;
 
-    return (sample_count * nee_pdf * sample_count * nee_pdf + bsdf_pdf * bsdf_pdf) / (sample_count * nee_pdf);
+    return (nee_pdf * nee_pdf + bsdf_pdf * bsdf_pdf) / (nee_pdf);
 }
 
 bool get_intersection_info(
@@ -315,7 +315,6 @@ bool get_intersection_info(
             light += visible * dl.color;
             nee_pdf.directional_light_pdf += visible * sample_directional_light_pdf(dl);
         }
-        nee_pdf.directional_light_pdf /= scene_metadata.directional_light_count;
         v.instance_id = -1;
         v.pos = origin;
         #ifdef CALC_PREV_VERTEX_POS
@@ -424,7 +423,7 @@ void eval_explicit_lights(
     if(any(greaterThan((d+s) * contrib, vec3(0.0001f))))
         contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
-    contrib /= nee_mis_pdf(1, light_pdf, bsdf_pdf);
+    contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
     diffuse_radiance += d * contrib;
     specular_radiance += s * contrib;
 }
