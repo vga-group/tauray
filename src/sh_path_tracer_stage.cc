@@ -12,9 +12,10 @@ struct grid_data_buffer
     mat4 transform;
     mat4 normal_transform;
     puvec3 grid_size;
-    float rotation;
-    pvec3 cell_scale;
     float mix_ratio;
+    pvec3 cell_scale;
+    float rotation_x;
+    float rotation_y;
 };
 
 namespace sh_path_tracer
@@ -152,7 +153,8 @@ void sh_path_tracer_stage::update(uint32_t frame_index)
             guni->grid_size = grid->get_resolution();
             guni->mix_ratio = max(1.0f/dev->ctx->get_frame_counter(), opt.temporal_ratio);
             guni->cell_scale = 0.5f*vec3(grid->get_resolution())/grid->get_scaling();
-            guni->rotation = pcg(sampling_start_counter)/float(0xFFFFFFFFu);
+            guni->rotation_x = pcg(sampling_start_counter)/float(0xFFFFFFFFu);
+            guni->rotation_y = pcg(sampling_start_counter+1)/float(0xFFFFFFFFu);
         }
     );
 }

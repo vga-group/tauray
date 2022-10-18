@@ -147,10 +147,10 @@ vec3 sample_blackman_harris_ball(vec3 u)
     return r * v;
 }
 
-vec3 even_sample_sphere(int sample_index, int sample_count, float off)
+vec3 even_sample_sphere(int sample_index, int sample_count, vec2 off)
 {
-    float o = float(sample_index)+off;
-    return sample_sphere(vec2(o/float(sample_count), o * GOLDEN_RATIO));
+    float o = (float(sample_index)+off.x) * 0.38196601125;
+    return sample_sphere(vec2((float(sample_index) + off.y)/float(sample_count), o));
 }
 
 vec3 sample_cone(vec2 u, vec3 dir, float cos_theta_min)
