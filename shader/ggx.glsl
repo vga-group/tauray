@@ -192,12 +192,10 @@ void ggx_bsdf(
     { // BTDF
         // Un-predivide geometry term ;)
         geometry *= 4.0;
-        float denom = mat.ior_in * cos_d + mat.ior_out * cos_o;
+        float denom = mat.ior_in / mat.ior_out * cos_d + cos_o;
         // This should be the reciprocal form, which is necessary when the light
         // source is inside the volume...
-        diffuse_weight = mat.transmittance * (1.0f - mat.metallic) * -cos_l *
-            abs(cos_d * cos_o) * mat.ior_in * mat.ior_in * (1.0f - fresnel) * geometry * distribution /
-            (denom * denom);
+        diffuse_weight = -cos_l * abs(cos_d * cos_o) * mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * geometry * distribution / (denom * denom);
         specular_weight = vec3(0.0f);
     }
 }
@@ -268,7 +266,8 @@ void ggx_bsdf_sample(
     sampled_material mat,
     out vec3 out_dir,
     out vec3 diffuse_weight,
-    out vec3 specular_weight
+    out vec3 specular_weight,
+    out float pdf
 ){
     const bool zero_roughness = mat.roughness < 0.001f;
     vec3 h = zero_roughness ? vec3(0,0,1) : ggx_vndf_sample(view_dir, mat.roughness, uniform_random.x, uniform_random.y);
@@ -303,8 +302,6 @@ void ggx_bsdf_sample(
 
     float u = uniform_random.z;
 
-    vec3 bsdf;
-    float pdf;
     if(u <= specular_cutoff)
     { // Reflective
         out_dir = reflect(-view_dir, h);
@@ -312,7 +309,7 @@ void ggx_bsdf_sample(
         float cos_h = h.z; // dot(normal, h)
         float G1 = ggx_masking(cos_v, cos_d, mat.roughness);
         float D = zero_roughness ? 4 * cos_l * cos_v : ggx_distribution(cos_h, mat.roughness);
-        pdf = (G1*D/(4*abs(cos_v))) * specular_probability +
+        pdf = G1 * D / (4*abs(cos_v)) * specular_probability +
             (zero_roughness ? 0 : pdf_cosine_hemisphere(out_dir) * diffuse_probability);
         ggx_brdf_inner(out_dir, view_dir, h, fresnel, D, cos_d, mat, diffuse_weight, specular_weight);
 
@@ -320,7 +317,12 @@ void ggx_bsdf_sample(
         // part. Compared to that, the diffuse part basically reaches zero.
         // Since we want a finite pdf, we've essentially pre-divided both it and
         // the weights "by the same infinity" if that makes any sense ;)
-        if(zero_roughness) diffuse_weight = vec3(0);
+        if(zero_roughness)
+        {
+            diffuse_weight = vec3(0);
+            specular_weight /= pdf;
+            pdf = 0;
+        }
     }
     else
     {
@@ -339,44 +341,67 @@ void ggx_bsdf_sample(
 
             float G1 = ggx_masking(cos_v, cos_d, mat.roughness);
             float D = (zero_roughness ? 0 : ggx_distribution(cos_h, mat.roughness));
-            pdf = (G1*D/(4*abs(cos_v))) * specular_probability +
+            pdf = G1 * D / (4*abs(cos_v)) * specular_probability +
                 pdf_cosine_hemisphere(out_dir) * diffuse_probability;
             ggx_brdf_inner(out_dir, view_dir, h, fresnel, D, cos_d, mat, diffuse_weight, specular_weight);
+            if(zero_roughness)
+                specular_weight = vec3(0.0f);
         }
         else
         { // Transmissive
             out_dir = normalize(refract(-view_dir, h, mat.ior_in/mat.ior_out));
             float cos_l = out_dir.z;
+            float cos_h = h.z;
             float cos_o = dot(out_dir, h);
             float G2 = ggx_masking_shadowing(cos_v, cos_d, cos_l, cos_o, mat.roughness);
             float G1 = ggx_masking(cos_v, cos_d, mat.roughness);
+            float D = zero_roughness ? 4 * cos_l * cos_v : ggx_distribution(cos_h, mat.roughness);
+            float denom = mat.ior_in/mat.ior_out * cos_d + cos_o;
 
-            pdf = G1 * transmissive_probability;
-            diffuse_weight = mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * G2;
+            diffuse_weight = abs(cos_d * cos_o) * mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * G2 * D / (denom * denom * abs(cos_v));
+            pdf = (abs(cos_d * cos_o) * G1 * D) / (denom * denom * abs(cos_v)) * transmissive_probability;
+
             specular_weight = vec3(0.0f);
+            if(zero_roughness)
+            {
+                diffuse_weight /= pdf;
+                pdf = 0;
+            }
         }
     }
-
-    float inv_pdf = 1.0f/pdf;
-    diffuse_weight = pdf <= 0.0f ? vec3(0.0f) : diffuse_weight * inv_pdf;
-    specular_weight = pdf <= 0.0f ? vec3(0.0f) : specular_weight * inv_pdf;
 }
 
-float ggx_bsdf_pdf(vec3 fresnel, vec3 view_dir, vec3 out_dir, sampled_material mat)
-{
+float ggx_bsdf_pdf(
+    vec3 out_dir,
+    vec3 view_dir,
+    sampled_material mat,
+    out vec3 diffuse_weight,
+    out vec3 specular_weight
+){
     float cos_l = out_dir.z; // dot(normal, out_dir)
+    float cos_v = view_dir.z; // dot(normal, view_dir)
 
     vec3 h;
-    if(cos_l > 0) h = normalize(view_dir + out_dir);
-    else h = normalize(mat.ior_out * out_dir + mat.ior_in * view_dir);
+    if(cos_l > 0)
+        h = normalize(view_dir + out_dir);
+    else
+        h = (mat.ior_in > mat.ior_out ? 1 : -1) * normalize(mat.ior_out * out_dir + mat.ior_in * view_dir);
 
-    float cos_v = view_dir.z;
+    float cos_h = h.z; // dot(normal, h)
     float cos_d = dot(view_dir, h);
     float cos_o = dot(out_dir, h);
-    float cos_h = h.z; // dot(normal, h)
+
+    vec3 fresnel = ggx_fresnel(cos_d, mat);
+    float geometry = ggx_masking_shadowing_predivided(
+        cos_v, cos_d, cos_l, cos_o, mat.roughness);
+
+    const bool zero_roughness = mat.roughness < 0.001f;
+    float distribution = zero_roughness ? 0 : ggx_distribution(cos_h, mat.roughness);
+
+    float max_albedo = max(mat.albedo.r, max(mat.albedo.g, mat.albedo.b));
 
     float specular_cutoff = mix(
-        max(fresnel.r, max(fresnel.g, fresnel.b)), 1, mat.metallic
+        1, max(fresnel.r, max(fresnel.g, fresnel.b)), (1-mat.metallic) * max_albedo
     );
     float diffuse_cutoff = 1.0f - mat.transmittance;
 
@@ -386,22 +411,39 @@ float ggx_bsdf_pdf(vec3 fresnel, vec3 view_dir, vec3 out_dir, sampled_material m
         (1.0f - specular_cutoff) * (1.0f - diffuse_cutoff);
 
     float G1 = ggx_masking(cos_v, cos_d, mat.roughness);
-    float D = ggx_distribution(cos_h, mat.roughness);
 
-    if(out_dir.z >= 0)
+    float pdf = 0.0f;
+    if(cos_l > 0)
     { // Reflective or diffuse
         // The transmissive part is zero here.
-        return (G1*D/(4*abs(cos_v))) * specular_probability +
+        vec3 specular = fresnel * geometry * distribution;
+        vec3 kd = (1.0f - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
+        vec3 diffuse = kd / M_PI;
+
+        diffuse_weight = diffuse * cos_l;
+        specular_weight = specular * cos_l;
+        pdf = G1 * distribution / (4*abs(cos_v)) * specular_probability +
             pdf_cosine_hemisphere(out_dir) * diffuse_probability;
     }
     else
     { // Transmissive
-        float denom = mat.ior_in * cos_d + mat.ior_out * cos_o;
+        float denom = mat.ior_in / mat.ior_out * cos_d + cos_o;
+        // Un-predivide geometry term ;)
+        geometry *= 4.0;
+        // This should be the reciprocal form, which is necessary when the light
+        // source is inside the volume...
+        diffuse_weight = -cos_l * abs(cos_d * cos_o) * mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * geometry * distribution / (denom * denom);
+        specular_weight = vec3(0.0f);
         // The reflective and diffuse parts are zero here.
-        float pdf = (abs(cos_d * cos_o) * mat.ior_out * mat.ior_out * G1 * D)/
-            (abs(cos_v) * denom * denom) * transmissive_probability;
-        return isnan(pdf) ? 0 : pdf;
+        pdf = (abs(cos_d * cos_o) * G1 * distribution) / (abs(cos_v) * denom * denom * M_PI) * transmissive_probability;
     }
+    if(isnan(pdf) || isinf(pdf) || pdf <= 0.0f)
+    {
+        diffuse_weight = vec3(0.0f);
+        specular_weight = vec3(0.0f);
+        pdf = 0.0f;
+    }
+    return pdf;
 }
 
 void lambert_bsdf_sample(

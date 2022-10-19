@@ -39,6 +39,13 @@ struct hit_payload
     vec2 barycentrics;
 };
 
+struct intersection_pdf
+{
+    float point_light_pdf;
+    float directional_light_pdf;
+    float envmap_pdf;
+};
+
 #ifdef USE_PUSH_CONSTANTS
 layout(push_constant, scalar) uniform push_constant_buffer
 {
@@ -105,14 +112,11 @@ vec3 sample_environment_map(
             pdf = at.alias_pdf;
         }
 
-        // TODO: Uniformly sample texel instead of picking center like this!
-        // ... But that might not be worth the effort, since the individual texels
-        // would only be visible in very smooth surfaces, which this function can't
-        // sample well anyway (they need BRDF sampling instead).
-        shadow_ray_direction = pixel_id_to_latlong_direction(i, ivec2(size));
-
         ivec2 p = ivec2(i % size.x, i / size.x);
-        vec2 uv = (vec2(p) + 0.5f)/vec2(size);
+        vec2 off = ldexp(vec2(uvec2(rand*pixel_count)), ivec2(-32));
+        vec2 uv = (vec2(p) + off)/vec2(size);
+
+        shadow_ray_direction = uv_to_latlong_direction(uv);
 
         color *= texture(environment_map_tex, vec2(uv.x, uv.y)).rgb;
     }
@@ -139,14 +143,120 @@ float sample_environment_map_pdf(vec3 dir)
 }
 #endif
 
+void sample_point_light(
+    point_light pl,
+    vec2 u,
+    vec3 pos,
+    out vec3 out_dir,
+    out float out_length,
+    out vec3 color,
+    out float pdf
+){
+    vec3 dir = pos - pl.pos;
+    float dist2 = dot(dir, dir);
+    float k = 1.0f - pl.radius * pl.radius / dist2;
+    float dir_cutoff = k > 0 ? sqrt(k) : -1.0f;
+    out_dir = sample_cone(u, -normalize(dir), dir_cutoff);
+
+    float b = dot(dir, out_dir);
+    out_length = -b - sqrt(max(b * b - dist2 + pl.radius * pl.radius, 0.0f));
+
+    color = get_spotlight_intensity(pl, out_dir) * pl.color;
+
+    if(pl.radius == 0.0f)
+    {
+        // We mark infinite PDFs with the minus sign on the NEE side.
+        pdf = -dist2;
+    }
+    else
+    {
+        color /= pl.radius * pl.radius * M_PI;
+        pdf = 1 / (2.0f * M_PI * (1.0f - dir_cutoff));
+    }
+}
+
+float sample_point_light_pdf(point_light pl, vec3 pos)
+{
+    vec3 dir = pos - pl.pos;
+    float dist2 = dot(dir, dir);
+    float k = 1.0f - pl.radius * pl.radius / dist2;
+    float dir_cutoff = k > 0 ? sqrt(k) : -1.0f;
+
+    if(pl.radius == 0.0f) return 0;
+    else return 1 / (2.0f * M_PI * (1.0f - dir_cutoff));
+}
+
+float sample_directional_light_pdf(directional_light dl)
+{
+    return dl.dir_cutoff >= 1.0f ? 0.0f : 1.0f / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
+}
+
+void sample_directional_light(
+    directional_light dl,
+    vec2 u,
+    out vec3 out_dir,
+    out vec3 color,
+    out float pdf
+){
+    out_dir = sample_cone(u, -dl.dir, dl.dir_cutoff);
+    pdf = dl.dir_cutoff >= 1.0f ? -1.0f : 1.0f / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
+    color = pdf > 0 ? dl.color * pdf : dl.color;
+}
+
+float bsdf_mis_pdf(
+    intersection_pdf nee_pdf,
+    float bsdf_pdf
+){
+    if(bsdf_pdf == 0.0f) return 1.0f;
+
+#ifdef IMPORTANCE_SAMPLE_ENVMAP
+    const float point_directional_split =
+        (scene_metadata.directional_light_count > 0 || control.environment_proj >= 0) ?
+        (scene_metadata.point_light_count > 0 ? 0.5f : 0.0f) :
+        1.00001f;
+
+    const float envmap_directional_split =
+        scene_metadata.directional_light_count > 0 ?
+        (control.environment_proj >= 0 ? 0.5f : 0.0f) :
+        1.00001f;
+#else
+    const float point_directional_split = scene_metadata.directional_light_count > 0 ?
+        (scene_metadata.point_light_count > 0 ? 0.5f : 0.0f) :
+        1.00001f;
+
+    const float envmap_directional_split = 0.0f;
+#endif
+
+    float avg_nee_pdf = mix(
+        mix(
+            nee_pdf.directional_light_pdf / max(scene_metadata.directional_light_count, 1),
+            nee_pdf.envmap_pdf,
+            envmap_directional_split
+        ),
+        nee_pdf.point_light_pdf / max(scene_metadata.point_light_count, 1),
+        point_directional_split
+    );
+    return (bsdf_pdf * bsdf_pdf + avg_nee_pdf * avg_nee_pdf) / bsdf_pdf;
+}
+
+float nee_mis_pdf(float nee_pdf, float bsdf_pdf)
+{
+    if(nee_pdf <= 0.0f) return -nee_pdf;
+
+    return (nee_pdf * nee_pdf + bsdf_pdf * bsdf_pdf) / (nee_pdf);
+}
 
 bool get_intersection_info(
     vec3 origin,
     vec3 view,
     out pt_vertex_data v,
+    out intersection_pdf nee_pdf,
     out sampled_material mat,
     out vec3 light
 ){
+    nee_pdf.point_light_pdf = 0;
+    nee_pdf.directional_light_pdf = 0;
+    nee_pdf.envmap_pdf = 0;
     if(payload.instance_id >= 0)
     {
         vertex_data vd = get_interpolated_vertex(
@@ -170,7 +280,9 @@ bool get_intersection_info(
     else if(payload.primitive_id >= 0)
     {
         point_light pl = point_lights.lights[payload.primitive_id];
-        light = get_spotlight_intensity(pl, view) * pl.color / (M_PI * pl.radius * pl.radius);
+        light = get_spotlight_intensity(pl, view) * pl.color / (pl.radius * pl.radius * M_PI);
+
+        nee_pdf.point_light_pdf = sample_point_light_pdf(pl, origin);
 
         v.pos = origin + payload.barycentrics.x * view;
         #ifdef CALC_PREV_VERTEX_POS
@@ -199,8 +311,9 @@ bool get_intersection_info(
             directional_light dl = directional_lights.lights[i];
             if(dl.dir_cutoff >= 1.0f)
                 continue;
-            light += step(dl.dir_cutoff, dot(view, -dl.dir)) * dl.color /
-                (2 * M_PI * (1 - dl.dir_cutoff));
+            float visible = step(dl.dir_cutoff, dot(view, -dl.dir));
+            light += visible * dl.color;
+            nee_pdf.directional_light_pdf += visible * sample_directional_light_pdf(dl);
         }
         v.instance_id = -1;
         v.pos = origin;
@@ -212,6 +325,7 @@ bool get_intersection_info(
 #ifdef IMPORTANCE_SAMPLE_ENVMAP
         mat.emission = vec3(0);
         light += color.rgb;
+        nee_pdf.envmap_pdf = control.environment_proj >= 0 ? sample_environment_map_pdf(view) : 0.0f;
 #else
         mat.emission = color.rgb;
 #endif
@@ -219,7 +333,7 @@ bool get_intersection_info(
     }
 }
 
-vec3 sample_explicit_light(uvec3 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, inout float ratio)
+vec3 sample_explicit_light(uvec3 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, out float pdf)
 {
 #ifdef IMPORTANCE_SAMPLE_ENVMAP
     const float point_directional_split =
@@ -249,24 +363,12 @@ vec3 sample_explicit_light(uvec3 rand_uint, vec3 pos, out vec3 out_dir, out floa
         int light_index = 0;
         float weight = 0;
         random_sample_point_light(pos, u.z, light_count, weight, light_index);
-        weight /= point_directional_split;
 
         point_light pl = point_lights.lights[light_index];
-        vec3 dir = pos - pl.pos;
-        float dist2 = dot(dir, dir);
-        vec3 ndir = dir * inversesqrt(dist2);
-        float k = 1.0f - pl.radius*pl.radius/dist2;
-        float dir_cutoff = k > 0 ? sqrt(k) : -1;
-        out_dir = sample_cone(u.xy, -ndir, dir_cutoff);
-
-        float b = dot(dir, out_dir);
-        out_length = -b - sqrt(max(b * b - dist2 + pl.radius * pl.radius, 0.0f));
-
-        vec3 color = get_spotlight_intensity(pl, out_dir) * pl.color;
-        color /= pl.radius == 0.0f ? dist2 : pl.radius * pl.radius;
-        if(pl.radius != 0.0f) color *= (1.0f - dir_cutoff) * 2.0f;
-        else ratio = 1.0f; // Punctual lights can only be sampled through NEE.
-        return color * weight;
+        vec3 color;
+        sample_point_light(pl, u.xy, pos, out_dir, out_length, color, pdf);
+        pdf *= point_directional_split / weight;
+        return color;
     }
     else
     {
@@ -276,25 +378,22 @@ vec3 sample_explicit_light(uvec3 rand_uint, vec3 pos, out vec3 out_dir, out floa
 #ifdef IMPORTANCE_SAMPLE_ENVMAP
         if(u.z < envmap_directional_split)
         {
-            float pdf = 1.0f;
             vec3 color = sample_environment_map(rand_uint.xy, out_dir, out_length, pdf);
             pdf *= (1.0f-point_directional_split) * envmap_directional_split;
-            return color / pdf;
+            return color;
         }
         else
 #endif
         {
             const int light_count = int(scene_metadata.directional_light_count);
             int light_index = clamp(int(u.z*light_count), 0, light_count-1);
-            float weight = light_count / ((1.0f - point_directional_split) * (1.0f - envmap_directional_split));
 
             directional_light dl = directional_lights.lights[light_index];
-            vec3 dir = -dl.dir;
             out_length = RAY_MAX_DIST;
-            out_dir = sample_cone(u.xy, dir, dl.dir_cutoff);
-            if(dl.dir_cutoff >= 1.0f)
-                ratio = 1.0f; // Punctual lights can only be sampled through NEE.
-            return dl.color * weight;
+            vec3 color;
+            sample_directional_light(dl, u.xy, out_dir, color, pdf);
+            pdf *= ((1.0f - point_directional_split) * (1.0f - envmap_directional_split)) / light_count;
+            return color;
         }
     }
 }
@@ -303,18 +402,18 @@ void eval_explicit_lights(
     uvec3 rand_uint,
     mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
-    float ratio,
     inout vec3 diffuse_radiance,
     inout vec3 specular_radiance
 ){
     vec3 out_dir;
     float out_length = 0.0f;
+    float light_pdf;
     // Sample lights
-    vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, ratio);
+    vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf);
 
     vec3 shading_light = out_dir * tbn;
     vec3 d, s;
-    ggx_bsdf(shading_light, shading_view, mat, d, s);
+    float bsdf_pdf = ggx_bsdf_pdf(shading_light, shading_view, mat, d, s);
     bool opaque = mat.transmittance < 0.0001f;
     d = dot(v.hard_normal, out_dir) < 0 && opaque ? vec3(0) : d;
     s = dot(v.hard_normal, out_dir) < 0 && opaque ? vec3(0) : s;
@@ -324,8 +423,9 @@ void eval_explicit_lights(
     if(any(greaterThan((d+s) * contrib, vec3(0.0001f))))
         contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
-    diffuse_radiance += ratio * d * contrib;
-    specular_radiance += ratio * s * contrib;
+    contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
+    diffuse_radiance += d * contrib;
+    specular_radiance += s * contrib;
 }
 
 // This is used to remove invalid ray directions, which are caused by normal
@@ -354,10 +454,8 @@ void evaluate_ray(
     direct = vec3(0);
     diffuse = vec3(0);
 
-    // Used for implementing NEE
-    float nee_light_ratio = 1.0f;
     float regularization = 1.0f;
-
+    float bsdf_pdf = 0.0f;
     payload.random_seed = pcg4d(lsampler.rs.seed).x;
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
@@ -381,15 +479,18 @@ void evaluate_ray(
 
         pt_vertex_data v;
         sampled_material mat;
+        intersection_pdf nee_pdf;
         vec3 light;
-        bool terminal = !get_intersection_info(pos, view, v, mat, light);
+        bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light);
+
+        attenuation /= bsdf_mis_pdf(nee_pdf, bsdf_pdf);
 
 #ifdef HIDE_LIGHTS
         if(bounce == 0) light = vec3(0);
 #endif
 
         vec3 diffuse_radiance = vec3(0);
-        vec3 specular_radiance = mat.emission + nee_light_ratio * light;
+        vec3 specular_radiance = mat.emission + light;
 
         if(bounce == 0)
         {
@@ -415,10 +516,6 @@ void evaluate_ray(
 
         shading_view = normalize(shading_view);
 
-        // This heuristic lets NEE rays be less weighted for extremely smooth and
-        // metallic materials.
-        nee_light_ratio = mix(0.0, mix(0.5, 1.0, mat.metallic), pow(1.0f-mat.roughness, 200.0f));
-
         // Calculate radiance from the intersection point (i.e. direct lighting
         // mostly, whenever that is applicable.)
         if(
@@ -433,7 +530,7 @@ void evaluate_ray(
             // Do NEE ray
             eval_explicit_lights(
                 generate_ray_sample_uint(lsampler, bounce).xyz, tbn, shading_view,
-                mat, v, 1.0f - nee_light_ratio, diffuse_radiance, specular_radiance
+                mat, v, diffuse_radiance, specular_radiance
             );
         }
 
@@ -457,7 +554,7 @@ void evaluate_ray(
         vec3 diffuse_weight = vec3(1.0f);
         vec3 specular_weight = vec3(1.0f);
         vec4 ray_sample = generate_ray_sample(lsampler, bounce);
-        ggx_bsdf_sample(ray_sample.xyz, shading_view, mat, view, diffuse_weight, specular_weight);
+        ggx_bsdf_sample(ray_sample.xyz, shading_view, mat, view, diffuse_weight, specular_weight, bsdf_pdf);
         view = tbn * view;
 
         shadow_terminator_fix(diffuse_weight, specular_weight, dot(view, v.mapped_normal), mat);
