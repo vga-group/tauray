@@ -165,8 +165,8 @@ void sample_point_light(
 
     if(pl.radius == 0.0f)
     {
-        color /= dist2;
-        pdf = 0;
+        // We mark infinite PDFs with the minus sign on the NEE side.
+        pdf = -dist2;
     }
     else
     {
@@ -199,8 +199,8 @@ void sample_directional_light(
     out float pdf
 ){
     out_dir = sample_cone(u, -dl.dir, dl.dir_cutoff);
-    pdf = sample_directional_light_pdf(dl);
-    color = pdf != 0 ? dl.color * pdf : dl.color;
+    pdf = dl.dir_cutoff >= 1.0f ? -1.0f : 1.0f / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
+    color = pdf > 0 ? dl.color * pdf : dl.color;
 }
 
 float bsdf_mis_pdf(
@@ -241,7 +241,7 @@ float bsdf_mis_pdf(
 
 float nee_mis_pdf(float nee_pdf, float bsdf_pdf)
 {
-    if(nee_pdf == 0.0f) return 1.0f;
+    if(nee_pdf <= 0.0f) return -nee_pdf;
 
     return (nee_pdf * nee_pdf + bsdf_pdf * bsdf_pdf) / (nee_pdf);
 }
