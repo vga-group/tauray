@@ -344,6 +344,8 @@ void ggx_bsdf_sample(
             pdf = G1 * D / (4*abs(cos_v)) * specular_probability +
                 pdf_cosine_hemisphere(out_dir) * diffuse_probability;
             ggx_brdf_inner(out_dir, view_dir, h, fresnel, D, cos_d, mat, diffuse_weight, specular_weight);
+            if(zero_roughness)
+                specular_weight = vec3(0.0f);
         }
         else
         { // Transmissive
@@ -410,6 +412,7 @@ float ggx_bsdf_pdf(
 
     float G1 = ggx_masking(cos_v, cos_d, mat.roughness);
 
+    float pdf = 0.0f;
     if(cos_l > 0)
     { // Reflective or diffuse
         // The transmissive part is zero here.
@@ -419,7 +422,7 @@ float ggx_bsdf_pdf(
 
         diffuse_weight = diffuse * cos_l;
         specular_weight = specular * cos_l;
-        return G1 * distribution / (4*abs(cos_v)) * specular_probability +
+        pdf = G1 * distribution / (4*abs(cos_v)) * specular_probability +
             pdf_cosine_hemisphere(out_dir) * diffuse_probability;
     }
     else
@@ -432,11 +435,15 @@ float ggx_bsdf_pdf(
         diffuse_weight = -cos_l * abs(cos_d * cos_o) * mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * geometry * distribution / (denom * denom);
         specular_weight = vec3(0.0f);
         // The reflective and diffuse parts are zero here.
-        float pdf = (abs(cos_d * cos_o) * G1 * distribution) / (abs(cos_v) * denom * denom * M_PI) * transmissive_probability;
-        if(isnan(pdf) || pdf == 0.0f)
-            diffuse_weight = vec3(0.0f);
-        return isnan(pdf) ? 0 : pdf;
+        pdf = (abs(cos_d * cos_o) * G1 * distribution) / (abs(cos_v) * denom * denom * M_PI) * transmissive_probability;
     }
+    if(isnan(pdf) || isinf(pdf) || pdf <= 0.0f)
+    {
+        diffuse_weight = vec3(0.0f);
+        specular_weight = vec3(0.0f);
+        pdf = 0.0f;
+    }
+    return pdf;
 }
 
 void lambert_bsdf_sample(
