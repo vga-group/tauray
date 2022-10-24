@@ -1,18 +1,23 @@
-// Atrous kernel from SVGF paper
-const float kernel[25] = float[25](
-    0.00390625, 0.015625, 0.0234375, 0.015625, 0.00390625, 
-    0.015625, 0.0625, 0.09375, 0.0625, 0.015625,
-    0.0234375, 0.09375, 0.140625, 0.09375, 0.0234375,
-    0.015625, 0.0625, 0.09375, 0.0625, 0.015625,
-    0.00390625, 0.015625, 0.0234375, 0.015625, 0.00390625
-);
+#ifndef SVGF_GLSL
+#define SVGF_GLSL
 
 const float gaussian_kernel[2][2] = {
     { 1.0 / 4.0, 1.0 / 8.0  },
     { 1.0 / 8.0, 1.0 / 16.0 }
 };
-
-float luminance(in vec3 color)
+layout(push_constant) uniform push_constant_buffer
 {
-    return dot(color, vec3(0.299, 0.587, 0.114));
-}
+    ivec2 size;
+    int level;
+    int iteration_count;
+    int spec_iteration_count;
+    int atrous_kernel_radius;
+    float sigma_n;
+    float sigma_z;
+    float sigma_l;
+    float temporal_alpha_color;
+    float temporal_alpha_moments;
+} control;
+
+
+#endif

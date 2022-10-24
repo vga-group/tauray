@@ -31,11 +31,15 @@
     /* R: X-coordinate, G: Y-coordinate, B: Z-coordinate (in world-space)*/\
     TR_GBUFFER_ENTRY(pos, vk::Format::eR32G32B32A32Sfloat)\
     /* RG: Position of the same point in the previous frame. On-screen between [0,1] */\
-    TR_GBUFFER_ENTRY(screen_motion, vk::Format::eR32G32Sfloat)\
+    /* B : Linear depth of the same point in the previous frame.*/\
+    TR_GBUFFER_ENTRY(screen_motion, vk::Format::eR32G32B32A32Sfloat)\
     /* R: ID of the instance covering each pixel. */\
     TR_GBUFFER_ENTRY(instance_id, vk::Format::eR32Sint)\
+    /* R: View-space linear depth, G: Derivative of linear depth B: pos fwidth length A: normal fwidth length*/\
+    TR_GBUFFER_ENTRY(linear_depth, vk::Format::eR32G32B32A32Sfloat)\
     /* R: View-space Z-coordinate (hyperbolic, depending on projection) */\
     TR_GBUFFER_ENTRY(depth, vk::Format::eD32Sfloat)\
+
 
 namespace tr
 {

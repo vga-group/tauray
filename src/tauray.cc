@@ -440,7 +440,18 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     ctx.get_display_count()
                 );
                 if (opt.denoiser == options::denoiser_type::SVGF)
-                    rt_opt.post_process.svgf_denoiser = svgf_stage::options{ 4 };
+                {
+                    svgf_stage::options svgf_opt{};
+                    svgf_opt.atrous_diffuse_iters = opt.svgf_params.atrous_diffuse_iter;
+                    svgf_opt.atrous_spec_iters = opt.svgf_params.atrous_spec_iter;
+                    svgf_opt.atrous_kernel_radius = opt.svgf_params.atrous_kernel_radius;
+                    svgf_opt.sigma_l = opt.svgf_params.sigma_l;
+                    svgf_opt.sigma_n = opt.svgf_params.sigma_n;
+                    svgf_opt.sigma_z = opt.svgf_params.sigma_z;
+                    svgf_opt.temporal_alpha_color = opt.svgf_params.min_alpha_color;
+                    svgf_opt.temporal_alpha_moments = opt.svgf_params.min_alpha_moments;
+                    rt_opt.post_process.svgf_denoiser = svgf_opt;
+                }
                 else if (opt.denoiser == options::denoiser_type::BMFR)
                     rt_opt.post_process.bmfr = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY };
                 rt_opt.scene_options = scene_options;

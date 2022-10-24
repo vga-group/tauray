@@ -1,4 +1,6 @@
-// As described in 
+#ifndef COLOR_GLSL
+#define COLOR_GLSL
+// As described in
 // https://en.wikipedia.org/wiki/SRGB#Specification_of_the_transformation,
 // but branchless and SIMD-optimized.
 vec3 inverse_srgb_correction(vec3 col)
@@ -12,3 +14,5 @@ float rgb_to_luminance(vec3 col)
 {
     return dot(col, vec3(0.2126, 0.7152, 0.0722));
 }
+
+#endif
