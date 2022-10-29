@@ -122,7 +122,7 @@ vec3 sample_environment_map(
     }
     else
     {
-        pdf = 4.0f * M_PI;
+        pdf = 1.0f / (4.0f * M_PI);
         shadow_ray_direction = sample_sphere(ldexp(vec2(rand), ivec2(-32)));
     }
     shadow_ray_length = RAY_MAX_DIST;
@@ -139,7 +139,7 @@ float sample_environment_map_pdf(vec3 dir)
         alias_table_entry at = environment_map_alias_table.entries[i];
         return at.pdf;
     }
-    else return 4.0f * M_PI;
+    else return 1.0f / (4.0f * M_PI);
 }
 #endif
 
