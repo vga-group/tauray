@@ -554,7 +554,7 @@ void evaluate_ray(
         vec3 diffuse_weight = vec3(1.0f);
         vec3 specular_weight = vec3(1.0f);
         vec4 ray_sample = generate_ray_sample(lsampler, bounce);
-        ggx_bsdf_sample(ray_sample.xyz, shading_view, mat, view, diffuse_weight, specular_weight, bsdf_pdf);
+        ggx_bsdf_sample(ray_sample, shading_view, mat, view, diffuse_weight, specular_weight, bsdf_pdf);
         view = tbn * view;
 
         shadow_terminator_fix(diffuse_weight, specular_weight, dot(view, v.mapped_normal), mat);

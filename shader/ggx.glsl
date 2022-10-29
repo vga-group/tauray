@@ -261,7 +261,7 @@ vec3 ggx_vndf_sample(
 // https://hal.inria.fr/hal-00996995v1/document
 // http://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf
 void ggx_bsdf_sample(
-    vec3 uniform_random,
+    vec4 uniform_random,
     vec3 view_dir,
     sampled_material mat,
     out vec3 out_dir,
@@ -330,7 +330,8 @@ void ggx_bsdf_sample(
         u = clamp((u - specular_cutoff)/(1 - specular_cutoff), 0.0f, 0.99999f);
         if(u <= diffuse_cutoff)
         { // Diffuse
-            out_dir = sample_cosine_hemisphere(uniform_random.xy);
+            u = clamp(u/diffuse_cutoff, 0.0f, 0.99999f);
+            out_dir = sample_cosine_hemisphere(vec2(u, uniform_random.w));
             // The half-vector is no longer related to the one from earlier;
             // this is why we recalculate a bunch of variables here.
             h = normalize(view_dir + out_dir);
