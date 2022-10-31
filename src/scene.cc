@@ -386,7 +386,10 @@ void scene::init_tlas(size_t i)
         vk::SharingMode::eExclusive
     );
 
-    as.scratch_buffer = create_buffer(devices[i], scratch_info, VMA_MEMORY_USAGE_GPU_ONLY);
+    as.scratch_buffer = create_buffer_aligned(
+        devices[i], scratch_info, VMA_MEMORY_USAGE_GPU_ONLY,
+        devices[i].as_props.minAccelerationStructureScratchOffsetAlignment
+    );
     tlas_info.scratchData = as.scratch_buffer.get_address();
 }
 

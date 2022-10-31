@@ -227,10 +227,11 @@ void aabb_scene::init_acceleration_structures(const char* timer_name)
             vk::BufferUsageFlagBits::eShaderDeviceAddress,
             vk::SharingMode::eExclusive
         );
-        as.scratch_buffer = create_buffer(
+        as.scratch_buffer = create_buffer_aligned(
             devices[i],
             scratch_info,
-            VMA_MEMORY_USAGE_GPU_ONLY
+            VMA_MEMORY_USAGE_GPU_ONLY,
+            devices[i].as_props.minAccelerationStructureScratchOffsetAlignment
         );
 
         as.blas_update_timer = timer(devices[i], timer_name);

@@ -89,8 +89,9 @@ void build_acceleration_structure(
         vk::BufferUsageFlagBits::eShaderDeviceAddress,
         vk::SharingMode::eExclusive
     );
-    blas_scratch_buffer = create_buffer(
-        dev, scratch_info, VMA_MEMORY_USAGE_GPU_ONLY
+    blas_scratch_buffer = create_buffer_aligned(
+        dev, scratch_info, VMA_MEMORY_USAGE_GPU_ONLY,
+        dev.as_props.minAccelerationStructureScratchOffsetAlignment
     );
     blas_info.scratchData = blas_scratch_buffer.get_address();
 
