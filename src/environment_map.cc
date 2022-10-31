@@ -113,11 +113,15 @@ void environment_map::generate_alias_table()
         }
     }
 
-    // Write inverse pdfs.
+    std::vector<float> sin_theta(size.y);
+    for(int i = 0; i < size.y; ++i)
+        sin_theta[i] = sin((i+0.5f) / float(size.y) * M_PI);
+    // Write pdfs.
     for(unsigned i = 0; i < pixel_count; ++i)
     {
-        alias_table[i].pdf = importance[i] / (4.0f * M_PI);
-        alias_table[i].alias_pdf = importance[alias_table[i].alias_id] / (4.0f * M_PI);
+        unsigned j = alias_table[i].alias_id;
+        alias_table[i].pdf = importance[i] / (2.0f * M_PI * M_PI * sin_theta[i/size.x]);
+        alias_table[i].alias_pdf = importance[j] / (2.0f * M_PI * M_PI * sin_theta[j/size.x]);
     }
 
     vmaUnmapMemory(dev.allocator, readback_buffer.get_allocation());
