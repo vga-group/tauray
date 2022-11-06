@@ -529,7 +529,7 @@ void evaluate_ray(
         ){
             // Do NEE ray
             eval_explicit_lights(
-                generate_ray_sample_uint(lsampler, bounce).xyz, tbn, shading_view,
+                generate_ray_sample_uint(lsampler, bounce*2).xyz, tbn, shading_view,
                 mat, v, diffuse_radiance, specular_radiance
             );
         }
@@ -553,7 +553,7 @@ void evaluate_ray(
         // Lastly, figure out the next ray and assign proper attenuation for it.
         vec3 diffuse_weight = vec3(1.0f);
         vec3 specular_weight = vec3(1.0f);
-        vec4 ray_sample = generate_ray_sample(lsampler, bounce);
+        vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
         ggx_bsdf_sample(ray_sample, shading_view, mat, view, diffuse_weight, specular_weight, bsdf_pdf);
         view = tbn * view;
 

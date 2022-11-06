@@ -339,9 +339,12 @@
         "Multiply the number of devices for debugging multi-GPU rendering.", \
         0, 0, 16) \
     TR_ENUM_OPT(sampler, path_tracer_stage::sampler_type, \
-        "Sets the sampling method used in path tracing. Defaults to the Owen-scrambled Sobol sequence.", \
-        rt_stage::sampler_type::SOBOL_OWEN, \
+        "Sets the sampling method used in path tracing. Defaults to the Sobol " \
+        "sequence on a space-filling curve with Owen scrambling.", \
+        rt_stage::sampler_type::SOBOL_Z_ORDER_3D, \
         {"uniform-random", rt_stage::sampler_type::UNIFORM_RANDOM}, \
+        {"sobol-z2", rt_stage::sampler_type::SOBOL_Z_ORDER_2D}, \
+        {"sobol-z3", rt_stage::sampler_type::SOBOL_Z_ORDER_3D}, \
         {"sobol-owen", rt_stage::sampler_type::SOBOL_OWEN} \
     )\
     TR_SETINT_OPT(spatial_reprojection, \

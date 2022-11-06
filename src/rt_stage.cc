@@ -53,8 +53,16 @@ void rt_stage::get_common_defines(
 ){
     switch(opt.local_sampler)
     {
+    case sampler_type::SOBOL_Z_ORDER_2D:
+        defines["USE_SOBOL_Z_ORDER_SAMPLING"];
+        defines["SOBOL_Z_ORDER_CURVE_DIMS"] = "2";
+        break;
+    case sampler_type::SOBOL_Z_ORDER_3D:
+        defines["USE_SOBOL_Z_ORDER_SAMPLING"];
+        defines["SOBOL_Z_ORDER_CURVE_DIMS"] = "3";
+        break;
     case sampler_type::SOBOL_OWEN:
-        defines["SOBOL_OWEN_SAMPLING"];
+        defines["USE_SOBOL_OWEN_SAMPLING"];
         break;
     default:
         break;
