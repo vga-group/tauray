@@ -2,6 +2,8 @@
 #define SAMPLING_GLSL
 #include "math.glsl"
 
+#include "random_sampler.glsl"
+
 #ifdef SAMPLING_DATA_BINDING
 layout(binding = SAMPLING_DATA_BINDING, set = 0) uniform sampling_data_buffer
 {
@@ -10,14 +12,16 @@ layout(binding = SAMPLING_DATA_BINDING, set = 0) uniform sampling_data_buffer
 } sampling_data;
 #endif
 
-#include "random_sampler.glsl"
-#include "sampling_sobol_owen.glsl"
+#include "sobol_z_sampler.glsl"
+#include "sobol_owen_sampler.glsl"
 
 struct local_sampler
 {
     random_sampler rs;
-#ifdef SOBOL_OWEN_SAMPLING
-    sobol_sampler ss;
+#if defined(USE_SOBOL_Z_ORDER_SAMPLING)
+    sobol_z_sampler ss;
+#elif defined(USE_SOBOL_OWEN_SAMPLING)
+    sobol_owen_sampler ss;
 #endif
 };
 
@@ -33,8 +37,10 @@ local_sampler init_local_sampler(uvec4 coord)
     local_sampler ls;
     coord.w += sampling_data.size_start_counter.w;
 
-#ifdef SOBOL_OWEN_SAMPLING
-    ls.ss = init_sobol_sampler(coord);
+#if defined(USE_SOBOL_Z_ORDER_SAMPLING)
+    ls.ss = init_sobol_z_sampler(coord);
+#elif defined(USE_SOBOL_OWEN_SAMPLING)
+    ls.ss = init_sobol_owen_sampler(coord);
 #endif
     ls.rs = init_random_sampler(coord, sampling_data.size_start_counter.xyz);
     return ls;
@@ -56,25 +62,27 @@ vec3 generate_spatial_sample(inout local_sampler ls)
     return generate_uniform_random(ls.rs).xyz;
 }
 
+#ifdef SAMPLING_DATA_BINDING
+
 // Generates a 2D sample in xy, 1D samples in z and w. This sampler is only
 // called once per bounce, so you can safely employ stratification or some
 // other scheme, as long as you take bounce_index into account.
-vec4 generate_ray_sample(inout local_sampler ls, uint bounce_index)
-{
-#ifdef SOBOL_OWEN_SAMPLING
-    return get_shuffled_scrambled_sobol_pt(ls.ss, bounce_index);
-#else
-    return generate_uniform_random(ls.rs);
-#endif
-}
-
 uvec4 generate_ray_sample_uint(inout local_sampler ls, uint bounce_index)
 {
-#ifdef SOBOL_OWEN_SAMPLING
+#if defined(USE_SOBOL_Z_ORDER_SAMPLING)
+    return get_sobol_z_sample_uint(ls.ss, bounce_index);
+#elif defined(USE_SOBOL_OWEN_SAMPLING)
     return get_shuffled_scrambled_sobol_pt_uint(ls.ss, bounce_index);
 #else
     return generate_uniform_random_uint(ls.rs);
 #endif
 }
+
+vec4 generate_ray_sample(inout local_sampler ls, uint bounce_index)
+{
+    return ldexp(vec4(generate_ray_sample_uint(ls, bounce_index)), ivec4(-32));
+}
+
+#endif
 
 #endif

@@ -53,7 +53,128 @@ uint find_bit_by_cardinality(uint bit, uvec4 mask)
     if(bit >= low) { bit -= low; i++; }
     return i * 32u + find_bit_by_cardinality(bit, mask[i]);
 }
-//
+
+// https://www.pcg-random.org/
+uint pcg(inout uint seed)
+{
+    seed = seed * 747796405u + 2891336453u;
+    seed = ((seed >> ((seed >> 28) + 4)) ^ seed) * 277803737u;
+    seed = (seed >> 22) ^ seed;
+    return seed;
+}
+
+// http://www.jcgt.org/published/0009/03/02/
+uvec2 pcg2d(inout uvec2 seed)
+{
+    seed = seed * 1664525u + 1013904223u;
+    seed += seed.yx * 1664525u;
+    seed = (seed >> 16) ^ seed;
+    seed += seed.yx * 1664525u;
+    seed = (seed >> 16) ^ seed;
+    return seed;
+}
+
+// http://www.jcgt.org/published/0009/03/02/
+uvec3 pcg3d(inout uvec3 seed)
+{
+    seed = seed * 1664525u + 1013904223u;
+    seed += seed.yzx * seed.zxy;
+    seed = (seed >> 16) ^ seed;
+    seed += seed.yzx * seed.zxy;
+    return seed;
+}
+
+// http://www.jcgt.org/published/0009/03/02/
+uvec4 pcg4d(inout uvec4 seed)
+{
+    seed = seed * 1664525u + 1013904223u;
+    seed += seed.yzxy * seed.wxyz;
+    seed = (seed >> 16) ^ seed;
+    seed += seed.yzxy * seed.wxyz;
+    return seed;
+}
+
+#include "sobol_lookup_table.glsl"
+
+// Returns in groups of 4 dimensions. 'bounce' defines the bounce.
+uvec4 generate_sobol_sample(uint index, uint bounce)
+{
+    // We determined that using this function is actually faster than
+    // precalculating the sobol values in a buffer, at least on a 3090.
+    uvec4 x = uvec4(0);
+    if(bounce >= MAX_SOBOL_BOUNCES)
+    {
+        x = uvec4(index, bounce, bounce * index, 0);
+        return pcg4d(x);
+    }
+
+    // This variant seems to be faster on 2080 ti, and equal on 3090.
+    for(int bit = findLSB(index); bit < findMSB(index); bit++)
+    {
+        uint mask = (index >> bit) & 1u;
+        if(mask != 0)
+            x ^= sobol_lookup_table[bounce * 32 + bit];
+    }
+
+    /*
+    // This variant seems to be slower on 2080 ti
+    for(int bit = 0; bit < 32; bit++)
+    {
+        uint mask = (index >> bit) & 1u;
+        x ^= mask * sobol_lookup_table[bounce * 32 + bit];
+    }
+    */
+    return x;
+}
+
+uint get_permutation_n(int n, uint permutation, uint dimension)
+{
+    uint res = 0;
+    for(int i = n-1; i >= 0; --i)
+    {
+        uint q = permutation % (n-i);
+        permutation /= n-i;
+        if(i == dimension) res = q;
+        if(dimension > i) res += uint(res >= q);
+    }
+    return res;
+}
+
+uvec4 owen_scramble_2d(uvec4 x, uvec4 seed)
+{
+    x = bitfieldReverse(x);
+    // https://psychopath.io/post/2021_01_30_building_a_better_lk_hash
+    x ^= x * 0x3D20ADEAu;
+    x += seed;
+    x *= (seed >> 16u) | 1u;
+    x ^= x * 0x05526C56u;
+    x ^= x * 0x53A22864u;
+    x = bitfieldReverse(x);
+    return x;
+}
+
+uint owen_scramble_4d(uint x, uint seed)
+{
+    uint result = 0;
+    for(uint i = 0; i < 32; i += 2)
+    {
+        uvec2 s = uvec2(seed, x & ((~3u)<<i));
+        result |= get_permutation_n(4, pcg2d(s).x % 24u, (x >> i) & 3u) << i;
+    }
+    return result;
+}
+
+uint owen_scramble_8d(uint x, uint seed)
+{
+    uint result = 0;
+    for(uint i = 0; i < 32; i += 3)
+    {
+        uvec2 s = uvec2(seed, x & ((~7u)<<i));
+        result |= get_permutation_n(8, pcg2d(s).x % 40320u, (x >> i) & 7u) << i;
+    }
+    return result;
+}
+
 // Uniformly samples a disk, but strategically mapped for preserving
 // stratification better.
 vec2 sample_concentric_disk(vec2 u)
@@ -92,6 +213,26 @@ vec2 sample_blackman_harris_concentric_disk(vec2 u)
         vec2(u.x, M_PI/4 * (uo.y / uo.x)) :
         vec2(u.y, M_PI/2 - M_PI/4 * (uo.x / uo.y));
     return (2.0f * sample_blackman_harris(rt.x) - 1.0f) * vec2(cos(rt.y), sin(rt.y));
+}
+
+uint morton_2d(uvec2 x)
+{
+    x &= 0x0000ffff;
+    x = (x ^ (x << 8u)) & 0x00ff00ffu;
+    x = (x ^ (x << 4u)) & 0x0f0f0f0fu;
+    x = (x ^ (x << 2u)) & 0x33333333u;
+    x = (x ^ (x << 1u)) & 0x55555555u;
+    return x.x + 2u * x.y;
+}
+
+uint morton_3d(uvec3 x)
+{
+    x &= 0x000003ffu;
+    x = (x ^ (x << 16u)) & 0xff0000ffu;
+    x = (x ^ (x << 8u)) & 0x0300f00fu;
+    x = (x ^ (x << 4u)) & 0x030c30c3u;
+    x = (x ^ (x << 2u)) & 0x09249249u;
+    return x.x + 2u * x.y + 4u * x.z;
 }
 
 // Based on CC0 code from https://gist.github.com/juliusikkala/1b2d9cee959c16c7c7ccc9cb6fb50754

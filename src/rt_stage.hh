@@ -21,6 +21,8 @@ public:
     {
         UNIFORM_RANDOM = 0,
         SOBOL_OWEN,
+        SOBOL_Z_ORDER_2D,
+        SOBOL_Z_ORDER_3D
     };
 
     struct options
@@ -49,7 +51,7 @@ public:
     );
 
     rt_stage(
-        device_data& dev, 
+        device_data& dev,
         const gfx_pipeline::pipeline_state& local_state,
         const options& opt,
         const std::string& timer_name,
