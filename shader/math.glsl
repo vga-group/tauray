@@ -107,11 +107,23 @@ uvec4 generate_sobol_sample(uint index, uint bounce)
         x = uvec4(index, bounce, bounce * index, 0);
         return pcg4d(x);
     }
+
+    // This variant seems to be faster on 2080 ti, and equal on 3090.
+    for(int bit = findLSB(index); bit < findMSB(index); bit++)
+    {
+        uint mask = (index >> bit) & 1u;
+        if(mask != 0)
+            x ^= sobol_lookup_table[bounce * 32 + bit];
+    }
+
+    /*
+    // This variant seems to be slower on 2080 ti
     for(int bit = 0; bit < 32; bit++)
     {
         uint mask = (index >> bit) & 1u;
         x ^= mask * sobol_lookup_table[bounce * 32 + bit];
     }
+    */
     return x;
 }
 
