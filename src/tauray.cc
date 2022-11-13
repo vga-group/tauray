@@ -777,7 +777,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         }
 
         if(camera_moved || !opt.accumulation)
-            rr->reset_accumulation();
+            rr->reset_accumulation(opt.accumulation);
 
         if(sd.ply_stream && sd.ply_stream->refresh())
         {

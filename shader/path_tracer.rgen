@@ -80,7 +80,7 @@ void main()
         uvec4(
             get_pixel_pos(),
             gl_LaunchIDEXT.z,
-            distribution.samples_accumulated + control.previous_samples
+            control.previous_samples
         )
     );
     vec2 cam_offset = vec2(0.0);

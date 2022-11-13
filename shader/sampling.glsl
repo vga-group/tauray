@@ -9,6 +9,7 @@ layout(binding = SAMPLING_DATA_BINDING, set = 0) uniform sampling_data_buffer
 {
     // xyz: size, w: sampling_start_counter
     uvec4 size_start_counter;
+    uint rng_seed;
 } sampling_data;
 #endif
 
@@ -36,6 +37,7 @@ local_sampler init_local_sampler(uvec4 coord)
 {
     local_sampler ls;
     coord.w += sampling_data.size_start_counter.w;
+    coord.z += sampling_data.rng_seed;
 
 #if defined(USE_SOBOL_Z_ORDER_SAMPLING)
     ls.ss = init_sobol_z_sampler(coord);

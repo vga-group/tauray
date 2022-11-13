@@ -63,6 +63,8 @@ public:
     void set_scene(scene* s);
     scene* get_scene();
 
+    void reset_sample_counter();
+
     void set_local_sampler_parameters(
         uvec3 target_size,
         uint32_t frame_counter_increment
@@ -93,6 +95,7 @@ private:
     gpu_buffer sampling_data;
     uvec3 sampling_target_size;
     uint32_t sampling_frame_counter_increment;
+    uint32_t sample_counter;
 };
 
 }
