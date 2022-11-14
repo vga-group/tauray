@@ -100,12 +100,16 @@ void rt_renderer<Pipeline>::set_scene(scene* s)
 }
 
 template<typename Pipeline>
-void rt_renderer<Pipeline>::reset_accumulation()
+void rt_renderer<Pipeline>::reset_accumulation(bool reset_sample_counter)
 {
     for(size_t i = 0; i < per_device.size(); ++i)
     {
         if(per_device[i].ray_tracer)
+        {
             per_device[i].ray_tracer->reset_accumulated_samples();
+            if(reset_sample_counter)
+                per_device[i].ray_tracer->reset_sample_counter();
+        }
     }
     accumulated_frames = 0;
     if(stitch)

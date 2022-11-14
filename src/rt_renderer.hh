@@ -45,7 +45,7 @@ public:
     ~rt_renderer();
 
     void set_scene(scene* s) override;
-    void reset_accumulation() override;
+    void reset_accumulation(bool reset_sample_counter = true) override;
     void render() override;
     void set_device_workloads(const std::vector<double>& ratios) override;
 

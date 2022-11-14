@@ -16,6 +16,7 @@ struct sampling_data_buffer
 {
     puvec3 size;
     uint sampling_start_counter;
+    uint rng_seed;
 };
 
 }
@@ -84,7 +85,9 @@ rt_stage::rt_stage(
     sampling_data(
         dev, sizeof(sampling_data_buffer),
         vk::BufferUsageFlagBits::eUniformBuffer
-    )
+    ),
+    sampling_frame_counter_increment(1),
+    sample_counter(0)
 {
     init_resources();
 }
@@ -113,17 +116,22 @@ void rt_stage::set_local_sampler_parameters(
     sampling_frame_counter_increment = frame_counter_increment;
 }
 
+void rt_stage::reset_sample_counter()
+{
+    sample_counter = 0;
+}
+
 void rt_stage::update(uint32_t frame_index)
 {
     sampling_data.map<sampling_data_buffer>(
         frame_index,
         [&](sampling_data_buffer* suni){
             suni->size = sampling_target_size;
-            suni->sampling_start_counter = dev->ctx->get_frame_counter() * sampling_frame_counter_increment;
-            if(opt.rng_seed != 0)
-                suni->sampling_start_counter += pcg(opt.rng_seed);
+            suni->sampling_start_counter = sample_counter;
+            suni->rng_seed = opt.rng_seed != 0 ? pcg(opt.rng_seed) : 0;
         }
     );
+    sample_counter += sampling_frame_counter_increment;
 }
 
 void rt_stage::init_resources()
