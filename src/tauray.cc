@@ -777,7 +777,14 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         }
 
         if(camera_moved || !opt.accumulation)
-            rr->reset_accumulation(opt.accumulation);
+        {
+            // With this commented line, sample counter restarts whenever the
+            // camera moves. This makes the noise pattern look still when
+            // moving, which may be unwanted, but could provide lower noise
+            // with some samplers in the future.
+            //rr->reset_accumulation(opt.accumulation);
+            rr->reset_accumulation(false);
+        }
 
         if(sd.ply_stream && sd.ply_stream->refresh())
         {
