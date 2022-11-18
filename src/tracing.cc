@@ -281,7 +281,7 @@ void tracing_record::print_tef_trace(const timing_result& res)
             {"dur",int64_t(t.duration_ns*1e-3)},
             {"ph", "X"},
             {"name", t.name},
-            {"args", {"ms", t.duration_ns*1e-6}}
+            {"args", {"frame", res.frame_number}}
         };
         std::cout << output.dump(-1, '\t') << ",\n";
     }
@@ -296,7 +296,7 @@ void tracing_record::print_tef_trace(const timing_result& res)
                 {"dur",int64_t(t.duration_ns*1e-3)},
                 {"ph", "X"},
                 {"name", t.name},
-                {"args", {"ms", t.duration_ns*1e-6}}
+                {"args", {"frame", res.frame_number}}
             };
             std::cout << output.dump(-1, '\t') << ",\n";
         }
