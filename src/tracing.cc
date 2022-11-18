@@ -129,6 +129,7 @@ void tracing_record::device_finish_frame()
 void tracing_record::wait_all_frames(bool print_traces, trace_format format)
 {
     if(max_timestamps == 0) return;
+    host_wait();
     ctx->sync();
     finish_host_frame();
     while(device_finished_frame_counter < frame_counter)
@@ -275,8 +276,8 @@ void tracing_record::print_tef_trace(const timing_result& res)
     for(const trace_event& t: res.host_traces)
     {
         nlohmann::json output = {
-            {"pid",0},
-            {"tid",0},
+            {"pid", "CPU"},
+            {"tid", "CPU"},
             {"ts",int64_t(t.start_ns*1e-3)},
             {"dur",int64_t(t.duration_ns*1e-3)},
             {"ph", "X"},
@@ -285,13 +286,15 @@ void tracing_record::print_tef_trace(const timing_result& res)
         };
         std::cout << output.dump(-1, '\t') << ",\n";
     }
+    const auto& devices = ctx->get_devices();
     for(size_t i = 0; i < res.device_traces.size(); ++i)
     {
+        const char* device_name = devices[i].props.deviceName;
         for(const trace_event& t: res.device_traces[i])
         {
             nlohmann::json output = {
-                {"pid",1},
-                {"tid",i},
+                {"pid", "GPU"},
+                {"tid", device_name},
                 {"ts",int64_t(t.start_ns*1e-3)},
                 {"dur",int64_t(t.duration_ns*1e-3)},
                 {"ph", "X"},
