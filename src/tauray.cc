@@ -695,7 +695,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                     camera_moved = true;
                 }
                 if(event.key.keysym.sym == SDLK_t && !opt.timing)
-                    ctx.print_timing();
+                    ctx.get_timing().print_last_trace(opt.trace);
                 if(event.key.keysym.sym == SDLK_0)
                 {
                     // Full camera reset, for when you get lost ;)
@@ -813,7 +813,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                 lkg->recreate_swapchains();
             else break;
         }
-        if(opt.timing) ctx.print_timing();
+        if(opt.timing) ctx.get_timing().print_last_trace(opt.trace);
 
         throttle.step();
         lb.update(*rr);
@@ -922,7 +922,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
             {
                 rr->reset_accumulation();
                 rr->render();
-                if(opt.timing) ctx.print_timing();
+                if(opt.timing) ctx.get_timing().print_last_trace(opt.trace);
             }
         }
         catch(vk::OutOfDateKHRError& e)
@@ -950,7 +950,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
     }
 
     // Ensure everything is finished before going to destructors.
-    ctx.finish_print_timing();
+    ctx.get_timing().wait_all_frames(opt.timing, opt.trace);
 }
 
 void headless_server(context& ctx, scene_data& sd, options& opt)

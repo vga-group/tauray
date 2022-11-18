@@ -14,7 +14,7 @@ void load_balancer::update(renderer& ren)
     double sum_speed = 0;
     for(size_t i = 0; i < workloads.size(); ++i)
     {
-        double time = ctx->get_timing(i, "path tracing");
+        double time = ctx->get_timing().get_duration(i, "path tracing");
         double speed = max(workloads[i] / time, 0.0);
         sum_speed += speed;
     }
@@ -23,7 +23,7 @@ void load_balancer::update(renderer& ren)
     {
         for(size_t i = 0; i < workloads.size(); ++i)
         {
-            double time = ctx->get_timing(i, "path tracing");
+            double time = ctx->get_timing().get_duration(i, "path tracing");
             double speed = workloads[i] / time;
             workloads[i] = mix(workloads[i], speed/sum_speed, 0.1);
         }

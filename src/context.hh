@@ -5,6 +5,7 @@
 #include "vkm.hh"
 #include "dependency.hh"
 #include "render_target.hh"
+#include "tracing.hh"
 #include <set>
 #include <map>
 #include <memory>
@@ -117,20 +118,11 @@ public:
     // sometimes a good idea.
     void sync();
 
+    tracing_record& get_timing();
+
     // You can add functions to be called when the current frame is guaranteed
     // to be finished on the GPU side.
     void queue_frame_finish_callback(std::function<void()>&& func);
-
-    int register_timer(size_t device_index, const std::string& name);
-    void unregister_timer(size_t device_index, int timer_id);
-    vk::QueryPool get_timestamp_pool(size_t device_index, uint32_t frame_index);
-
-    float get_timing(size_t device_index, const std::string& name) const;
-    void print_timing() const;
-    // Slow function, call this at the end before destroying pipelines but
-    // after issuing the last draw calls in order to print the remaining
-    // in-flight times.
-    void finish_print_timing();
 
     vk::Instance get_vulkan_instance() const;
 
@@ -184,9 +176,6 @@ protected:
 private:
     void free_purgatory();
     void call_frame_end_actions(uint32_t frame_index);
-    void step_timing();
-    void save_timing(uint32_t frame_number);
-    void print_timing_internal(uint32_t frame_number) const;
 
     options opt;
     std::vector<const char*> validation_layers;
@@ -209,25 +198,7 @@ private:
 
     std::unique_ptr<placeholders> placeholder_data;
 
-    struct time_info
-    {
-        uint64_t start;
-        uint64_t end;
-        std::string name;
-    };
-
-    struct timing_data
-    {
-        vkm<vk::QueryPool> timestamp_pool[MAX_FRAMES_IN_FLIGHT];
-
-        std::set<int> available_queries;
-        std::map<int, std::string> reserved_queries;
-
-        std::vector<time_info> times;
-    };
-    std::vector<timing_data> timing;
-    std::chrono::steady_clock::time_point host_timing[MAX_FRAMES_IN_FLIGHT][2];
-    float last_host_time;
+    tracing_record timing;
 
     // Callbacks for the end of each frame.
     std::vector<std::function<void()>> frame_end_actions[MAX_FRAMES_IN_FLIGHT];

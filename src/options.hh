@@ -408,6 +408,12 @@
         TR_STRUCT_OPT_FLOAT(sensor_size, 0.036f, 0.0f, FLT_MAX) \
         TR_STRUCT_OPT_INT(sides, 0, 3, INT_MAX) \
         TR_STRUCT_OPT_FLOAT(angle, 0, 0, 360) \
+    ) \
+    TR_ENUM_OPT(trace, tracing_record::trace_format, \
+        "Sets the performance trace output format.", \
+        tracing_record::SIMPLE, \
+        {"simple", tracing_record::SIMPLE}, \
+        {"trace-event-format", tracing_record::TRACE_EVENT_FORMAT} \
     )
 //==============================================================================
 // END OF OPTIONS
