@@ -28,9 +28,9 @@ struct instance_buffer
     uint32_t pad;
     int32_t sh_grid_index;
     float shadow_terminator_mul;
-    alignas(16) mat4 model;
-    alignas(16) mat4 model_normal;
-    alignas(16) mat4 model_prev;
+    alignas(16) pmat4 model;
+    alignas(16) pmat4 model_normal;
+    alignas(16) pmat4 model_prev;
     material_buffer mat;
 };
 
@@ -92,8 +92,8 @@ struct point_light_entry
 
 struct sh_grid_buffer
 {
-    alignas(16) mat4 pos_from_world;
-    alignas(16) mat4 normal_from_world;
+    alignas(16) pmat4 pos_from_world;
+    alignas(16) pmat4 normal_from_world;
     pvec3 grid_clamp;
     float pad0;
     pvec3 grid_resolution;
