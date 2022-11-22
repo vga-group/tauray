@@ -11,7 +11,7 @@ timer::timer()
 timer::timer(device_data& dev, const std::string& name)
 : dev(&dev)
 {
-    timer_id = dev.ctx->register_timer(dev.index, name);
+    timer_id = dev.ctx->get_timing().register_timer(dev.index, name);
 }
 
 timer::timer(timer&& other)
@@ -22,12 +22,12 @@ timer::timer(timer&& other)
 
 timer::~timer()
 {
-    if(dev) dev->ctx->unregister_timer(dev->index, timer_id);
+    if(dev) dev->ctx->get_timing().unregister_timer(dev->index, timer_id);
 }
 
 timer& timer::operator=(timer&& other)
 {
-    if(dev) dev->ctx->unregister_timer(dev->index, timer_id);
+    if(dev) dev->ctx->get_timing().unregister_timer(dev->index, timer_id);
     dev = other.dev;
     timer_id = other.timer_id;
     other.dev = nullptr;
@@ -39,7 +39,7 @@ void timer::begin(
 ){
     if(timer_id < 0 || !dev) return;
     uint32_t query_id = timer_id * 2u;
-    vk::QueryPool pool = dev->ctx->get_timestamp_pool(dev->index, frame_index);
+    vk::QueryPool pool = dev->ctx->get_timing().get_timestamp_pool(dev->index, frame_index);
     cb.resetQueryPool(pool, query_id, 2);
     cb.writeTimestamp(stage, pool, query_id);
 }
@@ -49,7 +49,7 @@ void timer::end(
 ){
     if(timer_id < 0 || !dev) return;
     uint32_t query_id = timer_id * 2u;
-    vk::QueryPool pool = dev->ctx->get_timestamp_pool(dev->index, frame_index);
+    vk::QueryPool pool = dev->ctx->get_timing().get_timestamp_pool(dev->index, frame_index);
     cb.writeTimestamp(stage, pool, query_id+1);
 }
 

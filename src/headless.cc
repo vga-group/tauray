@@ -122,7 +122,7 @@ void headless::finish_image(
     device_data& d = get_display_device();
     vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eTopOfPipe;
 
-    if(!display)
+    if(!display || opt.output_file_type == EMPTY)
     {
         // Eat the binary semaphore.
         d.graphics_queue.submit(

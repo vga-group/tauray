@@ -64,8 +64,9 @@ namespace tr
 {
 
 context::context(const options& opt)
-:   opt(opt), frame_counter(0), displayed_frame_counter(0),
-    swapchain_index(0), frame_index(0), is_displaying(true)
+:   image_array_layers(0), opt(opt), frame_counter(0),
+    displayed_frame_counter(0), swapchain_index(0), frame_index(0),
+    is_displaying(true), timing(this)
 {}
 
 context::~context() {}
@@ -152,6 +153,7 @@ dependency context::begin_frame()
     frame_index = frame_counter % MAX_FRAMES_IN_FLIGHT;
     frame_counter++;
 
+    timing.host_wait();
     device_data& d = get_display_device();
     (void)d.dev.waitForFences(*frame_fences[frame_index], true, UINT64_MAX);
 
@@ -183,7 +185,11 @@ dependency context::begin_frame()
     d.dev.resetFences(*frame_fences[frame_index]);
 
     call_frame_end_actions(frame_index);
-    step_timing();
+
+    if(frame_counter > MAX_FRAMES_IN_FLIGHT)
+        timing.device_finish_frame();
+    timing.begin_frame();
+
     return {*image_available[swapchain_index], frame_counter};
 }
 
@@ -235,40 +241,14 @@ void context::sync()
         call_frame_end_actions(i);
 }
 
+tracing_record& context::get_timing()
+{
+    return timing;
+}
+
 void context::queue_frame_finish_callback(std::function<void()>&& func)
 {
     frame_end_actions[frame_index].emplace_back(std::move(func));
-}
-
-int context::register_timer(size_t device_index, const std::string& name)
-{
-    if(opt.max_timestamps == 0) return -1;
-    timing_data& t = timing[device_index];
-    if(t.available_queries.size() == 0)
-        throw std::runtime_error(
-            "Not enough timer queries in pool! Increase max_timestamps!"
-        );
-    auto it = t.available_queries.begin();
-    int ret = *it;
-    t.reserved_queries[ret] = name;
-    t.available_queries.erase(it);
-    return ret;
-}
-
-void context::unregister_timer(size_t device_index, int timer_id)
-{
-    if(opt.max_timestamps == 0) return;
-    timing_data& t = timing[device_index];
-    t.reserved_queries.erase(timer_id);
-    t.available_queries.insert(timer_id);
-}
-
-vk::QueryPool context::get_timestamp_pool(
-    size_t device_index,
-    uint32_t frame_index
-){
-    if(opt.max_timestamps == 0) return {};
-    return timing[device_index].timestamp_pool[frame_index];
 }
 
 vk::Instance context::create_instance(
@@ -388,7 +368,8 @@ void context::init_devices()
     std::vector<const char*> required_device_extensions = {
         VK_KHR_MAINTENANCE1_EXTENSION_NAME,
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
-        VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME
+        VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+        VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
     };
 
     if(opt.enable_vulkan_validation)
@@ -546,7 +527,9 @@ void context::init_devices()
             has_extensions(required_device_extensions, available_extensions) &&
             dev_data.has_graphics && dev_data.has_compute
         ){
-            std::cout << "Using device: " << props.deviceName << std::endl;
+            // TODO: come up with a better way to not have these if piping
+            // trace output to file
+            std::cerr << "Using device: " << props.deviceName << std::endl;
 
             float priority = 1.0f;
             std::vector<vk::DeviceQueueCreateInfo> queue_infos = {
@@ -716,23 +699,7 @@ void context::init_resources()
 
     placeholder_data.reset(new placeholders(*this));
 
-    if(opt.max_timestamps)
-    {
-        timing.resize(devices.size());
-        for(size_t i = 0; i < devices.size(); ++i)
-        {
-            timing_data& t = timing[i];
-            for(size_t j = 0; j < MAX_FRAMES_IN_FLIGHT; ++j)
-                t.timestamp_pool[j] = vkm(
-                    devices[i],
-                    devices[i].dev.createQueryPool({
-                    {}, vk::QueryType::eTimestamp,
-                    opt.max_timestamps * 2u
-                }));
-            for(unsigned j = 0; j < opt.max_timestamps; ++j)
-                t.available_queries.insert(j);
-        }
-    }
+    timing.init(opt.max_timestamps);
 }
 
 void context::reset_image_views()
@@ -766,7 +733,7 @@ void context::deinit_resources()
     frame_available.clear();
     frame_finished.clear();
     image_fences.clear();
-    timing.clear();
+    timing.deinit();
 }
 
 void context::call_frame_end_actions(uint32_t frame_index)
@@ -774,124 +741,6 @@ void context::call_frame_end_actions(uint32_t frame_index)
     for(std::function<void()>& func: frame_end_actions[frame_index])
         func();
     frame_end_actions[frame_index].clear();
-}
-
-void context::step_timing()
-{
-    if(opt.max_timestamps == 0) return;
-
-    if(frame_counter > MAX_FRAMES_IN_FLIGHT)
-        save_timing(frame_counter-1-MAX_FRAMES_IN_FLIGHT);
-
-    auto time = std::chrono::steady_clock::now();
-    host_timing[frame_index][0] = time;
-    host_timing[
-        (frame_index+MAX_FRAMES_IN_FLIGHT-1)%MAX_FRAMES_IN_FLIGHT
-    ][1] = time;
-}
-
-void context::save_timing(uint32_t frame_number)
-{
-    uint32_t findex = frame_number%MAX_FRAMES_IN_FLIGHT;
-
-    for(size_t i = 0; i < devices.size(); ++i)
-    {
-        timing_data& t = timing[i];
-        std::vector<uint64_t> results(opt.max_timestamps*2u);
-        (void)devices[i].dev.getQueryPoolResults(
-            t.timestamp_pool[findex],
-            0,
-            opt.max_timestamps*2u,
-            results.size()*sizeof(uint64_t),
-            results.data(),
-            0,
-            vk::QueryResultFlagBits::e64
-        );
-        t.times.clear();
-        for(const auto& pair: t.reserved_queries)
-            t.times.push_back({
-                results[pair.first*2],
-                results[pair.first*2+1],
-                pair.second
-            });
-        std::sort(
-            t.times.begin(),
-            t.times.end(),
-            [](const time_info& a, const time_info& b){
-                return a.start < b.start;
-            }
-        );
-    }
-
-    std::chrono::duration<double> elapsed =
-        host_timing[findex][1]-host_timing[findex][0];
-    last_host_time = elapsed.count();
-}
-
-void context::print_timing() const
-{
-    if(frame_counter > MAX_FRAMES_IN_FLIGHT)
-        print_timing_internal(frame_counter - 1 - MAX_FRAMES_IN_FLIGHT);
-}
-
-void context::print_timing_internal(uint32_t frame_number) const
-{
-    std::cout << "FRAME " << frame_number << ":\n";
-    for(size_t i = 0; i < devices.size(); ++i)
-    {
-        const timing_data& t = timing[i];
-
-        std::cout << "\tDEVICE " << i << ": ";
-        if(t.times.size() == 0)
-            std::cout << "\n";
-        else
-        {
-            uint64_t delta = t.times.back().end - t.times.front().start;
-            float delta_ns =
-                delta * devices[i].props.limits.timestampPeriod;
-            std::cout << delta_ns/1e6 << " ms\n";
-        }
-
-        for(const time_info& t: t.times)
-        {
-            uint64_t delta = t.end - t.start;
-            float delta_ns =
-                delta * devices[i].props.limits.timestampPeriod;
-            std::cout << "\t\t[" << t.name << "] " << delta_ns/1e6 << " ms"
-                << "\n";
-        }
-    }
-
-    std::cout << "\tHOST: " << last_host_time*1e3 << " ms" << std::endl;
-}
-
-void context::finish_print_timing()
-{
-    if(opt.max_timestamps == 0) return;
-    sync();
-    uint32_t last_printed = max((int64_t)frame_counter-2, (int64_t)0ll);
-    for(; last_printed < frame_counter; last_printed++)
-    {
-        auto time = std::chrono::steady_clock::now();
-        host_timing[last_printed % MAX_FRAMES_IN_FLIGHT][1] = time;
-        save_timing(last_printed);
-        print_timing_internal(last_printed);
-    }
-}
-
-float context::get_timing(size_t device_index, const std::string& name) const
-{
-    const timing_data& t = timing[device_index];
-    float total_time = 0.0f;
-    for(const time_info& ti: t.times)
-    {
-        if(ti.name.compare(0, name.length(), name) == 0)
-        {
-            uint64_t delta = ti.end - ti.start;
-            total_time += delta * devices[device_index].props.limits.timestampPeriod;
-        }
-    }
-    return total_time;
 }
 
 vk::Instance context::get_vulkan_instance() const

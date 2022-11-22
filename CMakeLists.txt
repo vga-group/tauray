@@ -146,6 +146,7 @@ add_library(tauray-core STATIC
   src/texture.cc
   src/timer.cc
   src/tonemap_stage.cc
+  src/tracing.cc
   src/transformable.cc
   src/vkm.cc
   src/whitted_stage.cc
