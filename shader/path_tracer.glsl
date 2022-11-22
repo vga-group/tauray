@@ -91,7 +91,7 @@ float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
 #ifdef ENVIRONMENT_MAP_ALIAS_TABLE_BINDING
 // Based on CC0 code from https://gist.github.com/juliusikkala/6c8c186f0150fe877a55cee4d266b1b0
 vec3 sample_environment_map(
-    uvec2 rand,
+    uvec3 rand,
     out vec3 shadow_ray_direction,
     out float shadow_ray_length,
     out float pdf
@@ -101,18 +101,18 @@ vec3 sample_environment_map(
     {
         uvec2 size = textureSize(environment_map_tex, 0).xy;
         const uint pixel_count = size.x * size.y;
-        uvec2 ip = clamp(rand / (0xFFFFFFFFu / size), uvec2(0), size-1u);
+        uvec2 ip = clamp(rand.xy / (0xFFFFFFFFu / size), uvec2(0), size-1u);
         int i = int(ip.x + ip.y * size.x);
         alias_table_entry at = environment_map_alias_table.entries[i];
         pdf = at.pdf;
-        if(pcg(rand.x) > at.probability)
+        if(rand.z > at.probability)
         {
             i = int(at.alias_id);
             pdf = at.alias_pdf;
         }
 
         ivec2 p = ivec2(i % size.x, i / size.x);
-        vec2 off = ldexp(vec2(uvec2(rand*pixel_count)), ivec2(-32));
+        vec2 off = ldexp(vec2(uvec2(rand.xy*pixel_count)), ivec2(-32));
         vec2 uv = (vec2(p) + off)/vec2(size);
 
         shadow_ray_direction = uv_to_latlong_direction(uv);
@@ -122,7 +122,7 @@ vec3 sample_environment_map(
     else
     {
         pdf = 1.0f / (4.0f * M_PI);
-        shadow_ray_direction = sample_sphere(ldexp(vec2(rand), ivec2(-32)));
+        shadow_ray_direction = sample_sphere(ldexp(vec2(rand.xy), ivec2(-32)));
     }
     shadow_ray_length = RAY_MAX_DIST;
     return color;
@@ -332,7 +332,7 @@ bool get_intersection_info(
     }
 }
 
-vec3 sample_explicit_light(uvec3 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, out float pdf)
+vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, out float pdf)
 {
 #ifdef IMPORTANCE_SAMPLE_ENVMAP
     const float point_directional_split =
@@ -352,12 +352,11 @@ vec3 sample_explicit_light(uvec3 rand_uint, vec3 pos, out vec3 out_dir, out floa
     const float envmap_directional_split = 0.0f;
 #endif
 
-    vec3 u = ldexp(vec3(rand_uint), ivec3(-32));
+    vec4 u = ldexp(vec4(rand_uint), ivec4(-32));
 
-    if(u.z < point_directional_split)
+    if(u.w < point_directional_split)
     {
         // Sample point light
-        u.z = u.z / point_directional_split;
         const int light_count = int(scene_metadata.point_light_count);
         int light_index = 0;
         float weight = 0;
@@ -372,12 +371,12 @@ vec3 sample_explicit_light(uvec3 rand_uint, vec3 pos, out vec3 out_dir, out floa
     else
     {
         // Sample directional light or envmap
-        u.z = (u.z - point_directional_split)/(1-point_directional_split);
+        u.w = (u.w - point_directional_split)/(1-point_directional_split);
 
 #ifdef IMPORTANCE_SAMPLE_ENVMAP
-        if(u.z < envmap_directional_split)
+        if(u.w < envmap_directional_split)
         {
-            vec3 color = sample_environment_map(rand_uint.xy, out_dir, out_length, pdf);
+            vec3 color = sample_environment_map(rand_uint.xyz, out_dir, out_length, pdf);
             pdf *= (1.0f-point_directional_split) * envmap_directional_split;
             return color;
         }
@@ -398,7 +397,7 @@ vec3 sample_explicit_light(uvec3 rand_uint, vec3 pos, out vec3 out_dir, out floa
 }
 
 void eval_explicit_lights(
-    uvec3 rand_uint,
+    uvec4 rand_uint,
     mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
     inout vec3 diffuse_radiance,
@@ -528,7 +527,7 @@ void evaluate_ray(
         ){
             // Do NEE ray
             eval_explicit_lights(
-                generate_ray_sample_uint(lsampler, bounce*2).xyz, tbn, shading_view,
+                generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
                 mat, v, diffuse_radiance, specular_radiance
             );
         }
