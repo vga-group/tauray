@@ -101,12 +101,11 @@ vec3 sample_environment_map(
     {
         uvec2 size = textureSize(environment_map_tex, 0).xy;
         const uint pixel_count = size.x * size.y;
-        // Assuming pixel_count is a power of two or fairly small, this should
-        // be okay-ish to do.
-        int i = int(rand.x % pixel_count);
+        uvec2 ip = clamp(rand / (0xFFFFFFFFu / size), uvec2(0), size-1u);
+        int i = int(ip.x + ip.y * size.x);
         alias_table_entry at = environment_map_alias_table.entries[i];
         pdf = at.pdf;
-        if(rand.y > at.probability)
+        if(pcg(rand.x) > at.probability)
         {
             i = int(at.alias_id);
             pdf = at.alias_pdf;
