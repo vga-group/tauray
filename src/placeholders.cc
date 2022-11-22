@@ -54,7 +54,7 @@ placeholders::placeholders(context& ctx)
                 vk::BufferUsageFlagBits::eStorageBuffer,
                 vk::SharingMode::eExclusive
             },
-            VMA_MEMORY_USAGE_CPU_ONLY
+            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
         );
 
         per_device[i].img_2d_info = {

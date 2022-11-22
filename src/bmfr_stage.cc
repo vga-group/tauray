@@ -132,7 +132,7 @@ void bmfr_stage::init_resources()
             bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bufferInfo.size = required_size;
             bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-            min_max_buffer[i] = create_buffer(*dev, bufferInfo, VMA_MEMORY_USAGE_GPU_ONLY, nullptr);
+            min_max_buffer[i] = create_buffer(*dev, bufferInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, nullptr);
         }
 
         // Linear array for all the feature vectors used in the householder QR factorization
@@ -142,7 +142,7 @@ void bmfr_stage::init_resources()
             bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bufferInfo.size = required_size;
             bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-            tmp_data[i] = create_buffer(*dev, bufferInfo, VMA_MEMORY_USAGE_GPU_ONLY, nullptr);
+            tmp_data[i] = create_buffer(*dev, bufferInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, nullptr);
         }
 
         // Output weights from bmfr fit phase
@@ -152,7 +152,7 @@ void bmfr_stage::init_resources()
             bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
             bufferInfo.size = required_size;
-            weights[i] = create_buffer(*dev, bufferInfo, VMA_MEMORY_USAGE_GPU_ONLY, nullptr);
+            weights[i] = create_buffer(*dev, bufferInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, nullptr);
         }
 
         // Used to store the temporal reprojection accepts in order to reuse them in the accumulate output shader
@@ -162,7 +162,7 @@ void bmfr_stage::init_resources()
             bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bufferInfo.size = required_size;
             bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-            accepts[i] = create_buffer(*dev, bufferInfo, VMA_MEMORY_USAGE_GPU_ONLY, nullptr);
+            accepts[i] = create_buffer(*dev, bufferInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, nullptr);
         }
 
         // Used to get current frame index for block offsetting and seeding RNG

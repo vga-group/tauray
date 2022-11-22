@@ -204,7 +204,7 @@ void aabb_scene::init_acceleration_structures(const char* timer_name)
         as.blas_buffer = create_buffer(
             devices[i],
             blas_buffer_info,
-            VMA_MEMORY_USAGE_GPU_ONLY
+            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
         );
 
         vk::AccelerationStructureCreateInfoKHR create_info(
@@ -230,7 +230,7 @@ void aabb_scene::init_acceleration_structures(const char* timer_name)
         as.scratch_buffer = create_buffer_aligned(
             devices[i],
             scratch_info,
-            VMA_MEMORY_USAGE_GPU_ONLY,
+            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
             devices[i].as_props.minAccelerationStructureScratchOffsetAlignment
         );
 

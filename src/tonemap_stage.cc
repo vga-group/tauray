@@ -71,7 +71,7 @@ tonemap_stage::tonemap_stage(
         {}, this->opt.reorder.size() * sizeof(uint32_t),
         vk::BufferUsageFlagBits::eStorageBuffer, vk::SharingMode::eExclusive
     );
-    output_reorder_buf = create_buffer(dev, info, VMA_MEMORY_USAGE_GPU_ONLY, this->opt.reorder.data());
+    output_reorder_buf = create_buffer(dev, info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, this->opt.reorder.data());
 
     for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     for(uint32_t j = 0; j < output_target.get_frame_count(); ++j)

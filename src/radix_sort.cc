@@ -66,7 +66,7 @@ vkm<vk::Buffer> radix_sort::create_keyval_buffer(size_t max_items)
             vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress| vk::BufferUsageFlagBits::eTransferDst,
             vk::SharingMode::eExclusive
         },
-        VMA_MEMORY_USAGE_GPU_ONLY,
+        VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
         total_alignment
     );
 }

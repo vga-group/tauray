@@ -135,13 +135,14 @@ void transition_image_layout(
 vkm<vk::Buffer> create_buffer(
     device_data& dev,
     vk::BufferCreateInfo info,
-    VmaMemoryUsage usage,
+    VmaAllocationCreateFlagBits flags,
     const void* data
 ){
     vk::Buffer res;
     VmaAllocation alloc;
     VmaAllocationCreateInfo alloc_info = {};
-    alloc_info.usage = usage;
+    alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+    alloc_info.flags = flags;
     if(data)
         info.usage |= vk::BufferUsageFlagBits::eTransferDst;
 
@@ -165,14 +166,15 @@ vkm<vk::Buffer> create_buffer(
 vkm<vk::Buffer> create_buffer_aligned(
     device_data& dev,
     vk::BufferCreateInfo info,
-    VmaMemoryUsage usage,
+    VmaAllocationCreateFlagBits flags,
     size_t alignment,
     const void* data
 ){
     vk::Buffer res;
     VmaAllocation alloc;
     VmaAllocationCreateInfo alloc_info = {};
-    alloc_info.usage = usage;
+    alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+    alloc_info.flags = flags;
     if(data)
         info.usage |= vk::BufferUsageFlagBits::eTransferDst;
 
@@ -205,7 +207,8 @@ vkm<vk::Buffer> create_staging_buffer(
         vk::SharingMode::eExclusive
     );
     VmaAllocationCreateInfo alloc_info = {};
-    alloc_info.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+    alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
     vmaCreateBuffer(
         dev.allocator, (VkBufferCreateInfo*)&staging_info,
@@ -234,7 +237,8 @@ vkm<vk::Buffer> create_download_buffer(
         vk::SharingMode::eExclusive
     );
     VmaAllocationCreateInfo alloc_info = {};
-    alloc_info.usage = VMA_MEMORY_USAGE_GPU_TO_CPU;
+    alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+    alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
 
     vmaCreateBuffer(
         dev.allocator, (VkBufferCreateInfo*)&staging_info,
@@ -394,7 +398,8 @@ vkm<vk::Image> sync_create_gpu_image(
     if(!data)
     {
         VmaAllocationCreateInfo alloc_info = {};
-        alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+        alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+        alloc_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 
         vmaCreateImage(
             dev.allocator, (VkImageCreateInfo*)&info,
@@ -411,7 +416,8 @@ vkm<vk::Image> sync_create_gpu_image(
     else
     {
         VmaAllocationCreateInfo alloc_info = {};
-        alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+        alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+        alloc_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
         info.usage |= vk::ImageUsageFlagBits::eTransferDst |
             vk::ImageUsageFlagBits::eTransferSrc;
 

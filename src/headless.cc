@@ -217,7 +217,7 @@ void headless::init_images()
         id.staging_buffer = create_buffer(
             dev_data,
             staging_info,
-            VMA_MEMORY_USAGE_GPU_TO_CPU
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
         );
 
         id.copy_cb = create_graphics_command_buffer(dev_data);

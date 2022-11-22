@@ -31,7 +31,7 @@ bool gpu_buffer::resize(size_t size)
         vk::SharingMode::eExclusive
     );
 
-    buffer = create_buffer(*dev, gpu_buffer_info, VMA_MEMORY_USAGE_GPU_ONLY);
+    buffer = create_buffer(*dev, gpu_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         staging[i] = create_staging_buffer(*dev, this->capacity, nullptr);
     return true;

@@ -35,14 +35,14 @@ void transition_image_layout(
 vkm<vk::Buffer> create_buffer(
     device_data& dev,
     vk::BufferCreateInfo info,
-    VmaMemoryUsage usage,
+    VmaAllocationCreateFlagBits flags,
     const void* data = nullptr
 );
 
 vkm<vk::Buffer> create_buffer_aligned(
     device_data& dev,
     vk::BufferCreateInfo info,
-    VmaMemoryUsage usage,
+    VmaAllocationCreateFlagBits flags,
     size_t alignment,
     const void* data = nullptr
 );
