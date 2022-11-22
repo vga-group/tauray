@@ -404,20 +404,20 @@ void camera::refresh()
 // These structs must match the camera_data_buffers in shader/camera.glsl
 struct matrix_camera_data_buffer
 {
-    mat4 view;
-    mat4 view_inverse;
-    mat4 view_proj;
-    mat4 proj_inverse;
-    vec4 origin;
-    vec4 dof_params;
+    pmat4 view;
+    pmat4 view_inverse;
+    pmat4 view_proj;
+    pmat4 proj_inverse;
+    pvec4 origin;
+    pvec4 dof_params;
 };
 
 struct equirectangular_camera_data_buffer
 {
-    mat4 view;
-    mat4 view_inverse;
-    vec4 origin;
-    vec2 fov;
+    pmat4 view;
+    pmat4 view_inverse;
+    pvec4 origin;
+    pvec2 fov;
 };
 
 size_t camera::get_projection_type_uniform_buffer_size(projection_type type)
