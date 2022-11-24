@@ -70,7 +70,7 @@ void build_acceleration_structure(
         vk::BufferUsageFlagBits::eShaderDeviceAddress,
         vk::SharingMode::eExclusive
     );
-    blas_buffer = create_buffer(dev, blas_buffer_info, VMA_MEMORY_USAGE_GPU_ONLY);
+    blas_buffer = create_buffer(dev, blas_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
 
     vk::AccelerationStructureCreateInfoKHR create_info(
         {},
@@ -90,7 +90,7 @@ void build_acceleration_structure(
         vk::SharingMode::eExclusive
     );
     blas_scratch_buffer = create_buffer_aligned(
-        dev, scratch_info, VMA_MEMORY_USAGE_GPU_ONLY,
+        dev, scratch_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
         dev.as_props.minAccelerationStructureScratchOffsetAlignment
     );
     blas_info.scratchData = blas_scratch_buffer.get_address();
@@ -148,7 +148,7 @@ void build_acceleration_structure(
         vkm<vk::Buffer> fat_blas_buffer(std::move(blas_buffer));
 
         blas_buffer_info.size = compact_size;
-        blas_buffer = create_buffer(dev, blas_buffer_info, VMA_MEMORY_USAGE_GPU_ONLY);
+        blas_buffer = create_buffer(dev, blas_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
         create_info.buffer = blas_buffer;
 
         create_info.size = compact_size;
@@ -444,7 +444,7 @@ void mesh::init_buffers()
                 vk::BufferUsageFlagBits::eVertexBuffer|buf_flags,
                 vk::SharingMode::eExclusive
             },
-            VMA_MEMORY_USAGE_GPU_ONLY,
+            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
             vertices.data()
         );
 
@@ -457,7 +457,7 @@ void mesh::init_buffers()
                     vk::BufferUsageFlagBits::eIndexBuffer|buf_flags,
                     vk::SharingMode::eExclusive
                 },
-                VMA_MEMORY_USAGE_GPU_ONLY,
+                VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
                 indices.data()
             );
             if(skin_bytes > 0)
@@ -469,7 +469,7 @@ void mesh::init_buffers()
                         vk::BufferUsageFlagBits::eStorageBuffer,
                         vk::SharingMode::eExclusive
                     },
-                    VMA_MEMORY_USAGE_GPU_ONLY,
+                    VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
                     skin.data()
                 );
             }

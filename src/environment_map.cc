@@ -137,7 +137,7 @@ void environment_map::generate_alias_table()
                 sizeof(alias_table_entry) * pixel_count,
                 vk::BufferUsageFlagBits::eStorageBuffer
             },
-            VMA_MEMORY_USAGE_GPU_ONLY,
+            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
             alias_table.data()
         );
     }

@@ -425,7 +425,7 @@ void gfx_pipeline::init_pipeline()
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
                 vk::SharingMode::eExclusive
             },
-            VMA_MEMORY_USAGE_GPU_ONLY,
+            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
             sbt_mem.data()
         );
 
