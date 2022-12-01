@@ -58,7 +58,7 @@ Tauray has been tested on the Ubuntu 22.04 operating system. Building on Ubuntu
 1. Install dependencies: `sudo apt install build-essential cmake libsdl2-dev libglm-dev libczmq-dev libnng-dev libcbor-dev vulkan-tools libvulkan-dev vulkan-validationlayers libxcb-glx0-dev glslang-tools`
 2. `cmake -S . -B build`
 3. `cmake --build build`
-4. `build/tauray my_scene.glb`
+4. `build/tauray my_scene.glb --preset=accumulation`
 
 Building with Windows is also possible but not recommended. You can use the
 CMakeLists.txt with Visual Studio. A vcpkg.json is provided in this repository
@@ -70,7 +70,7 @@ supported on Windows.
 To launch a simple interactive path tracing session with the included test model:
 
 ```bash
-build/tauray test/test.glb
+build/tauray test/test.glb --preset=accumulation
 ```
 
 [See the user manual for more detailed usage documentation.](docs/tauray_user_manual.pdf)
