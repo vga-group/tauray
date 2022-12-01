@@ -650,13 +650,26 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
     bool camera_moved = false;
 
     ivec3 camera_movement = ivec3(0);
+    std::string command_line;
     while(running)
     {
         camera_moved = false;
+        if(nonblock_getline(command_line))
+        {
+            if(parse_command(command_line.c_str(), opt))
+            {
+                recreate_renderer = true;
+                camera_moved = true;
+            }
+        }
+
         if(recreate_renderer)
         {
             try
             {
+                s.set_shadow_map_renderer(nullptr);
+                s.set_sh_grid_textures(nullptr);
+                s.set_camera_jitter(get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
                 rr.reset(create_renderer(ctx, opt, s));
                 rr->set_scene(&s);
                 ctx.set_displaying(false);

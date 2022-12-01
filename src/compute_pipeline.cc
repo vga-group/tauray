@@ -37,7 +37,7 @@ compute_pipeline::compute_pipeline(device_data& dev, const params& p)
         pipeline_layout, {}, 0
     );
 
-    pipeline = vkm(dev, dev.dev.createComputePipeline({}, pipeline_info).value);
+    pipeline = vkm(dev, dev.dev.createComputePipeline(dev.pp_cache, pipeline_info).value);
 }
 
 }

@@ -3,6 +3,8 @@
 
 int main(int, char** argv) try
 {
+    std::ios_base::sync_with_stdio(false);
+
     tr::options opt;
     tr::parse_command_line_options(argv, opt);
     std::unique_ptr<tr::context> ctx(tr::create_context(opt));

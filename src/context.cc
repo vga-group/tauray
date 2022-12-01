@@ -636,6 +636,8 @@ void context::init_devices()
             dev_data.transfer_pool = dev_data.dev.createCommandPool(
                 {{}, dev_data.transfer_family_index}
             );
+            dev_data.pp_cache = dev_data.dev.createPipelineCache({
+            });
 
             VmaAllocatorCreateInfo allocator_info = {};
             allocator_info.physicalDevice = pdev;
@@ -657,6 +659,7 @@ void context::deinit_devices()
     sync();
     for(device_data& dev_data: devices)
     {
+        dev_data.dev.destroyPipelineCache(dev_data.pp_cache);
         dev_data.dev.destroyCommandPool(dev_data.graphics_pool);
         dev_data.dev.destroyCommandPool(dev_data.compute_pool);
         if(dev_data.has_present)

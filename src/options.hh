@@ -532,7 +532,8 @@ struct options
 };
 
 void parse_command_line_options(char** argv, options& opt);
-void parse_config_options(const char* config_str, options& opt);
+bool parse_config_options(const char* config_str, options& opt);
+bool parse_command(const char* config_str, options& opt);
 void print_help(const char* program_name);
 
 }

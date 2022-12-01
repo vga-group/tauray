@@ -49,6 +49,7 @@ struct device_data
     vk::CommandPool compute_pool;
     vk::CommandPool present_pool;
     vk::CommandPool transfer_pool;
+    vk::PipelineCache pp_cache;
     VmaAllocator allocator;
 };
 

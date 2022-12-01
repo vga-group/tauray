@@ -570,6 +570,25 @@ std::string load_text_file(const std::string& path)
     return ret;
 }
 
+bool nonblock_getline(std::string& line)
+{
+    static std::stringstream reading;
+    line.clear();
+
+    char c;
+    while(std::cin.readsome(&c, 1))
+    {
+        if(c == '\n')
+        {
+            line = reading.str();
+            reading.str("");
+            return true;
+        }
+        reading << c;
+    }
+    return false;
+}
+
 std::string to_uppercase(const std::string& str)
 {
     std::string ret(str);

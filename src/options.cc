@@ -418,8 +418,9 @@ void parse_command_line_options(char** argv, options& opt)
 #undef TR_STRUCT_OPT
 }
 
-void parse_config_options(const char* config_str, options& opt)
+bool parse_config_options(const char* config_str, options& opt)
 {
+    bool got_any = false;
     while(*config_str != 0)
     {
         std::string identifier;
@@ -542,6 +543,21 @@ void parse_config_options(const char* config_str, options& opt)
 #undef TR_STRUCT_OPT
         else throw option_parse_error(
             "Unknown option " + std::string(arg));
+        got_any = true;
+    }
+    return got_any;
+}
+
+bool parse_command(const char* config_str, options& opt)
+{
+    try
+    {
+        return parse_config_options(config_str, opt);
+    }
+    catch(const option_parse_error& err)
+    {
+        std::cerr << err.what() << std::endl;
+        return false;
     }
 }
 
