@@ -495,6 +495,7 @@ struct options
 
     using projection_option_type = std::optional<tr::camera::projection_type>;
 
+    bool running = true;
     std::vector<std::string> scene_paths;
 
 #define TR_BOOL_OPT(name, description, default) bool name = default;
@@ -534,6 +535,7 @@ struct options
 void parse_command_line_options(char** argv, options& opt);
 bool parse_config_options(const char* config_str, options& opt);
 bool parse_command(const char* config_str, options& opt);
+void print_command_help(const std::string& command);
 void print_help(const char* program_name);
 
 }
