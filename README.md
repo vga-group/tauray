@@ -58,7 +58,7 @@ Tauray has been tested on the Ubuntu 22.04 operating system. Building on Ubuntu
 1. Install dependencies: `sudo apt install build-essential cmake libsdl2-dev libglm-dev libczmq-dev libnng-dev libcbor-dev vulkan-tools libvulkan-dev vulkan-validationlayers libxcb-glx0-dev glslang-tools`
 2. `cmake -S . -B build`
 3. `cmake --build build`
-4. `build/tauray my_scene.glb --preset=accumulation`
+4. `build/tauray my_scene.glb`
 
 Building with Windows is also possible but not recommended. You can use the
 CMakeLists.txt with Visual Studio. A vcpkg.json is provided in this repository
@@ -88,7 +88,7 @@ and **disable validation**:
 You may also want to set `--force-double-sided` for better performance if your
 scene does not require single-sided surfaces. Also, remember to set
 `--max-ray-depth` appropriately for the type of benchmark, the default is quite
-high.
+high. It sets the number of bounces.
 
 By default, Tauray will use all GPUs with support for the required extensions.
 If you wish to use a specific GPU on a multi-GPU system, use `--devices=0` (or
