@@ -66,6 +66,50 @@ struct throttler
     std::chrono::high_resolution_clock::time_point time;
 };
 
+void set_camera_params(const options& opt, scene_data& s)
+{
+    if(auto proj = opt.force_projection)
+    {
+        switch(*proj)
+        {
+        case camera::PERSPECTIVE:
+            s.s->get_camera()->perspective(90.0f, 1.0f, 0.1f, 100.0f);
+            break;
+        case camera::ORTHOGRAPHIC:
+            s.s->get_camera()->ortho(
+                -1.0f, 1.0f, -1.0f, 1.0f, 0.0f, 100.0f
+            );
+            break;
+        case camera::EQUIRECTANGULAR:
+            s.s->get_camera()->equirectangular(360, 180);
+            break;
+        default:
+            break;
+        }
+    }
+
+    s.s->get_camera()->set_aspect(
+        opt.aspect_ratio > 0 ?
+            opt.aspect_ratio : opt.width/(float)opt.height
+    );
+    if(opt.fov)
+        s.s->get_camera()->set_fov(opt.fov);
+
+    if(opt.camera_clip_range.near > 0)
+        s.s->get_camera()->set_near(opt.camera_clip_range.near);
+    if(opt.camera_clip_range.far > 0)
+        s.s->get_camera()->set_far(opt.camera_clip_range.far);
+
+    if(opt.depth_of_field.f_stop != 0)
+        s.s->get_camera()->set_focus(
+            opt.depth_of_field.f_stop,
+            opt.depth_of_field.distance,
+            opt.depth_of_field.sides,
+            opt.depth_of_field.angle,
+            opt.depth_of_field.sensor_size
+        );
+}
+
 scene_data load_scenes(context& ctx, const options& opt)
 {
     // The frame client does not need scene data :D
@@ -201,46 +245,7 @@ scene_data load_scenes(context& ctx, const options& opt)
     }
     else
     {
-        if(auto proj = opt.force_projection)
-        {
-            switch(*proj)
-            {
-            case camera::PERSPECTIVE:
-                s.s->get_camera()->perspective(90.0f, 1.0f, 0.1f, 100.0f);
-                break;
-            case camera::ORTHOGRAPHIC:
-                s.s->get_camera()->ortho(
-                    -1.0f, 1.0f, -1.0f, 1.0f, 0.0f, 100.0f
-                );
-                break;
-            case camera::EQUIRECTANGULAR:
-                s.s->get_camera()->equirectangular(360, 180);
-                break;
-            default:
-                break;
-            }
-        }
-
-        s.s->get_camera()->set_aspect(
-            opt.aspect_ratio > 0 ?
-                opt.aspect_ratio : opt.width/(float)opt.height
-        );
-        if(opt.fov)
-            s.s->get_camera()->set_fov(opt.fov);
-
-        if(opt.camera_clip_range.near > 0)
-            s.s->get_camera()->set_near(opt.camera_clip_range.near);
-        if(opt.camera_clip_range.far > 0)
-            s.s->get_camera()->set_far(opt.camera_clip_range.far);
-
-        if(opt.depth_of_field.f_stop != 0)
-            s.s->get_camera()->set_focus(
-                opt.depth_of_field.f_stop,
-                opt.depth_of_field.distance,
-                opt.depth_of_field.sides,
-                opt.depth_of_field.angle,
-                opt.depth_of_field.sensor_size
-            );
+        set_camera_params(opt, s);
     }
 
     if(opt.animation_flag)
@@ -614,7 +619,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
     std::unique_ptr<renderer> rr;
 
-    bool running = true;
     float speed = 1.0f;
     vec3 euler = cam.get_orientation_euler();
     float pitch = euler.x;
@@ -650,13 +654,27 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
     bool camera_moved = false;
 
     ivec3 camera_movement = ivec3(0);
-    while(running)
+    std::string command_line;
+    while(opt.running)
     {
         camera_moved = false;
+        if(nonblock_getline(command_line))
+        {
+            if(parse_command(command_line.c_str(), opt))
+            {
+                set_camera_params(opt, sd);
+                recreate_renderer = true;
+                camera_moved = true;
+            }
+        }
+
         if(recreate_renderer)
         {
             try
             {
+                s.set_shadow_map_renderer(nullptr);
+                s.set_sh_grid_textures(nullptr);
+                s.set_camera_jitter(get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
                 rr.reset(create_renderer(ctx, opt, s));
                 rr->set_scene(&s);
                 ctx.set_displaying(false);
@@ -676,13 +694,13 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         while(SDL_PollEvent(&event)) switch(event.type)
         {
         case SDL_QUIT:
-            running = false;
+            opt.running = false;
             break;
         case SDL_KEYDOWN:
         case SDL_KEYUP:
             if(event.type == SDL_KEYDOWN)
             {
-                if(event.key.keysym.sym == SDLK_ESCAPE) running = false;
+                if(event.key.keysym.sym == SDLK_ESCAPE) opt.running = false;
                 if(event.key.keysym.sym == SDLK_RETURN) paused = !paused;
                 if(event.key.keysym.sym == SDLK_PAGEUP)
                 {
@@ -960,13 +978,11 @@ void headless_server(context& ctx, scene_data& sd, options& opt)
     rr->set_scene(&s);
     ctx.set_displaying(true);
 
-    bool running = true;
-
     throttler throttle(opt.throttle);
     std::chrono::steady_clock::time_point start =
         std::chrono::steady_clock::now();
     float delta = 0.0f;
-    while(running)
+    while(opt.running)
     {
         if(ctx.init_frame())
             break;

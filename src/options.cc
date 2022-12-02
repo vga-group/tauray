@@ -1,4 +1,5 @@
 #include "options.hh"
+#include "misc.hh"
 #include <cstring>
 #include <cstdlib>
 #include <iostream>
@@ -35,6 +36,50 @@ bool prefix(const char*& arg, const std::string& prefix)
 bool cmp(const char*& arg, const std::string& prefix)
 {
     return arg == prefix;
+}
+
+bool parse_identifier(const char*& arg, std::string& name)
+{
+    // Skip whitespace
+    arg += strspn(arg, " \t\r\n");
+    size_t len = strcspn(arg, " \t\r\n=");
+    if(len == 0)
+        return false;
+    name = std::string(arg, len);
+    arg += len;
+    arg += strspn(arg, " \t\r\n=");
+    return true;
+}
+
+void parse_param(const std::string& name, const char*& arg, std::string& param)
+{
+    // Skip leading whitespace
+    arg += strspn(arg, " \t\r\n");
+    // If quote
+    if(*arg == '"' || *arg == '\'')
+    {
+        char sep = *arg;
+        arg++;
+        const char* end = strchr(arg, sep);
+        if(end == nullptr)
+            throw option_parse_error(name + " has quoted parameter with missing unquote!");
+        param = std::string(arg, end-arg);
+        arg = end+1;
+        arg += strspn(arg, " \t\r\n");
+    }
+    else
+    { // Read until newline, strip back
+        const char* end = strchr(arg, '\n');
+        if(end == nullptr) end = arg+strlen(arg);
+
+        param = std::string(arg, end-arg);
+        arg = end;
+        arg += strspn(arg, " \t\r\n");
+
+        size_t strip_len = param.find_last_not_of(" \t\r\n");
+        if(strip_len != std::string::npos)
+            param.erase(strip_len+1);
+    }
 }
 
 int parse_int(const std::string& name, const char*& arg, int min, int max, char end = '\0')
@@ -130,12 +175,17 @@ std::string build_option_string(
     const std::string& type_tag,
     char shorthand,
     const std::string& description,
-    const std::string& default_str
+    const std::string& default_str,
+    bool argument = true
 ){
     std::string tag;
-    if(type_tag != "") tag = "=<"+type_tag+">";
+    if(type_tag != "")
+    {
+        if(argument) tag = "=<"+type_tag+">";
+        else tag = " <"+type_tag+">";
+    }
 
-    std::string option_name = "--" + dashify_string(name) + tag;
+    std::string option_name = (argument ? "--" : "") + dashify_string(name) + tag;
     if(shorthand)
     {
         std::string short_option = "-" + std::string(1, shorthand);
@@ -153,9 +203,8 @@ std::string build_option_string(
 namespace tr
 {
 
-options parse_options(char** argv)
+void parse_command_line_options(char** argv, options& opt)
 {
-    options opt;
     argv++; // Skip name
     bool skip_flags = false;
     opt.film_radius = -1.0f;
@@ -169,6 +218,15 @@ options parse_options(char** argv)
             {
                 if(*arg == 0) skip_flags = true;
                 else if(cmp(arg, "help")) throw option_parse_error("");
+                else if(prefix(arg, "config="))
+                    parse_config_options(load_text_file(arg).c_str(), opt);
+                else if(prefix(arg, "preset="))
+                {
+                    parse_config_options(
+                        load_text_file(get_resource_path(std::string("data/presets/")+arg+".cfg")).c_str(),
+                        opt
+                    );
+                }
 #define TR_BOOL_OPT(name, description, default) \
                 else if(cmp(arg, DASHIFY(name))) opt.name = true; \
                 else if(prefix(arg, DASHIFY(name)+"=")) \
@@ -308,7 +366,7 @@ options parse_options(char** argv)
     // The frame client has no required options and is mostly a separate program
     // anyway, so let's just skip the pointless option validation.
     if(opt.display == options::display_type::FRAME_CLIENT)
-        return opt;
+        return;
 
     if(opt.scene_paths.size() == 0)
         throw option_parse_error("No scene specified!");
@@ -351,8 +409,6 @@ options parse_options(char** argv)
         else if(opt.film == film::BLACKMAN_HARRIS)
             opt.film_radius = 1.0f;
     }
-
-    return opt;
 #undef TR_BOOL_OPT
 #undef TR_BOOL_SOPT
 #undef TR_INT_OPT
@@ -367,6 +423,233 @@ options parse_options(char** argv)
 #undef TR_STRUCT_OPT
 }
 
+bool parse_config_options(const char* config_str, options& opt)
+{
+    bool got_any = false;
+    while(*config_str != 0)
+    {
+        std::string identifier;
+        if(!parse_identifier(config_str, identifier))
+            continue;
+
+        if(identifier[0] == '#')
+        {
+            const char* end = strchr(config_str, '\n');
+            if(end == nullptr) end = config_str+strlen(config_str);
+            config_str = end;
+            continue;
+        }
+
+        std::string param;
+
+        parse_param(identifier, config_str, param);
+
+        const char* id = identifier.c_str();
+        const char* arg = param.c_str();
+
+        if(identifier == "help")
+        {
+            print_command_help(param);
+            continue;
+        }
+        else if(identifier == "quit")
+        {
+            opt.running = false;
+            continue;
+        }
+        else if(identifier == "config")
+            parse_config_options(load_text_file(param).c_str(), opt);
+        else if(identifier == "preset")
+        {
+            parse_config_options(
+                load_text_file(get_resource_path("data/presets/"+param+".cfg")).c_str(),
+                opt
+            );
+        }
+#define TR_BOOL_OPT(name, description, default) \
+        else if(identifier == DASHIFY(name)) \
+            opt.name = parse_toggle(DASHIFY(name), arg);
+#define TR_BOOL_SOPT(name, shorthand, description) \
+        TR_BOOL_OPT(name, description, false)
+#define TR_INT_OPT(name, description, default, min, max) \
+        else if(identifier == DASHIFY(name)) \
+            opt.name = parse_int(DASHIFY(name), arg, min, max);
+#define TR_INT_SOPT(name, shorthand, description, default, min, max) \
+        TR_INT_OPT(name, description, default, min, max)
+#define TR_FLOAT_OPT(name, description, default, min, max) \
+        else if(identifier == DASHIFY(name)) \
+            opt.name = parse_float(DASHIFY(name), arg, min, max);
+#define TR_STRING_OPT(name, description, default) \
+        else if(identifier == DASHIFY(name)) \
+            opt.name = arg;
+#define TR_FLAG_STRING_OPT(name, description, default) \
+        else if(identifier == DASHIFY(name)) \
+        {\
+            opt.name##_flag = true; \
+            opt.name = arg; \
+        }
+#define TR_VEC3_OPT(name, description, default, min, max) \
+        else if(identifier == DASHIFY(name)) \
+        {\
+            opt.name.x = parse_float(DASHIFY(name)+".x", arg, min.x, max.x, ','); \
+            if(*arg == ',') arg++; \
+            opt.name.y = parse_float(DASHIFY(name)+".y", arg, min.y, max.y, ','); \
+            if(*arg == ',') arg++; \
+            opt.name.z = parse_float(DASHIFY(name)+".z", arg, min.z, max.z); \
+        }
+#define TR_ENUM_OPT(name, type, description, default, ...) \
+        else if(identifier == DASHIFY(name)) \
+            enum_str(DASHIFY(name), opt.name, arg, { __VA_ARGS__ });
+#define TR_SETINT_OPT(name, description) \
+        else if(identifier == DASHIFY(name)) \
+        {\
+            while(true) \
+            {\
+                opt.name.insert(parse_int(DASHIFY(name), arg, INT_MIN, INT_MAX, ','));\
+                if(*arg != ',') break;\
+                arg++; \
+            }\
+        }
+#define TR_VECFLOAT_OPT(name, description) \
+        else if(identifier == DASHIFY(name)) \
+        {\
+            while(true) \
+            {\
+                opt.name.push_back(parse_float(DASHIFY(name), arg, -FLT_MAX, FLT_MAX, ','));\
+                if(*arg != ',') break;\
+                arg++; \
+            }\
+        }
+#define TR_STRUCT_OPT_INT(member, default, min, max) \
+        if(check_name ? (id == DASHIFY(member)) : (*arg != '\0')) { \
+            s.member = parse_int(name_prefix+DASHIFY(member), arg, min, max, ','); \
+            if(*arg == ',') arg++; \
+        }
+#define TR_STRUCT_OPT_FLOAT(member, default, min, max) \
+        if(check_name ? (id == DASHIFY(member)) : (*arg != '\0')) { \
+            s.member = parse_float(name_prefix+DASHIFY(member), arg, min, max, ','); \
+            if(*arg == ',') arg++; \
+        }
+#define TR_STRUCT_OPT(name, description, ...)\
+        else if(prefix(id, DASHIFY(name))) \
+        {\
+            std::string name_prefix = DASHIFY(name)+"."; \
+            auto& s = opt.name; \
+            bool check_name = false; \
+            if(*id == '.') \
+            { \
+                check_name = true; \
+                id++; \
+            } \
+            __VA_ARGS__ \
+            if(check_name && *arg != '\0') \
+                throw option_parse_error( \
+                    "Unknown struct command member: " + std::string(id) \
+                ); \
+            else if(*arg != '\0') \
+                throw option_parse_error( \
+                    "Unexpected extra value in struct: " +  \
+                    std::string(arg) \
+                ); \
+        }
+        TR_OPTIONS
+#undef TR_BOOL_OPT
+#undef TR_BOOL_SOPT
+#undef TR_INT_OPT
+#undef TR_INT_SOPT
+#undef TR_FLOAT_OPT
+#undef TR_STRING_OPT
+#undef TR_FLAG_STRING_OPT
+#undef TR_VEC3_OPT
+#undef TR_ENUM_OPT
+#undef TR_SETINT_OPT
+#undef TR_VECFLOAT_OPT
+#undef TR_STRUCT_OPT_INT
+#undef TR_STRUCT_OPT_FLOAT
+#undef TR_STRUCT_OPT
+        else throw option_parse_error("Unknown option " + identifier);
+        got_any = true;
+    }
+    return got_any;
+}
+
+bool parse_command(const char* config_str, options& opt)
+{
+    try
+    {
+        return parse_config_options(config_str, opt);
+    }
+    catch(const option_parse_error& err)
+    {
+        std::cerr << err.what() << std::endl;
+        return false;
+    }
+}
+
+void print_command_help(const std::string& command)
+{
+#define opt(name, ...) \
+    if(command == dashify_string(name)) \
+    { \
+        std::cout << build_option_string(name, __VA_ARGS__, false); \
+        return; \
+    }
+#define TR_BOOL_OPT(name, description, default) \
+    opt(#name, "on|off", '\0', description, default ? "on" : "off");
+#define TR_BOOL_SOPT(name, shorthand, description) \
+    opt(#name, "on|off", shorthand, description, "");
+#define TR_INT_OPT(name, description, default, min, max) \
+    opt(#name, "integer", '\0', description, std::to_string(default));
+#define TR_INT_SOPT(name, shorthand, description, default, min, max) \
+    opt(#name, "integer", shorthand, description, std::to_string(default));
+#define TR_FLOAT_OPT(name, description, default, min, max)\
+    opt(#name, "number", '\0', description, std::to_string(default));
+#define TR_STRING_OPT(name, description, default) \
+    opt(#name, "string", '\0', description, default);
+#define TR_FLAG_STRING_OPT(name, description, default) \
+    opt(#name, "string", '\0', description, default);
+#define TR_VEC3_OPT(name, description, default, min, max) \
+    opt(#name, "x,y,z", '\0', description, vec_to_string(default));
+#define TR_ENUM_OPT(name, type, description, default, ...) \
+    opt(#name, \
+        gather_enum_str(std::vector<std::pair<std::string, type>>{__VA_ARGS__}), \
+        '\0', description, find_default_enum_string<type>(default, {__VA_ARGS__}));
+#define TR_SETINT_OPT(name, description) \
+    opt(#name, "int,int,...", '\0', description, "");
+#define TR_VECFLOAT_OPT(name, description) \
+    opt(#name, "float,float,...", '\0', description, "");
+#define TR_STRUCT_OPT_INT(name, default, min, max) \
+    type_tag += DASHIFY(name) + ","; \
+    default_str += DASHIFY(name) + " = " + std::to_string(default) + ", ";
+#define TR_STRUCT_OPT_FLOAT(name, default, min, max) \
+    type_tag += DASHIFY(name) + ","; \
+    default_str += DASHIFY(name) + " = " + std::to_string(default) + ", ";
+#define TR_STRUCT_OPT(name, description, ...) \
+    {\
+        std::string type_tag = ""; \
+        std::string default_str = ""; \
+        __VA_ARGS__ \
+        type_tag.resize(type_tag.size()-1);\
+        default_str.resize(default_str.size()-2);\
+        opt(#name, type_tag, '\0', description, default_str); \
+    }
+    TR_OPTIONS
+#undef TR_BOOL_OPT
+#undef TR_BOOL_SOPT
+#undef TR_INT_OPT
+#undef TR_INT_SOPT
+#undef TR_FLOAT_OPT
+#undef TR_STRING_OPT
+#undef TR_FLAG_STRING_OPT
+#undef TR_VEC3_OPT
+#undef TR_ENUM_OPT
+#undef TR_SETINT_OPT
+#undef TR_VECFLOAT_OPT
+#undef TR_STRUCT_OPT
+#undef opt
+    std::cout << "Unknown command: " << command << std::endl;
+}
+
 void print_help(const char* program_name)
 {
     std::cout << "Usage: " << program_name << " [options] scene" << R"(
@@ -377,6 +660,10 @@ object described in the file.
 Options:
   --help
     Show this information.
+  --config=<string>
+    Load the given config file.
+  --preset=<reference|quality|accumulation|denoised|ddish-gi>
+    Load the given preset file (config file that is shipped with Tauray).
 )";
     std::map<std::string, std::string> short_option_strings;
     std::map<std::string, std::string> long_option_strings;

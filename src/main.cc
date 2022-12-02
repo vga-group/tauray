@@ -3,7 +3,10 @@
 
 int main(int, char** argv) try
 {
-    tr::options opt = tr::parse_options(argv);
+    std::ios_base::sync_with_stdio(false);
+
+    tr::options opt;
+    tr::parse_command_line_options(argv, opt);
     std::unique_ptr<tr::context> ctx(tr::create_context(opt));
 
     tr::scene_data sd = tr::load_scenes(*ctx, opt);

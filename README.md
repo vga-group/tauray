@@ -70,7 +70,7 @@ supported on Windows.
 To launch a simple interactive path tracing session with the included test model:
 
 ```bash
-build/tauray test/test.glb
+build/tauray test/test.glb --preset=accumulation
 ```
 
 [See the user manual for more detailed usage documentation.](docs/tauray_user_manual.pdf)
@@ -88,7 +88,7 @@ and **disable validation**:
 You may also want to set `--force-double-sided` for better performance if your
 scene does not require single-sided surfaces. Also, remember to set
 `--max-ray-depth` appropriately for the type of benchmark, the default is quite
-high.
+high. It sets the number of bounces.
 
 By default, Tauray will use all GPUs with support for the required extensions.
 If you wish to use a specific GPU on a multi-GPU system, use `--devices=0` (or
