@@ -498,9 +498,11 @@ void evaluate_ray(
 
 #ifdef PATH_SPACE_REGULARIZATION
         // Regularization strategy inspired by "Optimised Path Space Regularisation", 2021 Weier et al.
-        float original_roughness = mat.roughness;
+        // I'm using the BSDF PDF instead of roughness, which seems to be more
+        // effective at reducing fireflies.
+        if(bsdf_pdf != 0.0f)
+            regularization *= max(1 - control.regularization_gamma / pow(bsdf_pdf, 0.25f), 0.0f);
         mat.roughness = 1.0f - ((1.0f - mat.roughness) * regularization);
-        regularization *= max(1 - control.regularization_gamma * original_roughness, 0.0f);
 #endif
 
         mat3 tbn = create_tangent_space(v.mapped_normal);
