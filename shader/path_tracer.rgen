@@ -93,7 +93,7 @@ void main()
 #elif defined(USE_BLACKMAN_HARRIS_FILTER)
         cam_offset = sample_blackman_harris_concentric_disk(
             generate_film_sample(lsampler).xy
-        );
+        ) * 2.0f;
 #else
 #error "Unknown filter type"
 #endif

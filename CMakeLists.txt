@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(Tauray LANGUAGES C CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-option(VULKAN_VALIDATION "Load Vulkan validation layers when present" ON)
+option(VULKAN_VALIDATION "Load Vulkan validation layers by default when present" OFF)
 
 find_package(Threads)
 
