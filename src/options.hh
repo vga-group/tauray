@@ -183,7 +183,7 @@
     TR_FLOAT_OPT(film_radius, \
         "Sets the sampling radius for the film sampling. This is in pixels " \
         "for most rendering methods.", \
-        1.0f, 0.0f, FLT_MAX) \
+        0.5f, 0.0f, FLT_MAX) \
     TR_FLOAT_OPT(russian_roulette, \
         "Enables russian roulette sampling with the given delta.", \
         0.0f, 1.000001f, FLT_MAX) \
@@ -537,6 +537,7 @@ bool parse_config_options(const char* config_str, options& opt);
 bool parse_command(const char* config_str, options& opt);
 void print_command_help(const std::string& command);
 void print_help(const char* program_name);
+void print_options(options& opt, bool full);
 
 }
 

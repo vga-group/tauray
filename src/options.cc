@@ -207,7 +207,6 @@ void parse_command_line_options(char** argv, options& opt)
 {
     argv++; // Skip name
     bool skip_flags = false;
-    opt.film_radius = -1.0f;
 
     while(*argv)
     {
@@ -402,13 +401,6 @@ void parse_command_line_options(char** argv, options& opt)
         opt.tonemap = tonemap_stage::LINEAR;
     }
 
-    if(opt.film_radius < 0)
-    {
-        // Different radius defaults for different film types!
-        if(opt.film == film::BOX) opt.film_radius = 0.5f;
-        else if(opt.film == film::BLACKMAN_HARRIS)
-            opt.film_radius = 1.0f;
-    }
 #undef TR_BOOL_OPT
 #undef TR_BOOL_SOPT
 #undef TR_INT_OPT
@@ -465,6 +457,11 @@ bool parse_config_options(const char* config_str, options& opt)
                 load_text_file(get_resource_path("data/presets/"+param+".cfg")).c_str(),
                 opt
             );
+        }
+        else if(identifier == "dump")
+        {
+            print_options(opt, param == "full");
+            continue;
         }
 #define TR_BOOL_OPT(name, description, default) \
         else if(identifier == DASHIFY(name)) \
@@ -645,6 +642,8 @@ void print_command_help(const std::string& command)
 #undef TR_ENUM_OPT
 #undef TR_SETINT_OPT
 #undef TR_VECFLOAT_OPT
+#undef TR_STRUCT_OPT_INT
+#undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT
 #undef opt
     std::cout << "Unknown command: " << command << std::endl;
@@ -722,6 +721,8 @@ Options:
 #undef TR_ENUM_OPT
 #undef TR_SETINT_OPT
 #undef TR_VECFLOAT_OPT
+#undef TR_STRUCT_OPT_INT
+#undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT
 #undef lopt
 #undef sopt
@@ -729,6 +730,98 @@ Options:
         std::cout << pair.second;
     for(const auto& pair: long_option_strings)
         std::cout << pair.second;
+}
+
+void print_options(options& opt, bool full)
+{
+#define dump(name, value) \
+    std::cout << (name) << " " << (value) << std::endl;
+#define TR_BOOL_OPT(name, description, default) \
+    if(full || opt.name != default) dump(DASHIFY(name), (opt.name ? "on" : "off"))
+#define TR_BOOL_SOPT(name, shorthand, description) \
+    if(full || opt.name != false) dump(DASHIFY(name), (opt.name ? "on" : "off"))
+#define TR_INT_OPT(name, description, default, min, max) \
+    if(full || opt.name != default) dump(DASHIFY(name), std::to_string(opt.name))
+#define TR_INT_SOPT(name, shorthand, description, default, min, max) \
+    if(full || opt.name != default) dump(DASHIFY(name), std::to_string(opt.name))
+#define TR_FLOAT_OPT(name, description, default, min, max) \
+    if(full || (opt.name != default && (!isnan(default) || !isnan(opt.name)))) dump(DASHIFY(name), std::to_string(opt.name))
+#define TR_STRING_OPT(name, description, default) \
+    if(full || opt.name != default) dump(DASHIFY(name), "\""+opt.name+"\"")
+#define TR_FLAG_STRING_OPT(name, ...) \
+    if(opt.name##_flag) dump(DASHIFY(name), "\""+opt.name+"\"")
+#define TR_VEC3_OPT(name, description, default, min, max) \
+    if(full || opt.name != default) \
+        std::cout << DASHIFY(name) << " " << opt.name.x << "," << opt.name.y << "," << opt.name.z << std::endl;
+#define TR_ENUM_OPT(name, type, description, default, ...) \
+    if(full || !(opt.name == default)) \
+    { \
+        std::vector<std::pair<std::string, type>> options{__VA_ARGS__}; \
+        std::cout << DASHIFY(name) << " "; \
+        for(const auto& pair: options) \
+        { \
+            if(pair.second == opt.name) \
+            { \
+                std::cout << pair.first; \
+                break; \
+            } \
+        } \
+        std::cout << std::endl; \
+    }
+#define TR_SETINT_OPT(name, ...) \
+    if(full || opt.name.size() != 0) \
+    { \
+        std::cout << DASHIFY(name) << " "; \
+        bool first = true; \
+        for(int n: opt.name) \
+        { \
+            if(!first) std::cout << ","; \
+            std::cout << n; \
+            first = false;\
+        } \
+        std::cout << std::endl; \
+    }
+#define TR_VECFLOAT_OPT(name, ...) \
+    if(full || opt.name.size() != 0) \
+    { \
+        std::cout << DASHIFY(name) << " "; \
+        bool first = true; \
+        for(int n: opt.name) \
+        { \
+            if(!first) std::cout << ","; \
+            std::cout << n; \
+            first = false;\
+        } \
+        std::cout << std::endl; \
+    }
+#define TR_STRUCT_OPT_INT(name, default, ...) \
+    if(full || value.name != default) \
+        std::cout << name_start+DASHIFY(name) << " " << value.name << std::endl;
+#define TR_STRUCT_OPT_FLOAT(name, default, ...) \
+    if(full || value.name != default) \
+        std::cout << name_start+DASHIFY(name) << " " << value.name << std::endl;
+#define TR_STRUCT_OPT(name, description, ...) \
+    {\
+        auto& value = opt.name; \
+        std::string name_start = DASHIFY(name) + "."; \
+        __VA_ARGS__ \
+    }
+    TR_OPTIONS
+#undef TR_BOOL_OPT
+#undef TR_BOOL_SOPT
+#undef TR_INT_OPT
+#undef TR_INT_SOPT
+#undef TR_FLOAT_OPT
+#undef TR_STRING_OPT
+#undef TR_FLAG_STRING_OPT
+#undef TR_VEC3_OPT
+#undef TR_ENUM_OPT
+#undef TR_SETINT_OPT
+#undef TR_VECFLOAT_OPT
+#undef TR_STRUCT_OPT_INT
+#undef TR_STRUCT_OPT_FLOAT
+#undef TR_STRUCT_OPT
+#undef dump
 }
 
 }
