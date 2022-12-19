@@ -3,27 +3,27 @@
 ## Adding a new rendering technique
 
 Renderers are split into two parts in Tauray: the renderer class and the
-pipeline class. The renderer class ties multiple pipelines together to form the 
+stage class. The renderer class ties multiple stages together to form the 
 final image. It is also responsible for load balancing.
 
 You may not need to add a new renderer; for most ray-tracing-based techniques
 (MLT, BDPT, etc.) you should be able to simply specialize `rt_renderer` for your
 class. If you choose to do so, you get the benefit of all the post-processing
 and distributed computing capabilities handled by `rt_renderer`. Other, more
-novel kinds of pipelines are more likely to need a new renderer.
+novel kinds of stages are more likely to need a new renderer.
 
-You will always need to create a new pipeline, though. When creating a pipeline,
-you can choose from many different base classes. `gfx_pipeline` is the most
-generic pipeline that should not pose any limitations to what you can do.
-`rt_pipeline` is a more suitable base class for ray-tracing based methods, it
+You will always need to create a new stage, though. When creating a stage,
+you can choose from a couple of different base classes. `stage` is the most
+generic base class that should not pose any limitations to what you can do.
+`rt_stage` is a more suitable base class for ray-tracing based methods, it
 handles setting up all scene data. Further, if you want to make a camera-based
 ray-tracing pipeline that renders to a rectangular image buffer, you should
-derive from `rt_camera_pipeline` which also handles the camera buffer and output
-image. See `feature_pipeline` for a simple example of the usage.
+derive from `rt_camera_stage` which also handles the camera buffer and output
+image. See `feature_stage` for a simple example of the usage.
 
 Whatever you do, please refrain from trying to tack on new methods as a flag to
-existing pipelines. For example, do not implement bidirectional path tracing
-as a flag to `path_tracer_pipeline`.
+existing stages. For example, do not implement bidirectional path tracing
+as a flag to `path_tracer_stage`.
 
 ## Coding style
 

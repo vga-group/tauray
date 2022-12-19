@@ -38,6 +38,7 @@ In any case, you should [install Tauray](#installing-tauray) and
 [prepare a scene](#scene-setup) first. Then, you should check that the scene
 works properly, using the [interactive mode](#interactive-rendering) or a
 one-off [offline rendering](#offline-rendering). After that, you should
+[read how Tauray is configured](#configuration) and 
 [choose the options](#options) based on your needs, and render the final
 results.
 
@@ -206,7 +207,7 @@ Table: Controls of Tauray's interactive mode.
 | Page up     | Switch to next camera     |
 | Page down   | Switch to previous camera |
 | 0           | Reset camera to origin    |
-| F1          | Toggle camera movement    |
+| F1          | Detach cursor from window |
 | F5          | Reload all shaders        |
 | T           | Print timing info         |
 | Return      | Pause all animations      |
@@ -238,9 +239,63 @@ in the [Options](#options) chapter. Certain (but very few) options are specific
 to the headless mode. They are mostly related to the output format and
 animations.
 
+# Configuration
+
+Configuration of Tauray can be done in a three ways: command-line parameters,
+configuration files and the command-line interface.
+
+The command-line parameters you've already seen earlier in this document:
+`--filetype=png` is one of these. In general, most command-line parameters
+start with `--` and have an equals-sign for specifying the value. There's also
+no whitespace. Then there's also the short flags: `-f`, enables fullscreen mode,
+for example.
+
+Configuration files have all of the same parameters available, but they use a
+slightly different syntax. Preceding dashes are omitted, and the equals sign
+is optional. Whitespace is allowed! Short flags also do not exist in
+configuration files, so you'll need to use their long names instead (e.g.
+`fullscreen` instead of `f`). An example configuration file could look as follows:
+
+```bash
+# Let's call this file my_config.cfg
+# This is a comment!
+film blackman-harris
+force-double-sided on
+max-ray-depth 5
+accumulation on
+renderer path-tracer
+sampler sobol-z3
+samples-per-pixel 1
+regularization 0.2
+
+# Config files are also allowed to load each other like this, but please avoid
+# creating cycles.
+config base_config.cfg
+```
+
+If you saved this file as `my_config.cfg`, you can load it in Tauray using the
+`--config=my_config.cfg` parameter.
+
+Finally, there's the command-line interface (CLI). It is only available in
+interactive mode. You can access it by detaching control of the Tauray window
+with F1 and alt-tabbing to the console/terminal where you launched Tauray. Now,
+you can type in commands with the same syntax as in the configuration files,
+but they will take place while the program is running!
+
+You can use the CLI to experiment with options without having to restart Tauray
+constantly. There's also some extra features in the CLI that are not present
+elsewhere. You can get help for one specific command with the `help command-name`
+command, close the program with `quit` and print current configuration with
+`dump`.
+
+A few parameters cannot be changed while the program is running; generally,
+these are related to windowing or how the scene is loaded. You cannot switch
+into headless mode, re-select involved GPUs, change display type, etc. without
+restarting Tauray.
+
 # Options
 
-TauRay has a __lot__ of options and most things are customizable. Here, we've
+Tauray has a __lot__ of options and most things are customizable. Here, we've
 gathered the most important ones with example images of their function where
 applicable. Remember that, you can always get the most up-to-date information
 with `tauray --help`.
@@ -250,6 +305,43 @@ For example, `--some-algorithm-selection=<algo-a|algo-b|algo-c>` means that
 `--some-algorithm-selection=algo-b` would select the `algo-b` option of the
 listed three. Boolean flags (`--some-boolean-flag=<on|off>`) also have a short
 form: You can simply use `--some-boolean-flag` to set the value to `on`.
+
+While everything here is documented with the command-line parameter syntax (with
+the `--`, etc.), these options are also usable in configuration files. Just drop
+the `--` and replace the equals-sign with a space.
+
+## Presets
+
+`--preset=<preset-name>` loads the given preset.
+"Presets" are configuration files that are shipped with Tauray (in
+`data/presets/preset-name.cfg`) and can be loaded with a shorthand name.
+
++-------------------------------+----------------------------------------------------------------------------------------+
+| Preset                        | Image                                                                                  |
++:=============================:+:======================================================================================:+
+| `accumulation`: Interactive   | ![](images/preset_accumulation.png)                                                    |
+| renderer that slowly reduces  |                                                                                        |
+| noise when not moving.        |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
+| `ddish-gi`: Interactive       | ![](images/preset_ddish-gi.png)                                                        |
+| rendering with a fast global  |                                                                                        |
+| illumination approximation.   |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
+| `denoised`: Interactive       | ![](images/preset_denoised.png)                                                        |
+| renderer that produces        |                                                                                        |
+| denoised images.              |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
+| `quality`: Offline renderer   | ![](images/preset_quality.png)                                                         |
+| that creates high-quality     |                                                                                        |
+| images fairly quickly.        |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
+| `reference`: Reference        | ![](images/preset_reference.png)                                                       |
+| renderer that avoids biased   |                                                                                        |
+| images.                       |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
+
+Presets are subject to minor changes every now and then, so don't rely on
+specific behaviour (except for the `reference` preset).
 
 ## Fullscreen
 
@@ -279,7 +371,8 @@ mode. If you need to use headless mode regardless, ensure that its output
 filetype is `none`, so that your benchmark doesn't end up just measuring your
 disk speed instead.
 
-The timing information is printed in a similar format as presented below:
+The timing information is printed in a similar format as presented below, by
+default:
 
 ```
 FRAME 617:
@@ -307,6 +400,10 @@ the first and last few values which wind the in-flight frames up and down.
 
 You can also press the `T` key while Tauray is running to print the same timing
 info for one frame only.
+
+Additionally, you can change the timing output format into "Trace Event Format"
+with `--trace=trace-event-format`. The output can be viewed in Chrome's
+`about://tracing`.
 
 ## Vertical synchronization
 
@@ -653,6 +750,16 @@ Environment maps make it easier to generate realistic-looking images of
 individual objects, as you don't have to model proper surrounding geometry.
 They are also nice in larger scenes as well.
 
+By default, environment maps are importance sampled. This has a noticeable
+performance impact and you may want to disable the importance sampling sometimes.
+You can do this with `--importance-sample-envmap=off`. Note that this importance
+sampling is basically required if your environment map includes the sun or any
+other small and bright light source:
+
+| ![without](images/envmap_unsampled.png){width=50%} | ![with](images/envmap_sampled.png){width=50%}      |
+|:--------------------------------------------------:|:--------------------------------------------------:|
+| `--importance-sample-envmap=off`                   | `--importance-sample-envmap=on` (default)          |
+
 ## Tone mapping
 
 `--tonemap=<filmic|gamma-correction|linear|reinhard|reinhard-luminance>`
@@ -874,19 +981,28 @@ will appear as a bright sphere. You can disable this from primary rays with
 |:----------------------------------------------------:|:-----------------------------------------------------------:|
 | Note how the light source is visible.                | With `--hide-lights`, it's hidden!                          |
 
-## Firefly mitigation (indirect clamping)
+## Firefly mitigation (path space regularization & indirect clamping)
 
+`--regularization=<number>`
 `--indirect-clamping=<number>`
 
-If your image suffers from fireflies, the indirect clamping is the most
-efficient way to reduce or remove them. However, it does make the image more
-or less biased, depending on how aggressive it is. Usually, good indirect
-clamping values are around 10-100, lower values start to affect the image too
-much.
+If your image suffers from fireflies, you have two ways to get rid of them:
+path space regularization with `--regularization` and indirect clamping with
+`--indirect-clamping`.
 
-| ![fireflies](images/fireflies.png)            | ![clamped away](images/fireflies_clamped.png) |
-|:---------------------------------------------:|:---------------------------------------------:|
-| Fireflies can be seen in the cannon's shadow. | The same scene with `--indirect-clamping=5`.  |
+Path space regularization is the recommended way to do this. It biases the image
+by strategically adjusting roughness for indirect bounces such that fireflies
+cannot occur. Good values for real-time renders are between 0.1-0.5. Higher
+values make caustics appear blurrier.
+
+Indirect clamping is the older but powerful way to reduce or remove firelies.
+However, it's a fairly aggressive method that causes more biasing and loss of
+energy than path space regularization. Usually, good indirect clamping values
+are around 10-100, lower values start to affect the image too much.
+
+| ![fireflies](images/fireflies.png)               | ![clamped away](images/fireflies_clamped.png)    | ![regularized](images/fireflies_regularized.png) |
+|:------------------------------------------------:|:------------------------------------------------:|:------------------------------------------------:|
+| Fireflies can be seen in the cannon's shadow.    | The same scene with `--indirect-clamping=5`.     | The same scene with `--regularization=0.5`.      |
 
 ## Ray bounces
 
@@ -1061,16 +1177,22 @@ weight than usual, it responds poorly to `--indirect-clamping`!
 
 ## Sampler
 
-`--sampler=<uniform-random|sobol-owen>`
+`--sampler=<uniform-random|sobol-owen|sobol-z2|sobol-z3>`
 
 A sampler picks the samples for Monte Carlo integration in the path tracer.
 `uniform-random` is just regular random values, `sobol-owen` implements
 [Practical Hash-based Owen Scrambling](https://jcgt.org/published/0009/04/01/).
+`sobol-z2` and `sobol-z3` are related to [Screen-Space Blue-Noise Diffusion of Monte Carlo Sampling Error via Hierarchical Ordering of Pixels](http://abdallagafar.com/publications/zsampler/).
+The difference between them is that `sobol-z2` is using a typical 2D Morton curve,
+while `sobol-z3` is using a 3D Morton curve where frame index/time is the third axis.
 
-`sobol-owen` is the default and seems to be better in every way in every case.
-It's not even noticeably slower than `uniform-random`. `sobol-owen` converges
-with fewer samples than `uniform-random`, so you should definitely use it when
-doing high-spp renders.
+`sobol-z3` is the default, as it seems to perform fairly well in most cases.
+For low-spp renders, you may want to go for `sobol-z2` instead. For maximum
+performance, `uniform-random` is the fastest.
+
+| ![uniform random](images/sampler_uniform_random.png){width=20%} | ![sobol owen](images/sampler_sobol_owen.png){width=20%}         | ![sobol z2](images/sampler_sobol_z2.png){width=20%}             | ![sobol z3](images/sampler_sobol_z3.png){width=20%}             |
+|:---------------------------------------------------------------:|:---------------------------------------------------------------:|:---------------------------------------------------------------:|:---------------------------------------------------------------:|
+| `uniform-random`                                                | `sobol-owen`                                                    | `sobol-z2`                                                      | `sobol-z3`                                                      |
 
 ## Samples per pixel
 
@@ -1091,7 +1213,6 @@ Table: Effects of samples per pixel (SPP) counts to noise in path tracing.
 | ![1](images/pt1.png){width=12%}       | ![4](images/pt4.png){width=12%}       | ![16](images/pt16.png){width=12%}     | ![64](images/pt64.png){width=12%}     | ![256](images/pt256.png){width=12%}   | ![1024](images/pt1024.png){width=12%} | ![4096](images/pt4096.png){width=12%} |
 |:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|
 |            1 SPP                      |            4 SPP                      |            16 SPP                     |            64 SPP                     |            256 SPP                    |            1024 SPP                   |            4096 SPP                   |
-
 
 ## DDISH-GI
 
@@ -1160,6 +1281,36 @@ pixel values from the previous frame to deliver a more noise-free image.
 The given number affects the ratio of data re-used from the previous frame,
 where 0 is no re-use and 0.5 is 50/50 new and old frame.
 
+## Accumulation
+
+`--accumulation=<on|off>`
+
+Enables accumulation in the interactive path tracer, meaning that new frames
+are blended with previous frames until you move. This lets you quickly and
+interactively preview scenes with high SPP counts, as you can fly around
+normally, then stop to accumulate a high-SPP image. Do not use accumulation in
+headless mode.
+
+## Transparent background
+
+`--transparent-background=<on|off>`
+
+If you want to render cut-out images where the background is transparent, you
+can use `--transparent-background` to achieve just that.
+
+## Depth of field
+
+`--depth-of-field=<f-stop,distance,sensor-size,sides,angle>`.
+
+You can enable simulation of a simplistic non-pinhole camera with the
+thin-lens model, by using the `--depth-of-field` option. `f-stop` controls
+the [aperture size](https://en.wikipedia.org/wiki/F-number), `distance` sets
+the distance to the plane of focus, `sensor-size` sets the camera sensor size
+(default: 0.036), `sides` sets the shape of the aperture (0 = circle, 3 and
+above: polygonal), `angle` sets the angle of a polygonal aperture.
+
+![The usual scene, but with `--depth-of-field=0.05,10,0.036,6`.](images/depth_of_field.png)
+
 ## Force white albedo for first bounce
 
 `--use-white-albedo-on-first-bounce=<on|off>`
@@ -1180,14 +1331,10 @@ future, as we work on implementing more missing features. Namely:
 
 * Poor sampling of non-spherical area lights (i.e. emissive volumes). There is
   no importance sampling for these yet, so the image will be pretty noisy.
-* Environment maps that include a sun, cause fireflies. The environment map is
-  not importance sampled yet.
 * Morph target animations are not supported.
 * Advanced material models are not yet supported, only the basic GGX
   metallic-roughness + transmission.
 * Noisy caustics, due to the forward path tracing algorithm.
-* No depth-of-field for camera. Not hard to implement but also just not done
-  yet.
 
 # Conclusion
 
