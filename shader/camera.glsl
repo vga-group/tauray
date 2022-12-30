@@ -58,11 +58,12 @@ void get_camera_ray(
 #endif
 }
 
-vec2 get_camera_projection(in camera_data cam, vec3 world_pos)
+vec3 get_camera_projection(in camera_data cam, vec3 world_pos)
 {
     vec4 projected_pos = cam.view_proj * vec4(world_pos, 1.0f);
-    vec2 uv = projected_pos.xy / projected_pos.w;
-    return uv * 0.5 + 0.5;
+    vec3 uv = vec3(projected_pos.xy / projected_pos.w, projected_pos.z);
+    uv.xy = uv.xy * 0.5 + 0.5;
+    return uv;
 }
 
 #elif CAMERA_PROJECTION_TYPE == 2

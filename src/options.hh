@@ -377,6 +377,25 @@
         {"svgf", options::denoiser_type::SVGF}, \
         {"bmfr", options::denoiser_type::BMFR} \
     ) \
+    TR_STRUCT_OPT(svgf_params, \
+        "Parameters for the SVGF denoiser." \
+        "atrous_diffuse_iter: number of iterations of the atrous filter for the diffuse channel"\
+        "atrous_spec_iter: number of iterations of the atrous filter for the specular channel"\
+        "atrous_kernel_radius: atrous filter radius"\
+        "sigma_l: luminance weight for atrous filter"\
+        "sigma_z: depth weight for atrous filter"\
+        "sigma_n: normal weight for atrous filter"\
+        "min_alpha_color: controls temporal accumulation speed for diffuse and specular color" \
+        "min_alpha_moments: controls temporal accumulation speed for moments used to drive the variance guidance", \
+        TR_STRUCT_OPT_INT(atrous_diffuse_iter, 5, 1, 16) \
+        TR_STRUCT_OPT_INT(atrous_spec_iter, 5, 0, 16) \
+        TR_STRUCT_OPT_INT(atrous_kernel_radius, 2, 1, 16) \
+        TR_STRUCT_OPT_FLOAT(sigma_l, 10.0f, 0.001f, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(sigma_z, 1.0f, 0.001f, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(sigma_n, 128.0f, 0.0f, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(min_alpha_color, 0.02f, 0.001f, 1.0f) \
+        TR_STRUCT_OPT_FLOAT(min_alpha_moments, 0.2f, 0.001f, 1.0f) \
+    )\
     TR_BOOL_OPT(accumulation, \
         "Whether to accumulate samples from multiple frames or not. " \
         "For interactive mode, samples are accumulated when the camera is " \

@@ -212,4 +212,5 @@ void main()
     write_gbuffer_pos(v.pos);
     write_gbuffer_screen_motion(get_camera_projection(camera.pairs[gl_ViewIndex].previous, v.prev_pos));
     write_gbuffer_instance_id(int(control.instance_id));
+    write_gbuffer_linear_depth();
 }

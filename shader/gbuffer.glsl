@@ -301,9 +301,9 @@ vec3 read_gbuffer_pos(ivec3 pos) { return vec3(0); }
 #ifdef SCREEN_MOTION_TARGET_BINDING
 layout(binding = SCREEN_MOTION_TARGET_BINDING, set = 0, rg32f) uniform image2DArray screen_motion_target;
 
-void write_gbuffer_screen_motion(vec2 prev_frag_uv, ivec3 pos)
+void write_gbuffer_screen_motion(vec3 prev_frag_uv, ivec3 pos)
 {
-    imageStore(screen_motion_target, pos, vec4(prev_frag_uv, 0, 0));
+    imageStore(screen_motion_target, pos, vec4(prev_frag_uv, 0));
 }
 
 vec2 read_gbuffer_screen_motion(ivec3 pos)
@@ -313,11 +313,11 @@ vec2 read_gbuffer_screen_motion(ivec3 pos)
 
 #elif defined(SCREEN_MOTION_TARGET_LOCATION)
 
-layout(location = SCREEN_MOTION_TARGET_LOCATION) out vec2 screen_motion_target;
+layout(location = SCREEN_MOTION_TARGET_LOCATION) out vec4 screen_motion_target;
 
-void write_gbuffer_screen_motion(vec2 prev_frag_uv)
+void write_gbuffer_screen_motion(vec3 prev_frag_uv)
 {
-    screen_motion_target = prev_frag_uv;
+    screen_motion_target = vec4(prev_frag_uv, 0.0);
 }
 
 #else
@@ -359,6 +359,43 @@ void write_gbuffer_instance_id(int id)
 void write_gbuffer_instance_id(int id, ivec3 pos) {}
 void write_gbuffer_instance_id(int id) {}
 int read_gbuffer_instance_id(ivec3 pos) { return 0; }
+
+#endif
+
+//==============================================================================
+// Linear depth
+//==============================================================================
+
+#ifdef LINEAR_DEPTH_TARGET_BINDING
+layout(binding = LINEAR_DEPTH_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray linear_depth_target;
+
+void write_gbuffer_linear_depth(ivec3 pos)
+{
+    // TODO: Write linear depth from the path tracer as well
+    imageStore(linear_depth_target, pos, vec4(0.0, 0.0, 0.0, 1.0));
+}
+
+vec3 read_gbuffer_linear_depth(ivec3 pos)
+{
+    return imageLoad(linear_depth_target, pos).rgb;
+}
+
+#elif defined(LINEAR_DEPTH_TARGET_LOCATION)
+
+layout(location = LINEAR_DEPTH_TARGET_LOCATION) out vec4 linear_depth_target;
+
+void write_gbuffer_linear_depth()
+{
+    const float linear_depth = gl_FragCoord.z / gl_FragCoord.w;
+    const vec2 grad = vec2(dFdx(linear_depth), dFdy(linear_depth));
+    linear_depth_target = vec4(linear_depth, grad, 0.0);
+}
+
+#else
+
+void write_gbuffer_linear_depth(ivec3 pos) {}
+void write_gbuffer_linear_depth() {}
+vec3 read_gbuffer_linear_depth(ivec3 pos) { return vec3(0.0); }
 
 #endif
 

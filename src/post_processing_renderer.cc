@@ -52,6 +52,8 @@ void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
         spec.pos_present = true;
         spec.albedo_present = true;
         spec.diffuse_present = true;
+        spec.linear_depth_present = true;
+        spec.material_present = true;
     }
 
     if(opt.bmfr.has_value())
@@ -223,16 +225,14 @@ void post_processing_renderer::init_pipelines()
 
     if(opt.svgf_denoiser.has_value())
     {
+        opt.svgf_denoiser.value().active_viewport_count = opt.active_viewport_count;
         svgf.reset(new svgf_stage(
             *dev,
             input_target,
             prev_gbuffer,
-            in_color,
-            out_color,
             opt.svgf_denoiser.value()
         ));
-        if(svgf->need_ping_pongswap())
-            swap_pingpong();
+        svgf->set_scene(cur_scene);
     }
     if(opt.bmfr.has_value())
     {
