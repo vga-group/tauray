@@ -51,10 +51,19 @@ struct point_light
     int padding;
 };
 
+struct tri_light
+{
+    vec3 pos[3];
+    vec3 emission_factor;
+
+    vec2 uv[3];
+    int emission_tex_id;
+};
+
 struct instance
 {
     uint mesh_id;
-    uint pad;
+    int light_base_id;
     int sh_grid_index;
     float shadow_terminator_mul;
     mat4 model;
@@ -82,6 +91,13 @@ layout(binding = POINT_LIGHT_BUFFER_BINDING, set = 0, scalar) buffer point_light
 {
     point_light lights[];
 } point_lights;
+#endif
+
+#ifdef TRI_LIGHT_BUFFER_BINDING
+layout(binding = TRI_LIGHT_BUFFER_BINDING, set = 0, scalar) buffer tri_light_buffer
+{
+    tri_light lights[];
+} tri_lights;
 #endif
 
 #ifdef TEXTURE_3D_ARRAY_BINDING
@@ -140,6 +156,7 @@ layout(binding = SCENE_METADATA_BUFFER_BINDING, set = 0, scalar) uniform scene_m
 {
     uint point_light_count;
     uint directional_light_count;
+    uint tri_light_count;
 } scene_metadata;
 #endif
 

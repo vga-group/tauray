@@ -228,6 +228,7 @@ void scene::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_
             *sb.directional_light_data, 0, VK_WHOLE_SIZE
         }},
         {"point_lights", {*sb.point_light_data, 0, VK_WHOLE_SIZE}},
+        {"tri_lights", {*sb.tri_light_data, 0, VK_WHOLE_SIZE}},
         {"environment_map_tex", {
             sb.envmap_sampler.get_sampler(dev->index),
             envmap ? envmap->get_image_view(dev->index) : vk::ImageView{},
@@ -399,6 +400,7 @@ scene::scene_buffer::scene_buffer(device_data& dev)
     scene_metadata(dev, 0, vk::BufferUsageFlagBits::eUniformBuffer),
     directional_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     point_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    tri_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     sh_grid_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     shadow_map_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     camera_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),

@@ -25,7 +25,9 @@ struct material_buffer
 struct instance_buffer
 {
     uint32_t mesh_id;
-    uint32_t pad;
+    // -1 if not an area light source, otherwise base index to triangle light
+    // array.
+    int32_t light_base_id;
     int32_t sh_grid_index;
     float shadow_terminator_mul;
     alignas(16) pmat4 model;
@@ -90,6 +92,22 @@ struct point_light_entry
     int padding;
 };
 
+// These aren't built on the CPU, so this definition is only used for sizeof.
+// They're also not supported with rasterization, so they don't carry any shadow
+// mapping info.
+struct tri_light_entry
+{
+    pvec3 pos[3];
+    pvec3 emission_factor;
+
+    pvec2 uv[3];
+    int emission_tex_id;
+
+    // TODO: Put pre-calculated data here, since we want to pad to a multiple of
+    // 32 anyway. There's 5 ints left.
+    //int padding[5];
+};
+
 struct sh_grid_buffer
 {
     alignas(16) pmat4 pos_from_world;
@@ -150,6 +168,13 @@ struct scene_metadata_buffer
 {
     uint32_t point_light_count;
     uint32_t directional_light_count;
+    uint32_t tri_light_count;
+};
+
+struct extract_tri_light_push_constants
+{
+    uint32_t triangle_count;
+    uint32_t instance_id;
 };
 
 }
@@ -160,6 +185,13 @@ namespace tr
 scene_update_stage::scene_update_stage(device_data& dev, const options& opt)
 :   stage(dev), as_rebuild(true), command_buffers_outdated(true),
     force_instance_refresh_frames(0), cur_scene(nullptr),
+    extract_tri_lights(dev, compute_pipeline::params{
+        {"shader/extract_tri_lights.comp"},
+        {
+            {"vertices", (uint32_t)opt.max_meshes},
+            {"indices", (uint32_t)opt.max_meshes}
+        }
+    }),
     opt(opt), stage_timer(dev, "scene update")
 {
 }
@@ -178,8 +210,18 @@ void scene_update_stage::set_scene(scene* target)
     size_t point_light_mem = sizeof(point_light_entry) * point_light_count;
     size_t directional_light_mem =
         sizeof(directional_light_entry) * cur_scene->get_directional_lights().size();
+    size_t tri_light_count = 0;
+
+    for(const mesh_scene::instance& i: cur_scene->get_instances())
+    {
+        if(i.mat->emission_factor != vec3(0))
+            tri_light_count += i.m->get_indices().size() / 3;
+    }
+
     sb.point_light_data.resize(point_light_mem);
     sb.directional_light_data.resize(directional_light_mem);
+    sb.tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
+
     sb.scene_metadata.resize(sizeof(scene_metadata_buffer));
 
     sb.dii = sb.s_table.update_scene(cur_scene);
@@ -206,11 +248,20 @@ void scene_update_stage::update(uint32_t frame_index)
 
     uint64_t frame_counter = dev->ctx->get_frame_counter();
 
+    size_t tri_light_count = 0;
+
     const std::vector<scene::instance>& instances = cur_scene->get_instances();
     sb.scene_data.resize(sizeof(instance_buffer) * instances.size());
     sb.scene_data.foreach<instance_buffer>(
         frame_index, instances.size(),
         [&](instance_buffer& inst, size_t i){
+            if(instances[i].mat->emission_factor != vec3(0))
+            {
+                inst.light_base_id = tri_light_count;
+                tri_light_count += instances[i].m->get_indices().size() / 3;
+            }
+            else inst.light_base_id = -1;
+
             // Skip unchanged instances.
             if(
                 force_instance_refresh_frames == 0 &&
@@ -576,11 +627,36 @@ void scene_update_stage::record_command_buffers()
         sb.scene_metadata.upload(i, cb);
 
         if(dev->ctx->is_ray_tracing_supported())
+        {
             record_as_build(i, cb);
+            if(sb.tri_light_data.get_size() != 0)
+                record_tri_light_extraction(i, cb);
+        }
 
         stage_timer.end(cb, i);
 
         end_graphics(cb, i);
+    }
+}
+
+void scene_update_stage::record_tri_light_extraction(
+    uint32_t frame_index, vk::CommandBuffer cb
+){
+    cur_scene->bind(extract_tri_lights, frame_index, 0);
+    const std::vector<scene::instance>& instances = cur_scene->get_instances();
+    extract_tri_lights.bind(cb, frame_index);
+    for(size_t i = 0; i < instances.size(); ++i)
+    {
+        const mesh_scene::instance& inst = instances[i];
+        if(inst.mat->emission_factor == vec3(0))
+            continue;
+
+        extract_tri_light_push_constants pc;
+        pc.triangle_count = inst.m->get_indices().size() / 3;
+        pc.instance_id = i;
+
+        extract_tri_lights.push_constants(cb, pc);
+        cb.dispatch((pc.triangle_count+255u)/256u, 1, 1);
     }
 }
 

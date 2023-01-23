@@ -1,0 +1,50 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#define TRI_LIGHT_BUFFER_BINDING 0
+#define VERTEX_BUFFER_BINDING 1
+#define INDEX_BUFFER_BINDING 2
+#define SCENE_DATA_BUFFER_BINDING 3
+#include "scene.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(push_constant, scalar) uniform push_constant_buffer
+{
+    uint triangle_count;
+    uint instance_id;
+} control;
+
+void main()
+{
+    uint input_index = gl_GlobalInvocationID.x;
+    if(input_index < control.triangle_count)
+    {
+        instance o = scene.o[control.instance_id];
+
+        uint output_index = o.light_base_id + gl_GlobalInvocationID.x;
+        tri_light light;
+        light.emission_tex_id = o.mat.emission_tex_id;
+        light.emission_factor = o.mat.emission_factor_double_sided.rgb;
+
+        ivec3 i = ivec3(
+            indices[nonuniformEXT(o.mesh_id)].i[3*input_index+0],
+            indices[nonuniformEXT(o.mesh_id)].i[3*input_index+1],
+            indices[nonuniformEXT(o.mesh_id)].i[3*input_index+2]
+        );
+        vertex v0 = vertices[nonuniformEXT(o.mesh_id)].v[i.x];
+        vertex v1 = vertices[nonuniformEXT(o.mesh_id)].v[i.y];
+        vertex v2 = vertices[nonuniformEXT(o.mesh_id)].v[i.z];
+        light.pos[0] = v0.pos;
+        light.pos[1] = v1.pos;
+        light.pos[2] = v2.pos;
+        light.uv[0] = v0.uv;
+        light.uv[1] = v1.uv;
+        light.uv[2] = v2.uv;
+
+        tri_lights.lights[output_index] = light;
+    }
+}
+
