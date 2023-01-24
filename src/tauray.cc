@@ -355,6 +355,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     tonemap.post_resolve = opt.tonemap_post_resolve;
 
     scene_update_stage::options scene_options;
+    scene_options.max_meshes = s.get_mesh_count();
 
     taa_stage::options taa;
     taa.blending_ratio = 1.0f - 1.0f/opt.taa.sequence_length;
