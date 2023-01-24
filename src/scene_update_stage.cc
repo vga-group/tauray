@@ -488,6 +488,7 @@ void scene_update_stage::update(uint32_t frame_index)
         frame_index, [&](scene_metadata_buffer* data){
             data->point_light_count = point_lights.size() + spotlights.size();
             data->directional_light_count = directional_lights.size();
+            data->tri_light_count = tri_light_count;
         }
     );
 

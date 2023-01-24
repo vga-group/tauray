@@ -21,6 +21,7 @@ public:
         float indirect_clamping = 100.0f;
         bool importance_sample_envmap = true;
         float regularization_gamma = 1.0f; // 0 disables path regularization
+        bool sample_emissive_triangles = true;
 
         int sh_grid_index = 0;
         int sh_order = 2;

@@ -36,6 +36,9 @@ namespace sh_path_tracer
         if(opt.regularization_gamma != 0.0f)
             defines["PATH_SPACE_REGULARIZATION"];
 
+        if(opt.sample_emissive_triangles)
+            defines["NEE_SAMPLE_EMISSIVE_TRIANGLES"];
+
         switch(opt.film)
         {
         case film::POINT:

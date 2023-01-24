@@ -37,9 +37,9 @@ void main()
         vertex v0 = vertices[nonuniformEXT(o.mesh_id)].v[i.x];
         vertex v1 = vertices[nonuniformEXT(o.mesh_id)].v[i.y];
         vertex v2 = vertices[nonuniformEXT(o.mesh_id)].v[i.z];
-        light.pos[0] = v0.pos;
-        light.pos[1] = v1.pos;
-        light.pos[2] = v2.pos;
+        light.pos[0] = (o.model * vec4(v0.pos, 1)).xyz;
+        light.pos[1] = (o.model * vec4(v1.pos, 1)).xyz;
+        light.pos[2] = (o.model * vec4(v2.pos, 1)).xyz;
         light.uv[0] = v0.uv;
         light.uv[1] = v1.uv;
         light.uv[2] = v2.uv;

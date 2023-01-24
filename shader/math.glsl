@@ -303,4 +303,79 @@ vec3 sample_cone(vec2 u, vec3 dir, float cos_theta_min)
     return dot(o, dir) <= cos_theta_min ? dir : o;
 }
 
+// https://www.graphics.cornell.edu/pubs/1995/Arv95c.pdf
+vec3 sample_spherical_triangle(
+    vec2 u, vec3 A, vec3 B, vec3 C, out float solid_angle
+){
+    vec3 nA = normalize(A);
+    vec3 nB = normalize(B);
+    vec3 nC = normalize(C);
+
+    vec3 cos_side = vec3(dot(nB, nC), dot(nA, nC), dot(nA, nB));
+    vec3 sin2_side = 1.0 - cos_side * cos_side;
+    vec3 cos_vertex = clamp(
+        (cos_side.xyz - cos_side.yxx * cos_side.zzy)*inversesqrt(sin2_side.yxx * sin2_side.zzy),
+        vec3(-1.0f), vec3(1.0f)
+    );
+    vec3 angles = acos(cos_vertex);
+
+    solid_angle = angles.x + angles.y + angles.z - M_PI;
+    float chosen_split = u.x * solid_angle - angles.x;
+
+    float s = sin(chosen_split);
+    float t = cos(chosen_split);
+
+    float sin_alpha = sqrt(1 - cos_vertex.x * cos_vertex.x);
+    float q = (t * cos_side.z * cos_vertex.x - s * sin_alpha - cos_side.z)/
+        (1 + s * sin_alpha * cos_side.z - t * cos_vertex.x);
+
+    vec3 Ch = q * nA + sqrt(1 - q*q) * normalize(nC - cos_side.y * nA);
+    float d = dot(Ch, nB);
+    float z = 1 - u.y + d * u.y;
+    vec3 P = z * nB + sqrt(1 - z*z) * normalize(Ch - d * nB);
+    return P;
+}
+
+float spherical_triangle_solid_angle(
+    vec3 A, vec3 B, vec3 C
+){
+    vec3 nA = normalize(A);
+    vec3 nB = normalize(B);
+    vec3 nC = normalize(C);
+
+    vec3 cos_side = vec3(dot(nB, nC), dot(nA, nC), dot(nA, nB));
+    vec3 sin2_side = 1.0 - cos_side * cos_side;
+    vec3 cos_vertex = clamp(
+        (cos_side.xyz - cos_side.yxx * cos_side.zzy)*inversesqrt(sin2_side.yxx * sin2_side.zzy),
+        vec3(-1.0f), vec3(1.0f)
+    );
+    vec3 angles = acos(cos_vertex);
+    return angles.x + angles.y + angles.z - M_PI;
+}
+
+float ray_plane_intersection_dist(
+    vec3 dir, vec3 A, vec3 B, vec3 C
+){
+    vec4 plane = vec4(normalize(cross(A-B, A-C)), 0);
+    plane.w = dot(A, plane.xyz);
+    return abs(plane.w / dot(plane.xyz, dir));
+}
+
+vec3 get_barycentric_coords(vec3 p, vec3 A, vec3 B, vec3 C)
+{
+    vec3 ba = B - A, ca = C - A, pa = p - A;
+    float bb = dot(ba, ba);
+    float bc = dot(ba, ca);
+    float cc = dot(ca, ca);
+    float pb = dot(pa, ba);
+    float pc = dot(pa, ca);
+    float denom = 1.0f / (bb * cc - bc * bc);
+
+    vec3 bary;
+    bary.y = (cc * pb - bc * pc) * denom;
+    bary.z = (bb * pc - bc * pb) * denom;
+    bary.x = 1.0f - bary.y - bary.z;
+    return bary;
+}
+
 #endif
