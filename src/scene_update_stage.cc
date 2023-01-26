@@ -220,7 +220,10 @@ void scene_update_stage::set_scene(scene* target)
 
     sb.point_light_data.resize(point_light_mem);
     sb.directional_light_data.resize(directional_light_mem);
-    sb.tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
+    if(opt.gather_emissive_triangles)
+        sb.tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
+    else
+        sb.tri_light_data.resize(0);
 
     sb.scene_metadata.resize(sizeof(scene_metadata_buffer));
 

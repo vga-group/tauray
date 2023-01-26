@@ -15,6 +15,7 @@ public:
     struct options
     {
         uint32_t max_meshes = 1024;
+        bool gather_emissive_triangles = false;
     };
 
     scene_update_stage(device_data& dev, const options& opt);
