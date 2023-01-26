@@ -4,6 +4,7 @@
 #include "mesh_scene.hh"
 #include "timer.hh"
 #include "sampler_table.hh"
+#include "descriptor_state.hh"
 
 namespace tr
 {
@@ -59,7 +60,7 @@ public:
 
     vk::AccelerationStructureKHR get_acceleration_structure(
         size_t device_index
-    );
+    ) const;
 
     void set_shadow_map_renderer(shadow_map_renderer* smr);
     void set_sh_grid_textures(
@@ -67,7 +68,9 @@ public:
     );
     vec2 get_shadow_map_atlas_pixel_margin() const;
 
+    std::vector<descriptor_state> get_descriptor_info(device_data* dev, int32_t camera_index) const;
     void bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_offset = 0);
+    void push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_offset = 0);
     static void bind_placeholders(
         basic_pipeline& pipeline,
         size_t max_samplers,

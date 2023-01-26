@@ -32,7 +32,6 @@ private:
         vk::CommandBuffer cb
     );
     void record_tri_light_extraction(
-        uint32_t frame_index,
         vk::CommandBuffer cb
     );
 

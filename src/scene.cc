@@ -152,7 +152,7 @@ bool scene::is_playing() const
 
 vk::AccelerationStructureKHR scene::get_acceleration_structure(
     size_t device_index
-){
+) const {
     if(!ctx->is_ray_tracing_supported())
         throw std::runtime_error(
             "Trying to use TLAS, but ray tracing is not available!"
@@ -180,9 +180,8 @@ vec2 scene::get_shadow_map_atlas_pixel_margin() const
         return vec2(0);
 }
 
-void scene::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_index)
+std::vector<descriptor_state> scene::get_descriptor_info(device_data* dev, int32_t camera_index) const
 {
-    device_data* dev = pipeline.get_device();
     auto& sb = scene_buffers[dev->index];
     const std::vector<sh_grid*>& sh_grids = get_sh_grids();
 
@@ -218,7 +217,7 @@ void scene::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_
         dbi_index.push_back({index_buffer, 0, VK_WHOLE_SIZE});
     }
 
-    pipeline.update_descriptor_set({
+    std::vector<descriptor_state> descriptors = {
         {"scene", {*sb.scene_data, 0, VK_WHOLE_SIZE}},
         {"scene_metadata", {*sb.scene_metadata, 0, VK_WHOLE_SIZE}},
         {"vertices", dbi_vertex},
@@ -239,21 +238,21 @@ void scene::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_
         }},
         {"textures3d", dii_3d},
         {"sh_grids", {*sb.sh_grid_data, 0, VK_WHOLE_SIZE}}
-    }, frame_index);
+    };
 
     if(camera_index >= 0)
     {
         std::pair<size_t, size_t> camera_offset = sb.camera_data_offsets[camera_index];
-        pipeline.update_descriptor_set({
+        descriptors.push_back(
             {"camera", {*sb.camera_data, camera_offset.first, VK_WHOLE_SIZE}}
-        }, frame_index);
+        );
     }
 
     if(ctx->is_ray_tracing_supported())
     {
-        pipeline.update_descriptor_set({
+        descriptors.push_back(
             {"tlas", {1, acceleration_structures[dev->index].tlas}}
-        }, frame_index);
+        );
     }
 
     if(smr)
@@ -262,26 +261,45 @@ void scene::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_
 
         const atlas* shadow_map_atlas = smr->get_shadow_map_atlas();
 
-        pipeline.update_descriptor_set({
-            {"shadow_maps", {
-                *sb.shadow_map_data, 0, sb.shadow_map_range
-            }},
+        descriptors.push_back(
+            {"shadow_maps", {*sb.shadow_map_data, 0, sb.shadow_map_range}}
+        );
+        descriptors.push_back(
             {"shadow_map_cascades", {
                 *sb.shadow_map_data, sb.shadow_map_range,
                 sb.shadow_map_cascade_range
-            }},
+            }}
+        );
+        descriptors.push_back(
             {"shadow_map_atlas", {
                 pl.default_sampler.get_sampler(dev->index),
                 shadow_map_atlas->get_image_view(dev->index),
                 vk::ImageLayout::eShaderReadOnlyOptimal
-            }},
+            }}
+        );
+        descriptors.push_back(
             {"shadow_map_atlas_test", {
                 sb.shadow_sampler.get_sampler(dev->index),
                 shadow_map_atlas->get_image_view(dev->index),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }}
-        }, frame_index);
+        );
     }
+    return descriptors;
+}
+
+void scene::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_index)
+{
+    device_data* dev = pipeline.get_device();
+    std::vector<descriptor_state> descriptors = get_descriptor_info(dev, camera_index);
+    pipeline.update_descriptor_set(descriptors, frame_index);
+}
+
+void scene::push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_index)
+{
+    device_data* dev = pipeline.get_device();
+    std::vector<descriptor_state> descriptors = get_descriptor_info(dev, camera_index);
+    pipeline.push_descriptors(cmd, descriptors);
 }
 
 void scene::bind_placeholders(

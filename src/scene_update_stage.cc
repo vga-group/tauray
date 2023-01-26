@@ -190,7 +190,9 @@ scene_update_stage::scene_update_stage(device_data& dev, const options& opt)
         {
             {"vertices", (uint32_t)opt.max_meshes},
             {"indices", (uint32_t)opt.max_meshes}
-        }
+        },
+        1,
+        true
     }),
     opt(opt), stage_timer(dev, "scene update")
 {
@@ -634,7 +636,7 @@ void scene_update_stage::record_command_buffers()
         {
             record_as_build(i, cb);
             if(sb.tri_light_data.get_size() != 0)
-                record_tri_light_extraction(i, cb);
+                record_tri_light_extraction(cb);
         }
 
         stage_timer.end(cb, i);
@@ -644,11 +646,11 @@ void scene_update_stage::record_command_buffers()
 }
 
 void scene_update_stage::record_tri_light_extraction(
-    uint32_t frame_index, vk::CommandBuffer cb
+    vk::CommandBuffer cb
 ){
-    cur_scene->bind(extract_tri_lights, frame_index, 0);
     const std::vector<scene::instance>& instances = cur_scene->get_instances();
-    extract_tri_lights.bind(cb, frame_index);
+    extract_tri_lights.bind(cb);
+    cur_scene->push(extract_tri_lights, cb, 0);
     for(size_t i = 0; i < instances.size(); ++i)
     {
         const mesh_scene::instance& inst = instances[i];
