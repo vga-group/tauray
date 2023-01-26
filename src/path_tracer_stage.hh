@@ -22,6 +22,7 @@ public:
         bool importance_sample_envmap = true;
         float regularization_gamma = 0.0f; // 0 disables path regularization
         bool depth_of_field = false; // false disregards camera focus parameters.
+        bool sample_emissive_triangles = true;
     };
 
     path_tracer_stage(

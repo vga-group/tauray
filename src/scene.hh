@@ -97,6 +97,7 @@ private:
         gpu_buffer scene_metadata;
         gpu_buffer directional_light_data;
         gpu_buffer point_light_data;
+        gpu_buffer tri_light_data;
         gpu_buffer sh_grid_data;
         gpu_buffer shadow_map_data;
         gpu_buffer camera_data;

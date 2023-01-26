@@ -42,6 +42,9 @@ namespace path_tracer
         if(opt.depth_of_field)
             defines["USE_DEPTH_OF_FIELD"];
 
+        if(opt.sample_emissive_triangles)
+            defines["NEE_SAMPLE_EMISSIVE_TRIANGLES"];
+
 #define TR_GBUFFER_ENTRY(name, ...)\
         if(gbuf.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
         TR_GBUFFER_ENTRIES

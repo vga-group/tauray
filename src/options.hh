@@ -395,6 +395,12 @@
         "generally reduces noise significantly.", \
         true \
     ) \
+    TR_BOOL_OPT(sample_emissive_triangles, \
+        "Sample triangle lights in next event estimation. All emissive " \
+        "triangles take part in this. Can result in less noise, but has a " \
+        "slight performance hit.", \
+        true \
+    ) \
     TR_FLOAT_OPT(regularization, \
         "Sets the path space regularization gamma. Path regularization " \
         "reduces noise without clamping brightness. It still causes some " \

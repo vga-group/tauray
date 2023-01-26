@@ -14,6 +14,8 @@ class scene_update_stage: public stage
 public:
     struct options
     {
+        uint32_t max_meshes = 1024;
+        bool gather_emissive_triangles = false;
     };
 
     scene_update_stage(device_data& dev, const options& opt);
@@ -29,6 +31,10 @@ private:
         uint32_t frame_index,
         vk::CommandBuffer cb
     );
+    void record_tri_light_extraction(
+        uint32_t frame_index,
+        vk::CommandBuffer cb
+    );
 
     bool as_rebuild;
     bool command_buffers_outdated;
@@ -38,8 +44,9 @@ private:
     // algorithms.
     std::vector<uint8_t> old_camera_data;
 
-    options opt;
+    compute_pipeline extract_tri_lights;
 
+    options opt;
     timer stage_timer;
 };
 

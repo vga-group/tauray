@@ -18,7 +18,11 @@ layout(binding = DISTRIBUTION_DATA_BINDING, set = 0) uniform distribution_data_b
 #define RAY_MAX_DIST float(1e39)
 
 #if defined(SCENE_DATA_BUFFER_BINDING) && defined(VERTEX_BUFFER_BINDING) && defined(INDEX_BUFFER_BINDING)
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, vec3 pos, out float solid_angle)
+#else
 vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_id, int primitive_id)
+#endif
 {
     instance o = scene.o[instance_id];
     ivec3 i = ivec3(
@@ -35,6 +39,18 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
     vec4 avg_tangent = v0.tangent * b.x + v1.tangent * b.y + v2.tangent * b.z;
 
     vertex_data interp;
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+    if(o.light_base_id >= 0)
+    {
+        solid_angle = spherical_triangle_solid_angle(
+            (o.model * vec4(v0.pos, 1)).xyz - pos,
+            (o.model * vec4(v1.pos, 1)).xyz - pos,
+            (o.model * vec4(v2.pos, 1)).xyz - pos
+        );
+    }
+    else solid_angle = 0.0f;
+#endif
+
     vec4 model_pos = vec4(v0.pos * b.x + v1.pos * b.y + v2.pos * b.z, 1);
     interp.pos = (o.model * model_pos).xyz;
 #ifdef CALC_PREV_VERTEX_POS

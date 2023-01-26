@@ -43,6 +43,7 @@ struct intersection_pdf
 {
     float point_light_pdf;
     float directional_light_pdf;
+    float tri_light_pdf;
     float envmap_pdf;
 };
 
@@ -202,39 +203,49 @@ void sample_directional_light(
     color = pdf > 0 ? dl.color * pdf : dl.color;
 }
 
+void get_nee_sampling_probabilities(out float point, out float triangle, out float directional, out float envmap)
+{
+    if(scene_metadata.point_light_count > 0) point = 1.0f;
+    else point = 0.0f;
+
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+    if(scene_metadata.tri_light_count > 0) triangle = 1.0f;
+    else
+#endif
+    triangle = 0.0f;
+
+    if(scene_metadata.directional_light_count > 0) directional = 1.0f;
+    else directional = 0.0f;
+
+#ifdef IMPORTANCE_SAMPLE_ENVMAP
+    if(control.environment_proj >= 0) envmap = 1.0f;
+    else
+#endif
+    envmap = 0.0f;
+
+    float sum = point + triangle + directional + envmap;
+    float inv_sum = sum <= 0.0f ? 0.0f : (1.0f/sum + 1e-5f);
+
+    point *= inv_sum;
+    triangle *= inv_sum;
+    directional *= inv_sum;
+    envmap *= inv_sum;
+}
+
 float bsdf_mis_pdf(
     intersection_pdf nee_pdf,
     float bsdf_pdf
 ){
     if(bsdf_pdf == 0.0f) return 1.0f;
 
-#ifdef IMPORTANCE_SAMPLE_ENVMAP
-    const float point_directional_split =
-        (scene_metadata.directional_light_count > 0 || control.environment_proj >= 0) ?
-        (scene_metadata.point_light_count > 0 ? 0.5f : 0.0f) :
-        1.00001f;
+    float point_prob, triangle_prob, dir_prob, envmap_prob;
+    get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
 
-    const float envmap_directional_split =
-        scene_metadata.directional_light_count > 0 ?
-        (control.environment_proj >= 0 ? 0.5f : 0.0f) :
-        1.00001f;
-#else
-    const float point_directional_split = scene_metadata.directional_light_count > 0 ?
-        (scene_metadata.point_light_count > 0 ? 0.5f : 0.0f) :
-        1.00001f;
-
-    const float envmap_directional_split = 0.0f;
-#endif
-
-    float avg_nee_pdf = mix(
-        mix(
-            nee_pdf.directional_light_pdf / max(scene_metadata.directional_light_count, 1),
-            nee_pdf.envmap_pdf,
-            envmap_directional_split
-        ),
-        nee_pdf.point_light_pdf / max(scene_metadata.point_light_count, 1),
-        point_directional_split
-    );
+    float avg_nee_pdf =
+        nee_pdf.directional_light_pdf * dir_prob / max(scene_metadata.directional_light_count, 1) +
+        nee_pdf.tri_light_pdf * triangle_prob / max(scene_metadata.tri_light_count, 1) +
+        nee_pdf.envmap_pdf * envmap_prob +
+        nee_pdf.point_light_pdf * point_prob / max(scene_metadata.point_light_count, 1);
     return (bsdf_pdf * bsdf_pdf + avg_nee_pdf * avg_nee_pdf) / bsdf_pdf;
 }
 
@@ -255,17 +266,25 @@ bool get_intersection_info(
 ){
     nee_pdf.point_light_pdf = 0;
     nee_pdf.directional_light_pdf = 0;
+    nee_pdf.tri_light_pdf = 0;
     nee_pdf.envmap_pdf = 0;
     if(payload.instance_id >= 0)
     {
+        float solid_angle;
         vertex_data vd = get_interpolated_vertex(
             view, payload.barycentrics,
             payload.instance_id,
             payload.primitive_id
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+            , origin, solid_angle
+#endif
         );
         light = vec3(0);
         mat = sample_material(payload.instance_id, vd);
         mat.albedo.a = 1.0; // Alpha blending was handled by the any-hit shader!
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+        nee_pdf.tri_light_pdf = solid_angle == 0.0f ? 0.0f : 1.0f / solid_angle;
+#endif
         v.pos = vd.pos;
 #ifdef CALC_PREV_VERTEX_POS
         v.prev_pos = vd.prev_pos;
@@ -334,29 +353,13 @@ bool get_intersection_info(
 
 vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, out float pdf)
 {
-#ifdef IMPORTANCE_SAMPLE_ENVMAP
-    const float point_directional_split =
-        (scene_metadata.directional_light_count > 0 || control.environment_proj >= 0) ?
-        (scene_metadata.point_light_count > 0 ? 0.5f : 0.0f) :
-        1.00001f;
-
-    const float envmap_directional_split =
-        scene_metadata.directional_light_count > 0 ?
-        (control.environment_proj >= 0 ? 0.5f : 0.0f) :
-        1.00001f;
-#else
-    const float point_directional_split = scene_metadata.directional_light_count > 0 ?
-        (scene_metadata.point_light_count > 0 ? 0.5f : 0.0f) :
-        1.00001f;
-
-    const float envmap_directional_split = 0.0f;
-#endif
+    float point_prob, triangle_prob, dir_prob, envmap_prob;
+    get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
 
     vec4 u = ldexp(vec4(rand_uint), ivec4(-32));
 
-    if(u.w < point_directional_split)
-    {
-        // Sample point light
+    if((u.w -= point_prob) < 0)
+    { // Sample point light
         const int light_count = int(scene_metadata.point_light_count);
         int light_index = 0;
         float weight = 0;
@@ -365,34 +368,65 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
         point_light pl = point_lights.lights[light_index];
         vec3 color;
         sample_point_light(pl, u.xy, pos, out_dir, out_length, color, pdf);
-        pdf *= point_directional_split / weight;
+        pdf *= point_prob / weight;
         return color;
     }
-    else
-    {
-        // Sample directional light or envmap
-        u.w = (u.w - point_directional_split)/(1-point_directional_split);
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+    else if((u.w -= triangle_prob) < 0)
+    { // Sample triangle light
+        const int light_count = int(scene_metadata.tri_light_count);
+        int light_index = clamp(int(u.z*light_count), 0, light_count-1);
+        tri_light tl = tri_lights.lights[light_index];
+        vec3 A = tl.pos[0]-pos;
+        vec3 B = tl.pos[1]-pos;
+        vec3 C = tl.pos[2]-pos;
 
-#ifdef IMPORTANCE_SAMPLE_ENVMAP
-        if(u.w < envmap_directional_split)
-        {
-            vec3 color = sample_environment_map(rand_uint.xyz, out_dir, out_length, pdf);
-            pdf *= (1.0f-point_directional_split) * envmap_directional_split;
-            return color;
+
+        vec3 color = tl.emission_factor;
+
+        float solid_angle = 0.0f;
+        out_dir = sample_spherical_triangle(u.xy, A, B, C, solid_angle);
+        out_length = ray_plane_intersection_dist(out_dir, A, B, C);
+        if(solid_angle <= 0 || solid_angle >= 2*M_PI || out_length <= control.min_ray_dist)
+        { // Same triangle, trying to intersect self...
+            pdf = 1.0f;
+            return vec3(0);
         }
-        else
+
+        if(tl.emission_tex_id >= 0)
+        { // Textured emissive triangle, so read texture.
+            vec3 bary = get_barycentric_coords(out_dir*out_length, A, B, C);
+            vec2 uv = bary.x * tl.uv[0] + bary.y * tl.uv[1] + bary.z * tl.uv[2];
+            color *= texture(textures[nonuniformEXT(tl.emission_tex_id)], uv).rgb;
+        }
+
+        // Prevent shadow ray from intersecting with the target triangle
+        out_length -= control.min_ray_dist;
+
+        pdf = triangle_prob / (light_count * solid_angle);
+        return color;
+    }
 #endif
-        {
-            const int light_count = int(scene_metadata.directional_light_count);
-            int light_index = clamp(int(u.z*light_count), 0, light_count-1);
+#ifdef IMPORTANCE_SAMPLE_ENVMAP
+    else if((u.w -= envmap_prob) < 0)
+    {
+        // Sample envmap
+        vec3 color = sample_environment_map(rand_uint.xyz, out_dir, out_length, pdf);
+        pdf *= envmap_prob;
+        return color;
+    }
+#endif
+    else
+    { // Sample directional light
+        const int light_count = int(scene_metadata.directional_light_count);
+        int light_index = clamp(int(u.z*light_count), 0, light_count-1);
 
-            directional_light dl = directional_lights.lights[light_index];
-            out_length = RAY_MAX_DIST;
-            vec3 color;
-            sample_directional_light(dl, u.xy, out_dir, color, pdf);
-            pdf *= ((1.0f - point_directional_split) * (1.0f - envmap_directional_split)) / light_count;
-            return color;
-        }
+        directional_light dl = directional_lights.lights[light_index];
+        out_length = RAY_MAX_DIST;
+        vec3 color;
+        sample_directional_light(dl, u.xy, out_dir, color, pdf);
+        pdf *= dir_prob / light_count;
+        return color;
     }
 }
 
@@ -522,6 +556,9 @@ void evaluate_ray(
             !terminal &&
             (scene_metadata.directional_light_count > 0 ||
             scene_metadata.point_light_count > 0
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+            || scene_metadata.tri_light_count > 0
+#endif
 #ifdef IMPORTANCE_SAMPLE_ENVMAP
             || control.environment_proj >= 0
 #endif

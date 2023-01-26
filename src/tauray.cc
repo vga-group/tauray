@@ -354,7 +354,23 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     tonemap.alpha_grid_background = opt.headless == "";
     tonemap.post_resolve = opt.tonemap_post_resolve;
 
+    bool use_shadow_terminator_fix = false;
+    bool has_tri_lights = false;
+    for(const mesh_object* o: s.get_mesh_objects())
+    {
+        if(o->get_shadow_terminator_offset() > 0.0f)
+            use_shadow_terminator_fix = true;
+        const model* m = o->get_model();
+        if(m) for(const model::vertex_group& vg: *m)
+        {
+            if(vg.mat.emission_factor != vec3(0))
+                has_tri_lights = true;
+        }
+    }
+
     scene_update_stage::options scene_options;
+    scene_options.max_meshes = s.get_mesh_count();
+    scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles;
 
     taa_stage::options taa;
     taa.blending_ratio = 1.0f - 1.0f/opt.taa.sequence_length;
@@ -383,16 +399,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         0.01f,
         vec2(0.005, opt.shadow_map_bias*2)
     );
-
-    bool use_shadow_terminator_fix = false;
-    for(const mesh_object* o: s.get_mesh_objects())
-    {
-        if(o->get_shadow_terminator_offset() > 0.0f)
-        {
-            use_shadow_terminator_fix = true;
-            break;
-        }
-    }
 
     if(auto rtype = std::get_if<feature_stage::feature>(&opt.renderer))
     {
@@ -424,6 +430,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     s.get_environment_map() &&
                     opt.importance_sample_envmap;
                 rt_opt.regularization_gamma = opt.regularization;
+                rt_opt.sample_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles;
                 rt_opt.post_process.tonemap = tonemap;
                 rt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
                 if(opt.temporal_reprojection > 0.0f)
@@ -497,6 +504,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     s.get_environment_map() &&
                     opt.importance_sample_envmap;
                 sh.regularization_gamma = opt.regularization;
+                sh.sample_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles;
                 dr_opt.sh_source = sh;
                 dr_opt.sh_order = opt.sh_order;
                 dr_opt.use_probe_visibility = opt.use_probe_visibility;
@@ -524,6 +532,11 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.sh.russian_roulette_delta = opt.russian_roulette;
                 dr_opt.sh.temporal_ratio = opt.dshgi_temporal_ratio;
                 dr_opt.sh.indirect_clamping = opt.indirect_clamping;
+                dr_opt.sh.importance_sample_envmap =
+                    s.get_environment_map() &&
+                    opt.importance_sample_envmap;
+                dr_opt.sh.regularization_gamma = opt.regularization;
+                dr_opt.sh.sample_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles;
                 dr_opt.max_skinned_meshes = s.get_mesh_count();
                 dr_opt.port_number = opt.port;
                 //dr_opt.scene_options = scene_options;
