@@ -191,8 +191,7 @@ scene_update_stage::scene_update_stage(device_data& dev, const options& opt)
             {"vertices", (uint32_t)opt.max_meshes},
             {"indices", (uint32_t)opt.max_meshes}
         },
-        1,
-        true
+        1
     }),
     opt(opt), stage_timer(dev, "scene update")
 {
@@ -620,6 +619,13 @@ void scene_update_stage::record_command_buffers()
 {
     clear_commands();
     auto& sb = cur_scene->scene_buffers[dev->index];
+
+    if(opt.gather_emissive_triangles)
+    {
+        extract_tri_lights.reset_descriptor_sets();
+        cur_scene->bind(extract_tri_lights, 0, 0);
+    }
+
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vk::CommandBuffer cb = begin_graphics();
@@ -649,8 +655,7 @@ void scene_update_stage::record_tri_light_extraction(
     vk::CommandBuffer cb
 ){
     const std::vector<scene::instance>& instances = cur_scene->get_instances();
-    extract_tri_lights.bind(cb);
-    cur_scene->push(extract_tri_lights, cb, 0);
+    extract_tri_lights.bind(cb, 0);
     for(size_t i = 0; i < instances.size(); ++i)
     {
         const mesh_scene::instance& inst = instances[i];

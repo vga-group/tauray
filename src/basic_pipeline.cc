@@ -22,47 +22,16 @@ basic_pipeline::basic_pipeline(
     );
 
     if(use_push_descriptors)
-    {
         descriptor_set_layout_info.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR;
-    }
 
     descriptor_set_layout = vkm(
         dev, dev.dev.createDescriptorSetLayout(descriptor_set_layout_info)
     );
 
-    std::map<vk::DescriptorType, uint32_t> type_count;
-    for(auto& b: bindings) type_count[b.descriptorType] += b.descriptorCount;
-
-    std::vector<vk::DescriptorPoolSize> pool_sizes;
-    for(auto& pair: type_count)
-    {
-        pool_sizes.push_back({
-            pair.first, (uint32_t)(pair.second * max_descriptor_sets)
-        });
-    }
-
     if(!use_push_descriptors)
     {
-        descriptor_pool = vkm(dev,
-            dev.dev.createDescriptorPool({
-                {}, max_descriptor_sets,
-                (uint32_t)pool_sizes.size(), pool_sizes.data()
-            })
-        );
-
-        for(size_t i = 0; i < max_descriptor_sets; ++i)
-        {
-            vk::DescriptorSetAllocateInfo dset_alloc_info(
-                descriptor_pool, 1, descriptor_set_layout
-            );
-            vk::DescriptorSet descriptor_set;
-            vk::Result res = dev.dev.allocateDescriptorSets(
-                &dset_alloc_info, &descriptor_set
-            );
-            if(res != vk::Result::eSuccess)
-                throw std::runtime_error(vk::to_string(res));
-            descriptor_sets.push_back(descriptor_set);
-        }
+        descriptor_sets.resize(max_descriptor_sets);
+        reset_descriptor_sets();
     }
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info(
@@ -72,6 +41,42 @@ basic_pipeline::basic_pipeline(
     );
 
     pipeline_layout = vkm(dev, dev.dev.createPipelineLayout(pipeline_layout_info));
+}
+
+void basic_pipeline::reset_descriptor_sets()
+{
+    if(descriptor_sets.size() == 0)
+        return;
+
+    std::map<vk::DescriptorType, uint32_t> type_count;
+    for(auto& b: bindings) type_count[b.descriptorType] += b.descriptorCount;
+
+    std::vector<vk::DescriptorPoolSize> pool_sizes;
+    for(auto& pair: type_count)
+    {
+        pool_sizes.push_back({
+            pair.first, (uint32_t)(pair.second * descriptor_sets.size())
+        });
+    }
+
+    descriptor_pool = vkm(*dev,
+        dev->dev.createDescriptorPool({
+            {}, (uint32_t)descriptor_sets.size(),
+            (uint32_t)pool_sizes.size(), pool_sizes.data()
+        })
+    );
+
+    for(size_t i = 0; i < descriptor_sets.size(); ++i)
+    {
+        vk::DescriptorSetAllocateInfo dset_alloc_info(
+            descriptor_pool, 1, descriptor_set_layout
+        );
+        vk::Result res = dev->dev.allocateDescriptorSets(
+            &dset_alloc_info, &descriptor_sets[i]
+        );
+        if(res != vk::Result::eSuccess)
+            throw std::runtime_error(vk::to_string(res));
+    }
 }
 
 void basic_pipeline::update_descriptor_set(

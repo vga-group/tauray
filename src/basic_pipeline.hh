@@ -32,6 +32,7 @@ public:
     basic_pipeline(basic_pipeline&& other) = delete;
     virtual ~basic_pipeline() = default;
 
+    void reset_descriptor_sets();
     void update_descriptor_set(
         const std::vector<descriptor_state>& descriptor_states,
         int32_t descriptor_set_index = -1 // If -1, all frames use same descriptors.
