@@ -30,9 +30,9 @@ struct instance_buffer
     int32_t light_base_id;
     int32_t sh_grid_index;
     float shadow_terminator_mul;
-    alignas(16) pmat4 model;
-    alignas(16) pmat4 model_normal;
-    alignas(16) pmat4 model_prev;
+    pmat4 model;
+    pmat4 model_normal;
+    pmat4 model_prev;
     material_buffer mat;
 };
 
@@ -273,7 +273,7 @@ void scene_update_stage::update(uint32_t frame_index)
                 instances[i].last_refresh_frame+MAX_FRAMES_IN_FLIGHT < frame_counter
             ) return;
 
-            mat4 model = instances[i].transform;
+            pmat4 model = instances[i].transform;
             inst.model = model;
             inst.model_normal = instances[i].normal_transform;
             inst.model_prev = instances[i].prev_transform;
