@@ -252,7 +252,7 @@ float bsdf_mis_pdf(
 #elif defined(MIS_BALANCE_HEURISTIC)
     return avg_nee_pdf + bsdf_pdf;
 #else
-    return avg_nee_pdf > 0 ? -bsdf_pdf : bsdf_pdf;
+    return avg_nee_pdf > 0 ? 1.0f / 0.0f : bsdf_pdf;
 #endif
 }
 
@@ -261,7 +261,7 @@ float nee_mis_pdf(float nee_pdf, float bsdf_pdf)
     if(nee_pdf <= 0.0f) return -nee_pdf;
 
 #ifdef MIS_POWER_HEURISTIC
-    return (nee_pdf * nee_pdf + bsdf_pdf * bsdf_pdf) / (nee_pdf);
+    return (nee_pdf * nee_pdf + bsdf_pdf * bsdf_pdf) / nee_pdf;
 #elif defined(MIS_BALANCE_HEURISTIC)
     return nee_pdf + bsdf_pdf;
 #else
@@ -283,7 +283,7 @@ bool get_intersection_info(
     nee_pdf.envmap_pdf = 0;
     if(payload.instance_id >= 0)
     {
-        float solid_angle;
+        float solid_angle = 0.0f;
         vertex_data vd = get_interpolated_vertex(
             view, payload.barycentrics,
             payload.instance_id,
@@ -530,15 +530,15 @@ void evaluate_ray(
         vec3 light;
         bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
 
+
+        // Get rid of the attenuation by multiplying with bsdf_pdf, and use
+        // mis_pdf instead.
         float mis_pdf = bsdf_mis_pdf(nee_pdf, bsdf_pdf);
-#if !defined(MIS_BALANCE_HEURISTIC) && !defined(MIS_POWER_HEURISTIC)
-        if(mis_pdf < 0)
+        if(bsdf_pdf != 0)
         {
-            light = vec3(0);
-            mis_pdf = -mis_pdf;
+            attenuation /= bsdf_pdf;
+            light = light / mis_pdf * bsdf_pdf;
         }
-#endif
-        attenuation /= mis_pdf;
 
 #ifdef HIDE_LIGHTS
         if(bounce == 0) light = vec3(0);
