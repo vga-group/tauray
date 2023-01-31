@@ -423,6 +423,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rt_opt.use_white_albedo_on_first_bounce =
                     opt.use_white_albedo_on_first_bounce;
                 rt_opt.film = opt.film;
+                rt_opt.mis_mode = opt.multiple_importance_sampling;
                 rt_opt.film_radius = opt.film_radius;
                 rt_opt.russian_roulette_delta = opt.russian_roulette;
                 rt_opt.indirect_clamping = opt.indirect_clamping;
@@ -497,6 +498,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 sh.samples_per_probe = opt.samples_per_probe;
                 sh.film = opt.film;
                 sh.film_radius = opt.film_radius;
+                sh.mis_mode = opt.multiple_importance_sampling;
                 sh.russian_roulette_delta = opt.russian_roulette;
                 sh.temporal_ratio = opt.dshgi_temporal_ratio;
                 sh.indirect_clamping = opt.indirect_clamping;
@@ -529,6 +531,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.sh.samples_per_probe = opt.samples_per_probe;
                 dr_opt.sh.film = opt.film;
                 dr_opt.sh.film_radius = opt.film_radius;
+                dr_opt.sh.mis_mode = opt.multiple_importance_sampling;
                 dr_opt.sh.russian_roulette_delta = opt.russian_roulette;
                 dr_opt.sh.temporal_ratio = opt.dshgi_temporal_ratio;
                 dr_opt.sh.indirect_clamping = opt.indirect_clamping;

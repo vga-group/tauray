@@ -338,7 +338,7 @@
     TR_INT_OPT(fake_devices, \
         "Multiply the number of devices for debugging multi-GPU rendering.", \
         0, 0, 16) \
-    TR_ENUM_OPT(sampler, path_tracer_stage::sampler_type, \
+    TR_ENUM_OPT(sampler, rt_stage::sampler_type, \
         "Sets the sampling method used in path tracing. Defaults to the Sobol " \
         "sequence on a space-filling curve with Owen scrambling.", \
         rt_stage::sampler_type::SOBOL_Z_ORDER_3D, \
@@ -401,6 +401,13 @@
         "slight performance hit.", \
         true \
     ) \
+    TR_ENUM_OPT(multiple_importance_sampling, multiple_importance_sampling_mode, \
+        "Sets the multiple importance sampling heuristic used in path tracing. ", \
+        multiple_importance_sampling_mode::MIS_POWER_HEURISTIC, \
+        {"off", multiple_importance_sampling_mode::MIS_DISABLED}, \
+        {"balance", multiple_importance_sampling_mode::MIS_BALANCE_HEURISTIC}, \
+        {"power", multiple_importance_sampling_mode::MIS_POWER_HEURISTIC} \
+    )\
     TR_FLOAT_OPT(regularization, \
         "Sets the path space regularization gamma. Path regularization " \
         "reduces noise without clamping brightness. It still causes some " \
@@ -428,6 +435,7 @@
 #include "math.hh"
 #include "headless.hh"
 #include "tonemap_stage.hh"
+#include "path_tracer_stage.hh"
 #include "rt_renderer.hh"
 #include "film.hh"
 #include "feature_stage.hh"

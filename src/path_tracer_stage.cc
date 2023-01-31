@@ -62,6 +62,19 @@ namespace path_tracer
             defines["USE_BLACKMAN_HARRIS_FILTER"];
             break;
         }
+
+        switch(opt.mis_mode)
+        {
+        case multiple_importance_sampling_mode::MIS_DISABLED:
+            break;
+        case multiple_importance_sampling_mode::MIS_BALANCE_HEURISTIC:
+            defines["MIS_BALANCE_HEURISTIC"];
+            break;
+        case multiple_importance_sampling_mode::MIS_POWER_HEURISTIC:
+            defines["MIS_POWER_HEURISTIC"];
+            break;
+        }
+
         rt_camera_stage::get_common_defines(defines, opt);
 
         return {

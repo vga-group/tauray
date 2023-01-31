@@ -6,6 +6,13 @@
 namespace tr
 {
 
+enum class multiple_importance_sampling_mode
+{
+    MIS_DISABLED,
+    MIS_BALANCE_HEURISTIC,
+    MIS_POWER_HEURISTIC
+};
+
 class scene;
 class path_tracer_stage: public rt_camera_stage
 {
@@ -16,6 +23,8 @@ public:
         bool use_white_albedo_on_first_bounce = false;
         bool hide_lights = false;
         film::filter film = film::BLACKMAN_HARRIS;
+        multiple_importance_sampling_mode mis_mode =
+            multiple_importance_sampling_mode::MIS_POWER_HEURISTIC;
         float film_radius = 1.0f; // 0.5 is "correct" for the box filter.
         float russian_roulette_delta = 0; // 0 disables russian roulette.
         float indirect_clamping = 0; // 0 disables indirect clamping.

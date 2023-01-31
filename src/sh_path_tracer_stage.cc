@@ -52,6 +52,18 @@ namespace sh_path_tracer
             break;
         }
 
+        switch(opt.mis_mode)
+        {
+        case multiple_importance_sampling_mode::MIS_DISABLED:
+            break;
+        case multiple_importance_sampling_mode::MIS_BALANCE_HEURISTIC:
+            defines["MIS_BALANCE_HEURISTIC"];
+            break;
+        case multiple_importance_sampling_mode::MIS_POWER_HEURISTIC:
+            defines["MIS_POWER_HEURISTIC"];
+            break;
+        }
+
         defines["SH_ORDER"] = std::to_string(opt.sh_order);
         defines["SH_COEF_COUNT"] = std::to_string(
             sh_grid::get_coef_count(opt.sh_order)

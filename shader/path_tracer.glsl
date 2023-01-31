@@ -246,14 +246,27 @@ float bsdf_mis_pdf(
         nee_pdf.tri_light_pdf * triangle_prob / max(scene_metadata.tri_light_count, 1) +
         nee_pdf.envmap_pdf * envmap_prob +
         nee_pdf.point_light_pdf * point_prob / max(scene_metadata.point_light_count, 1);
-    return (bsdf_pdf * bsdf_pdf + avg_nee_pdf * avg_nee_pdf) / bsdf_pdf;
+
+#ifdef MIS_POWER_HEURISTIC
+    return (avg_nee_pdf * avg_nee_pdf + bsdf_pdf * bsdf_pdf) / bsdf_pdf;
+#elif defined(MIS_BALANCE_HEURISTIC)
+    return avg_nee_pdf + bsdf_pdf;
+#else
+    return avg_nee_pdf > 0 ? -bsdf_pdf : bsdf_pdf;
+#endif
 }
 
 float nee_mis_pdf(float nee_pdf, float bsdf_pdf)
 {
     if(nee_pdf <= 0.0f) return -nee_pdf;
 
+#ifdef MIS_POWER_HEURISTIC
     return (nee_pdf * nee_pdf + bsdf_pdf * bsdf_pdf) / (nee_pdf);
+#elif defined(MIS_BALANCE_HEURISTIC)
+    return nee_pdf + bsdf_pdf;
+#else
+    return nee_pdf;
+#endif
 }
 
 bool get_intersection_info(
@@ -279,11 +292,14 @@ bool get_intersection_info(
             , origin, solid_angle
 #endif
         );
-        light = vec3(0);
         mat = sample_material(payload.instance_id, vd);
         mat.albedo.a = 1.0; // Alpha blending was handled by the any-hit shader!
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
         nee_pdf.tri_light_pdf = solid_angle == 0.0f ? 0.0f : 1.0f / solid_angle;
+        light = mat.emission;
+        mat.emission = vec3(0);
+#else
+        light = vec3(0);
 #endif
         v.pos = vd.pos;
 #ifdef CALC_PREV_VERTEX_POS
@@ -381,14 +397,13 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
         vec3 B = tl.pos[1]-pos;
         vec3 C = tl.pos[2]-pos;
 
-
         vec3 color = tl.emission_factor;
 
         float solid_angle = 0.0f;
         out_dir = sample_spherical_triangle(u.xy, A, B, C, solid_angle);
         out_length = ray_plane_intersection_dist(out_dir, A, B, C);
-        if(solid_angle <= 0 || solid_angle >= 2*M_PI || out_length <= control.min_ray_dist)
-        { // Same triangle, trying to intersect self...
+        if(solid_angle <= 0 || isnan(solid_angle) || solid_angle >= 2*M_PI || out_length <= control.min_ray_dist)
+        { // Same triangle, trying to intersect itself... Or zero-area degenerate triangle.
             pdf = 1.0f;
             return vec3(0);
         }
@@ -513,9 +528,17 @@ void evaluate_ray(
         sampled_material mat;
         intersection_pdf nee_pdf;
         vec3 light;
-        bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light);
+        bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
 
-        attenuation /= bsdf_mis_pdf(nee_pdf, bsdf_pdf);
+        float mis_pdf = bsdf_mis_pdf(nee_pdf, bsdf_pdf);
+#if !defined(MIS_BALANCE_HEURISTIC) && !defined(MIS_POWER_HEURISTIC)
+        if(mis_pdf < 0)
+        {
+            light = vec3(0);
+            mis_pdf = -mis_pdf;
+        }
+#endif
+        attenuation /= mis_pdf;
 
 #ifdef HIDE_LIGHTS
         if(bounce == 0) light = vec3(0);
