@@ -850,7 +850,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         if(opt.timing) ctx.get_timing().print_last_trace(opt.trace);
 
         throttle.step();
-        lb.update(*rr);
+        if(rr) lb.update(*rr);
 
         auto end = std::chrono::steady_clock::now();
         std::chrono::duration<double> elapsed = end-start;
