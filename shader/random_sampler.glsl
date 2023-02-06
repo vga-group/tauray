@@ -12,7 +12,10 @@ random_sampler init_random_sampler(
     uvec4 coord, uvec3 size
 ){
     random_sampler rsampler;
-    rsampler.seed = pcg4d(coord);
+    rsampler.seed = coord;
+    rsampler.seed.y ^= pcg(rsampler.seed.x);
+    rsampler.seed.z ^= pcg(rsampler.seed.y);
+    rsampler.seed.w ^= pcg(rsampler.seed.z);
     return rsampler;
 }
 

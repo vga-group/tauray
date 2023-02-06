@@ -25,6 +25,18 @@ mat3 create_tangent_space(vec3 normal)
     return mat3(tangent, bitangent, normal);
 }
 
+vec3 orthogonalize(vec3 a, vec3 b)
+{
+    return normalize(b - dot(a, b) * a);
+}
+
+mat3 orthogonalize(mat3 m)
+{
+    m[0] = normalize(m[0] - dot(m[0], m[2]) * m[2]);
+    m[1] = cross(m[2], m[0]);
+    return m;
+}
+
 uint find_bit_by_cardinality(uint r, uint v)
 {
     uint c = 0;
@@ -305,35 +317,32 @@ vec3 sample_cone(vec2 u, vec3 dir, float cos_theta_min)
 
 // https://www.graphics.cornell.edu/pubs/1995/Arv95c.pdf
 vec3 sample_spherical_triangle(
-    vec2 u, vec3 A, vec3 B, vec3 C, out float solid_angle
+    vec2 xi, vec3 A, vec3 B, vec3 C, out float solid_angle
 ){
     vec3 nA = normalize(A);
     vec3 nB = normalize(B);
     vec3 nC = normalize(C);
 
-    vec3 cos_side = vec3(dot(nB, nC), dot(nA, nC), dot(nA, nB));
-    vec3 sin2_side = 1.0 - cos_side * cos_side;
-    vec3 cos_vertex = clamp(
-        (cos_side.xyz - cos_side.yxx * cos_side.zzy)*inversesqrt(sin2_side.yxx * sin2_side.zzy),
-        vec3(-1.0f), vec3(1.0f)
-    );
-    vec3 angles = acos(cos_vertex);
+    vec3 cos_side = clamp(vec3(dot(nB, nC), dot(nA, nC), dot(nA, nB)), vec3(-1.0f), vec3(1.0f));
+    solid_angle = 2.0f * atan(abs(dot(nA, cross(nB, nC))), (1.0f + cos_side.x + cos_side.y + cos_side.z));
 
-    solid_angle = angles.x + angles.y + angles.z - M_PI;
-    float chosen_split = u.x * solid_angle - angles.x;
+    float chosen_split = xi.x * solid_angle;
 
-    float s = sin(chosen_split);
-    float t = cos(chosen_split);
+    float cos_alpha = clamp(dot(orthogonalize(nA, nB-nA), orthogonalize(nA, nC-nA)), -1.0f, 1.0f);
+    float alpha = acos(cos_alpha);
+    float sin_alpha = sin(alpha);
 
-    float sin_alpha = sqrt(1 - cos_vertex.x * cos_vertex.x);
-    float q = (t * cos_side.z * cos_vertex.x - s * sin_alpha - cos_side.z)/
-        (1 + s * sin_alpha * cos_side.z - t * cos_vertex.x);
+    float s = sin(chosen_split - alpha);
+    float t = cos(chosen_split - alpha);
+    float u = t - cos_alpha;
+    float v = s + sin_alpha * cos_side.z;
+
+    float q = ((v*t - u*s) * cos_alpha - v)/((v*s + u*t) * sin_alpha);
 
     vec3 Ch = q * nA + sqrt(1 - q*q) * normalize(nC - cos_side.y * nA);
     float d = dot(Ch, nB);
-    float z = 1 - u.y + d * u.y;
-    vec3 P = z * nB + sqrt(1 - z*z) * normalize(Ch - d * nB);
-    return P;
+    float z = 1 - xi.y + d * xi.y;
+    return z * nB + sqrt(1 - z*z) * normalize(Ch - d * nB);
 }
 
 float spherical_triangle_solid_angle(
@@ -343,14 +352,10 @@ float spherical_triangle_solid_angle(
     vec3 nB = normalize(B);
     vec3 nC = normalize(C);
 
-    vec3 cos_side = vec3(dot(nB, nC), dot(nA, nC), dot(nA, nB));
-    vec3 sin2_side = 1.0 - cos_side * cos_side;
-    vec3 cos_vertex = clamp(
-        (cos_side.xyz - cos_side.yxx * cos_side.zzy)*inversesqrt(sin2_side.yxx * sin2_side.zzy),
-        vec3(-1.0f), vec3(1.0f)
+    return 2.0f * atan(
+        abs(dot(nA, cross(nB, nC))),
+        (1.0f+dot(nA,nB)+dot(nB,nC)+dot(nA,nC))
     );
-    vec3 angles = acos(cos_vertex);
-    return angles.x + angles.y + angles.z - M_PI;
 }
 
 float ray_plane_intersection_dist(
