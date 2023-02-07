@@ -13,6 +13,13 @@ enum class multiple_importance_sampling_mode
     MIS_POWER_HEURISTIC
 };
 
+enum class bounce_sampling_mode
+{
+    HEMISPHERE, // Degrades to spherical for transmissive objects
+    COSINE_HEMISPHERE, // Degrades to double-sided for transmissive objects
+    MATERIAL
+};
+
 class scene;
 class path_tracer_stage: public rt_camera_stage
 {
@@ -35,6 +42,7 @@ public:
         float sample_directional_lights = 1.0f;
         float sample_envmap = 1.0f;
         float sample_emissive_triangles = 1.0f;
+        bounce_sampling_mode bounce_mode = bounce_sampling_mode::MATERIAL;
     };
 
     path_tracer_stage(

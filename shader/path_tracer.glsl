@@ -421,9 +421,10 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
         float solid_angle = 0.0f;
         out_dir = sample_spherical_triangle(u.xy, A, B, C, solid_angle);
         out_length = ray_plane_intersection_dist(out_dir, A, B, C);
-        if(solid_angle <= 0 || isnan(solid_angle) || solid_angle >= 2*M_PI || out_length <= control.min_ray_dist)
+        if(solid_angle <= 0 || isnan(solid_angle) || solid_angle >= 2*M_PI || out_length <= control.min_ray_dist || any(isnan(out_dir)))
         { // Same triangle, trying to intersect itself... Or zero-area degenerate triangle.
             pdf = 1.0f;
+            out_dir = vec3(0);
             return vec3(0);
         }
 
@@ -482,7 +483,7 @@ void eval_explicit_lights(
 
     vec3 shading_light = out_dir * tbn;
     vec3 d, s;
-    float bsdf_pdf = ggx_bsdf_pdf(shading_light, shading_view, mat, d, s);
+    float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, d, s);
     bool opaque = mat.transmittance < 0.0001f;
     d = dot(v.hard_normal, out_dir) < 0 && opaque ? vec3(0) : d;
     s = dot(v.hard_normal, out_dir) < 0 && opaque ? vec3(0) : s;
@@ -638,7 +639,7 @@ void evaluate_ray(
         vec3 diffuse_weight = vec3(1.0f);
         vec3 specular_weight = vec3(1.0f);
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
-        ggx_bsdf_sample(ray_sample, shading_view, mat, view, diffuse_weight, specular_weight, bsdf_pdf);
+        material_bsdf_sample(ray_sample, shading_view, mat, view, diffuse_weight, specular_weight, bsdf_pdf);
         view = tbn * view;
 
         shadow_terminator_fix(diffuse_weight, specular_weight, dot(view, v.mapped_normal), mat);

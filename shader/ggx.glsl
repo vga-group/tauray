@@ -462,4 +462,58 @@ void lambert_bsdf_sample(
     specular_weight = vec3(0.0f);
 }
 
+void material_bsdf_sample(
+    vec4 uniform_random,
+    vec3 view_dir,
+    sampled_material mat,
+    out vec3 out_dir,
+    out vec3 diffuse_weight,
+    out vec3 specular_weight,
+    out float pdf
+){
+#if defined(BOUNCE_HEMISPHERE)
+    if(mat.transmittance > 0.0f)
+    {
+        out_dir = sample_sphere(uniform_random.xy);
+        pdf = 0.25f/M_PI;
+    }
+    else
+    {
+        out_dir = sample_hemisphere(uniform_random.xy);
+        pdf = 0.5f/M_PI;
+    }
+    ggx_bsdf_pdf(out_dir, view_dir, mat, diffuse_weight, specular_weight);
+#elif defined(BOUNCE_COSINE_HEMISPHERE)
+    float split = mat.transmittance * 0.5f;
+    out_dir = (uniform_random.z < split ? -1 : 1) * sample_cosine_hemisphere(uniform_random.xy);
+    pdf = abs(pdf_cosine_hemisphere(out_dir)) / (uniform_random.z < split ? split : 1.0f-split);
+
+    ggx_bsdf_pdf(out_dir, view_dir, mat, diffuse_weight, specular_weight);
+#else
+    ggx_bsdf_sample(uniform_random, view_dir, mat, out_dir, diffuse_weight, specular_weight, pdf);
+#endif
+}
+
+float material_bsdf_pdf(
+    vec3 out_dir,
+    vec3 view_dir,
+    sampled_material mat,
+    out vec3 diffuse_weight,
+    out vec3 specular_weight
+){
+#if defined(BOUNCE_HEMISPHERE)
+    ggx_bsdf_pdf(out_dir, view_dir, mat, diffuse_weight, specular_weight);
+    if(mat.transmittance == 0 && out_dir.z <= 0) return 0.0f;
+    return mat.transmittance > 0.0f ? 0.25f/M_PI : 0.5f/M_PI;
+#elif defined(BOUNCE_COSINE_HEMISPHERE)
+    ggx_bsdf_pdf(out_dir, view_dir, mat, diffuse_weight, specular_weight);
+
+    if(mat.transmittance == 0 && out_dir.z <= 0) return 0.0f;
+    float split = mat.transmittance * 0.5f;
+    return abs(pdf_cosine_hemisphere(out_dir)) / (out_dir.z < 0 ? split : 1.0f-split);
+#else
+    return ggx_bsdf_pdf(out_dir, view_dir, mat, diffuse_weight, specular_weight);
+#endif
+}
+
 #endif

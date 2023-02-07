@@ -407,6 +407,13 @@
         "All emissive triangles take part in this. Can result in less noise, " \
         "but has a slight performance hit.", \
         1.0f, 0.0f, FLT_MAX)\
+    TR_ENUM_OPT(bounce_mode, bounce_sampling_mode, \
+        "Sets the method used to pick bounce directions in path tracing.", \
+        bounce_sampling_mode::MATERIAL, \
+        {"hemisphere", bounce_sampling_mode::HEMISPHERE}, \
+        {"cosine", bounce_sampling_mode::COSINE_HEMISPHERE}, \
+        {"material", bounce_sampling_mode::MATERIAL} \
+    )\
     TR_ENUM_OPT(multiple_importance_sampling, multiple_importance_sampling_mode, \
         "Sets the multiple importance sampling heuristic used in path tracing. ", \
         multiple_importance_sampling_mode::MIS_POWER_HEURISTIC, \

@@ -78,6 +78,19 @@ namespace path_tracer
             break;
         }
 
+        switch(opt.bounce_mode)
+        {
+        case bounce_sampling_mode::HEMISPHERE:
+            defines["BOUNCE_HEMISPHERE"];
+            break;
+        case bounce_sampling_mode::COSINE_HEMISPHERE:
+            defines["BOUNCE_COSINE_HEMISPHERE"];
+            break;
+        case bounce_sampling_mode::MATERIAL:
+            defines["BOUNCE_MATERIAL"];
+            break;
+        }
+
         rt_camera_stage::get_common_defines(defines, opt);
 
         return {

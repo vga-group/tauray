@@ -284,6 +284,18 @@ vec3 sample_sphere(vec2 u)
     );
 }
 
+vec3 sample_hemisphere(vec2 u)
+{
+    float cos_theta = u.x;
+    float sin_theta = sqrt(1.0f - cos_theta * cos_theta);
+    float phi = u.y * 2 * M_PI;
+    return vec3(
+        cos(phi) * sin_theta,
+        sin(phi) * sin_theta,
+        cos_theta
+    );
+}
+
 vec3 sample_blackman_harris_ball(vec3 u)
 {
     vec3 v = sample_sphere(u.xy);
