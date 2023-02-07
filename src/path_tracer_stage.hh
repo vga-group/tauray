@@ -13,6 +13,13 @@ enum class multiple_importance_sampling_mode
     MIS_POWER_HEURISTIC
 };
 
+enum class bounce_sampling_mode
+{
+    HEMISPHERE, // Degrades to spherical for transmissive objects
+    COSINE_HEMISPHERE, // Degrades to double-sided for transmissive objects
+    MATERIAL
+};
+
 class scene;
 class path_tracer_stage: public rt_camera_stage
 {
@@ -28,10 +35,14 @@ public:
         float film_radius = 1.0f; // 0.5 is "correct" for the box filter.
         float russian_roulette_delta = 0; // 0 disables russian roulette.
         float indirect_clamping = 0; // 0 disables indirect clamping.
-        bool importance_sample_envmap = true;
         float regularization_gamma = 0.0f; // 0 disables path regularization
         bool depth_of_field = false; // false disregards camera focus parameters.
-        bool sample_emissive_triangles = true;
+
+        float sample_point_lights = 1.0f;
+        float sample_directional_lights = 1.0f;
+        float sample_envmap = 1.0f;
+        float sample_emissive_triangles = 1.0f;
+        bounce_sampling_mode bounce_mode = bounce_sampling_mode::MATERIAL;
     };
 
     path_tracer_stage(

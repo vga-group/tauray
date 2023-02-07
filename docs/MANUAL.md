@@ -752,13 +752,13 @@ They are also nice in larger scenes as well.
 
 By default, environment maps are importance sampled. This has a noticeable
 performance impact and you may want to disable the importance sampling sometimes.
-You can do this with `--importance-sample-envmap=off`. Note that this importance
+You can do this with `--sample-envmap=off`. Note that this importance
 sampling is basically required if your environment map includes the sun or any
 other small and bright light source:
 
 | ![without](images/envmap_unsampled.png){width=50%} | ![with](images/envmap_sampled.png){width=50%}      |
 |:--------------------------------------------------:|:--------------------------------------------------:|
-| `--importance-sample-envmap=off`                   | `--importance-sample-envmap=on` (default)          |
+| `--sample-envmap=off`                   | `--sample-envmap=on` (default)          |
 
 ## Tone mapping
 

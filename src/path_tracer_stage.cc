@@ -33,17 +33,20 @@ namespace path_tracer
         if(opt.transparent_background)
             defines["USE_TRANSPARENT_BACKGROUND"];
 
-        if(opt.importance_sample_envmap)
-            defines["IMPORTANCE_SAMPLE_ENVMAP"];
-
         if(opt.regularization_gamma != 0.0f)
             defines["PATH_SPACE_REGULARIZATION"];
 
         if(opt.depth_of_field)
             defines["USE_DEPTH_OF_FIELD"];
 
-        if(opt.sample_emissive_triangles)
-            defines["NEE_SAMPLE_EMISSIVE_TRIANGLES"];
+        if(opt.sample_point_lights > 0)
+            defines["NEE_SAMPLE_POINT_LIGHTS"] = std::to_string(opt.sample_point_lights);
+        if(opt.sample_directional_lights > 0)
+            defines["NEE_SAMPLE_DIRECTIONAL_LIGHTS"] = std::to_string(opt.sample_directional_lights);
+        if(opt.sample_envmap > 0)
+            defines["NEE_SAMPLE_ENVMAP"] = std::to_string(opt.sample_envmap);
+        if(opt.sample_emissive_triangles > 0)
+            defines["NEE_SAMPLE_EMISSIVE_TRIANGLES"] = std::to_string(opt.sample_emissive_triangles);
 
 #define TR_GBUFFER_ENTRY(name, ...)\
         if(gbuf.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
@@ -72,6 +75,19 @@ namespace path_tracer
             break;
         case multiple_importance_sampling_mode::MIS_POWER_HEURISTIC:
             defines["MIS_POWER_HEURISTIC"];
+            break;
+        }
+
+        switch(opt.bounce_mode)
+        {
+        case bounce_sampling_mode::HEMISPHERE:
+            defines["BOUNCE_HEMISPHERE"];
+            break;
+        case bounce_sampling_mode::COSINE_HEMISPHERE:
+            defines["BOUNCE_COSINE_HEMISPHERE"];
+            break;
+        case bounce_sampling_mode::MATERIAL:
+            defines["BOUNCE_MATERIAL"];
             break;
         }
 
