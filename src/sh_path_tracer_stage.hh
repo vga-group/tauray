@@ -22,9 +22,12 @@ public:
         float russian_roulette_delta = 0;
         float temporal_ratio = 0.02f;
         float indirect_clamping = 100.0f;
-        bool importance_sample_envmap = true;
         float regularization_gamma = 1.0f; // 0 disables path regularization
-        bool sample_emissive_triangles = true;
+
+        float sample_point_lights = 1.0f;
+        float sample_directional_lights = 1.0f;
+        float sample_envmap = 1.0f;
+        float sample_emissive_triangles = 1.0f;
 
         int sh_grid_index = 0;
         int sh_order = 2;

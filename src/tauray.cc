@@ -356,6 +356,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     bool use_shadow_terminator_fix = false;
     bool has_tri_lights = false;
+    bool has_point_lights = s.get_point_lights().size() + s.get_spotlights().size() > 0;
+    bool has_directional_lights = s.get_directional_lights().size() > 0;
     for(const mesh_object* o: s.get_mesh_objects())
     {
         if(o->get_shadow_terminator_offset() > 0.0f)
@@ -370,7 +372,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     scene_update_stage::options scene_options;
     scene_options.max_meshes = s.get_mesh_count();
-    scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles;
+    scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles > 0;
 
     taa_stage::options taa;
     taa.blending_ratio = 1.0f - 1.0f/opt.taa.sequence_length;
@@ -427,11 +429,11 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rt_opt.film_radius = opt.film_radius;
                 rt_opt.russian_roulette_delta = opt.russian_roulette;
                 rt_opt.indirect_clamping = opt.indirect_clamping;
-                rt_opt.importance_sample_envmap =
-                    s.get_environment_map() &&
-                    opt.importance_sample_envmap;
                 rt_opt.regularization_gamma = opt.regularization;
-                rt_opt.sample_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles;
+                rt_opt.sample_point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;
+                rt_opt.sample_directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
+                rt_opt.sample_envmap = s.get_environment_map() ? opt.sample_envmap : 0.0f;
+                rt_opt.sample_emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
                 rt_opt.post_process.tonemap = tonemap;
                 rt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
                 if(opt.temporal_reprojection > 0.0f)
@@ -502,11 +504,11 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 sh.russian_roulette_delta = opt.russian_roulette;
                 sh.temporal_ratio = opt.dshgi_temporal_ratio;
                 sh.indirect_clamping = opt.indirect_clamping;
-                sh.importance_sample_envmap =
-                    s.get_environment_map() &&
-                    opt.importance_sample_envmap;
                 sh.regularization_gamma = opt.regularization;
-                sh.sample_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles;
+                sh.sample_point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;
+                sh.sample_directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
+                sh.sample_envmap = s.get_environment_map() ? opt.sample_envmap : 0.0f;
+                sh.sample_emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
                 dr_opt.sh_source = sh;
                 dr_opt.sh_order = opt.sh_order;
                 dr_opt.use_probe_visibility = opt.use_probe_visibility;
@@ -535,11 +537,11 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.sh.russian_roulette_delta = opt.russian_roulette;
                 dr_opt.sh.temporal_ratio = opt.dshgi_temporal_ratio;
                 dr_opt.sh.indirect_clamping = opt.indirect_clamping;
-                dr_opt.sh.importance_sample_envmap =
-                    s.get_environment_map() &&
-                    opt.importance_sample_envmap;
                 dr_opt.sh.regularization_gamma = opt.regularization;
-                dr_opt.sh.sample_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles;
+                dr_opt.sh.sample_point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;
+                dr_opt.sh.sample_directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
+                dr_opt.sh.sample_envmap = s.get_environment_map() ? opt.sample_envmap : 0.0f;
+                dr_opt.sh.sample_emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
                 dr_opt.max_skinned_meshes = s.get_mesh_count();
                 dr_opt.port_number = opt.port;
                 //dr_opt.scene_options = scene_options;

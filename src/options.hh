@@ -389,18 +389,24 @@
         "environment map usage.", \
         false \
     ) \
-    TR_BOOL_OPT(importance_sample_envmap, \
-        "Importance sample the environment map, if present. Has a minor " \
-        "performance hit, and can make some rare scenes noisier, but " \
-        "generally reduces noise significantly.", \
-        true \
-    ) \
-    TR_BOOL_OPT(sample_emissive_triangles, \
-        "Sample triangle lights in next event estimation. All emissive " \
-        "triangles take part in this. Can result in less noise, but has a " \
-        "slight performance hit.", \
-        true \
-    ) \
+    TR_FLOAT_OPT(sample_point_lights, \
+        "NEE sampling weight for point lights. If zero, punctual point " \
+        "lights will not appear at all.", \
+        1.0f, 0.0f, FLT_MAX)\
+    TR_FLOAT_OPT(sample_directional_lights, \
+        "NEE sampling weight for directional lights. If zero, punctual " \
+        "directional lights will not appear at all.", \
+        1.0f, 0.0f, FLT_MAX)\
+    TR_FLOAT_OPT(sample_envmap, \
+        "NEE sampling weight for the environment map, if present. Non-zero " \
+        "values have a minor performance hit, and can make some rare scenes " \
+        "noisier, but generally reduces noise significantly.", \
+        1.0f, 0.0f, FLT_MAX)\
+    TR_FLOAT_OPT(sample_emissive_triangles, \
+        "NEE sampling weight for triangle lights in next event estimation. " \
+        "All emissive triangles take part in this. Can result in less noise, " \
+        "but has a slight performance hit.", \
+        1.0f, 0.0f, FLT_MAX)\
     TR_ENUM_OPT(multiple_importance_sampling, multiple_importance_sampling_mode, \
         "Sets the multiple importance sampling heuristic used in path tracing. ", \
         multiple_importance_sampling_mode::MIS_POWER_HEURISTIC, \
