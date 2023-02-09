@@ -83,7 +83,8 @@ public:
     void set_opaque(bool opaque);
 
     // If you modify vertices or indices after constructor call, use this to
-    // reload the GPU buffer(s).
+    // reload the GPU buffer(s). If you give the command buffers, uploads are
+    // recorded into them instead of temporary ones.
     void refresh_buffers();
 
     // Calculates new normals for existing vertices. Assumes that vertices and

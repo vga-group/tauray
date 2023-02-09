@@ -136,7 +136,8 @@ vkm<vk::Buffer> create_buffer(
     device_data& dev,
     vk::BufferCreateInfo info,
     VmaAllocationCreateFlagBits flags,
-    const void* data
+    const void* data,
+    vk::CommandBuffer shared_cb
 ){
     vk::Buffer res;
     VmaAllocation alloc;
@@ -155,10 +156,13 @@ vkm<vk::Buffer> create_buffer(
     if(data)
     {
         vkm<vk::Buffer> staging = create_staging_buffer(dev, info.size, data);
-        vk::CommandBuffer cb = begin_command_buffer(dev);
+        vk::CommandBuffer cb = shared_cb ? shared_cb : begin_command_buffer(dev);
         cb.copyBuffer(staging, res, {{0, 0, info.size}});
-        end_command_buffer(dev, cb);
-        staging.destroy();
+        if(!shared_cb)
+        {
+            end_command_buffer(dev, cb);
+            staging.destroy();
+        }
     }
     return vkm<vk::Buffer>(dev, res, alloc);
 }
@@ -597,17 +601,19 @@ std::string to_uppercase(const std::string& str)
 }
 
 
-static std::chrono::high_resolution_clock::time_point profile_begin;
+static std::vector<std::chrono::high_resolution_clock::time_point> profile_begin;
 void profile_tick()
 {
-    profile_begin = std::chrono::high_resolution_clock::now();
+    profile_begin.push_back(std::chrono::high_resolution_clock::now());
 }
 
-void profile_tock()
+void profile_tock(const char* message)
 {
+    auto begin = profile_begin.back(); 
+    profile_begin.pop_back();
     auto profile_end = std::chrono::high_resolution_clock::now();
-    auto duration = profile_end - profile_begin;
-    std::cout << "Tock: " << std::chrono::duration_cast<std::chrono::duration<double>>(duration).count() << std::endl;
+    auto duration = profile_end - begin;
+    std::cout << message << std::chrono::duration_cast<std::chrono::duration<double>>(duration).count() << std::endl;
 }
 
 }

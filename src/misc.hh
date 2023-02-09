@@ -36,7 +36,8 @@ vkm<vk::Buffer> create_buffer(
     device_data& dev,
     vk::BufferCreateInfo info,
     VmaAllocationCreateFlagBits flags,
-    const void* data = nullptr
+    const void* data = nullptr,
+    vk::CommandBuffer shared_cb = {}
 );
 
 vkm<vk::Buffer> create_buffer_aligned(
@@ -164,7 +165,7 @@ size_t count_array_layers(const std::vector<T>& targets)
 
 // For lazy CPU profiling ;)
 void profile_tick();
-void profile_tock();
+void profile_tock(const char* message = "Tock: ");
 
 }
 
