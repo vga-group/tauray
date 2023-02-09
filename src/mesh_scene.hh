@@ -50,7 +50,8 @@ protected:
     {
         for(mesh_object* o: objects)
         {
-            f(o);
+            if(!o->is_static())
+                f(o);
         }
     }
 

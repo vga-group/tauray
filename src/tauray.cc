@@ -829,7 +829,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
             if(rr) rr->set_scene(&s);
         }
 
-        s.update(paused ? 0 : delta * 1000000);
+        s.update(paused || !opt.animation_flag ? 0 : delta * 1000000);
 
         try
         {

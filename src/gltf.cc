@@ -319,7 +319,8 @@ void load_gltf_node(
     int node_index,
     scene_graph& data,
     transformable_node* parent,
-    node_meta_info& meta
+    node_meta_info& meta,
+    bool static_lock
 ){
     tinygltf::Node& node = model.nodes[node_index];
     transformable_node* tnode = nullptr;
@@ -354,6 +355,7 @@ void load_gltf_node(
 
         if(node.skin != -1)
         {
+            static_lock = false;
             meta.skins[node.skin].related_models.insert(
                 const_cast<class model*>(obj.get_model())
             );
@@ -366,6 +368,8 @@ void load_gltf_node(
     {
         camera cam;
         tinygltf::Camera& c = model.cameras[node.camera];
+        // Cameras can be moved dynamically basically always.
+        static_lock = false;
 
         if(c.type == "perspective")
         {
@@ -460,7 +464,10 @@ void load_gltf_node(
     {
         auto it = meta.animations.find(node_index);
         if(it != meta.animations.end())
+        {
+            static_lock = false;
             anode->set_animation_pool(it->second);
+        }
     }
 
     tnode->set_parent(parent);
@@ -480,6 +487,8 @@ void load_gltf_node(
             tnode->set_orientation(glm::make_quat(node.rotation.data()));
     }
 
+    tnode->set_static(static_lock);
+
     // Save joints & root node
     for(int skin_index: meta.node_to_skin[node_index])
     {
@@ -498,7 +507,7 @@ void load_gltf_node(
     // Load child nodes
     for(int child_index: node.children)
     {
-        load_gltf_node(model, scene, child_index, data, tnode, meta);
+        load_gltf_node(model, scene, child_index, data, tnode, meta, static_lock);
     }
 }
 
@@ -755,7 +764,7 @@ scene_graph load_gltf(
     for(tinygltf::Scene& scene: gltf_model.scenes)
     {
         for(int node_index: scene.nodes)
-            load_gltf_node(gltf_model, scene, node_index, md, nullptr, meta);
+            load_gltf_node(gltf_model, scene, node_index, md, nullptr, meta, true);
     }
 
     // Apply skins to meshes
@@ -770,9 +779,7 @@ scene_graph load_gltf(
 
     // Upload buffer data here so that we have had time to fill in joint data
     for(auto& m: md.meshes)
-    {
         m->refresh_buffers();
-    }
 
     // Detach animated mesh clones
     for(auto& pair: md.mesh_objects)
