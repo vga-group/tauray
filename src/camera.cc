@@ -484,7 +484,7 @@ json camera::serialize_projection() const
         }
     case EQUIRECTANGULAR:
         {
-            return json::array({
+            return json({
                 pd.equirectangular.fov.x,
                 pd.equirectangular.fov.y
             });
