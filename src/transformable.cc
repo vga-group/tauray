@@ -1,15 +1,16 @@
 #include "transformable.hh"
+#include <cassert>
 #ifdef TR_TRANSFORM_CACHING
-#define REVISION ++revision;
+#define REVISION ++revision; assert(!static_locked);
 #else
-#define REVISION
+#define REVISION assert(!static_locked);
 #endif
 
 namespace tr
 {
 
 transformable::transformable()
-:   orientation(1,0,0,0), position(0), scaling(1)
+:   orientation(1,0,0,0), position(0), scaling(1), static_locked(false)
 #ifdef TR_TRANSFORM_CACHING
     , revision(1)
 #endif
@@ -249,10 +250,10 @@ const mat4& transformable_node::get_global_transform() const
     return cached_transform;
 }
 
-const mat4& transformable_node::get_global_inverse_transform() const
+const mat4& transformable_node::get_global_inverse_transpose_transform() const
 {
     update_cached_transform();
-    return cached_inverse_transform;
+    return cached_inverse_transpose_transform;
 }
 #else
 mat4 transformable_node::get_global_transform() const
@@ -261,9 +262,9 @@ mat4 transformable_node::get_global_transform() const
         parent->get_global_transform() * get_transform() : get_transform();
 }
 
-mat4 transformable_node::get_global_inverse_transform() const
+mat4 transformable_node::get_global_inverse_transpose_transform() const
 {
-    return affineInverse(get_global_transform());
+    return transpose(affineInverse(get_global_transform()));
 }
 #endif
 
@@ -351,6 +352,21 @@ transformable_node* transformable_node::get_parent() const
 {
     return parent;
 }
+
+void transformable_node::set_static(bool s)
+{
+#ifdef TR_TRANSFORM_CACHING
+    if(!this->static_locked)
+        update_cached_transform();
+#endif
+    this->static_locked = s;
+}
+
+bool transformable_node::is_static() const
+{
+    return static_locked;
+}
+
 
 void transformable_node::lookat(
     vec3 pos,
@@ -450,6 +466,8 @@ void transformable_node::align_to_view(
 #ifdef TR_TRANSFORM_CACHING
 uint16_t transformable_node::update_cached_transform() const
 {
+    if(static_locked) return revision;
+
     if(parent)
     {
         uint16_t parent_revision = parent->update_cached_transform();
@@ -458,7 +476,7 @@ uint16_t transformable_node::update_cached_transform() const
             cached_parent_revision != parent_revision
         ){
             cached_transform = parent->cached_transform * get_transform();
-            cached_inverse_transform = affineInverse(cached_transform);
+            cached_inverse_transpose_transform = transpose(affineInverse(cached_transform));
             cached_parent_revision = parent_revision;
             // Local revision must change if parent transform has changed. This
             // ensures that further children update properly.
@@ -470,7 +488,7 @@ uint16_t transformable_node::update_cached_transform() const
         if(cached_revision != revision)
         {
             cached_transform = get_transform();
-            cached_inverse_transform = affineInverse(cached_transform);
+            cached_inverse_transpose_transform = transpose(affineInverse(cached_transform));
             cached_revision = ++revision;
         }
     }

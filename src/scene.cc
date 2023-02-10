@@ -101,18 +101,22 @@ void scene::play(const std::string& name, bool loop, bool use_fallback)
 
 void scene::update(time_ticks dt)
 {
-    auto update_handler = [&](animated_node* n){
-        n->update(dt);
-    };
     for(camera* c: cameras)
     {
-        update_handler(c);
         c->step_jitter();
     }
-    for(animated_node* o: control_nodes) update_handler(o);
 
-    light_scene::visit_animated(update_handler);
-    mesh_scene::visit_animated(update_handler);
+    if(dt > 0)
+    {
+        auto update_handler = [&](animated_node* n){
+            n->update(dt);
+        };
+        for(camera* c: cameras)
+            update_handler(c);
+        for(animated_node* o: control_nodes) update_handler(o);
+        light_scene::visit_animated(update_handler);
+        mesh_scene::visit_animated(update_handler);
+    }
     total_ticks += dt;
 }
 

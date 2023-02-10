@@ -66,6 +66,7 @@ public:
 protected:
     quat orientation;
     vec3 position, scaling;
+    bool static_locked;
 #ifdef TR_TRANSFORM_CACHING
     mutable uint16_t revision;
 #endif
@@ -78,10 +79,10 @@ public:
 
 #ifdef TR_TRANSFORM_CACHING
     const mat4& get_global_transform() const;
-    const mat4& get_global_inverse_transform() const;
+    const mat4& get_global_inverse_transpose_transform() const;
 #else
     mat4 get_global_transform() const;
-    mat4 get_global_inverse_transform() const;
+    mat4 get_global_inverse_transpose_transform() const;
 #endif
 
     vec3 get_global_position() const;
@@ -101,6 +102,12 @@ public:
         bool keep_transform = false
     );
     transformable_node* get_parent() const;
+
+    // Once marked static, a transformable should no longer move in any way.
+    // This includes its parents! So make sure that children of dynamic objects
+    // are not marked as static.
+    void set_static(bool s);
+    bool is_static() const;
 
     void lookat(
         vec3 pos,
@@ -148,7 +155,7 @@ protected:
 private:
 #ifdef TR_TRANSFORM_CACHING
     mutable mat4 cached_transform;
-    mutable mat4 cached_inverse_transform;
+    mutable mat4 cached_inverse_transpose_transform;
 #endif
 };
 

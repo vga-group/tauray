@@ -294,7 +294,7 @@ void mesh::update_blas(
         vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild|
         vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
         strat == UPDATE_REBUILD ?
-            vk::BuildAccelerationStructureModeKHR::eBuild : 
+            vk::BuildAccelerationStructureModeKHR::eBuild :
             vk::BuildAccelerationStructureModeKHR::eUpdate,
         {},
         buffers[device_index].blas,
@@ -366,7 +366,7 @@ void mesh::calculate_normals()
         v1.normal += hard_normal;
         v2.normal += hard_normal;
     }
- 
+
     // Normalize results
     for(vertex& v: vertices)
     {
@@ -405,7 +405,7 @@ void mesh::calculate_tangents()
             dot(cross(hard_normal, hard_tangent), hard_bitangent) < 0 ? -1 : 1
         );
     }
- 
+
     // Normalize results
     for(vertex& v: vertices)
     {
@@ -436,6 +436,7 @@ void mesh::init_buffers()
         if(ctx->is_ray_tracing_supported())
             buf_flags = buf_flags | vk::BufferUsageFlagBits::eShaderDeviceAddress|
                 vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
+        vk::CommandBuffer cb = begin_command_buffer(devices[i]);
 
         buffers[i].vertex_buffer = create_buffer(
             devices[i],
@@ -445,7 +446,8 @@ void mesh::init_buffers()
                 vk::SharingMode::eExclusive
             },
             VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-            vertices.data()
+            vertices.data(),
+            cb
         );
 
         if(!animation_source)
@@ -458,7 +460,8 @@ void mesh::init_buffers()
                     vk::SharingMode::eExclusive
                 },
                 VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-                indices.data()
+                indices.data(),
+                cb
             );
             if(skin_bytes > 0)
             {
@@ -470,10 +473,13 @@ void mesh::init_buffers()
                         vk::SharingMode::eExclusive
                     },
                     VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-                    skin.data()
+                    skin.data(),
+                    cb
                 );
             }
         }
+
+        end_command_buffer(devices[i], cb);
 
         if(ctx->is_ray_tracing_supported())
         {

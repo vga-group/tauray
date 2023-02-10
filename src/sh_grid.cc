@@ -116,7 +116,7 @@ int sh_grid::get_coef_count(int order)
 
 float sh_grid::point_distance(vec3 p) const
 {
-    vec3 local_p = get_global_inverse_transform() * vec4(p, 1);
+    vec3 local_p = transpose(get_global_inverse_transpose_transform()) * vec4(p, 1);
 
     if(all(lessThanEqual(abs(local_p), vec3(1.0f))))
         return 0.0f;

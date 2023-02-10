@@ -124,13 +124,14 @@ void mesh_scene::refresh_instance_cache(bool force)
         return;
     instance_cache_frame = frame_counter;
     size_t i = 0;
+    mat4 transform;
+    mat4 normal_transform;
     for(const mesh_object* o: objects)
     {
         if(!o) continue;
         const model* m = o->get_model();
         if(!m) continue;
-        mat4 transform = o->get_global_transform();
-        mat4 normal_transform = transpose(o->get_global_inverse_transform());
+        bool fetched_transforms = false;
         for(const auto& vg: *m)
         {
             if(i == instance_cache.size())
@@ -165,16 +166,26 @@ void mesh_scene::refresh_instance_cache(bool force)
                 inst.prev_transform = mat4(0);
                 inst.last_refresh_frame = frame_counter;
             }
-            if(inst.prev_transform != inst.transform)
+            if(inst.last_refresh_frame == frame_counter || !o->is_static())
             {
-                inst.prev_transform = inst.transform;
-                inst.last_refresh_frame = frame_counter;
-            }
-            if(inst.transform != transform)
-            {
-                inst.transform = transform;
-                inst.normal_transform = normal_transform;
-                inst.last_refresh_frame = frame_counter;
+                if(!fetched_transforms)
+                {
+                    transform = o->get_global_transform();
+                    normal_transform = o->get_global_inverse_transpose_transform();
+                    fetched_transforms = true;
+                }
+
+                if(inst.prev_transform != inst.transform)
+                {
+                    inst.prev_transform = inst.transform;
+                    inst.last_refresh_frame = frame_counter;
+                }
+                if(inst.transform != transform)
+                {
+                    inst.transform = transform;
+                    inst.normal_transform = normal_transform;
+                    inst.last_refresh_frame = frame_counter;
+                }
             }
             ++i;
         }
@@ -220,22 +231,18 @@ void mesh_scene::add_acceleration_structure_instances(
     for(size_t j = 0; j < instance_cache.size() && instance_index < capacity; ++j)
     {
         const instance& in = instance_cache[j];
-        mat4 global_transform = transpose(in.transform);
         vk::AccelerationStructureInstanceKHR inst = vk::AccelerationStructureInstanceKHR(
             {}, j, 1<<0, 0, // Hit group 0 for triangle meshes.
             vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable,
             in.m->get_blas_address(device_index)
         );
+        mat4 global_transform = transpose(in.transform);
         memcpy(
             (void*)&inst.transform,
             (void*)&global_transform,
             sizeof(inst.transform)
         );
-        memcpy(
-            &instances[instance_index++],
-            &inst,
-            sizeof(inst)
-        );
+        instances[instance_index++] = inst;
     }
 }
 
