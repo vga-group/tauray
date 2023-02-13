@@ -53,6 +53,24 @@ vec3 ggx_fresnel(float cos_d, sampled_material mat)
     );
 }
 
+// Used in importance sampling which sometimes can't depend on actual fresnel
+// values. This one works with the cos_d being dot(view, surface normal)
+// (not microfacet normal).
+float fresnel_importance(float cos_d, sampled_material mat)
+{
+    if(mat.ior_in > mat.ior_out)
+    {
+        float inv_eta = mat.ior_in / mat.ior_out;
+        float sin_theta2 = inv_eta * inv_eta * (1.0f - cos_d * cos_d);
+        if(sin_theta2 >= 1.0f)
+            return 1.0f;
+        cos_d = sqrt(1.0f - sin_theta2);
+    }
+    else if(mat.ior_in == mat.ior_out)
+        return 0.0f;
+    return mat.f0 + (max(1.0f - mat.roughness, mat.f0) - mat.f0) * pow(1.0f - cos_d, 5.0f);
+}
+
 // Only valid when refraction isn't possible. Faster than the generic
 // ggx_fresnel. Specular-only, has no diffuse component!
 vec3 ggx_fresnel_refl(float cos_d, sampled_material mat)
@@ -237,11 +255,7 @@ vec3 ggx_vndf_sample(
     float u1,
     float u2
 ){
-    vec3 v = normalize(vec3(
-        roughness * view.x,
-        roughness * view.y,
-        view.z
-    ));
+    vec3 v = normalize(vec3(roughness * view.x, roughness * view.y, view.z));
 
     vec3 t1 = v.z < 0.9999 ? normalize(cross(v, vec3(0, 0, 1))) : vec3(1, 0, 0);
     vec3 t2 = cross(t1, v);
@@ -281,9 +295,7 @@ void ggx_bsdf_sample(
     // This is arbitrary, but affects the PDF. Thus, handling it is part of the
     // normalization. I selected this one to have the number of rays somewhat
     // match the intensity of the reflection.
-    float specular_cutoff = mix(
-        1, max(fresnel.r, max(fresnel.g, fresnel.b)), (1-mat.metallic) * max_albedo
-    );
+    float specular_cutoff = mix(1, fresnel_importance(view_dir.z, mat), (1-mat.metallic) * max_albedo);
 
     // If the specular test fails, next up is the decision between diffuse /
     // transmissive. Again, arbitrary number that must be accounted for in the
@@ -401,9 +413,7 @@ float ggx_bsdf_pdf(
 
     float max_albedo = max(mat.albedo.r, max(mat.albedo.g, mat.albedo.b));
 
-    float specular_cutoff = mix(
-        1, max(fresnel.r, max(fresnel.g, fresnel.b)), (1-mat.metallic) * max_albedo
-    );
+    float specular_cutoff = mix(1, fresnel_importance(view_dir.z, mat), (1-mat.metallic) * max_albedo);
     float diffuse_cutoff = 1.0f - mat.transmittance;
 
     float specular_probability = specular_cutoff;
@@ -486,7 +496,7 @@ void material_bsdf_sample(
 #elif defined(BOUNCE_COSINE_HEMISPHERE)
     float split = mat.transmittance * 0.5f;
     out_dir = (uniform_random.z < split ? -1 : 1) * sample_cosine_hemisphere(uniform_random.xy);
-    pdf = abs(pdf_cosine_hemisphere(out_dir)) / (uniform_random.z < split ? split : 1.0f-split);
+    pdf = abs(out_dir.z / M_PI) * (uniform_random.z < split ? split : 1.0f-split);
 
     ggx_bsdf_pdf(out_dir, view_dir, mat, diffuse_weight, specular_weight);
 #else
@@ -510,7 +520,7 @@ float material_bsdf_pdf(
 
     if(mat.transmittance == 0 && out_dir.z <= 0) return 0.0f;
     float split = mat.transmittance * 0.5f;
-    return abs(pdf_cosine_hemisphere(out_dir)) / (out_dir.z < 0 ? split : 1.0f-split);
+    return abs(out_dir.z / M_PI) * (out_dir.z < 0 ? split : 1.0f-split);
 #else
     return ggx_bsdf_pdf(out_dir, view_dir, mat, diffuse_weight, specular_weight);
 #endif

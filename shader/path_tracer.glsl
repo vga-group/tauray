@@ -326,6 +326,7 @@ bool get_intersection_info(
         light = color;
         nee_pdf.point_light_pdf = sample_point_light_pdf(pl, origin);
 #else
+        light = vec3(0);
         mat.emission = color;
 #endif
 

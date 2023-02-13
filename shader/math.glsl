@@ -269,7 +269,7 @@ vec3 sample_cosine_hemisphere(vec2 u)
 
 float pdf_cosine_hemisphere(vec3 dir)
 {
-    return dir.z * (1.0/M_PI);
+    return max(dir.z, 0.0) * (1.0/M_PI);
 }
 
 vec3 sample_sphere(vec2 u)
