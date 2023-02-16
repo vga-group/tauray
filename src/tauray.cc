@@ -612,6 +612,41 @@ std::vector<camera> generate_cameras(camera& tracked, options& opt)
     return res;
 }
 
+void show_stats(scene_data& sd, options& opt)
+{
+    if(!opt.scene_stats)
+        return;
+    
+    std::cout << "\nScene statistics: \n";
+    
+    std::cout << "Number of meshes = " << sd.s->get_mesh_count() << std::endl;
+    std::cout << "Number of mesh instances = " << sd.s->get_instance_count() << std::endl;
+     
+    //Calculating the number of triangles and dynamic objects
+    uint32_t triangle_count = 0; 
+    uint32_t dyn_obj_count = 0;
+    for(auto& mesh_obj: sd.s->get_mesh_objects())
+    {
+        for (auto& group: *mesh_obj->get_model())
+        {
+            triangle_count += group.m->get_indices().size() / 3; 
+        }
+        dyn_obj_count += mesh_obj->is_static() ? 0:1;
+    }
+    std::cout << "Number of triangles = " << triangle_count << std::endl;
+    
+    uint32_t objects_count = sd.s->get_mesh_objects().size();
+    std::cout << "\nNumber of objects = " <<  objects_count << std::endl;
+    std::cout << "Static objects = " << objects_count - dyn_obj_count << std::endl;
+    std::cout << "Dynamic objects = " << dyn_obj_count << std::endl;
+
+    std::cout << "\nNumber of textures = " << sd.s->get_sampler_count() << std::endl;
+    std::cout << "Number of point lights = " << sd.s->get_point_lights().size() << std::endl;
+    std::cout << "Number of spot lights = " << sd.s->get_spotlights().size() << std::endl;
+
+    opt.scene_stats = false;
+}
+
 void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 {
     scene& s = *sd.s;
@@ -706,6 +741,8 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                 if(crash_on_exception) throw err;
                 else std::cerr << err.what() << std::endl;
             }
+            show_stats(sd, opt);
+
             recreate_renderer = false;
         }
 
