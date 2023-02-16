@@ -296,6 +296,8 @@ void ggx_bsdf_sample(
     // normalization. I selected this one to have the number of rays somewhat
     // match the intensity of the reflection.
     float specular_cutoff = mix(1, fresnel_importance(view_dir.z, mat), (1-mat.metallic) * max_albedo);
+    // Lower noise, but seems to bias slightly :(
+    //float specular_cutoff = mix(1, max(fresnel.r, max(fresnel.g, fresnel.b)), (1-mat.metallic) * max_albedo);
 
     // If the specular test fails, next up is the decision between diffuse /
     // transmissive. Again, arbitrary number that must be accounted for in the
@@ -363,6 +365,13 @@ void ggx_bsdf_sample(
         else
         { // Transmissive
             out_dir = normalize(refract(-view_dir, h, mat.ior_in/mat.ior_out));
+            if(any(isnan(out_dir)))
+            {
+                out_dir = vec3(0);
+                diffuse_weight = vec3(0);
+                pdf = 0;
+                return;
+            }
             float cos_l = out_dir.z;
             float cos_h = h.z;
             float cos_o = dot(out_dir, h);
@@ -414,6 +423,8 @@ float ggx_bsdf_pdf(
     float max_albedo = max(mat.albedo.r, max(mat.albedo.g, mat.albedo.b));
 
     float specular_cutoff = mix(1, fresnel_importance(view_dir.z, mat), (1-mat.metallic) * max_albedo);
+    // Lower noise, but seems to bias slightly :(
+    //float specular_cutoff = mix(1, max(fresnel.r, max(fresnel.g, fresnel.b)), (1-mat.metallic) * max_albedo);
     float diffuse_cutoff = 1.0f - mat.transmittance;
 
     float specular_probability = specular_cutoff;
