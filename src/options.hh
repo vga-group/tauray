@@ -440,7 +440,11 @@
         tracing_record::SIMPLE, \
         {"simple", tracing_record::SIMPLE}, \
         {"trace-event-format", tracing_record::TRACE_EVENT_FORMAT} \
-    )
+    )\
+    TR_BOOL_OPT(scene_stats, \
+        "Shows the scene stats including triangles count, static and dynamic objects count, texture count, and the number of light sources.", \
+        false \
+    ) \
 //==============================================================================
 // END OF OPTIONS
 //==============================================================================
