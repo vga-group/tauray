@@ -91,6 +91,19 @@ namespace path_tracer
             break;
         }
 
+        switch(opt.tri_light_mode)
+        {
+        case tri_light_sampling_mode::AREA:
+            defines["TRI_LIGHT_SAMPLE_AREA"];
+            break;
+        case tri_light_sampling_mode::SOLID_ANGLE:
+            defines["TRI_LIGHT_SAMPLE_SOLID_ANGLE"];
+            break;
+        case tri_light_sampling_mode::HYBRID:
+            defines["TRI_LIGHT_SAMPLE_HYBRID"];
+            break;
+        }
+
         rt_camera_stage::get_common_defines(defines, opt);
 
         return {

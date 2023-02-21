@@ -435,6 +435,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rt_opt.sample_envmap = s.get_environment_map() ? opt.sample_envmap : 0.0f;
                 rt_opt.sample_emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
                 rt_opt.bounce_mode = opt.bounce_mode;
+                rt_opt.tri_light_mode = opt.tri_light_mode;
                 rt_opt.post_process.tonemap = tonemap;
                 rt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
                 if(opt.temporal_reprojection > 0.0f)

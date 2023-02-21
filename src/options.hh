@@ -384,6 +384,13 @@
         "reached by accumulating the same frame.", \
         false \
     ) \
+    TR_ENUM_OPT(tri_light_mode, tri_light_sampling_mode, \
+        "Sets the sampling method used for triangle area lights.", \
+        tri_light_sampling_mode::HYBRID, \
+        {"area", tri_light_sampling_mode::AREA}, \
+        {"solid-angle", tri_light_sampling_mode::SOLID_ANGLE}, \
+        {"hybrid", tri_light_sampling_mode::HYBRID} \
+    )\
     TR_BOOL_OPT(transparent_background, \
         "Replaces background with alpha transparency, regardless of " \
         "environment map usage.", \

@@ -327,16 +327,30 @@ vec3 sample_cone(vec2 u, vec3 dir, float cos_theta_min)
     return dot(o, dir) <= cos_theta_min ? dir : o;
 }
 
+vec3 sample_triangle_area(vec2 u, vec3 A, vec3 B, vec3 C)
+{
+    float alpha = u.x;
+    float beta = u.y;
+    if(alpha+beta > 1)
+    {
+        alpha = 1 - alpha;
+        beta = 1 - beta;
+    }
+    float gamma = 1-beta-alpha;
+    return alpha * A + beta * B + gamma * C;
+}
+
 // https://www.graphics.cornell.edu/pubs/1995/Arv95c.pdf
 vec3 sample_spherical_triangle(
-    vec2 xi, vec3 A, vec3 B, vec3 C, out float solid_angle
+    vec2 xi, vec3 A, vec3 B, vec3 C, out float pdf
 ){
     vec3 nA = normalize(A);
     vec3 nB = normalize(B);
     vec3 nC = normalize(C);
 
     vec3 cos_side = clamp(vec3(dot(nB, nC), dot(nA, nC), dot(nA, nB)), vec3(-1.0f), vec3(1.0f));
-    solid_angle = 2.0f * atan(abs(dot(nA, cross(nB, nC))), (1.0f + cos_side.x + cos_side.y + cos_side.z));
+    float solid_angle = 2.0f * atan(abs(dot(nA, cross(nB, nC))), (1.0f + cos_side.x + cos_side.y + cos_side.z));
+    pdf = 1.0f / solid_angle;
 
     float chosen_split = xi.x * solid_angle;
 
@@ -357,19 +371,38 @@ vec3 sample_spherical_triangle(
     return z * nB + sqrt(1 - z*z) * normalize(Ch - d * nB);
 }
 
+// Caution: all input vectors must be normalized!
 float spherical_triangle_solid_angle(
-    vec3 A, vec3 B, vec3 C
+    vec3 nA, vec3 nB, vec3 nC
 ){
-    vec3 nA = normalize(A);
-    vec3 nB = normalize(B);
-    vec3 nC = normalize(C);
-
     return 2.0f * atan(
         abs(dot(nA, cross(nB, nC))),
-        (1.0f+dot(nA,nB)+dot(nB,nC)+dot(nA,nC))
+        1.0f + (dot(nA,nB)+(dot(nB,nC)+dot(nA,nC)))
     );
 }
 
+float triangle_surface_area(vec3 a, vec3 b, vec3 c)
+{
+    return 0.5f * length(cross(a-b, a-c));
+}
+
+float area_light_pdf(float area, vec3 normal, vec3 view, float dist2)
+{
+    return dist2/(abs(dot(normal, view)) * area);
+}
+
+float triangle_area_pdf(vec3 p, vec3 a, vec3 b, vec3 c)
+{
+    vec3 normal = cross(a-b, a-c);
+    float normal_len = length(normal);
+    normal /= normal_len;
+    float area = 0.5 * normal_len;
+    float p_dist2 = dot(p, p);
+    vec3 view = p / sqrt(p_dist2);
+    return area_light_pdf(area, normal, view, p_dist2);
+}
+
+// Assumes that ray starts from vec3(0)
 float ray_plane_intersection_dist(
     vec3 dir, vec3 A, vec3 B, vec3 C
 ){

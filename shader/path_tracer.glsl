@@ -289,19 +289,19 @@ bool get_intersection_info(
     nee_pdf.envmap_pdf = 0;
     if(payload.instance_id >= 0)
     {
-        float solid_angle = 0.0f;
+        float pdf = 0.0f;
         vertex_data vd = get_interpolated_vertex(
             view, payload.barycentrics,
             payload.instance_id,
             payload.primitive_id
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-            , origin, solid_angle
+            , origin, pdf
 #endif
         );
         mat = sample_material(payload.instance_id, vd);
         mat.albedo.a = 1.0; // Alpha blending was handled by the any-hit shader!
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-        nee_pdf.tri_light_pdf = solid_angle == 0.0f ? 0.0f : 1.0f / solid_angle;
+        nee_pdf.tri_light_pdf = pdf == 0.0f ? 0.0f : pdf;
         light = mat.emission;
         mat.emission = vec3(0);
 #else
@@ -419,10 +419,10 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
 
         vec3 color = tl.emission_factor;
 
-        float solid_angle = 0.0f;
-        out_dir = sample_spherical_triangle(u.xy, A, B, C, solid_angle);
+        float tri_pdf = 0.0f;
+        out_dir = sample_triangle_light(u.xy, A, B, C, tri_pdf);
         out_length = ray_plane_intersection_dist(out_dir, A, B, C);
-        if(solid_angle <= 0 || isnan(solid_angle) || solid_angle >= 2*M_PI || out_length <= control.min_ray_dist || any(isnan(out_dir)))
+        if(isinf(tri_pdf) || tri_pdf <= 0 || out_length <= control.min_ray_dist || any(isnan(out_dir)))
         { // Same triangle, trying to intersect itself... Or zero-area degenerate triangle.
             pdf = 1.0f;
             out_dir = vec3(0);
@@ -439,7 +439,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
         // Prevent shadow ray from intersecting with the target triangle
         out_length -= control.min_ray_dist;
 
-        pdf = triangle_prob / (light_count * solid_angle);
+        pdf = triangle_prob * tri_pdf / light_count;
         return color;
     }
 #endif

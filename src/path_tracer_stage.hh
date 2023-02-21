@@ -20,6 +20,13 @@ enum class bounce_sampling_mode
     MATERIAL
 };
 
+enum class tri_light_sampling_mode
+{
+    AREA, // Okay for small solid angles, pretty bad for large solid angles
+    SOLID_ANGLE, // Good for large solid angles, bad for small due to precision issues
+    HYBRID // Tries to switch between area and solid angle sampling depending on precision pitfalls
+};
+
 class scene;
 class path_tracer_stage: public rt_camera_stage
 {
@@ -43,6 +50,7 @@ public:
         float sample_envmap = 1.0f;
         float sample_emissive_triangles = 1.0f;
         bounce_sampling_mode bounce_mode = bounce_sampling_mode::MATERIAL;
+        tri_light_sampling_mode tri_light_mode = tri_light_sampling_mode::HYBRID;
     };
 
     path_tracer_stage(
