@@ -395,11 +395,8 @@ float triangle_area_pdf(vec3 p, vec3 a, vec3 b, vec3 c)
 {
     vec3 normal = cross(a-b, a-c);
     float normal_len = length(normal);
-    normal /= normal_len;
-    float area = 0.5 * normal_len;
     float p_dist2 = dot(p, p);
-    vec3 view = p / sqrt(p_dist2);
-    return area_light_pdf(area, normal, view, p_dist2);
+    return 2.0 * p_dist2*sqrt(p_dist2)/abs(dot(normal, p));
 }
 
 // Assumes that ray starts from vec3(0)
