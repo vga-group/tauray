@@ -53,7 +53,7 @@ public:
         bool loop = false,
         bool use_fallback = false
     );
-    void update(time_ticks dt);
+    void update(time_ticks dt, bool force_update = false);
     bool is_playing() const;
     void set_animation_time(time_ticks dt);
     time_ticks get_total_ticks() const;

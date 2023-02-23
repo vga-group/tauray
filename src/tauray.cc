@@ -974,7 +974,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
             {
                 if(!opt.skip_render)
                 {
-                    s.update(0);
+                    s.update(0, true);
                     rr->render();
                     lb.update(*rr);
                 }
@@ -987,7 +987,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
 
         // First frame should not update time.
         time_ticks dt = i == 0 ? 0 : update_dt;
-        s.update(dt);
+        s.update(dt, true);
         for(camera_log& clog: camera_logs)
             clog.frame(dt);
 
@@ -1044,7 +1044,7 @@ void headless_server(context& ctx, scene_data& sd, options& opt)
         if(ctx.init_frame())
             break;
 
-        s.update(delta * 1000000);
+        s.update(delta * 1000000, true);
 
         rr->reset_accumulation();
 

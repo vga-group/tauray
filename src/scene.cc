@@ -99,14 +99,14 @@ void scene::play(const std::string& name, bool loop, bool use_fallback)
     mesh_scene::visit_animated(play_handler);
 }
 
-void scene::update(time_ticks dt)
+void scene::update(time_ticks dt, bool force_update)
 {
     for(camera* c: cameras)
     {
         c->step_jitter();
     }
 
-    if(dt > 0)
+    if(dt > 0 || force_update)
     {
         auto update_handler = [&](animated_node* n){
             n->update(dt);
