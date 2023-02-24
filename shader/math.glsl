@@ -340,7 +340,18 @@ vec3 sample_triangle_area(vec2 u, vec3 A, vec3 B, vec3 C)
     return alpha * A + beta * B + gamma * C;
 }
 
-// https://www.graphics.cornell.edu/pubs/1995/Arv95c.pdf
+float determinant_accurate(vec3 nA, vec3 nB, vec3 nC)
+{
+    float div = inversesqrt(2.0f * abs(nB.x) + 2.0f);
+    float e = nB.x > 0 ? div : -div;
+    vec3 h = nB * div + vec3(e, 0, 0);
+
+    vec3 a = nA - 2.0f * h * dot(h, nA);
+    vec3 c = nC - 2.0f * h * dot(h, nC);
+    return abs(a.y * c.z - c.y * a.z);
+}
+
+// https://momentsingraphics.de/Siggraph2021.html
 vec3 sample_spherical_triangle(
     vec2 xi, vec3 A, vec3 B, vec3 C, out float pdf
 ){
@@ -348,27 +359,30 @@ vec3 sample_spherical_triangle(
     vec3 nB = normalize(B);
     vec3 nC = normalize(C);
 
-    vec3 cos_side = clamp(vec3(dot(nB, nC), dot(nA, nC), dot(nA, nB)), vec3(-1.0f), vec3(1.0f));
-    float solid_angle = 2.0f * atan(abs(dot(nA, cross(nB, nC))), (1.0f + cos_side.x + cos_side.y + cos_side.z));
+    float dAB = dot(nA, nB);
+    float dBC = dot(nB, nC);
+    float dAC = dot(nA, nC);
+
+    float div = inversesqrt(2.0f * abs(nB.x) + 2.0f);
+    float e = nB.x > 0 ? div : -div;
+    vec3 h = nB * div + vec3(e, 0, 0);
+
+    vec3 a = nA - 2.0f * h * (dAB * div + e * nA.x);
+    vec3 c = nC - 2.0f * h * (dBC * div + e * nC.x);
+    float G0 = abs(a.y * c.z - c.y * a.z);
+    float G1 = dAC + dBC;
+    float G2 = 1.0f + dAB;
+
+    float solid_angle = 2.0f * atan(G0, G1 + G2);
     pdf = 1.0f / solid_angle;
+    float chosen_split = xi.x * solid_angle * 0.5;
+    vec3 r = (G0 * cos(chosen_split) - G1 * sin(chosen_split)) * nA + G2 * sin(chosen_split) * nC;
 
-    float chosen_split = xi.x * solid_angle;
-
-    float cos_alpha = clamp(dot(orthogonalize(nA, nB-nA), orthogonalize(nA, nC-nA)), -1.0f, 1.0f);
-    float alpha = acos(cos_alpha);
-    float sin_alpha = sin(alpha);
-
-    float s = sin(chosen_split - alpha);
-    float t = cos(chosen_split - alpha);
-    float u = t - cos_alpha;
-    float v = s + sin_alpha * cos_side.z;
-
-    float q = ((v*t - u*s) * cos_alpha - v)/((v*s + u*t) * sin_alpha);
-
-    vec3 Ch = q * nA + sqrt(1 - q*q) * normalize(nC - cos_side.y * nA);
+    vec3 Ch = 2.0f * dot(nA, r) * r / dot(r, r) - nA;
     float d = dot(Ch, nB);
     float z = 1 - xi.y + d * xi.y;
-    return z * nB + sqrt(1 - z*z) * normalize(Ch - d * nB);
+    float st = sqrt((1.0f - z * z)/(1.0f - d * d));
+    return (z - st * d) * nB + st * Ch;
 }
 
 // Caution: all input vectors must be normalized!
@@ -376,7 +390,7 @@ float spherical_triangle_solid_angle(
     vec3 nA, vec3 nB, vec3 nC
 ){
     return 2.0f * atan(
-        abs(dot(nA, cross(nB, nC))),
+        determinant_accurate(nA, nB, nC),
         1.0f + (dot(nA,nB)+(dot(nB,nC)+dot(nA,nC)))
     );
 }

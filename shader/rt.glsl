@@ -43,13 +43,13 @@ vec3 sample_triangle_light(vec2 u, vec3 A, vec3 B, vec3 C, out float pdf)
 float triangle_light_pdf(vec3 P, vec3 A, vec3 B, vec3 C)
 {
     float solid_angle = spherical_triangle_solid_angle(normalize(A), normalize(B), normalize(C));
-    return solid_angle > 1e-4 ? 1.0f / solid_angle : triangle_area_pdf(P, A, B, C);
+    return solid_angle > 1e-6 ? 1.0f / solid_angle : triangle_area_pdf(P, A, B, C);
 }
 
 vec3 sample_triangle_light(vec2 u, vec3 A, vec3 B, vec3 C, out float pdf)
 {
     float solid_angle = spherical_triangle_solid_angle(normalize(A), normalize(B), normalize(C));
-    if(solid_angle > 1e-4)
+    if(solid_angle > 1e-6)
     {
         // Let's just hope that the optimizer spots us calculating the same solid
         // angle twice (that happens inside sample_spherical_triangle)

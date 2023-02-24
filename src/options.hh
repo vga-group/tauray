@@ -386,7 +386,7 @@
     ) \
     TR_ENUM_OPT(tri_light_mode, tri_light_sampling_mode, \
         "Sets the sampling method used for triangle area lights.", \
-        tri_light_sampling_mode::HYBRID, \
+        tri_light_sampling_mode::SOLID_ANGLE, \
         {"area", tri_light_sampling_mode::AREA}, \
         {"solid-angle", tri_light_sampling_mode::SOLID_ANGLE}, \
         {"hybrid", tri_light_sampling_mode::HYBRID} \
