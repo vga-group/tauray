@@ -3,6 +3,7 @@
 #include "material.glsl"
 #include "color.glsl"
 #include "camera.glsl"
+#include "light.glsl"
 
 struct vertex
 {
@@ -27,37 +28,6 @@ struct vertex_data
     bool back_facing;
     int instance_id;
     int primitive_id;
-};
-
-struct directional_light
-{
-    vec3 color;
-    int shadow_map_index;
-    vec3 dir;
-    float dir_cutoff;
-};
-
-struct point_light
-{
-    vec3 color;
-    vec3 dir;
-    vec3 pos;
-    float radius;
-    float dir_cutoff;
-    float dir_falloff;
-    float cutoff_radius;
-    float spot_radius;
-    int shadow_map_index;
-    int padding;
-};
-
-struct tri_light
-{
-    vec3 pos[3];
-    vec3 emission_factor;
-
-    vec2 uv[3];
-    int emission_tex_id;
 };
 
 struct instance
@@ -163,41 +133,6 @@ layout(binding = SCENE_METADATA_BUFFER_BINDING, set = 0, scalar) uniform scene_m
 #define POINT_LIGHT_FOR_BEGIN(world_pos) \
     for(uint item_index = 0; item_index < scene_metadata.point_light_count; ++item_index) {
 #define POINT_LIGHT_FOR_END }
-
-void random_sample_point_light(vec3 world_pos, float u, int item_count, out float selected_weight, out int selected_index)
-{
-    selected_index = clamp(int(u * item_count), 0, item_count-1);
-    selected_weight = item_count;
-}
-
-float get_spotlight_intensity(point_light l, vec3 dir)
-{
-    if(l.dir_falloff > 0)
-    {
-        float cutoff = dot(dir, -l.dir);
-        cutoff = cutoff > l.dir_cutoff ?
-            1.0f-pow(
-                max(1.0f-cutoff, 0.0f)/(1.0f-l.dir_cutoff), l.dir_falloff
-            ) : 0.0f;
-        return cutoff;
-    }
-    else return 1.0f;
-}
-
-void get_point_light_info(
-    point_light l,
-    vec3 pos,
-    out vec3 dir,
-    out float dist,
-    out vec3 color
-){
-    dir = l.pos - pos;
-    float dist2 = dot(dir, dir);
-    dist = sqrt(dist2);
-    dir /= dist;
-
-    color = get_spotlight_intensity(l, dir) * l.color/dist2;
-}
 
 #ifdef TEXTURE_ARRAY_BINDING
 layout(binding = TEXTURE_ARRAY_BINDING, set = 0) uniform sampler2D textures[];

@@ -17,53 +17,6 @@ layout(binding = DISTRIBUTION_DATA_BINDING, set = 0) uniform distribution_data_b
 // I would prefer this to be INF, but it's hard to write in glsl.
 #define RAY_MAX_DIST float(1e39)
 
-#if defined(TRI_LIGHT_SAMPLE_AREA)
-float triangle_light_pdf(vec3 P, vec3 A, vec3 B, vec3 C)
-{
-    return triangle_area_pdf(P, A, B, C);
-}
-
-vec3 sample_triangle_light(vec2 u, vec3 A, vec3 B, vec3 C, out float pdf)
-{
-    vec3 P = sample_triangle_area(u, A, B, C);
-    pdf = triangle_area_pdf(P, A, B, C);
-    return normalize(P);
-}
-#elif defined(TRI_LIGHT_SAMPLE_SOLID_ANGLE)
-float triangle_light_pdf(vec3 P, vec3 A, vec3 B, vec3 C)
-{
-    return 1.0f / spherical_triangle_solid_angle(normalize(A), normalize(B), normalize(C));
-}
-
-vec3 sample_triangle_light(vec2 u, vec3 A, vec3 B, vec3 C, out float pdf)
-{
-    return sample_spherical_triangle(u, A, B, C, pdf);
-}
-#else
-float triangle_light_pdf(vec3 P, vec3 A, vec3 B, vec3 C)
-{
-    float solid_angle = spherical_triangle_solid_angle(normalize(A), normalize(B), normalize(C));
-    return solid_angle > 1e-6 ? 1.0f / solid_angle : triangle_area_pdf(P, A, B, C);
-}
-
-vec3 sample_triangle_light(vec2 u, vec3 A, vec3 B, vec3 C, out float pdf)
-{
-    float solid_angle = spherical_triangle_solid_angle(normalize(A), normalize(B), normalize(C));
-    if(solid_angle > 1e-6)
-    {
-        // Let's just hope that the optimizer spots us calculating the same solid
-        // angle twice (that happens inside sample_spherical_triangle)
-        return sample_spherical_triangle(u, A, B, C, pdf);
-    }
-    else
-    {
-        vec3 P = sample_triangle_area(u, A, B, C);
-        pdf = triangle_area_pdf(P, A, B, C);
-        return normalize(P);
-    }
-}
-#endif
-
 #if defined(SCENE_DATA_BUFFER_BINDING) && defined(VERTEX_BUFFER_BINDING) && defined(INDEX_BUFFER_BINDING)
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
 vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, vec3 pos, out float pdf)
@@ -93,7 +46,7 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
     if(o.light_base_id >= 0)
     {
-        pdf = triangle_light_pdf(
+        pdf = sample_triangle_light_pdf(
             interp.pos - pos,
             (o.model * vec4(v0.pos, 1)).xyz - pos,
             (o.model * vec4(v1.pos, 1)).xyz - pos,

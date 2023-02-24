@@ -143,66 +143,6 @@ float sample_environment_map_pdf(vec3 dir)
 }
 #endif
 
-void sample_point_light(
-    point_light pl,
-    vec2 u,
-    vec3 pos,
-    out vec3 out_dir,
-    out float out_length,
-    out vec3 color,
-    out float pdf
-){
-    vec3 dir = pos - pl.pos;
-    float dist2 = dot(dir, dir);
-    float k = 1.0f - pl.radius * pl.radius / dist2;
-    float dir_cutoff = k > 0 ? sqrt(k) : -1.0f;
-    out_dir = sample_cone(u, -normalize(dir), dir_cutoff);
-
-    float b = dot(dir, out_dir);
-    out_length = -b - sqrt(max(b * b - dist2 + pl.radius * pl.radius, 0.0f));
-
-    color = get_spotlight_intensity(pl, out_dir) * pl.color;
-
-    if(pl.radius == 0.0f)
-    {
-        // We mark infinite PDFs with the minus sign on the NEE side.
-        pdf = -dist2;
-    }
-    else
-    {
-        color /= pl.radius * pl.radius * M_PI;
-        pdf = 1 / (2.0f * M_PI * (1.0f - dir_cutoff));
-    }
-}
-
-float sample_point_light_pdf(point_light pl, vec3 pos)
-{
-    vec3 dir = pos - pl.pos;
-    float dist2 = dot(dir, dir);
-    float k = 1.0f - pl.radius * pl.radius / dist2;
-    float dir_cutoff = k > 0 ? sqrt(k) : -1.0f;
-
-    if(pl.radius == 0.0f) return 0;
-    else return 1 / (2.0f * M_PI * (1.0f - dir_cutoff));
-}
-
-float sample_directional_light_pdf(directional_light dl)
-{
-    return dl.dir_cutoff >= 1.0f ? 0.0f : 1.0f / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
-}
-
-void sample_directional_light(
-    directional_light dl,
-    vec2 u,
-    out vec3 out_dir,
-    out vec3 color,
-    out float pdf
-){
-    out_dir = sample_cone(u, -dl.dir, dl.dir_cutoff);
-    pdf = dl.dir_cutoff >= 1.0f ? -1.0f : 1.0f / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
-    color = pdf > 0 ? dl.color * pdf : dl.color;
-}
-
 void get_nee_sampling_probabilities(out float point, out float triangle, out float directional, out float envmap)
 {
 #ifdef NEE_SAMPLE_POINT_LIGHTS
