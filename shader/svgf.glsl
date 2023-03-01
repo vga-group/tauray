@@ -8,7 +8,7 @@ const float gaussian_kernel[2][2] = {
 layout(push_constant) uniform push_constant_buffer
 {
     ivec2 size;
-    int level;
+    int iteration;
     int iteration_count;
     int spec_iteration_count;
     int atrous_kernel_radius;

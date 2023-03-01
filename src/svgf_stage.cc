@@ -1,6 +1,7 @@
 #include "svgf_stage.hh"
 #include "misc.hh"
 #include "camera.hh"
+#include "placeholders.hh"
 
 namespace
 {
@@ -32,7 +33,7 @@ svgf_stage::svgf_stage(
     gbuffer_target& prev_features,
     const options& opt
 ) : stage(dev),
-    atrous_comp(dev, compute_pipeline::params{shader_source("shader/svgf_atrous.comp"), {}}),
+    atrous_comp(dev, compute_pipeline::params{shader_source("shader/svgf_atrous.comp"), {}, 0, true}),
     temporal_comp(dev, compute_pipeline::params{shader_source("shader/svgf_temporal.comp"), {}}),
     estimate_variance_comp(dev, compute_pipeline::params{ shader_source("shader/svgf_estimate_variance.comp"), {} }),
     opt(opt),
@@ -98,21 +99,6 @@ void svgf_stage::init_resources()
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         cur_scene->bind(temporal_comp, i);
-
-        atrous_comp.update_descriptor_set({
-            {"diffuse_ping", {{}, atrous_diffuse_pingpong[1][i].view, vk::ImageLayout::eGeneral} },
-            {"diffuse_pong", {{}, atrous_diffuse_pingpong[0][i].view, vk::ImageLayout::eGeneral} },
-            {"specular_ping", {{}, atrous_specular_pingpong[1][i].view, vk::ImageLayout::eGeneral} },
-            {"specular_pong", {{}, atrous_specular_pingpong[0][i].view, vk::ImageLayout::eGeneral} },
-            {"final_output", {{}, input_features.color[i].view, vk::ImageLayout::eGeneral}},
-            {"diffuse_hist", {{}, svgf_color_hist[i].view, vk::ImageLayout::eGeneral}},
-            {"spec_hist", {{}, svgf_spec_hist[i].view, vk::ImageLayout::eGeneral}},
-            {"in_linear_depth", {{}, input_features.linear_depth[i].view, vk::ImageLayout::eGeneral}},
-            {"in_normal", {{}, input_features.normal[i].view, vk::ImageLayout::eGeneral}},
-            {"in_albedo", {{}, input_features.albedo[i].view, vk::ImageLayout::eGeneral}},
-            {"in_material", {{}, input_features.material[i].view, vk::ImageLayout::eGeneral}},
-            {"in_moments", {{}, moments_history[1][i].view, vk::ImageLayout::eGeneral}}
-        }, i);
         temporal_comp.update_descriptor_set({
             {"in_color", {{}, input_features.color[i].view, vk::ImageLayout::eGeneral}},
             {"in_diffuse", {{}, input_features.diffuse[i].view, vk::ImageLayout::eGeneral}},
@@ -189,7 +175,19 @@ void svgf_stage::record_command_buffers()
             {}, barrier, {}, {}
         );
 
-        atrous_comp.bind(cb, i);
+        atrous_comp.bind(cb);
+        atrous_comp.push_descriptors(cb,
+            {
+                {"final_output", {{}, input_features.color[i].view, vk::ImageLayout::eGeneral}},
+                {"diffuse_hist", {{}, svgf_color_hist[i].view, vk::ImageLayout::eGeneral}},
+                {"spec_hist", {{}, svgf_spec_hist[i].view, vk::ImageLayout::eGeneral}},
+                {"in_linear_depth", {{}, input_features.linear_depth[i].view, vk::ImageLayout::eGeneral}},
+                {"in_normal", {{}, input_features.normal[i].view, vk::ImageLayout::eGeneral}},
+                {"in_albedo", {{}, input_features.albedo[i].view, vk::ImageLayout::eGeneral}},
+                {"in_material", {{}, input_features.material[i].view, vk::ImageLayout::eGeneral}},
+                {"in_moments", {{}, moments_history[1][i].view, vk::ImageLayout::eGeneral}}
+            }
+        );
         const int iteration_count = opt.atrous_diffuse_iters;
         for (int j = 0; j < iteration_count; ++j)
         {
@@ -201,6 +199,16 @@ void svgf_stage::record_command_buffers()
                     {}, barrier, {}, {}
                 );
             }
+            int out_index = j & 1;
+            int in_index = (j + 1) & 1;
+            atrous_comp.push_descriptors(cb, 
+                {
+                    {"diffuse_in", {{}, atrous_diffuse_pingpong[in_index][i].view, vk::ImageLayout::eGeneral}},
+                    {"diffuse_out", {{}, atrous_diffuse_pingpong[out_index][i].view, vk::ImageLayout::eGeneral}},
+                    {"specular_in", {{}, atrous_specular_pingpong[in_index][i].view, vk::ImageLayout::eGeneral}},
+                    {"specular_out", {{}, atrous_specular_pingpong[out_index][i].view, vk::ImageLayout::eGeneral}}
+                }
+            );
 
             control.iteration = j;
             atrous_comp.push_constants(cb, control);

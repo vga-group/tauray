@@ -95,11 +95,14 @@ void get_camera_ray(
     origin = cam.origin.xyz;
 }
 
-vec2 get_camera_projection(in camera_data cam, vec3 world_pos)
+vec3 get_camera_projection(in camera_data cam, vec3 world_pos)
 {
-    vec3 t = normalize((cam.view * vec4(world_pos, 1.0f)).xyz);
-    vec2 uv = vec2(atan(t.x, -t.z), asin(t.y));
-    return (uv / cam.fov) * 0.5 + 0.5;
+    vec3 t = (cam.view * vec4(world_pos, 1.0f)).xyz;
+    float t_len = length(t);
+    t /= t_len
+    vec3 uv = vec2(atan(t.x, -t.z), asin(t.y), t_len);
+    uv.xy = (uv.xy / cam.fov) * 0.5 + 0.5;
+    return uv;
 }
 
 #endif

@@ -1,6 +1,5 @@
 #version 460
 #extension GL_GOOGLE_include_directive : enable
-#extension GL_EXT_debug_printf : enable
 #include "svgf.glsl"
 #include "projection.glsl"
 #include "gbuffer.glsl"
@@ -8,15 +7,15 @@
 
 layout (local_size_x = 16, local_size_y = 16) in;
 
-layout(binding = 0, set = 0, rgba32f) uniform image2DArray diffuse_ping;
-layout(binding = 1, set = 0, rgba32f) uniform image2DArray diffuse_pong;
+layout(binding = 0, set = 0, rgba32f) uniform image2DArray diffuse_in;
+layout(binding = 1, set = 0, rgba32f) uniform image2DArray diffuse_out;
 layout(binding = 2, set = 0, rgba32f) uniform image2DArray diffuse_hist;
 layout(binding = 3, set = 0, rgba32f) uniform image2DArray final_output;
 layout(binding = 4, set = 0, rgba32f) uniform image2DArray in_linear_depth;
 layout(binding = 5, set = 0, rgba32f) uniform image2DArray in_normal;
 layout(binding = 6, set = 0, rgba32f) uniform image2DArray in_albedo;
-layout(binding = 7, set = 0, rgba32f) uniform image2DArray specular_ping;
-layout(binding = 8, set = 0, rgba32f) uniform image2DArray specular_pong;
+layout(binding = 7, set = 0, rgba32f) uniform image2DArray specular_in;
+layout(binding = 8, set = 0, rgba32f) uniform image2DArray specular_out;
 layout(binding = 9, set = 0, rgba32f) uniform image2DArray spec_hist;
 layout(binding = 10, set = 0, rgba32f) uniform image2DArray in_material;
 layout(binding = 11, set = 0, rgba32f) uniform image2DArray in_moments;
@@ -31,7 +30,7 @@ float filter_variance(ivec3 p)
     {
         const ivec3 q = p + ivec3(xx, yy, 0.0);
         const float k = gaussian_kernel[abs(xx)][abs(yy)];
-        float v = (control.level & 1) == 0 ? imageLoad(diffuse_ping, q).a : imageLoad(diffuse_pong, q).a;
+        float v = imageLoad(diffuse_in, q).a;
         sum += v * k;
     }
 
@@ -44,25 +43,17 @@ void main()
     if(all(lessThan(p.xy, control.size)))
     {
         const vec4 z_center = imageLoad(in_linear_depth, p);
-        vec4 center_color = (control.level & 1) == 0 ? imageLoad(diffuse_ping, p) : imageLoad(diffuse_pong, p);
-        vec4 center_specular = (control.level & 1) == 0 ? imageLoad(specular_ping, p) : imageLoad(specular_pong, p);
+        vec4 center_color = imageLoad(diffuse_in, p);
+        vec4 center_specular = imageLoad(specular_in, p);
 
         if (any(isnan(z_center)))
         {
-            if ((control.level & 1) == 0)
-            {
-                imageStore(diffuse_pong, p, center_color);
-                imageStore(specular_pong, p, center_specular);
-            }
-            else
-            {
-                imageStore(diffuse_ping, p, center_color);
-                imageStore(specular_ping, p, center_specular);
-            }
+            imageStore(diffuse_out, p, center_color);
+            imageStore(specular_out, p, center_specular);
             return;
         }
 
-        const int step_size = int(1u << control.level);
+        const int step_size = int(1u << control.iteration);
 
         float center_luminance = rgb_to_luminance(center_color.rgb);
 
@@ -85,10 +76,10 @@ void main()
         {
             const ivec3 q  = p + ivec3(xx, yy, 0) * step_size;
 
-            if (all(lessThan(q.xy, control.size)) && all(greaterThanEqual(q.xy, ivec2(0))) && xx != 0 && yy != 0)
+            if (all(lessThan(q.xy, control.size)) && all(greaterThanEqual(q.xy, ivec2(0))) && !(xx == 0 && yy == 0))
             {
-                const vec4 color_q = (control.level & 1) == 0 ? imageLoad(diffuse_ping, q) : imageLoad(diffuse_pong, q);
-                const vec4 spec_q =  (control.level & 1) == 0 ? imageLoad(specular_ping, q) : imageLoad(specular_pong, q);
+                const vec4 color_q = imageLoad(diffuse_in, q);
+                const vec4 spec_q = imageLoad(specular_in, q);
                 const float lum_q = rgb_to_luminance(color_q.rgb);
                 const float z_q = imageLoad(in_linear_depth, q).r;
                 const vec3 n_q = unpack_gbuffer_normal(imageLoad(in_normal, q).rg);
@@ -110,7 +101,7 @@ void main()
                 float w_spec = exp(-max(0.0, w_z)) * w_n * w_r * w_d;
                 sum_w += w;
                 sum_color += color_q * vec4(vec3(w), w * w);
-                if (control.level < control.spec_iteration_count)
+                if (control.iteration < control.spec_iteration_count)
                 {
                     sum_w_spec += w_spec;
                     sum_specular += spec_q * vec4(vec3(w_spec), w_spec * w_spec);
@@ -120,21 +111,20 @@ void main()
 
         vec4 filtered_color = sum_color / vec4(vec3(sum_w), sum_w * sum_w);
         vec4 filtered_spec = sum_specular / vec4(vec3(sum_w_spec), sum_w_spec * sum_w_spec);
-        if (control.level == 0)
+        if (control.iteration == 0)
         {
             imageStore(diffuse_hist, p, filtered_color);
             imageStore(spec_hist, p, filtered_spec);
-
         }
-        if (control.level == control.iteration_count - 1)
+        if (control.iteration == control.iteration_count - 1)
         {
             vec4 albedo = imageLoad(in_albedo, p);
             imageStore(final_output, p, vec4(filtered_spec.rgb + filtered_color.rgb * albedo.rgb, 1.0));
         }
         else
         {
-            if ((control.level & 1) == 0) {imageStore(diffuse_pong, p, filtered_color); imageStore(specular_pong, p, filtered_spec);}
-            else                          {imageStore(diffuse_ping, p, filtered_color); imageStore(specular_ping, p, filtered_spec);}
+            imageStore(diffuse_out, p, filtered_color);
+            imageStore(specular_out, p, filtered_spec);
         }
     }
 }

@@ -378,15 +378,15 @@
         {"bmfr", options::denoiser_type::BMFR} \
     ) \
     TR_STRUCT_OPT(svgf_params, \
-        "Parameters for the SVGF denoiser." \
-        "atrous_diffuse_iter: number of iterations of the atrous filter for the diffuse channel"\
-        "atrous_spec_iter: number of iterations of the atrous filter for the specular channel"\
-        "atrous_kernel_radius: atrous filter radius"\
-        "sigma_l: luminance weight for atrous filter"\
-        "sigma_z: depth weight for atrous filter"\
-        "sigma_n: normal weight for atrous filter"\
-        "min_alpha_color: controls temporal accumulation speed for diffuse and specular color" \
-        "min_alpha_moments: controls temporal accumulation speed for moments used to drive the variance guidance", \
+        "Parameters for the SVGF denoiser.\n" \
+        "atrous-diffuse-iter: number of iterations of the atrous filter for the diffuse channel\n"\
+        "atrous-spec-iter: number of iterations of the atrous filter for the specular channel\n"\
+        "atrous-kernel-radius: atrous filter radius\n"\
+        "sigma-l: luminance weight for atrous filter\n"\
+        "sigma-z: depth weight for atrous filter\n"\
+        "sigma-n: normal weight for atrous filter\n"\
+        "min-alpha-color: controls temporal accumulation speed for diffuse and specular color\n" \
+        "min-alpha-moments: controls temporal accumulation speed for moments used to drive the variance guidance\n", \
         TR_STRUCT_OPT_INT(atrous_diffuse_iter, 5, 1, 16) \
         TR_STRUCT_OPT_INT(atrous_spec_iter, 5, 0, 16) \
         TR_STRUCT_OPT_INT(atrous_kernel_radius, 2, 1, 16) \

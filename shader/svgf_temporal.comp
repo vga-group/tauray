@@ -1,6 +1,5 @@
 #version 460
 #extension GL_GOOGLE_include_directive : enable
-#extension GL_EXT_debug_printf : enable
 #include "svgf.glsl"
 #include "projection.glsl"
 #include "gbuffer.glsl"
@@ -17,15 +16,14 @@ layout(binding = 3, set = 0, rg16_snorm) uniform readonly image2DArray previous_
 layout(binding = 4, set = 0, rg32f) uniform readonly image2DArray in_screen_motion;
 layout(binding = 5, set = 0, rgba32f) uniform readonly image2DArray previous_color;
 layout(binding = 6, set = 0, rgba32f) uniform image2DArray out_color;
-layout(binding = 8, set = 0, rgba32f) uniform readonly image2DArray in_linear_depth;
-layout(binding = 9, set = 0, rgba32f) uniform readonly image2DArray previous_linear_depth;
-layout(binding = 10, set = 0, rgba32f) uniform readonly image2DArray previous_moments;
-layout(binding = 11, set = 0, rgba32f) uniform image2DArray out_moments;
-layout(binding = 12, set = 0, rgba32f) uniform readonly image2DArray in_diffuse;
-layout(binding = 13, set = 0, rgba32f) uniform readonly image2DArray previous_specular;
-layout(binding = 14, set = 0, rgba32f) uniform image2DArray out_specular;
-
-layout(binding = 7) buffer jitter_info_buffer
+layout(binding = 7, set = 0, rgba32f) uniform readonly image2DArray in_linear_depth;
+layout(binding = 8, set = 0, rgba32f) uniform readonly image2DArray previous_linear_depth;
+layout(binding = 9, set = 0, rgba32f) uniform readonly image2DArray previous_moments;
+layout(binding = 10, set = 0, rgba32f) uniform image2DArray out_moments;
+layout(binding = 11, set = 0, rgba32f) uniform readonly image2DArray in_diffuse;
+layout(binding = 12, set = 0, rgba32f) uniform readonly image2DArray previous_specular;
+layout(binding = 13, set = 0, rgba32f) uniform image2DArray out_specular;
+layout(binding = 14) buffer jitter_info_buffer
 {
     vec4 jitter[];
 } jitter_info;
@@ -65,7 +63,6 @@ void main()
 
         vec3 normal = unpack_gbuffer_normal(imageLoad(in_normal, p).rg);
         vec4 depth = imageLoad(in_linear_depth, p);
-;
         vec4 prev_color = vec4(0.0);
         vec4 prev_diffuse = vec4(0.0);
         vec4 prev_specular = vec4(0.0);
