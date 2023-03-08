@@ -78,8 +78,8 @@ void z_pass_stage::set_scene(scene* s)
             cur_scene->bind(*gfx, i, j);
             j += gfx->get_multiview_layer_count();
 
-            gfx->bind(cb, i);
             gfx->begin_render_pass(cb, i);
+            gfx->bind(cb, i);
 
             const std::vector<scene::instance>& instances = cur_scene->get_instances();
 

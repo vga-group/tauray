@@ -99,8 +99,8 @@ void shadow_map_stage::set_scene(scene* s)
         shadow_timer.begin(cb, i);
         camera_data.upload(i, cb);
 
-        gfx.bind(cb, i);
         gfx.begin_render_pass(cb, i);
+        gfx.bind(cb, i);
         const std::vector<scene::instance>& instances = cur_scene->get_instances();
 
         for(size_t i = 0; i < instances.size(); ++i)

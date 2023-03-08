@@ -221,8 +221,8 @@ void raster_stage::record_command_buffers()
         raster_timer.begin(cb, i);
         for(std::unique_ptr<gfx_pipeline>& gfx: array_pipelines)
         {
-            gfx->bind(cb, i);
             gfx->begin_render_pass(cb, i);
+            gfx->bind(cb, i);
 
             const std::vector<scene::instance>& instances = cur_scene->get_instances();
             push_constant_buffer control;

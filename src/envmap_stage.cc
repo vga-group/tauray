@@ -92,8 +92,8 @@ void envmap_stage::set_scene(scene* s)
             cur_scene->bind(*gfx, i, j);
             j += gfx->get_multiview_layer_count();
 
-            gfx->bind(cb, i);
             gfx->begin_render_pass(cb, i);
+            gfx->bind(cb, i);
 
             control.screen_size = vec2(gfx->get_state().output_size);
             gfx->push_constants(cb, control);

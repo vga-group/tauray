@@ -422,7 +422,8 @@ void gfx_pipeline::init_pipeline()
                 {},
                 (uint32_t)sbt_mem.size(),
                 vk::BufferUsageFlagBits::eTransferSrc |
-                vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                vk::BufferUsageFlagBits::eShaderBindingTableKHR,
                 vk::SharingMode::eExclusive
             },
             VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,

@@ -184,7 +184,7 @@ void basic_pipeline::bind(vk::CommandBuffer cmd, uint32_t descriptor_set_index) 
 
 void basic_pipeline::bind(vk::CommandBuffer cmd) const
 {
-    cmd.bindPipeline(bind_point, pipeline);
+    cmd.bindPipeline(bind_point, *pipeline);
 }
 
 }
