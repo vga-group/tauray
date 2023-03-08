@@ -155,6 +155,91 @@ void mesh_scene::refresh_instance_cache(bool force)
     instance_cache.resize(i);
 }
 
+bool mesh_scene::reserve_pre_transformed_vertices(size_t device_index, size_t max_vertex_count)
+{
+    if(!ctx->is_ray_tracing_supported())
+        return false;
+
+    auto& as = acceleration_structures[device_index];
+    if(as.pre_transformed_vertex_count < max_vertex_count)
+    {
+        as.pre_transformed_vertices = create_buffer(
+            ctx->get_devices()[device_index],
+            {
+                {}, max_vertex_count * sizeof(mesh::vertex),
+                vk::BufferUsageFlagBits::eVertexBuffer|vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::SharingMode::eExclusive
+            },
+            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
+        );
+        as.pre_transformed_vertex_count = max_vertex_count;
+        return true;
+    }
+    return false;
+}
+
+void mesh_scene::clear_pre_transformed_vertices(size_t device_index)
+{
+    if(!ctx->is_ray_tracing_supported())
+        return;
+
+    auto& as = acceleration_structures[device_index];
+    if(as.pre_transformed_vertex_count != 0)
+    {
+        as.pre_transformed_vertices.drop();
+        as.pre_transformed_vertex_count = 0;
+    }
+}
+
+std::vector<vk::DescriptorBufferInfo> mesh_scene::get_vertex_buffer_bindings(
+    size_t device_index
+) const {
+    std::vector<vk::DescriptorBufferInfo> dbi_vertex;
+    if(ctx->is_ray_tracing_supported())
+    {
+        auto& as = acceleration_structures[device_index];
+        if(as.pre_transformed_vertex_count != 0)
+        {
+            size_t offset = 0;
+            for(size_t i = 0; i < instance_cache.size(); ++i)
+            {
+                const mesh* m = instance_cache[i].m;
+                size_t bytes = m->get_vertices().size() * sizeof(mesh::vertex);
+                dbi_vertex.push_back({as.pre_transformed_vertices, offset, bytes});
+                offset += bytes;
+            }
+            return dbi_vertex;
+        }
+    }
+
+    for(size_t i = 0; i < instance_cache.size(); ++i)
+    {
+        const mesh* m = instance_cache[i].m;
+        vk::Buffer vertex_buffer = m->get_vertex_buffer(device_index);
+        dbi_vertex.push_back({vertex_buffer, 0, VK_WHOLE_SIZE});
+    }
+    return dbi_vertex;
+}
+
+std::vector<vk::DescriptorBufferInfo> mesh_scene::get_index_buffer_bindings(
+    size_t device_index
+) const {
+    std::vector<vk::DescriptorBufferInfo> dbi_index;
+    for(size_t i = 0; i < instance_cache.size(); ++i)
+    {
+        const mesh* m = instance_cache[i].m;
+        vk::Buffer index_buffer = m->get_index_buffer(device_index);
+        dbi_index.push_back({index_buffer, 0, VK_WHOLE_SIZE});
+    }
+    return dbi_index;
+}
+
+vk::Buffer mesh_scene::get_pre_transformed_vertices(size_t device_index)
+{
+    auto& as = acceleration_structures[device_index];
+    return *as.pre_transformed_vertices;
+}
+
 const std::vector<mesh_scene::instance>& mesh_scene::get_instances() const
 {
     return instance_cache;

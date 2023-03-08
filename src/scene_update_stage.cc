@@ -177,6 +177,12 @@ struct extract_tri_light_push_constants
     uint32_t instance_id;
 };
 
+struct pre_tranform_push_constants
+{
+    uint32_t vertex_count;
+    uint32_t instance_id;
+};
+
 }
 
 namespace tr
@@ -186,12 +192,18 @@ scene_update_stage::scene_update_stage(device_data& dev, const options& opt)
 :   stage(dev), as_rebuild(true), command_buffers_outdated(true),
     force_instance_refresh_frames(0), cur_scene(nullptr),
     extract_tri_lights(dev, compute_pipeline::params{
-        {"shader/extract_tri_lights.comp"},
+        {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
+            std::map<std::string, std::string>{{"PRE_TRANSFORMED_VERTICES", ""}} :
+            std::map<std::string, std::string>()
+        },
         {
             {"vertices", (uint32_t)opt.max_instances},
             {"indices", (uint32_t)opt.max_instances}
         },
         1
+    }),
+    pre_transform(dev, compute_pipeline::params{
+        {"shader/pre_transform.comp"}, {}, 1, true
     }),
     opt(opt), stage_timer(dev, "scene update")
 {
@@ -253,6 +265,7 @@ void scene_update_stage::update(uint32_t frame_index)
     uint64_t frame_counter = dev->ctx->get_frame_counter();
 
     size_t tri_light_count = 0;
+    size_t vertex_count = 0;
 
     const std::vector<scene::instance>& instances = cur_scene->get_instances();
     sb.scene_data.resize(sizeof(instance_buffer) * instances.size());
@@ -265,6 +278,8 @@ void scene_update_stage::update(uint32_t frame_index)
                 tri_light_count += instances[i].m->get_indices().size() / 3;
             }
             else inst.light_base_id = -1;
+
+            vertex_count += instances[i].m->get_indices().size();
 
             // Skip unchanged instances.
             if(
@@ -531,6 +546,12 @@ void scene_update_stage::update(uint32_t frame_index)
         );
         if(as_rebuild == false)
             as_rebuild = need_scene_reset;
+
+        if(opt.pre_transform_vertices)
+            need_scene_reset |= cur_scene->reserve_pre_transformed_vertices(dev->index, vertex_count);
+        else
+            cur_scene->clear_pre_transformed_vertices(dev->index);
+
         command_buffers_outdated |= need_scene_reset;
     }
 
@@ -641,6 +662,8 @@ void scene_update_stage::record_command_buffers()
         if(dev->ctx->is_ray_tracing_supported())
         {
             record_as_build(i, cb);
+            if(opt.pre_transform_vertices)
+                record_pre_transform(cb);
             if(sb.tri_light_data.get_size() != 0)
                 record_tri_light_extraction(cb);
         }
@@ -669,6 +692,48 @@ void scene_update_stage::record_tri_light_extraction(
         extract_tri_lights.push_constants(cb, pc);
         cb.dispatch((pc.triangle_count+255u)/256u, 1, 1);
     }
+}
+
+void scene_update_stage::record_pre_transform(
+    vk::CommandBuffer cb
+){
+    const std::vector<scene::instance>& instances = cur_scene->get_instances();
+    auto& sb = cur_scene->scene_buffers[dev->index];
+    vk::Buffer pre_transformed_vertices = cur_scene->get_pre_transformed_vertices(dev->index);
+    pre_transform.bind(cb);
+    size_t offset = 0;
+    for(size_t i = 0; i < instances.size(); ++i)
+    {
+        const mesh_scene::instance& inst = instances[i];
+
+        pre_tranform_push_constants pc;
+        pc.vertex_count = inst.m->get_vertices().size();
+        pc.instance_id = i;
+
+        size_t bytes = pc.vertex_count * sizeof(mesh::vertex);
+
+        pre_transform.push_descriptors(cb, {
+            {"input_verts", {inst.m->get_vertex_buffer(dev->index), 0, bytes}},
+            {"output_verts", {pre_transformed_vertices, offset, bytes}},
+            {"scene", {*sb.scene_data, 0, VK_WHOLE_SIZE}}
+        });
+
+        pre_transform.push_constants(cb, pc);
+        cb.dispatch((pc.vertex_count+255u)/256u, 1, 1);
+
+        offset += bytes;
+    }
+    cb.pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader,
+        {}, {}, {
+            {
+                vk::AccessFlagBits::eShaderWrite,
+                vk::AccessFlagBits::eShaderRead,
+                {}, {}, pre_transformed_vertices, 0, VK_WHOLE_SIZE
+            },
+        }, {}
+    );
 }
 
 }

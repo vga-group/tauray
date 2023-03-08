@@ -16,6 +16,7 @@ public:
     {
         uint32_t max_instances = 1024;
         bool gather_emissive_triangles = false;
+        bool pre_transform_vertices = false;
     };
 
     scene_update_stage(device_data& dev, const options& opt);
@@ -31,7 +32,12 @@ private:
         uint32_t frame_index,
         vk::CommandBuffer cb
     );
+
     void record_tri_light_extraction(
+        vk::CommandBuffer cb
+    );
+
+    void record_pre_transform(
         vk::CommandBuffer cb
     );
 
@@ -44,6 +50,7 @@ private:
     std::vector<uint8_t> old_camera_data;
 
     compute_pipeline extract_tri_lights;
+    compute_pipeline pre_transform;
 
     options opt;
     timer stage_timer;

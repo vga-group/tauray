@@ -373,6 +373,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     scene_update_stage::options scene_options;
     scene_options.max_instances = s.get_instance_count();
     scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles > 0;
+    scene_options.pre_transform_vertices = opt.pre_transform_vertices;
 
     taa_stage::options taa;
     taa.blending_ratio = 1.0f - 1.0f/opt.taa.sequence_length;
@@ -391,6 +392,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.rng_seed = opt.rng_seed;
     rc_opt.local_sampler = opt.sampler;
     rc_opt.transparent_background = opt.transparent_background;
+    rc_opt.pre_transformed_vertices = opt.pre_transform_vertices;
 
     light_sampling_weights sampling_weights;
     sampling_weights.point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;

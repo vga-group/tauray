@@ -42,7 +42,7 @@ struct shader_sources
 
     struct hit_group
     {
-        vk::RayTracingShaderGroupTypeKHR type = 
+        vk::RayTracingShaderGroupTypeKHR type =
             vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup;
         shader_source rchit = {};
         shader_source rahit = {};

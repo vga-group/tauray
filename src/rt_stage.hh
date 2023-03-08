@@ -33,6 +33,8 @@ public:
         int max_ray_depth = 8;
         float min_ray_dist = 0.001f;
 
+        bool pre_transformed_vertices = false;
+
         int rng_seed = 0;
         sampler_type local_sampler  = sampler_type::UNIFORM_RANDOM;
     };

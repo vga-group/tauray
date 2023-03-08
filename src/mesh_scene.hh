@@ -41,6 +41,17 @@ public:
     void refresh_instance_cache(bool force = false);
     const std::vector<instance>& get_instances() const;
 
+    bool reserve_pre_transformed_vertices(size_t device_index, size_t max_vertex_count);
+    void clear_pre_transformed_vertices(size_t device_index);
+    vk::Buffer get_pre_transformed_vertices(size_t device_index);
+
+    std::vector<vk::DescriptorBufferInfo> get_vertex_buffer_bindings(
+        size_t device_index
+    ) const;
+    std::vector<vk::DescriptorBufferInfo> get_index_buffer_bindings(
+        size_t device_index
+    ) const;
+
 protected:
     template<typename F>
     void visit_animated(F&& f) const
@@ -88,6 +99,7 @@ private:
     struct acceleration_structure_data
     {
         bool scene_reset_needed = true;
+        uint32_t pre_transformed_vertex_count = 0;
         vkm<vk::Buffer> pre_transformed_vertices;
 
         struct per_frame_data

@@ -68,6 +68,9 @@ void rt_stage::get_common_defines(
     default:
         break;
     }
+
+    if(opt.pre_transformed_vertices)
+        defines["PRE_TRANSFORMED_VERTICES"];
 }
 
 rt_stage::rt_stage(
