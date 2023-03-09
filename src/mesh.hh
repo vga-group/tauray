@@ -5,6 +5,8 @@
 #include "material.hh"
 #include "transformable.hh"
 #include "gpu_buffer.hh"
+#include "acceleration_structure.hh"
+#include <optional>
 
 namespace tr
 {
@@ -81,6 +83,7 @@ public:
     // alpha effects will not work on them. The change will not take effect
     // until upload() is called.
     void set_opaque(bool opaque);
+    bool get_opaque() const;
 
     // If you modify vertices or indices after constructor call, use this to
     // reload the GPU buffer(s). If you give the command buffers, uploads are
@@ -113,13 +116,9 @@ private:
         vkm<vk::Buffer> vertex_buffer;
         vkm<vk::Buffer> index_buffer;
         vkm<vk::Buffer> skin_buffer;
-
-        vkm<vk::AccelerationStructureKHR> blas;
-        vkm<vk::Buffer> blas_buffer;
-        vk::DeviceAddress blas_address;
-        vkm<vk::Buffer> blas_scratch_buffer;
     };
     std::vector<buffer_data> buffers;
+    mutable std::optional<bottom_level_acceleration_structure> blas;
 };
 
 }

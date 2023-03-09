@@ -42,6 +42,7 @@ private:
     );
 
     bool as_rebuild;
+    size_t as_instance_count;
     bool command_buffers_outdated;
     unsigned force_instance_refresh_frames;
     scene* cur_scene;

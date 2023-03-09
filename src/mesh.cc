@@ -1,178 +1,6 @@
 #include "mesh.hh"
 #include "misc.hh"
 
-namespace
-{
-using namespace tr;
-
-void build_acceleration_structure(
-    device_data& dev,
-    vkm<vk::AccelerationStructureKHR>& blas,
-    vkm<vk::Buffer>& blas_buffer,
-    vk::DeviceAddress& blas_address,
-    vkm<vk::Buffer>& blas_scratch_buffer,
-    size_t vertex_count,
-    vk::Buffer vertex_buffer,
-    size_t index_count,
-    vk::Buffer index_buffer,
-    bool static_as,
-    bool opaque
-){
-    vk::AccelerationStructureGeometryKHR geom(
-        VULKAN_HPP_NAMESPACE::GeometryTypeKHR::eTriangles,
-        vk::AccelerationStructureGeometryTrianglesDataKHR(
-            vk::Format::eR32G32B32Sfloat,
-            dev.dev.getBufferAddress({vertex_buffer}),
-            sizeof(mesh::vertex),
-            vertex_count-1,
-            vk::IndexType::eUint32,
-            dev.dev.getBufferAddress({index_buffer}),
-            {}
-        ),
-        opaque ?
-            vk::GeometryFlagBitsKHR::eOpaque :
-            vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
-    );
-
-    vk::AccelerationStructureBuildRangeInfoKHR offset((uint32_t)index_count/3);
-
-    vk::AccelerationStructureBuildGeometryInfoKHR blas_info(
-        vk::AccelerationStructureTypeKHR::eBottomLevel,
-        {},
-        vk::BuildAccelerationStructureModeKHR::eBuild,
-        VK_NULL_HANDLE,
-        VK_NULL_HANDLE,
-        1,
-        &geom
-    );
-
-    if(static_as)
-    {
-        blas_info.flags =
-            vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace|
-            vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction;
-    }
-    else
-    {
-        blas_info.flags =
-            vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild|
-            vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate;
-    }
-
-    vk::AccelerationStructureBuildSizesInfoKHR size_info =
-        dev.dev.getAccelerationStructureBuildSizesKHR(
-            vk::AccelerationStructureBuildTypeKHR::eDevice, blas_info, {(uint32_t)index_count/3}
-        );
-
-    vk::BufferCreateInfo blas_buffer_info(
-        {}, size_info.accelerationStructureSize,
-        vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR|
-        vk::BufferUsageFlagBits::eShaderDeviceAddress,
-        vk::SharingMode::eExclusive
-    );
-    blas_buffer = create_buffer(dev, blas_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
-
-    vk::AccelerationStructureCreateInfoKHR create_info(
-        {},
-        blas_buffer,
-        {},
-        size_info.accelerationStructureSize,
-        vk::AccelerationStructureTypeKHR::eBottomLevel,
-        {}
-    );
-    blas = vkm(dev, dev.dev.createAccelerationStructureKHR(create_info));
-    blas_info.dstAccelerationStructure = blas;
-
-    vk::BufferCreateInfo scratch_info(
-        {}, size_info.buildScratchSize,
-        vk::BufferUsageFlagBits::eStorageBuffer|
-        vk::BufferUsageFlagBits::eShaderDeviceAddress,
-        vk::SharingMode::eExclusive
-    );
-    blas_scratch_buffer = create_buffer_aligned(
-        dev, scratch_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-        dev.as_props.minAccelerationStructureScratchOffsetAlignment
-    );
-    blas_info.scratchData = blas_scratch_buffer.get_address();
-
-    vkm<vk::QueryPool> query_pool = vkm(dev, dev.dev.createQueryPool({
-        {},
-        vk::QueryType::eAccelerationStructureCompactedSizeKHR,
-        1,
-        {}
-    }));
-
-    vk::CommandBuffer cb = begin_command_buffer(dev);
-    cb.resetQueryPool(query_pool, 0, 1);
-    cb.buildAccelerationStructuresKHR({blas_info}, {&offset});
-
-    if(static_as)
-    {
-        vk::MemoryBarrier barrier(
-            vk::AccessFlagBits::eAccelerationStructureWriteKHR,
-            vk::AccessFlagBits::eAccelerationStructureReadKHR
-        );
-        cb.pipelineBarrier(
-            vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-            vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-            {}, barrier, {}, {}
-        );
-
-        cb.writeAccelerationStructuresPropertiesKHR(
-            *blas,
-            vk::QueryType::eAccelerationStructureCompactedSizeKHR,
-            query_pool,
-            0
-        );
-    }
-
-    end_command_buffer(dev, cb);
-
-    // Compact the acceleration structure.
-    if(static_as)
-    {
-        // NVIDIA bug as of 460.27.04: Only the lower 32 bits of the parameter
-        // get written to, despite the spec saying that it's supposed to be a
-        // VkDeviceSize (uint64_t). We need to make sure that the size is
-        // zero-initialized to avoid the higher 32 bits breaking everything.
-        vk::DeviceSize compact_size = 0;
-        (void)dev.dev.getQueryPoolResults(
-            query_pool, 0, 1,
-            sizeof(vk::DeviceSize),
-            &compact_size,
-            sizeof(vk::DeviceSize),
-            vk::QueryResultFlagBits::eWait
-        );
-
-        vkm<vk::AccelerationStructureKHR> fat_blas = std::move(blas);
-        vkm<vk::Buffer> fat_blas_buffer(std::move(blas_buffer));
-
-        blas_buffer_info.size = compact_size;
-        blas_buffer = create_buffer(dev, blas_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
-        create_info.buffer = blas_buffer;
-
-        create_info.size = compact_size;
-        blas = vkm(dev, dev.dev.createAccelerationStructureKHR(create_info));
-        blas_info.dstAccelerationStructure = blas;
-
-        vk::CommandBuffer cb = begin_command_buffer(dev);
-        cb.copyAccelerationStructureKHR({
-            fat_blas,
-            blas,
-            vk::CopyAccelerationStructureModeKHR::eCompact
-        });
-        end_command_buffer(dev, cb);
-
-        fat_blas.destroy();
-        fat_blas_buffer.destroy();
-        blas_scratch_buffer.destroy();
-    }
-
-    blas_address = dev.dev.getAccelerationStructureAddressKHR({blas});
-}
-
-}
-
 namespace tr
 {
 
@@ -253,12 +81,12 @@ vk::Buffer mesh::get_skin_buffer(size_t device_index) const
 
 vk::AccelerationStructureKHR mesh::get_blas(size_t device_index) const
 {
-    return buffers[device_index].blas;
+    return blas->get_blas_handle(device_index);
 }
 
 vk::DeviceAddress mesh::get_blas_address(size_t device_index) const
 {
-    return buffers[device_index].blas_address;
+    return blas->get_blas_address(device_index);
 }
 
 void mesh::update_blas(
@@ -267,56 +95,13 @@ void mesh::update_blas(
     blas_update_strategy strat
 ) const
 {
-    std::vector<device_data>& devices = ctx->get_devices();
-
-    vk::AccelerationStructureBuildRangeInfoKHR offset(
-        (uint32_t)get_indices().size()/3
-    );
-
-    vk::AccelerationStructureGeometryKHR geom(
-        VULKAN_HPP_NAMESPACE::GeometryTypeKHR::eTriangles,
-        vk::AccelerationStructureGeometryTrianglesDataKHR(
-            vk::Format::eR32G32B32Sfloat,
-            devices[device_index].dev.getBufferAddress({get_vertex_buffer(device_index)}),
-            sizeof(mesh::vertex),
-            get_vertices().size()-1,
-            vk::IndexType::eUint32,
-            devices[device_index].dev.getBufferAddress({get_index_buffer(device_index)}),
-            {}
-        ),
-        opaque ?
-            vk::GeometryFlagBitsKHR::eOpaque :
-            vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
-    );
-
-    vk::AccelerationStructureBuildGeometryInfoKHR blas_info(
-        vk::AccelerationStructureTypeKHR::eBottomLevel,
-        vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild|
-        vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
-        strat == UPDATE_REBUILD ?
-            vk::BuildAccelerationStructureModeKHR::eBuild :
-            vk::BuildAccelerationStructureModeKHR::eUpdate,
+    blas->rebuild(
+        device_index,
+        cb,
+        {this},
         {},
-        buffers[device_index].blas,
-        1,
-        &geom,
-        {},
-        buffers[device_index].blas_scratch_buffer.get_address()
+        strat != UPDATE_REBUILD
     );
-
-    switch(strat)
-    {
-    case UPDATE_FROM_ANIMATION_SOURCE:
-        blas_info.srcAccelerationStructure = animation_source->buffers[device_index].blas;
-        break;
-    case UPDATE_FROM_PREVIOUS:
-        blas_info.srcAccelerationStructure = buffers[device_index].blas;
-        break;
-    default:
-        break;
-    }
-
-    cb.buildAccelerationStructuresKHR({blas_info}, {&offset});
 }
 
 bool mesh::is_skinned() const
@@ -332,6 +117,11 @@ mesh* mesh::get_animation_source() const
 void mesh::set_opaque(bool opaque)
 {
     this->opaque = opaque;
+}
+
+bool mesh::get_opaque() const
+{
+    return this->opaque;
 }
 
 void mesh::refresh_buffers()
@@ -480,23 +270,17 @@ void mesh::init_buffers()
         }
 
         end_command_buffer(devices[i], cb);
+    }
 
-        if(ctx->is_ray_tracing_supported())
-        {
-            build_acceleration_structure(
-                devices[i],
-                buffers[i].blas,
-                buffers[i].blas_buffer,
-                buffers[i].blas_address,
-                buffers[i].blas_scratch_buffer,
-                vertices.size(),
-                buffers[i].vertex_buffer,
-                indices.size(),
-                get_index_buffer(i),
-                !animation_source && skin_bytes == 0,
-                opaque
-            );
-        }
+    if(ctx->is_ray_tracing_supported())
+    {
+        blas.emplace(
+            *ctx,
+            std::vector<const mesh*>{this},
+            std::vector<const transformable_node*>{},
+            false,
+            animation_source || skin_bytes != 0
+        );
     }
 }
 

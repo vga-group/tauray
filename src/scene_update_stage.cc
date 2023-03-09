@@ -513,21 +513,20 @@ void scene_update_stage::update(uint32_t frame_index)
 
     if(dev->ctx->is_ray_tracing_supported())
     {
-        auto& as = cur_scene->acceleration_structures[dev->index];
-        auto& f = as.per_frame[frame_index];
+        auto& instance_buffer = cur_scene->tlas->get_instances_buffer(dev->index);
 
-        f.instance_count = 0;
+        as_instance_count = 0;
         uint32_t total_max_capacity =
             cur_scene->mesh_scene::get_max_capacity() +
             cur_scene->light_scene::get_max_capacity();
-        as.instance_buffer.map<vk::AccelerationStructureInstanceKHR>(
+        instance_buffer.map<vk::AccelerationStructureInstanceKHR>(
             frame_index,
             [&](vk::AccelerationStructureInstanceKHR* as_instances){
                 cur_scene->mesh_scene::add_acceleration_structure_instances(
-                    as_instances, dev->index, frame_index, f.instance_count, total_max_capacity
+                    as_instances, dev->index, frame_index, as_instance_count, total_max_capacity
                 );
                 cur_scene->light_scene::add_acceleration_structure_instances(
-                    as_instances, dev->index, frame_index, f.instance_count, total_max_capacity
+                    as_instances, dev->index, frame_index, as_instance_count, total_max_capacity
                 );
             }
         );
@@ -568,8 +567,7 @@ void scene_update_stage::record_as_build(
     uint32_t frame_index,
     vk::CommandBuffer cb
 ){
-    auto& as = cur_scene->acceleration_structures[dev->index];
-    auto& f = as.per_frame[frame_index];
+    auto& instance_buffer = cur_scene->tlas->get_instances_buffer(dev->index);
     bool as_update = !as_rebuild;
     cur_scene->mesh_scene::record_acceleration_structure_build(
         cb, dev->index, frame_index, as_update
@@ -579,9 +577,9 @@ void scene_update_stage::record_as_build(
         cb, dev->index, frame_index, as_update
     );
 
-    if(f.instance_count > 0)
+    if(as_instance_count > 0)
     {
-        as.instance_buffer.upload(frame_index, cb);
+        instance_buffer.upload(frame_index, cb);
 
         vk::MemoryBarrier barrier(
             vk::AccessFlagBits::eTransferWrite,
@@ -596,44 +594,7 @@ void scene_update_stage::record_as_build(
         );
     }
 
-    // Barrier to make sure all BLAS's have updated already.
-    vk::MemoryBarrier blas_barrier(
-        vk::AccessFlagBits::eAccelerationStructureWriteKHR,
-        vk::AccessFlagBits::eAccelerationStructureWriteKHR
-    );
-
-    cb.pipelineBarrier(
-        vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-        vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-        {}, blas_barrier, {}, {}
-    );
-
-    vk::AccelerationStructureGeometryKHR tlas_geometry(
-        vk::GeometryTypeKHR::eInstances,
-        vk::AccelerationStructureGeometryInstancesDataKHR{
-            false, as.instance_buffer.get_address()
-        },
-        {}
-    );
-
-    vk::AccelerationStructureBuildGeometryInfoKHR tlas_info(
-        vk::AccelerationStructureTypeKHR::eTopLevel,
-        vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace|
-        vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
-        as_update ? vk::BuildAccelerationStructureModeKHR::eUpdate : vk::BuildAccelerationStructureModeKHR::eBuild,
-        as_update ? as.tlas : vk::AccelerationStructureKHR{},
-        as.tlas,
-        1,
-        &tlas_geometry,
-        nullptr,
-        as.scratch_buffer.get_address()
-    );
-
-    vk::AccelerationStructureBuildRangeInfoKHR build_offset_info(
-        f.instance_count, 0, 0, 0
-    );
-
-    cb.buildAccelerationStructuresKHR({tlas_info}, {&build_offset_info});
+    cur_scene->tlas->rebuild(dev->index, cb, as_instance_count, as_update);
 }
 
 void scene_update_stage::record_command_buffers()
