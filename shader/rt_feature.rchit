@@ -21,9 +21,10 @@ layout(location = 0) rayPayloadInEXT hit_payload payload;
 void main()
 {
     vec3 view = gl_WorldRayDirectionEXT;
-    vertex_data v = get_interpolated_vertex(view, attribs, gl_InstanceID, gl_PrimitiveID);
+    int instance_id = gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT;
+    vertex_data v = get_interpolated_vertex(view, attribs, instance_id, gl_PrimitiveID);
 
-    sampled_material mat = sample_material(gl_InstanceID, v);
+    sampled_material mat = sample_material(instance_id, v);
     const camera_data cam = get_camera();
     const camera_data prev_cam = get_prev_camera();
 

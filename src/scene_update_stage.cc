@@ -513,6 +513,20 @@ void scene_update_stage::update(uint32_t frame_index)
 
     if(dev->ctx->is_ray_tracing_supported())
     {
+        bool need_scene_reset = false;
+        cur_scene->light_scene::update_acceleration_structures(
+            dev->index,
+            frame_index,
+            need_scene_reset,
+            command_buffers_outdated
+        );
+        cur_scene->mesh_scene::update_acceleration_structures(
+            dev->index,
+            frame_index,
+            need_scene_reset,
+            command_buffers_outdated
+        );
+
         auto& instance_buffer = cur_scene->tlas->get_instances_buffer(dev->index);
 
         as_instance_count = 0;
@@ -530,19 +544,7 @@ void scene_update_stage::update(uint32_t frame_index)
                 );
             }
         );
-        bool need_scene_reset = false;
-        cur_scene->light_scene::update_acceleration_structures(
-            dev->index,
-            frame_index,
-            need_scene_reset,
-            command_buffers_outdated
-        );
-        cur_scene->mesh_scene::update_acceleration_structures(
-            dev->index,
-            frame_index,
-            need_scene_reset,
-            command_buffers_outdated
-        );
+
         if(as_rebuild == false)
             as_rebuild = need_scene_reset;
 

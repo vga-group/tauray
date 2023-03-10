@@ -4,7 +4,9 @@
 namespace tr
 {
 
-mesh::mesh(context& ctx): ctx(&ctx), opaque(false), animation_source(nullptr) {}
+uint64_t mesh::id_counter = 1;
+
+mesh::mesh(context& ctx): ctx(&ctx), id(0), animation_source(nullptr) {}
 
 mesh::mesh(
     context& ctx,
@@ -12,16 +14,20 @@ mesh::mesh(
     std::vector<uint32_t>&& indices,
     std::vector<skin_data>&& skin
 ):  ctx(&ctx), vertices(std::move(vertices)), indices(std::move(indices)),
-    skin(std::move(skin)), opaque(false), animation_source(nullptr)
+    skin(std::move(skin)), animation_source(nullptr)
 {
     init_buffers();
 }
 
 mesh::mesh(mesh* animation_source)
-:   ctx(animation_source->ctx), opaque(animation_source->opaque),
-    animation_source(animation_source)
+:   ctx(animation_source->ctx), animation_source(animation_source)
 {
     init_buffers();
+}
+
+uint64_t mesh::get_id() const
+{
+    return id;
 }
 
 std::vector<mesh::vertex>& mesh::get_vertices()
@@ -79,31 +85,6 @@ vk::Buffer mesh::get_skin_buffer(size_t device_index) const
     return buffers[device_index].skin_buffer;
 }
 
-vk::AccelerationStructureKHR mesh::get_blas(size_t device_index) const
-{
-    return blas->get_blas_handle(device_index);
-}
-
-vk::DeviceAddress mesh::get_blas_address(size_t device_index) const
-{
-    return blas->get_blas_address(device_index);
-}
-
-void mesh::update_blas(
-    vk::CommandBuffer cb,
-    size_t device_index,
-    blas_update_strategy strat
-) const
-{
-    blas->rebuild(
-        device_index,
-        cb,
-        {this},
-        {},
-        strat != UPDATE_REBUILD
-    );
-}
-
 bool mesh::is_skinned() const
 {
     return skin.size() > 0;
@@ -112,16 +93,6 @@ bool mesh::is_skinned() const
 mesh* mesh::get_animation_source() const
 {
     return animation_source;
-}
-
-void mesh::set_opaque(bool opaque)
-{
-    this->opaque = opaque;
-}
-
-bool mesh::get_opaque() const
-{
-    return this->opaque;
 }
 
 void mesh::refresh_buffers()
@@ -208,6 +179,8 @@ void mesh::calculate_tangents()
 
 void mesh::init_buffers()
 {
+    id = id_counter++;
+
     std::vector<device_data>& devices = ctx->get_devices();
     buffers.resize(devices.size());
 
@@ -270,17 +243,6 @@ void mesh::init_buffers()
         }
 
         end_command_buffer(devices[i], cb);
-    }
-
-    if(ctx->is_ray_tracing_supported())
-    {
-        blas.emplace(
-            *ctx,
-            std::vector<const mesh*>{this},
-            std::vector<const transformable_node*>{},
-            false,
-            animation_source || skin_bytes != 0
-        );
     }
 }
 

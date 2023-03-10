@@ -92,7 +92,7 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
     return interp;
 }
 
-void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, out vec2 uv, out bool back_facing)
+void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, out vec2 uv)
 {
     instance o = scene.o[instance_id];
     ivec3 i = ivec3(
@@ -106,12 +106,6 @@ void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id
 
     vec3 b = vec3(1.0f - barycentrics.x - barycentrics.y, barycentrics);
     uv = v0.uv * b.x + v1.uv * b.y + v2.uv * b.z;
-
-    vec3 hard_normal = TRANSFORM_MAT(
-        mat3(o.model_normal),
-        normalize(cross(v1.pos-v0.pos, v2.pos-v0.pos))
-    );
-    back_facing = dot(hard_normal, view) > 0;
 }
 
 sampled_material sample_material(int instance_id, inout vertex_data v)
@@ -123,15 +117,14 @@ sampled_material sample_material(int instance_id, inout vertex_data v)
     return res;
 }
 
-bool is_material_skippable(int instance_id, vec2 uv, bool back_facing, float alpha_cutoff)
+bool is_material_skippable(int instance_id, vec2 uv, float alpha_cutoff)
 {
     material mat = scene.o[instance_id].mat;
     vec4 albedo = mat.albedo_factor;
     if(mat.albedo_tex_id >= 0)
         albedo *= texture(textures[nonuniformEXT(mat.albedo_tex_id)], uv);
 
-    bool double_sided = mat.emission_factor_double_sided.a > 0.5f;
-    return (albedo.a <= alpha_cutoff) || (back_facing && !double_sided);
+    return (albedo.a <= alpha_cutoff);
 }
 
 #endif

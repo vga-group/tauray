@@ -48,7 +48,7 @@ vec4 secondary_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
     vec4 refl_color = vec4(0,0,0,1);
     if(payload.depth < control.max_depth)
     {
-        payload.self_instance_id = gl_InstanceID;
+        payload.self_instance_id = gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT;
         payload.self_primitive_id = gl_PrimitiveID;
         traceRayEXT(
             tlas,
@@ -73,9 +73,10 @@ vec4 secondary_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
 void main()
 {
     vec3 view = gl_WorldRayDirectionEXT;
-    vertex_data v = get_interpolated_vertex(view, attribs, gl_InstanceID, gl_PrimitiveID);
+    int instance_id = gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT;
+    vertex_data v = get_interpolated_vertex(view, attribs, instance_id, gl_PrimitiveID);
 
-    sampled_material mat = sample_material(gl_InstanceID, v);
+    sampled_material mat = sample_material(instance_id, v);
 
     mat3 tbn = create_tangent_space(v.mapped_normal);
     vec3 shading_view = -view * tbn;

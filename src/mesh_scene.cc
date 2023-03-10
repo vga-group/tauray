@@ -9,7 +9,7 @@ mesh_scene::mesh_scene(context& ctx, size_t max_capacity)
 : ctx(&ctx), max_capacity(max_capacity), instance_cache_frame(0)
 {
     if(ctx.is_ray_tracing_supported())
-        acceleration_structures.resize(ctx.get_devices().size());
+        as_update.resize(ctx.get_devices().size());
 }
 
 mesh_scene::~mesh_scene()
@@ -19,19 +19,19 @@ mesh_scene::~mesh_scene()
 void mesh_scene::add(mesh_object& o)
 {
     sorted_insert(objects, &o);
-    invalidate_acceleration_structures();
+    invalidate_tlas();
 }
 
 void mesh_scene::remove(mesh_object& o)
 {
     sorted_erase(objects, &o);
-    invalidate_acceleration_structures();
+    invalidate_tlas();
 }
 
 void mesh_scene::clear_mesh_objects()
 {
     objects.clear();
-    invalidate_acceleration_structures();
+    invalidate_tlas();
 }
 
 const std::vector<mesh_object*>& mesh_scene::get_mesh_objects() const
@@ -160,7 +160,7 @@ bool mesh_scene::reserve_pre_transformed_vertices(size_t device_index, size_t ma
     if(!ctx->is_ray_tracing_supported())
         return false;
 
-    auto& as = acceleration_structures[device_index];
+    auto& as = as_update[device_index];
     if(as.pre_transformed_vertex_count < max_vertex_count)
     {
         as.pre_transformed_vertices = create_buffer(
@@ -183,7 +183,7 @@ void mesh_scene::clear_pre_transformed_vertices(size_t device_index)
     if(!ctx->is_ray_tracing_supported())
         return;
 
-    auto& as = acceleration_structures[device_index];
+    auto& as = as_update[device_index];
     if(as.pre_transformed_vertex_count != 0)
     {
         as.pre_transformed_vertices.drop();
@@ -197,7 +197,7 @@ std::vector<vk::DescriptorBufferInfo> mesh_scene::get_vertex_buffer_bindings(
     std::vector<vk::DescriptorBufferInfo> dbi_vertex;
     if(ctx->is_ray_tracing_supported())
     {
-        auto& as = acceleration_structures[device_index];
+        auto& as = as_update[device_index];
         if(as.pre_transformed_vertex_count != 0)
         {
             size_t offset = 0;
@@ -234,9 +234,33 @@ std::vector<vk::DescriptorBufferInfo> mesh_scene::get_index_buffer_bindings(
     return dbi_index;
 }
 
+void mesh_scene::refresh_dynamic_acceleration_structures(
+    size_t device_index,
+    size_t frame_index,
+    vk::CommandBuffer cmd
+){
+    // Run BLAS updates
+    for(mesh_object* obj: objects)
+    {
+        model* m = const_cast<model*>(obj->get_model());
+        if(!m) continue;
+        if(m->has_joints_buffer())
+        {
+            for(auto& vg: *m)
+            {
+                per_mesh_blas_cache.at(vg.m->get_id()).rebuild(
+                    device_index, frame_index, cmd,
+                    {{vg.m, mat4(1), vg.mat.potentially_transparent()}},
+                    {}
+                );
+            }
+        }
+    }
+}
+
 vk::Buffer mesh_scene::get_pre_transformed_vertices(size_t device_index)
 {
-    auto& as = acceleration_structures[device_index];
+    auto& as = as_update[device_index];
     return *as.pre_transformed_vertices;
 }
 
@@ -251,13 +275,16 @@ void mesh_scene::update_acceleration_structures(
     bool& need_scene_reset,
     bool& command_buffers_outdated
 ){
-    auto& as = acceleration_structures[device_index];
+    auto& as = as_update[device_index];
     auto& f = as.per_frame[frame_index];
 
-    need_scene_reset |= as.scene_reset_needed;
+    need_scene_reset |= as.tlas_reset_needed;
     command_buffers_outdated |= f.command_buffers_outdated;
 
-    as.scene_reset_needed = false;
+    if(as.tlas_reset_needed)
+        ensure_blas();
+
+    as.tlas_reset_needed = false;
     f.command_buffers_outdated = false;
 }
 
@@ -281,7 +308,7 @@ void mesh_scene::add_acceleration_structure_instances(
         vk::AccelerationStructureInstanceKHR inst = vk::AccelerationStructureInstanceKHR(
             {}, j, 1<<0, 0, // Hit group 0 for triangle meshes.
             vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable,
-            in.m->get_blas_address(device_index)
+            per_mesh_blas_cache.at(in.m->get_id()).get_blas_address(device_index)
         );
         mat4 global_transform = transpose(in.transform);
         memcpy(
@@ -293,13 +320,40 @@ void mesh_scene::add_acceleration_structure_instances(
     }
 }
 
-void mesh_scene::invalidate_acceleration_structures()
+void mesh_scene::invalidate_tlas()
 {
-    for(auto& as: acceleration_structures)
+    for(auto& as: as_update)
     {
-        as.scene_reset_needed = true;
+        as.tlas_reset_needed = true;
         for(auto& f: as.per_frame)
             f.command_buffers_outdated = true;
+    }
+}
+
+void mesh_scene::ensure_blas()
+{
+    // Goes through all IDs and ensures they have valid BLASes.
+    for(const mesh_object* o: objects)
+    {
+        if(!o) continue;
+        const model* m = o->get_model();
+        if(!m) continue;
+        for(const auto& group: *m)
+        {
+            auto it = per_mesh_blas_cache.find(group.m->get_id());
+            if(it != per_mesh_blas_cache.end())
+                continue;
+
+            per_mesh_blas_cache.emplace(
+                group.m->get_id(),
+                bottom_level_acceleration_structure(
+                    *ctx,
+                    {{group.m, mat4(1), !group.mat.potentially_transparent()}},
+                    !group.mat.double_sided,
+                    group.m->is_skinned() || group.m->get_animation_source()
+                )
+            );
+        }
     }
 }
 

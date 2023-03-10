@@ -12,35 +12,49 @@ class mesh;
 class bottom_level_acceleration_structure
 {
 public:
+    struct entry
+    {
+        const mesh* m = nullptr;
+        mat4 transform = mat4(1);
+        bool opaque = true;
+    };
+
     bottom_level_acceleration_structure(
         context& ctx,
-        const std::vector<const mesh*>& meshes,
-        const std::vector<const transformable_node*>& transformables,
-        bool backface_culling,
+        const std::vector<entry>& entries,
+        bool backface_culled,
         bool dynamic
+    );
+
+    void update_transforms(
+        size_t frame_index,
+        const std::vector<entry>& entries
     );
 
     void rebuild(
         size_t device_index,
+        size_t frame_index,
         vk::CommandBuffer cb,
-        const std::vector<const mesh*>& meshes,
-        const std::vector<const transformable_node*>& transformables,
+        const std::vector<entry>& entries,
         bool update = true
     );
     size_t get_updates_since_rebuild() const;
     vk::AccelerationStructureKHR get_blas_handle(size_t device_index) const;
     vk::DeviceAddress get_blas_address(size_t device_index) const;
 
+    size_t get_geometry_count() const;
+
 private:
     context* ctx;
     size_t updates_since_rebuild;
     size_t geometry_count;
-    bool backface_culling;
+    bool backface_culled;
     bool dynamic;
 
     // Per-device
     struct buffer_data
     {
+        gpu_buffer transform_buffer;
         vkm<vk::AccelerationStructureKHR> blas;
         vkm<vk::Buffer> blas_buffer;
         vk::DeviceAddress blas_address;

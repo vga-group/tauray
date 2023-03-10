@@ -1,6 +1,7 @@
 #ifndef TAURAY_MESH_SCENE_HH
 #define TAURAY_MESH_SCENE_HH
 #include "mesh.hh"
+#include "acceleration_structure.hh"
 #include "mesh_object.hh"
 #include "timer.hh"
 #include <unordered_map>
@@ -52,6 +53,12 @@ public:
         size_t device_index
     ) const;
 
+    void refresh_dynamic_acceleration_structures(
+        size_t device_index,
+        size_t frame_index,
+        vk::CommandBuffer cmd
+    );
+
 protected:
     template<typename F>
     void visit_animated(F&& f) const
@@ -88,17 +95,18 @@ protected:
     ) const;
 
 private:
-    void invalidate_acceleration_structures();
+    void invalidate_tlas();
+    void ensure_blas();
 
     context* ctx;
     size_t max_capacity;
     std::vector<mesh_object*> objects;
 
-    // The meshes contain the acceleration structures themselves, so we only
-    // have to track scene & command buffer validity!
-    struct acceleration_structure_data
+    // We have to track scene & command buffer validity! So that's what this
+    // struct is for.
+    struct as_update_data
     {
-        bool scene_reset_needed = true;
+        bool tlas_reset_needed = true;
         uint32_t pre_transformed_vertex_count = 0;
         vkm<vk::Buffer> pre_transformed_vertices;
 
@@ -108,7 +116,8 @@ private:
         };
         per_frame_data per_frame[MAX_FRAMES_IN_FLIGHT];
     };
-    std::vector<acceleration_structure_data> acceleration_structures;
+    std::vector<as_update_data> as_update;
+    std::unordered_map<uint64_t, bottom_level_acceleration_structure> per_mesh_blas_cache;
     std::vector<instance> instance_cache;
     uint64_t instance_cache_frame;
 };

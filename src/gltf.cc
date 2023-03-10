@@ -748,11 +748,6 @@ scene_graph load_gltf(
             if(generate_tangents)
                 prim_mesh->calculate_tangents();
 
-            prim_mesh->set_opaque(
-                !primitive_material.potentially_transparent() &&
-                primitive_material.double_sided
-            );
-
             md.meshes.emplace_back(prim_mesh);
             m.add_vertex_group(primitive_material, prim_mesh);
         }

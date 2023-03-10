@@ -48,6 +48,15 @@ public:
     mesh(const context& other) = delete;
     mesh(mesh&& other) = default;
 
+    // Why do we bother with some odd "ID"s? They're used to determine the
+    // identity of a mesh when they are assigned into acceleration structures;
+    // using pointers instead would not work, as the mesh can change without
+    // notice. IDs are reassigned whenever refresh_buffers() is called.
+    // The number of triangles in a mesh cannot change without the ID changing,
+    // ensuring that acceleration structures with the same ID are at least
+    // update-compatible.
+    uint64_t get_id() const;
+
     std::vector<vertex>& get_vertices();
     const std::vector<vertex>& get_vertices() const;
     std::vector<uint32_t>& get_indices();
@@ -59,31 +68,8 @@ public:
     vk::Buffer get_index_buffer(size_t device_index) const;
     vk::Buffer get_skin_buffer(size_t device_index) const;
 
-    vk::AccelerationStructureKHR get_blas(size_t device_index) const;
-    vk::DeviceAddress get_blas_address(size_t device_index) const;
-
-    enum blas_update_strategy
-    {
-        UPDATE_REBUILD, // Slow, but best acceleration structure quality
-        UPDATE_FROM_ANIMATION_SOURCE, // Fast, bad quality but won't get progressively worse
-        UPDATE_FROM_PREVIOUS // Fast, OK quality but eventually gets worse if applied repeatedly
-    };
-
-    // You only need to call this when you have modified the vertex buffer.
-    void update_blas(
-        vk::CommandBuffer cb,
-        size_t device_index,
-        blas_update_strategy strat = UPDATE_FROM_ANIMATION_SOURCE
-    ) const;
-
     bool is_skinned() const;
     mesh* get_animation_source() const;
-
-    // Setting certain meshes opaque can make rendering them faster, but
-    // alpha effects will not work on them. The change will not take effect
-    // until upload() is called.
-    void set_opaque(bool opaque);
-    bool get_opaque() const;
 
     // If you modify vertices or indices after constructor call, use this to
     // reload the GPU buffer(s). If you give the command buffers, uploads are
@@ -104,11 +90,13 @@ public:
 private:
     void init_buffers();
 
+    static uint64_t id_counter;
+
     context* ctx;
+    uint64_t id;
     std::vector<vertex> vertices;
     std::vector<uint32_t> indices;
     std::vector<skin_data> skin;
-    bool opaque;
     mesh* animation_source;
     // Per-device
     struct buffer_data
@@ -118,7 +106,6 @@ private:
         vkm<vk::Buffer> skin_buffer;
     };
     std::vector<buffer_data> buffers;
-    mutable std::optional<bottom_level_acceleration_structure> blas;
 };
 
 }

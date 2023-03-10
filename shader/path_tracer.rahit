@@ -18,10 +18,10 @@ void main()
 {
     vec3 view = gl_WorldRayDirectionEXT;
     vec2 uv;
-    bool back_facing;
-    get_interpolated_vertex_light(view, attribs, gl_InstanceID, gl_PrimitiveID, uv, back_facing);
+    int instance_id = gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT;
+    get_interpolated_vertex_light(view, attribs, instance_id, gl_PrimitiveID, uv);
     float alpha_cutoff = generate_single_uniform_random(payload.random_seed);
-    if(is_material_skippable(gl_InstanceID, uv, back_facing, alpha_cutoff))
+    if(is_material_skippable(instance_id, uv, alpha_cutoff))
         ignoreIntersectionEXT;
 }
 

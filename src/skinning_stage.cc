@@ -127,10 +127,7 @@ void skinning_stage::set_scene(scene* s)
                 {}, barrier, {}, {}
             );
 
-            // Run BLAS updates
-            for(uint32_t i = 0; i < skinned_models.size(); ++i)
-                for(auto& vg: *skinned_models[i])
-                    vg.m->update_blas(cb, dev->index);
+            cur_scene->refresh_dynamic_acceleration_structures(dev->index, i, cb);
         }
 
         stage_timer.end(cb, i);
