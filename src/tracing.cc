@@ -294,7 +294,7 @@ void tracing_record::print_tef_trace(const timing_result& res)
         {
             nlohmann::json output = {
                 {"pid", "GPU"},
-                {"tid", device_name},
+                {"tid", device_name + (" (" + std::to_string(i)+")")},
                 {"ts",int64_t(t.start_ns*1e-3)},
                 {"dur",int64_t(t.duration_ns*1e-3)},
                 {"ph", "X"},
