@@ -84,9 +84,13 @@ void evaluate_direct_ray(
     vec3 light;
     bool terminal = !get_intersection_info(pos, view, first_hit_vertex, nee_pdf, first_hit_material, light);
 
-    color += light + first_hit_material.emission;
+    color += (light + first_hit_material.emission) * SAMPLES_PER_PASS;
 
-    if(!terminal)
+    if(terminal)
+        return;
+
+    int ray_sample_index = 0;
+    for(int i = 0; i < SAMPLES_PER_PASS; ++i)
     {
         mat3 tbn = create_tangent_space(first_hit_vertex.mapped_normal);
         vec3 shading_view = -view * tbn;
@@ -98,7 +102,7 @@ void evaluate_direct_ray(
         vec3 specular_radiance = vec3(0);
         // Do NEE ray
         next_event_estimation(
-            generate_ray_sample_uint(lsampler, 0), tbn, shading_view,
+            generate_ray_sample_uint(lsampler, ray_sample_index++), tbn, shading_view,
             first_hit_material, first_hit_vertex, diffuse_radiance,
             specular_radiance
         );
@@ -108,16 +112,19 @@ void evaluate_direct_ray(
 #if defined(MIS_POWER_HEURISTIC) || defined(MIS_BALANCE_HEURISTIC)
         vec3 diffuse_weight = vec3(1.0f);
         vec3 specular_weight = vec3(1.0f);
-        vec4 ray_sample = generate_ray_sample(lsampler, 1);
+        vec4 ray_sample = generate_ray_sample(lsampler, ray_sample_index++);
         float bsdf_pdf = 0.0f;
         material_bsdf_sample(ray_sample, shading_view, first_hit_material, view, diffuse_weight, specular_weight, bsdf_pdf);
-        view = tbn * view;
+        vec3 new_view = tbn * view;
 
-        shadow_terminator_fix(diffuse_weight, specular_weight, dot(view, first_hit_vertex.mapped_normal), first_hit_material);
+        shadow_terminator_fix(diffuse_weight, specular_weight, dot(new_view, first_hit_vertex.mapped_normal), first_hit_material);
 
-        float visibility = ray_visibility(view, first_hit_vertex);
+        float visibility = ray_visibility(new_view, first_hit_vertex);
         vec3 attenuation = (diffuse_weight * first_hit_material.albedo.rgb + specular_weight) * visibility;
         vec3 diffuse_attenuation_ratio = diffuse_weight / (diffuse_weight * first_hit_material.albedo.rgb + specular_weight);
+        if(diffuse_weight.r < 1e-7) diffuse_attenuation_ratio.r = 0;
+        if(diffuse_weight.g < 1e-7) diffuse_attenuation_ratio.g = 0;
+        if(diffuse_weight.b < 1e-7) diffuse_attenuation_ratio.b = 0;
 
         pos = first_hit_vertex.pos;
         traceRayEXT(
@@ -129,7 +136,7 @@ void evaluate_direct_ray(
             0,
             pos,
             control.min_ray_dist,
-            view,
+            new_view,
             RAY_MAX_DIST,
             0
         );
@@ -137,7 +144,7 @@ void evaluate_direct_ray(
         pt_vertex_data v;
         sampled_material mat;
         vec3 light;
-        get_intersection_info(pos, view, v, nee_pdf, mat, light);
+        get_intersection_info(pos, new_view, v, nee_pdf, mat, light);
 
         float mis_pdf = bsdf_mis_pdf(nee_pdf, bsdf_pdf);
         if(bsdf_pdf != 0)
@@ -174,6 +181,9 @@ void main()
         lsampler, origin, dir,
         color, diffuse, first_hit_vertex, first_hit_material
     );
+
+    color /= SAMPLES_PER_PASS;
+    diffuse /= SAMPLES_PER_PASS;
 
     write_all_outputs(
         color,

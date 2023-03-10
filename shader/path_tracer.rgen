@@ -92,28 +92,38 @@ void main()
 {
     pt_vertex_data first_hit_vertex;
     sampled_material first_hit_material;
-    local_sampler lsampler = init_local_sampler(
-        uvec4(
-            get_pixel_pos(),
-            gl_LaunchIDEXT.z,
-            control.previous_samples
-        )
-    );
+    vec3 sum_color = vec3(0);
+    vec3 sum_direct = vec3(0);
+    vec3 sum_diffuse = vec3(0);
+    for(int i = 0; i < SAMPLES_PER_PASS; ++i)
+    {
+        local_sampler lsampler = init_local_sampler(
+            uvec4(
+                get_pixel_pos(),
+                gl_LaunchIDEXT.z,
+                control.previous_samples + i
+            )
+        );
 
-    vec3 origin;
-    vec3 dir;
-    get_world_camera_ray(lsampler, origin, dir);
+        vec3 origin;
+        vec3 dir;
+        get_world_camera_ray(lsampler, origin, dir);
 
-    vec3 color, direct, diffuse;
-    evaluate_ray(
-        lsampler, origin, dir,
-        color, direct, diffuse, first_hit_vertex, first_hit_material
-    );
+        vec3 color, direct, diffuse;
+        evaluate_ray(
+            lsampler, origin, dir,
+            color, direct, diffuse, first_hit_vertex, first_hit_material
+        );
+
+        sum_color += color;
+        sum_direct += direct;
+        sum_diffuse += diffuse;
+    }
 
     write_all_outputs(
-        color,
-        direct,
-        diffuse,
+        sum_color / SAMPLES_PER_PASS,
+        sum_direct / SAMPLES_PER_PASS,
+        sum_diffuse / SAMPLES_PER_PASS,
         first_hit_vertex,
         first_hit_material
     );

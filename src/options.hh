@@ -165,6 +165,12 @@
         "Sets the number of samples per pixel for path tracing, or MSAA " \
         "samples for rasterization.", \
         1, 1, INT_MAX) \
+    TR_INT_OPT(samples_per_pass, \
+        "Sets the number of samples per pass for path tracing. This is " \
+        "useful when command buffers would otherwise get bloated with " \
+        "extremely high SPP counts. Too high values can cause driver " \
+        "timeouts. ", \
+        1, 1, 128) \
     TR_BOOL_OPT(shadow_terminator_fix, \
         "Enables support for a workaround for the shadow terminator issue, " \
         "compatible with the method used in Blender 2.90. This does not " \

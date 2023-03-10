@@ -17,6 +17,7 @@ namespace direct
         shader_source shadow_chit("shader/path_tracer_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
+        defines["SAMPLES_PER_PASS"] = std::to_string(opt.samples_per_pass);
 
         if(opt.transparent_background)
             defines["USE_TRANSPARENT_BACKGROUND"];
@@ -104,7 +105,7 @@ direct_stage::direct_stage(
         ),
         opt,
         "direct light",
-        opt.samples_per_pixel
+        opt.samples_per_pixel / opt.samples_per_pass
     ),
     opt(opt)
 {
@@ -133,11 +134,8 @@ void direct_stage::record_command_buffer_push_constants(
     control.film_radius = opt.film_radius;
     control.min_ray_dist = opt.min_ray_dist;
 
-    control.previous_samples = pass_index;
-    control.samples = min(
-        opt.samples_per_pixel - (int)control.previous_samples,
-        1
-    );
+    control.previous_samples = pass_index * opt.samples_per_pass;
+    control.samples = opt.samples_per_pass;
     control.antialiasing = opt.film != film_filter::POINT ? 1 : 0;
 
     gfx.push_constants(cb, control);

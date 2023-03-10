@@ -647,9 +647,9 @@ void write_all_outputs(
         const float alpha = 1.0;
 #endif
 
-        accumulate_gbuffer_color(vec4(color, alpha), p, 1, prev_samples);
-        accumulate_gbuffer_direct(vec4(direct, alpha), p, 1, prev_samples);
-        accumulate_gbuffer_diffuse(vec4(diffuse, alpha), p, 1, prev_samples);
+        accumulate_gbuffer_color(vec4(color, alpha), p, control.samples, prev_samples);
+        accumulate_gbuffer_direct(vec4(direct, alpha), p, control.samples, prev_samples);
+        accumulate_gbuffer_diffuse(vec4(diffuse, alpha), p, control.samples, prev_samples);
 
         if(prev_samples == 0)
         { // Only write gbuffer for the first sample.

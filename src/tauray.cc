@@ -383,7 +383,11 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.max_samplers = s.get_sampler_count();
     rc_opt.min_ray_dist = opt.min_ray_dist;
     rc_opt.max_ray_depth = opt.max_ray_depth;
-    rc_opt.samples_per_pixel = opt.samples_per_pixel;
+    rc_opt.samples_per_pass = min(opt.samples_per_pass, opt.samples_per_pixel);
+    // Round sample count to next multiple of samples_per_pass
+    rc_opt.samples_per_pixel =
+        ((opt.samples_per_pixel + rc_opt.samples_per_pass - 1)
+         / rc_opt.samples_per_pass) * rc_opt.samples_per_pass;
     rc_opt.rng_seed = opt.rng_seed;
     rc_opt.local_sampler = opt.sampler;
     rc_opt.transparent_background = opt.transparent_background;
