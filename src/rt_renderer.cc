@@ -274,14 +274,12 @@ void rt_renderer<Pipeline>::init_device_resources(size_t device_index)
     uvec2 max_target_size = get_distribution_target_max_size(rt_opt.distribution);
     uvec2 target_size = get_distribution_target_size(rt_opt.distribution);
 
-    unsigned color_format_size = sizeof(uint16_t)*4;
+    unsigned color_format_size = sizeof(uint32_t)*4;
     gbuffer_spec spec, copy_spec;
     spec.color_present = true;
-    spec.color_format = vk::Format::eR16G16B16A16Sfloat;
+    spec.color_format = vk::Format::eR32G32B32A32Sfloat;
     if constexpr(std::is_same_v<Pipeline, path_tracer_stage>)
     {
-        color_format_size = sizeof(uint32_t)*4;
-        spec.color_format = vk::Format::eR32G32B32A32Sfloat;
         rt_opt.samples_per_pixel = opt.accumulate ? 1 : opt.samples_per_pixel;
     }
     post_processing.set_gbuffer_spec(spec);
@@ -611,5 +609,6 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
 template class rt_renderer<path_tracer_stage>;
 template class rt_renderer<whitted_stage>;
 template class rt_renderer<feature_stage>;
+template class rt_renderer<direct_stage>;
 
 }

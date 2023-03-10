@@ -2,7 +2,6 @@
 #define TAURAY_SH_PATH_TRACER_HH
 #include "rt_stage.hh"
 #include "path_tracer_stage.hh"
-#include "film.hh"
 
 namespace tr
 {
@@ -15,7 +14,7 @@ public:
     {
         int samples_per_probe = 1;
         int samples_per_invocation = 1;
-        film::filter film = film::BLACKMAN_HARRIS;
+        film_filter film = film_filter::BLACKMAN_HARRIS;
         multiple_importance_sampling_mode mis_mode =
             multiple_importance_sampling_mode::MIS_POWER_HEURISTIC;
         float film_radius = 1.0f; // 0.5 is "correct" for the box filter.
@@ -24,10 +23,7 @@ public:
         float indirect_clamping = 100.0f;
         float regularization_gamma = 1.0f; // 0 disables path regularization
 
-        float sample_point_lights = 1.0f;
-        float sample_directional_lights = 1.0f;
-        float sample_envmap = 1.0f;
-        float sample_emissive_triangles = 1.0f;
+        light_sampling_weights sampling_weights;
 
         int sh_grid_index = 0;
         int sh_order = 2;

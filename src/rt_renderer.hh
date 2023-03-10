@@ -12,6 +12,7 @@
 #include "context.hh"
 #include "texture.hh"
 #include "path_tracer_stage.hh"
+#include "direct_stage.hh"
 #include "whitted_stage.hh"
 #include "raster_stage.hh"
 #include "feature_stage.hh"
@@ -119,6 +120,7 @@ private:
 using path_tracer_renderer = rt_renderer<path_tracer_stage>;
 using whitted_renderer = rt_renderer<whitted_stage>;
 using feature_renderer = rt_renderer<feature_stage>;
+using direct_renderer = rt_renderer<direct_stage>;
 
 }
 

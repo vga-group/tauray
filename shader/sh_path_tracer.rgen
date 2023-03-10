@@ -5,7 +5,6 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
 
-#define USE_PUSH_CONSTANTS
 #define TLAS_BINDING 0
 #define SCENE_DATA_BUFFER_BINDING 1
 #define VERTEX_BUFFER_BINDING 2
@@ -22,6 +21,21 @@
 #ifdef NEE_SAMPLE_ENVMAP
 #define ENVIRONMENT_MAP_ALIAS_TABLE_BINDING 14
 #endif
+
+layout(push_constant, scalar) uniform push_constant_buffer
+{
+    uint samples;
+    uint previous_samples;
+    float min_ray_dist;
+    float indirect_clamping;
+    float film_radius;
+    float russian_roulette_delta;
+    int antialiasing;
+    int environment_proj;
+    vec4 environment_factor;
+    float regularization_gamma;
+} control;
+
 #include "path_tracer.glsl"
 #include "spherical_harmonics.glsl"
 

@@ -17,7 +17,6 @@
 // USE_BLACKMAN_HARRIS_FILTER:
 //   Film is sampled with Blackman-Harris filter.
 
-#define USE_PUSH_CONSTANTS
 #define TLAS_BINDING 0
 #define SCENE_DATA_BUFFER_BINDING 1
 #define VERTEX_BUFFER_BINDING 2
@@ -73,6 +72,20 @@
 #define INSTANCE_ID_TARGET_BINDING 19
 #endif
 
+layout(push_constant, scalar) uniform push_constant_buffer
+{
+    uint samples;
+    uint previous_samples;
+    float min_ray_dist;
+    float indirect_clamping;
+    float film_radius;
+    float russian_roulette_delta;
+    int antialiasing;
+    int environment_proj;
+    vec4 environment_factor;
+    float regularization_gamma;
+} control;
+
 #include "path_tracer.glsl"
 
 void main()
@@ -86,82 +99,22 @@ void main()
             control.previous_samples
         )
     );
-    vec2 cam_offset = vec2(0.0);
-    if(control.antialiasing == 1)
-    {
-#if defined(USE_POINT_FILTER)
-        cam_offset = vec2(0.0);
-#elif defined(USE_BOX_FILTER)
-        cam_offset = generate_film_sample(lsampler) * 2.0f - 1.0f;
-#elif defined(USE_BLACKMAN_HARRIS_FILTER)
-        cam_offset = sample_blackman_harris_concentric_disk(
-            generate_film_sample(lsampler).xy
-        ) * 2.0f;
-#else
-#error "Unknown filter type"
-#endif
-        cam_offset *= 2.0f * control.film_radius;
-    }
 
     vec3 origin;
     vec3 dir;
+    get_world_camera_ray(lsampler, origin, dir);
 
-    const camera_data cam = get_camera();
-    get_screen_camera_ray(
-        cam, cam_offset,
-#ifdef USE_DEPTH_OF_FIELD
-        generate_film_sample(lsampler),
-#else
-        vec2(0.5f),
-#endif
-        origin, dir
-    );
     vec3 color, direct, diffuse;
     evaluate_ray(
         lsampler, origin, dir,
         color, direct, diffuse, first_hit_vertex, first_hit_material
     );
 
-#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
-    vec3 specular = color - diffuse * first_hit_material.albedo.rgb;
-    specular /= mix(vec3(1), first_hit_material.albedo.rgb, first_hit_material.metallic);
-    color = diffuse + specular;
-#endif
-
-    // Write all outputs
-    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
-#if DISTRIBUTION_STRATEGY != 0
-    if(p == ivec3(-1))
-        return;
-#endif
-
-    uint prev_samples = distribution.samples_accumulated + control.previous_samples;
-
-#ifdef USE_TRANSPARENT_BACKGROUND
-    const float alpha = first_hit_material.albedo.a;
-#else
-    const float alpha = 1.0;
-#endif
-
-    accumulate_gbuffer_color(vec4(color, alpha), p, 1, prev_samples);
-    accumulate_gbuffer_direct(vec4(direct, alpha), p, 1, prev_samples);
-    accumulate_gbuffer_diffuse(vec4(diffuse, alpha), p, 1, prev_samples);
-
-    if(prev_samples == 0)
-    { // Only write gbuffer for the first sample.
-        ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
-        write_gbuffer_albedo(first_hit_material.albedo, p);
-        write_gbuffer_material(
-            vec2(first_hit_material.metallic, first_hit_material.roughness), p
-        );
-        write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
-        write_gbuffer_pos(first_hit_vertex.pos, p);
-        #ifdef CALC_PREV_VERTEX_POS
-        write_gbuffer_screen_motion(
-            get_camera_projection(get_prev_camera(), first_hit_vertex.prev_pos),
-            p
-        );
-        #endif
-        write_gbuffer_instance_id(first_hit_vertex.instance_id, p);
-    }
+    write_all_outputs(
+        color,
+        direct,
+        diffuse,
+        first_hit_vertex,
+        first_hit_material
+    );
 }

@@ -76,6 +76,7 @@ add_library(tauray-core STATIC
   src/context.cc
   src/dependency.cc
   src/descriptor_state.cc
+  src/direct_stage.cc
   src/distribution_strategy.cc
   src/dshgi_renderer.cc
   src/dshgi_server.cc
@@ -119,6 +120,7 @@ add_library(tauray-core STATIC
   src/rectangle_packer.cc
   src/render_target.cc
   src/rt_camera_stage.cc
+  src/rt_common.cc
   src/rt_stage.cc
   src/rt_renderer.cc
   src/sampler.cc

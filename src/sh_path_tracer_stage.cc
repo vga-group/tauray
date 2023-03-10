@@ -30,43 +30,12 @@ namespace sh_path_tracer
         if(opt.russian_roulette_delta > 0)
             defines["USE_RUSSIAN_ROULETTE"];
 
-        if(opt.sample_point_lights > 0)
-            defines["NEE_SAMPLE_POINT_LIGHTS"] = std::to_string(opt.sample_point_lights);
-        if(opt.sample_directional_lights > 0)
-            defines["NEE_SAMPLE_DIRECTIONAL_LIGHTS"] = std::to_string(opt.sample_directional_lights);
-        if(opt.sample_envmap > 0)
-            defines["NEE_SAMPLE_ENVMAP"] = std::to_string(opt.sample_envmap);
-        if(opt.sample_emissive_triangles > 0)
-            defines["NEE_SAMPLE_EMISSIVE_TRIANGLES"] = std::to_string(opt.sample_emissive_triangles);
+        add_defines(opt.sampling_weights, defines);
+        add_defines(opt.film, defines);
+        add_defines(opt.mis_mode, defines);
 
         if(opt.regularization_gamma != 0.0f)
             defines["PATH_SPACE_REGULARIZATION"];
-
-
-        switch(opt.film)
-        {
-        case film::POINT:
-            defines["USE_POINT_FILTER"];
-            break;
-        case film::BOX:
-            defines["USE_BOX_FILTER"];
-            break;
-        case film::BLACKMAN_HARRIS:
-            defines["USE_BLACKMAN_HARRIS_FILTER"];
-            break;
-        }
-
-        switch(opt.mis_mode)
-        {
-        case multiple_importance_sampling_mode::MIS_DISABLED:
-            break;
-        case multiple_importance_sampling_mode::MIS_BALANCE_HEURISTIC:
-            defines["MIS_BALANCE_HEURISTIC"];
-            break;
-        case multiple_importance_sampling_mode::MIS_POWER_HEURISTIC:
-            defines["MIS_POWER_HEURISTIC"];
-            break;
-        }
 
         defines["SH_ORDER"] = std::to_string(opt.sh_order);
         defines["SH_COEF_COUNT"] = std::to_string(

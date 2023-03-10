@@ -3,7 +3,6 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_GOOGLE_include_directive : enable
 
-#define USE_PUSH_CONSTANTS
 #define POINT_LIGHT_BUFFER_BINDING 6
 #include "path_tracer.glsl"
 
