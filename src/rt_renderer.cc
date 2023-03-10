@@ -129,7 +129,7 @@ void rt_renderer<Pipeline>::render()
 
     for(size_t i = 0; i < devices.size(); ++i)
     {
-        dependencies device_deps = per_device[i].skinning->run({});
+        dependencies device_deps = per_device[i].skinning->run(per_device[i].last_frame_deps);
         device_data& dev = devices[i];
         for(int sample = 0; sample < (opt.accumulate ? opt.samples_per_pixel : 1); ++sample)
         {
@@ -139,6 +139,7 @@ void rt_renderer<Pipeline>::render()
 
             device_deps = per_device[i].ray_tracer->run(device_deps);
         }
+        per_device[i].last_frame_deps = device_deps;
 
         if(i != display_device.index)
         {

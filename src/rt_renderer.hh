@@ -100,6 +100,7 @@ private:
         std::unique_ptr<scene_update_stage> scene_update;
 
         distribution_params dist;
+        dependencies last_frame_deps;
     };
     std::vector<per_device_data> per_device;
     std::unique_ptr<stitch_stage> stitch;
