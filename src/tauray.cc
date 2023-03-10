@@ -489,7 +489,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 direct_renderer::options rt_opt;
                 (rt_camera_stage::options&)rt_opt = rc_opt;
                 rt_opt.film = opt.film;
-                rt_opt.mis_mode = opt.multiple_importance_sampling;
                 rt_opt.film_radius = opt.film_radius;
                 rt_opt.sampling_weights = sampling_weights;
                 rt_opt.bounce_mode = opt.bounce_mode;

@@ -30,7 +30,6 @@ namespace direct
 #undef TR_GBUFFER_ENTRY
 
         add_defines(opt.film, defines);
-        add_defines(opt.mis_mode, defines);
         add_defines(opt.bounce_mode, defines);
         add_defines(opt.tri_light_mode, defines);
 

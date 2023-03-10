@@ -12,8 +12,6 @@ public:
     struct options: public rt_camera_stage::options
     {
         film_filter film = film_filter::BLACKMAN_HARRIS;
-        multiple_importance_sampling_mode mis_mode =
-            multiple_importance_sampling_mode::MIS_POWER_HEURISTIC;
         float film_radius = 1.0f; // 0.5 is "correct" for the box filter.
 
         light_sampling_weights sampling_weights;
