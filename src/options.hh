@@ -490,6 +490,9 @@
 #include <optional>
 #include <climits>
 #include <cfloat>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 #ifdef ENABLE_VULKAN_VALIDATION
 static constexpr bool VULKAN_VALIDATION_ENABLED_BY_DEFAULT = true;
@@ -590,7 +593,7 @@ struct options
 };
 
 void parse_command_line_options(char** argv, options& opt);
-bool parse_config_options(const char* config_str, options& opt);
+bool parse_config_options(const char* config_str, fs::path relative_path, options& opt);
 bool parse_command(const char* config_str, options& opt);
 void print_command_help(const std::string& command);
 void print_help(const char* program_name);
