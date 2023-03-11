@@ -43,6 +43,7 @@ public:
     vk::DeviceAddress get_blas_address(size_t device_index) const;
 
     size_t get_geometry_count() const;
+    bool is_backface_culled() const;
 
 private:
     context* ctx;

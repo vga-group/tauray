@@ -156,6 +156,8 @@ std::vector<vec2> get_camera_jitter_sequence(
     int sequence_length, uvec2 resolution
 );
 
+size_t hash_combine(size_t a, size_t b);
+
 }
 
 #include "math.tcc"

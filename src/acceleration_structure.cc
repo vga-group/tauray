@@ -263,6 +263,11 @@ size_t bottom_level_acceleration_structure::get_geometry_count() const
     return geometry_count;
 }
 
+bool bottom_level_acceleration_structure::is_backface_culled() const
+{
+    return backface_culled;
+}
+
 top_level_acceleration_structure::top_level_acceleration_structure(
     context& ctx,
     size_t capacity

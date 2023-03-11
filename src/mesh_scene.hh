@@ -116,9 +116,23 @@ private:
         };
         per_frame_data per_frame[MAX_FRAMES_IN_FLIGHT];
     };
+
+    // For acceleration structures, instances are grouped by which ones go into
+    // the same BLAS. If two groups share the same ID, they will have the same
+    // acceleration structure as well, but are inserted as separate TLAS
+    // instances still.
+    struct instance_group
+    {
+        uint64_t id = 0;
+        size_t size = 0;
+        bool static_mesh = false;
+        bool static_transformable = false;
+    };
+
     std::vector<as_update_data> as_update;
-    std::unordered_map<uint64_t, bottom_level_acceleration_structure> per_mesh_blas_cache;
+    std::unordered_map<uint64_t, bottom_level_acceleration_structure> blas_cache;
     std::vector<instance> instance_cache;
+    std::vector<instance_group> group_cache;
     uint64_t instance_cache_frame;
 };
 

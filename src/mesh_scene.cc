@@ -86,72 +86,93 @@ void mesh_scene::refresh_instance_cache(bool force)
         return;
     instance_cache_frame = frame_counter;
     size_t i = 0;
-    mat4 transform;
-    mat4 normal_transform;
-    for(const mesh_object* o: objects)
-    {
-        if(!o) continue;
-        const model* m = o->get_model();
-        if(!m) continue;
-        bool fetched_transforms = false;
-        for(const auto& vg: *m)
+    group_cache.clear();
+    auto add_instances = [&](bool static_mesh, bool static_transformable){
+        for(const mesh_object* o: objects)
         {
-            if(i == instance_cache.size())
+            if(!o) continue;
+
+            // If requesting dynamic meshes, we don't care about the
+            // transformable staticness any more.
+            if(static_mesh && static_transformable != o->is_static())
+                continue;
+
+            const model* m = o->get_model();
+            if(!m) continue;
+            bool fetched_transforms = false;
+            mat4 transform;
+            mat4 normal_transform;
+            for(const auto& vg: *m)
             {
-                instance_cache.push_back({
-                    mat4(0),
-                    mat4(0),
-                    mat4(0),
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    frame_counter
+                bool is_static = !vg.m->is_skinned() && !vg.m->get_animation_source();
+                if(static_mesh != is_static)
+                    continue;
+
+                if(i == instance_cache.size())
+                {
+                    instance_cache.push_back({
+                        mat4(0),
+                        mat4(0),
+                        mat4(0),
+                        nullptr,
+                        nullptr,
+                        nullptr,
+                        frame_counter
+                    });
+                }
+                instance& inst = instance_cache[i];
+                group_cache.push_back({
+                    vg.m->get_id(), 0, static_mesh, static_transformable
                 });
-            }
-            instance& inst = instance_cache[i];
+                instance_group& group = group_cache.back();
+                group.size++;
 
-            if(inst.mat != &vg.mat)
-            {
-                inst.mat = &vg.mat;
-                inst.prev_transform = mat4(0);
-                inst.last_refresh_frame = frame_counter;
-            }
-            if(inst.m != vg.m)
-            {
-                inst.m = vg.m;
-                inst.prev_transform = mat4(0);
-                inst.last_refresh_frame = frame_counter;
-            }
-            if(inst.o != o)
-            {
-                inst.o = o;
-                inst.prev_transform = mat4(0);
-                inst.last_refresh_frame = frame_counter;
-            }
-            if(inst.last_refresh_frame == frame_counter || !o->is_static())
-            {
-                if(!fetched_transforms)
+                if(inst.mat != &vg.mat)
                 {
-                    transform = o->get_global_transform();
-                    normal_transform = o->get_global_inverse_transpose_transform();
-                    fetched_transforms = true;
-                }
-
-                if(inst.prev_transform != inst.transform)
-                {
-                    inst.prev_transform = inst.transform;
+                    inst.mat = &vg.mat;
+                    inst.prev_transform = mat4(0);
                     inst.last_refresh_frame = frame_counter;
                 }
-                if(inst.transform != transform)
+                if(inst.m != vg.m)
                 {
-                    inst.transform = transform;
-                    inst.normal_transform = normal_transform;
+                    inst.m = vg.m;
+                    inst.prev_transform = mat4(0);
                     inst.last_refresh_frame = frame_counter;
                 }
+                if(inst.o != o)
+                {
+                    inst.o = o;
+                    inst.prev_transform = mat4(0);
+                    inst.last_refresh_frame = frame_counter;
+                }
+                if(inst.last_refresh_frame == frame_counter || !o->is_static())
+                {
+                    if(!fetched_transforms)
+                    {
+                        transform = o->get_global_transform();
+                        normal_transform = o->get_global_inverse_transpose_transform();
+                        fetched_transforms = true;
+                    }
+
+                    if(inst.prev_transform != inst.transform)
+                    {
+                        inst.prev_transform = inst.transform;
+                        inst.last_refresh_frame = frame_counter;
+                    }
+                    if(inst.transform != transform)
+                    {
+                        inst.transform = transform;
+                        inst.normal_transform = normal_transform;
+                        inst.last_refresh_frame = frame_counter;
+                    }
+                }
+                ++i;
             }
-            ++i;
         }
-    }
+    };
+    add_instances(true, true);
+    add_instances(true, false);
+    add_instances(false, false);
     instance_cache.resize(i);
 }
 
@@ -240,21 +261,30 @@ void mesh_scene::refresh_dynamic_acceleration_structures(
     vk::CommandBuffer cmd
 ){
     // Run BLAS updates
-    for(mesh_object* obj: objects)
+    size_t offset = 0;
+    std::vector<bottom_level_acceleration_structure::entry> entries;
+    for(const instance_group& group: group_cache)
     {
-        model* m = const_cast<model*>(obj->get_model());
-        if(!m) continue;
-        if(m->has_joints_buffer())
+        if(group.static_mesh)
         {
-            for(auto& vg: *m)
-            {
-                per_mesh_blas_cache.at(vg.m->get_id()).rebuild(
-                    device_index, frame_index, cmd,
-                    {{vg.m, mat4(1), vg.mat.potentially_transparent()}},
-                    {}
-                );
-            }
+            offset += group.size;
+            continue;
         }
+
+        entries.clear();
+        for(size_t i = 0; i < group.size; ++i, ++offset)
+        {
+            const instance& inst = instance_cache[offset];
+            entries.push_back({
+                inst.m,
+                group.static_transformable ? inst.transform : mat4(1),
+                !inst.mat->potentially_transparent()
+            });
+        }
+        blas_cache.at(group.id).rebuild(
+            device_index, frame_index, cmd,
+            entries, true
+        );
     }
 }
 
@@ -302,21 +332,27 @@ void mesh_scene::add_acceleration_structure_instances(
     size_t capacity
 ) const {
     // Update instance staging buffer
-    for(size_t j = 0; j < instance_cache.size() && instance_index < capacity; ++j)
+    size_t offset = 0;
+    for(size_t j = 0; j < group_cache.size() && instance_index < capacity; ++j)
     {
-        const instance& in = instance_cache[j];
+        const instance_group& group = group_cache[j];
+        const bottom_level_acceleration_structure& blas = blas_cache.at(group.id);
         vk::AccelerationStructureInstanceKHR inst = vk::AccelerationStructureInstanceKHR(
-            {}, j, 1<<0, 0, // Hit group 0 for triangle meshes.
-            vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable,
-            per_mesh_blas_cache.at(in.m->get_id()).get_blas_address(device_index)
+            {}, offset, 1<<0, 0, // Hit group 0 for triangle meshes.
+            {}, blas.get_blas_address(device_index)
         );
-        mat4 global_transform = transpose(in.transform);
+        if(!blas.is_backface_culled())
+            inst.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
+
+        mat4 global_transform = group.static_transformable ?
+            mat4(1) : transpose(instance_cache[offset].transform);
         memcpy(
             (void*)&inst.transform,
             (void*)&global_transform,
             sizeof(inst.transform)
         );
         instances[instance_index++] = inst;
+        offset += group.size;
     }
 }
 
@@ -332,28 +368,39 @@ void mesh_scene::invalidate_tlas()
 
 void mesh_scene::ensure_blas()
 {
-    // Goes through all IDs and ensures they have valid BLASes.
-    for(const mesh_object* o: objects)
+    // Goes through all groups and ensures they have valid BLASes.
+    size_t offset = 0;
+    std::vector<bottom_level_acceleration_structure::entry> entries;
+    for(const instance_group& group: group_cache)
     {
-        if(!o) continue;
-        const model* m = o->get_model();
-        if(!m) continue;
-        for(const auto& group: *m)
+        auto it = blas_cache.find(group.id);
+        if(it != blas_cache.end())
         {
-            auto it = per_mesh_blas_cache.find(group.m->get_id());
-            if(it != per_mesh_blas_cache.end())
-                continue;
-
-            per_mesh_blas_cache.emplace(
-                group.m->get_id(),
-                bottom_level_acceleration_structure(
-                    *ctx,
-                    {{group.m, mat4(1), !group.mat.potentially_transparent()}},
-                    !group.mat.double_sided,
-                    group.m->is_skinned() || group.m->get_animation_source()
-                )
-            );
+            offset += group.size;
+            continue;
         }
+
+        entries.clear();
+        bool double_sided = false;
+        for(size_t i = 0; i < group.size; ++i, ++offset)
+        {
+            const instance& inst = instance_cache[offset];
+            if(inst.mat->double_sided) double_sided = true;
+            entries.push_back({
+                inst.m,
+                group.static_transformable ? inst.transform : mat4(1),
+                !inst.mat->potentially_transparent()
+            });
+        }
+        blas_cache.emplace(
+            group.id,
+            bottom_level_acceleration_structure(
+                *ctx,
+                entries,
+                !double_sided,
+                !group.static_mesh
+            )
+        );
     }
 }
 
