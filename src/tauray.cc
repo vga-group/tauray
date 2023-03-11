@@ -211,6 +211,7 @@ scene_data load_scenes(context& ctx, const options& opt)
     };
     s.s->set_environment_map(s.sky.get());
     s.s->set_ambient(opt.ambient);
+    s.s->set_blas_strategy(opt.as_strategy);
     for(scene_graph& sg: s.scenes)
     {
         sg.to_scene(*s.s);
@@ -687,6 +688,7 @@ void show_stats(scene_data& sd, options& opt)
         meshes.insert(inst.m);
     std::cout << "Number of unique meshes = " << meshes.size() << std::endl;
     std::cout << "Number of mesh instances = " << sd.s->get_instance_count() << std::endl;
+    std::cout << "Number of BLASes (depends on settings) = " << sd.s->get_blas_group_count() << std::endl;
 
     //Calculating the number of triangles and dynamic objects
     uint32_t triangle_count = 0;
@@ -794,6 +796,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
             {
                 s.set_shadow_map_renderer(nullptr);
                 s.set_sh_grid_textures(nullptr);
+                s.set_blas_strategy(opt.as_strategy);
                 s.set_camera_jitter(get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
                 rr.reset(create_renderer(ctx, opt, s));
                 rr->set_scene(&s);

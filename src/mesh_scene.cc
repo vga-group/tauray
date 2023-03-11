@@ -6,7 +6,8 @@ namespace tr
 {
 
 mesh_scene::mesh_scene(context& ctx, size_t max_capacity)
-: ctx(&ctx), max_capacity(max_capacity), instance_cache_frame(0)
+:   ctx(&ctx), max_capacity(max_capacity),
+    group_strategy(blas_strategy::PER_MATERIAL), instance_cache_frame(0)
 {
     if(ctx.is_ray_tracing_supported())
         as_update.resize(ctx.get_devices().size());
@@ -79,6 +80,17 @@ size_t mesh_scene::get_max_capacity() const
     return max_capacity;
 }
 
+void mesh_scene::set_blas_strategy(blas_strategy strat)
+{
+    group_strategy = strat;
+    invalidate_tlas();
+}
+
+size_t mesh_scene::get_blas_group_count() const
+{
+    return group_cache.size();
+}
+
 void mesh_scene::refresh_instance_cache(bool force)
 {
     uint64_t frame_counter = ctx->get_frame_counter();
@@ -86,10 +98,12 @@ void mesh_scene::refresh_instance_cache(bool force)
         return;
     instance_cache_frame = frame_counter;
     size_t i = 0;
+    size_t last_object_index = SIZE_MAX;
     group_cache.clear();
     auto add_instances = [&](bool static_mesh, bool static_transformable){
-        for(const mesh_object* o: objects)
+        for(size_t object_index = 0; object_index < objects.size(); ++object_index)
         {
+            const mesh_object* o = objects[object_index];
             if(!o) continue;
 
             // If requesting dynamic meshes, we don't care about the
@@ -121,11 +135,14 @@ void mesh_scene::refresh_instance_cache(bool force)
                     });
                 }
                 instance& inst = instance_cache[i];
-                group_cache.push_back({
-                    vg.m->get_id(), 0, static_mesh, static_transformable
-                });
-                instance_group& group = group_cache.back();
-                group.size++;
+
+                assign_group_cache(
+                    vg.m->get_id(),
+                    static_mesh,
+                    static_transformable,
+                    object_index,
+                    last_object_index
+                );
 
                 if(inst.mat != &vg.mat)
                 {
@@ -174,6 +191,7 @@ void mesh_scene::refresh_instance_cache(bool force)
     add_instances(true, false);
     add_instances(false, false);
     instance_cache.resize(i);
+    if(force) ensure_blas();
 }
 
 bool mesh_scene::reserve_pre_transformed_vertices(size_t device_index, size_t max_vertex_count)
@@ -282,8 +300,8 @@ void mesh_scene::refresh_dynamic_acceleration_structures(
             });
         }
         blas_cache.at(group.id).rebuild(
-            device_index, frame_index, cmd,
-            entries, true
+            device_index, frame_index, cmd, entries,
+            group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : true
         );
     }
 }
@@ -313,6 +331,28 @@ void mesh_scene::update_acceleration_structures(
 
     if(as.tlas_reset_needed)
         ensure_blas();
+
+    // Run BLAS matrix updates. Only necessary when merged BLASes have dynamic
+    // transformables.
+    if(group_strategy == blas_strategy::ALL_MERGED_STATIC)
+    {
+        size_t offset = 0;
+        std::vector<bottom_level_acceleration_structure::entry> entries;
+        for(const instance_group& group: group_cache)
+        {
+            entries.clear();
+            for(size_t i = 0; i < group.size; ++i, ++offset)
+            {
+                const instance& inst = instance_cache[offset];
+                entries.push_back({
+                    inst.m,
+                    group.static_transformable ? inst.transform : mat4(1),
+                    !inst.mat->potentially_transparent()
+                });
+            }
+            blas_cache.at(group.id).update_transforms(frame_index, entries);
+        }
+    }
 
     as.tlas_reset_needed = false;
     f.command_buffers_outdated = false;
@@ -398,10 +438,77 @@ void mesh_scene::ensure_blas()
                 *ctx,
                 entries,
                 !double_sided,
-                !group.static_mesh
+                group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : !group.static_mesh,
+                group.static_mesh
             )
         );
     }
+}
+
+void mesh_scene::assign_group_cache(
+    uint64_t id,
+    bool static_mesh,
+    bool static_transformable,
+    size_t object_index,
+    size_t& last_object_index
+){
+    switch(group_strategy)
+    {
+    case blas_strategy::PER_MATERIAL:
+        group_cache.push_back({id, 1, static_mesh, false});
+        break;
+    case blas_strategy::PER_MODEL:
+        if(last_object_index == object_index)
+        {
+            instance_group& group = group_cache.back();
+            group.id = hash_combine(group.id, id);
+            if(!static_mesh) group.static_mesh = false;
+            group.size++;
+        }
+        else group_cache.push_back({id, 1, static_mesh, false});
+        break;
+    case blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL:
+        if(group_cache.size() == 0)
+        {
+            bool is_static = static_mesh && static_transformable;
+            group_cache.push_back({
+                id, 1, static_mesh, is_static
+            });
+        }
+        else
+        {
+            instance_group& group = group_cache.back();
+            bool prev_is_static = group.static_mesh && group.static_transformable;
+            bool is_static = static_mesh && static_transformable;
+            if(prev_is_static && is_static)
+            {
+                group.id = hash_combine(group.id, id);
+                group.size++;
+            }
+            else
+            {
+                if(last_object_index == object_index)
+                {
+                    group.id = hash_combine(group.id, id);
+                    if(!static_mesh) group.static_mesh = false;
+                    group.size++;
+                }
+                else group_cache.push_back({id, 1, static_mesh, false});
+            }
+        }
+        break;
+    case blas_strategy::ALL_MERGED_STATIC:
+        {
+            if(group_cache.size() == 0)
+                group_cache.push_back({0, 0, true, true});
+            instance_group& group = group_cache.back();
+            group.id = hash_combine(group.id, id);
+            if(!static_mesh) group.static_mesh = false;
+            group.size++;
+        }
+        break;
+    }
+    last_object_index = object_index;
 }
 
 }

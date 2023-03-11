@@ -34,6 +34,11 @@ void main()
         v.pos = (o.model * vec4(v.pos, 1)).xyz;
         v.normal = normalize(mat3(o.model_normal) * v.normal);
         v.tangent = vec4(normalize(mat3(o.model_normal) * v.tangent.xyz), v.tangent.w);
+        if(determinant(mat3(o.model_normal)) < 0)
+        {
+            v.normal = -v.normal;
+            v.tangent = -v.tangent;
+        }
         output_verts.v[i] = v;
     }
 }

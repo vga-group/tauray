@@ -483,6 +483,20 @@
         "Increases memory usage, but speeds up multi-bounce path tracing " \
         "performance.", \
         false \
+    )\
+    TR_ENUM_OPT(as_strategy, blas_strategy, \
+        "Acceleration structure strategy; i.e. how geometries are assigned " \
+        "into BLASes. per-material assigns each material of each model a " \
+        "different BLAS. per-model assigns each model a BLAS. " \
+        "static-merged-dynamic-per-model merges all static geometries into " \
+        "one BLAS, while dynamic geometries are given per-model BLASes. " \
+        "all-merged puts everything in one. Each approach has different " \
+        "performance and memory tradeoffs.", \
+        blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL, \
+        {"per-material", blas_strategy::PER_MATERIAL}, \
+        {"per-model", blas_strategy::PER_MODEL}, \
+        {"static-merged-dynamic-per-model", blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL}, \
+        {"all-merged", blas_strategy::ALL_MERGED_STATIC} \
     )
 //==============================================================================
 // END OF OPTIONS
@@ -497,6 +511,7 @@
 #include "feature_stage.hh"
 #include "raster_stage.hh"
 #include "camera.hh"
+#include "mesh_scene.hh"
 #include <string>
 #include <variant>
 #include <stdexcept>

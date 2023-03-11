@@ -9,6 +9,14 @@
 namespace tr
 {
 
+enum class blas_strategy
+{
+    PER_MATERIAL,
+    PER_MODEL,
+    STATIC_MERGED_DYNAMIC_PER_MODEL,
+    ALL_MERGED_STATIC
+};
+
 class mesh_scene
 {
 public:
@@ -53,6 +61,8 @@ public:
         size_t device_index
     ) const;
 
+    void set_blas_strategy(blas_strategy strat);
+    size_t get_blas_group_count() const;
     void refresh_dynamic_acceleration_structures(
         size_t device_index,
         size_t frame_index,
@@ -97,6 +107,13 @@ protected:
 private:
     void invalidate_tlas();
     void ensure_blas();
+    void assign_group_cache(
+        uint64_t id,
+        bool static_mesh,
+        bool static_transformable,
+        size_t object_index,
+        size_t& last_object_index
+    );
 
     context* ctx;
     size_t max_capacity;
@@ -133,6 +150,7 @@ private:
     std::unordered_map<uint64_t, bottom_level_acceleration_structure> blas_cache;
     std::vector<instance> instance_cache;
     std::vector<instance_group> group_cache;
+    blas_strategy group_strategy;
     uint64_t instance_cache_frame;
 };
 

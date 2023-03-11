@@ -23,7 +23,8 @@ public:
         context& ctx,
         const std::vector<entry>& entries,
         bool backface_culled,
-        bool dynamic
+        bool dynamic,
+        bool compact
     );
 
     void update_transforms(
@@ -51,6 +52,7 @@ private:
     size_t geometry_count;
     bool backface_culled;
     bool dynamic;
+    bool compact;
 
     // Per-device
     struct buffer_data

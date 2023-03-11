@@ -84,6 +84,7 @@ void rt_renderer<Pipeline>::set_scene(scene* s)
     opt.projection = s->get_camera(0)->get_projection_type();
     if(s)
     {
+        s->refresh_instance_cache(true);
         for(size_t i = 0; i < per_device.size(); ++i)
         {
             per_device[i].skinning->set_scene(s);

@@ -9,9 +9,10 @@ bottom_level_acceleration_structure::bottom_level_acceleration_structure(
     context& ctx,
     const std::vector<entry>& entries,
     bool backface_culled,
-    bool dynamic
+    bool dynamic,
+    bool compact
 ):  ctx(&ctx), updates_since_rebuild(0), geometry_count(entries.size()),
-    backface_culled(backface_culled), dynamic(dynamic)
+    backface_culled(backface_culled), dynamic(dynamic), compact(!dynamic && compact)
 {
     std::vector<device_data>& devices = ctx.get_devices();
     buffers.resize(devices.size());
@@ -25,7 +26,8 @@ bottom_level_acceleration_structure::bottom_level_acceleration_structure(
         );
     }
 
-    update_transforms(0, entries);
+    for(size_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index)
+        update_transforms(frame_index, entries);
 
     for(size_t i = 0; i < devices.size(); ++i)
     {
@@ -115,7 +117,7 @@ void bottom_level_acceleration_structure::rebuild(
         geometries.data()
     );
 
-    if(!bd.blas || !dynamic)
+    if(!*bd.blas)
     {
         // Need to calculate BLAS size.
         vk::AccelerationStructureBuildSizesInfoKHR size_info = dev.dev.getAccelerationStructureBuildSizesKHR(
@@ -159,7 +161,7 @@ void bottom_level_acceleration_structure::rebuild(
 
     vkm<vk::QueryPool> query_pool;
     vk::CommandBuffer initial_cb;
-    if(!dynamic)
+    if(compact)
     {
         initial_cb = begin_command_buffer(dev);
         bd.transform_buffer.upload(frame_index, initial_cb);
