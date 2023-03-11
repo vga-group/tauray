@@ -21,6 +21,9 @@
 #ifdef NEE_SAMPLE_ENVMAP
 #define ENVIRONMENT_MAP_ALIAS_TABLE_BINDING 14
 #endif
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+#define TRI_LIGHT_BUFFER_BINDING 22
+#endif
 
 layout(push_constant, scalar) uniform push_constant_buffer
 {

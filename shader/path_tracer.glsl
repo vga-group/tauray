@@ -595,6 +595,9 @@ void evaluate_ray(
 #endif
 }
 
+#endif
+
+#ifdef CAMERA_DATA_BINDING
 void get_world_camera_ray(inout local_sampler lsampler, out vec3 origin, out vec3 dir)
 {
     vec2 cam_offset = vec2(0.0);
@@ -670,7 +673,6 @@ void write_all_outputs(
         }
     }
 }
-
 #endif
 
 #endif

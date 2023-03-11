@@ -322,8 +322,8 @@ void write_gbuffer_screen_motion(vec3 prev_frag_uv)
 
 #else
 
-void write_gbuffer_screen_motion(vec2 prev_frag_uv, ivec3 pos) {}
-void write_gbuffer_screen_motion(vec2 prev_frag_uv) {}
+void write_gbuffer_screen_motion(vec3 prev_frag_uv, ivec3 pos) {}
+void write_gbuffer_screen_motion(vec3 prev_frag_uv) {}
 vec2 read_gbuffer_screen_motion(ivec3 pos) { return vec2(0); }
 
 #endif
