@@ -137,6 +137,7 @@
         options::PATH_TRACER, \
         {"whitted", options::WHITTED}, \
         {"path-tracer", options::PATH_TRACER}, \
+        {"direct", options::DIRECT}, \
         {"raster", options::RASTER}, \
         {"dshgi", options::DSHGI}, \
         {"dshgi-server", options::DSHGI_SERVER}, \
@@ -164,21 +165,27 @@
         "Sets the number of samples per pixel for path tracing, or MSAA " \
         "samples for rasterization.", \
         1, 1, INT_MAX) \
+    TR_INT_OPT(samples_per_pass, \
+        "Sets the number of samples per pass for path tracing. This is " \
+        "useful when command buffers would otherwise get bloated with " \
+        "extremely high SPP counts. Too high values can cause driver " \
+        "timeouts. ", \
+        1, 1, 128) \
     TR_BOOL_OPT(shadow_terminator_fix, \
         "Enables support for a workaround for the shadow terminator issue, " \
         "compatible with the method used in Blender 2.90. This does not " \
         "conserve energy, but unless it's manually specified for a model in " \
         "the input scene, it has no effect.", \
         true) \
-    TR_ENUM_OPT(film, film::filter, \
+    TR_ENUM_OPT(film, film_filter, \
         "Chooses the film type for path tracing. Point sampling can enable " \
         "some optimizations in > 1spp situations, and may be required for " \
         "certain post-processing effects. The other methods implement " \
         "antialiasing.", \
-        film::POINT, \
-        {"point", film::POINT}, \
-        {"box", film::BOX}, \
-        {"blackman-harris", film::BLACKMAN_HARRIS} \
+        film_filter::POINT, \
+        {"point", film_filter::POINT}, \
+        {"box", film_filter::BOX}, \
+        {"blackman-harris", film_filter::BLACKMAN_HARRIS} \
     )\
     TR_FLOAT_OPT(film_radius, \
         "Sets the sampling radius for the film sampling. This is in pixels " \
@@ -339,9 +346,9 @@
         "Multiply the number of devices for debugging multi-GPU rendering.", \
         0, 0, 16) \
     TR_ENUM_OPT(sampler, rt_stage::sampler_type, \
-        "Sets the sampling method used in path tracing. Defaults to the Sobol " \
-        "sequence on a space-filling curve with Owen scrambling.", \
-        rt_stage::sampler_type::SOBOL_Z_ORDER_3D, \
+        "Sets the sampling method used in path tracing. Defaults to uniform " \
+        "random.", \
+        rt_stage::sampler_type::UNIFORM_RANDOM, \
         {"uniform-random", rt_stage::sampler_type::UNIFORM_RANDOM}, \
         {"sobol-z2", rt_stage::sampler_type::SOBOL_Z_ORDER_2D}, \
         {"sobol-z3", rt_stage::sampler_type::SOBOL_Z_ORDER_3D}, \
@@ -480,7 +487,7 @@
 #include "tonemap_stage.hh"
 #include "path_tracer_stage.hh"
 #include "rt_renderer.hh"
-#include "film.hh"
+#include "rt_common.hh"
 #include "feature_stage.hh"
 #include "raster_stage.hh"
 #include "camera.hh"
@@ -544,6 +551,7 @@ struct options
     enum basic_pipeline_type
     {
         PATH_TRACER = 0,
+        DIRECT,
         WHITTED,
         RASTER,
         DSHGI,

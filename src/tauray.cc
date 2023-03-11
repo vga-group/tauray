@@ -383,10 +383,20 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.max_samplers = s.get_sampler_count();
     rc_opt.min_ray_dist = opt.min_ray_dist;
     rc_opt.max_ray_depth = opt.max_ray_depth;
-    rc_opt.samples_per_pixel = opt.samples_per_pixel;
+    rc_opt.samples_per_pass = min(opt.samples_per_pass, opt.samples_per_pixel);
+    // Round sample count to next multiple of samples_per_pass
+    rc_opt.samples_per_pixel =
+        ((opt.samples_per_pixel + rc_opt.samples_per_pass - 1)
+         / rc_opt.samples_per_pass) * rc_opt.samples_per_pass;
     rc_opt.rng_seed = opt.rng_seed;
     rc_opt.local_sampler = opt.sampler;
     rc_opt.transparent_background = opt.transparent_background;
+
+    light_sampling_weights sampling_weights;
+    sampling_weights.point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;
+    sampling_weights.directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
+    sampling_weights.envmap = s.get_environment_map() ? opt.sample_envmap : 0.0f;
+    sampling_weights.emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
 
     s.auto_shadow_maps(
         opt.shadow_map_resolution,
@@ -430,10 +440,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rt_opt.russian_roulette_delta = opt.russian_roulette;
                 rt_opt.indirect_clamping = opt.indirect_clamping;
                 rt_opt.regularization_gamma = opt.regularization;
-                rt_opt.sample_point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;
-                rt_opt.sample_directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
-                rt_opt.sample_envmap = s.get_environment_map() ? opt.sample_envmap : 0.0f;
-                rt_opt.sample_emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
+                rt_opt.sampling_weights = sampling_weights;
                 rt_opt.bounce_mode = opt.bounce_mode;
                 rt_opt.tri_light_mode = opt.tri_light_mode;
                 rt_opt.post_process.tonemap = tonemap;
@@ -477,6 +484,54 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     rt_opt.distribution.strategy = DISTRIBUTION_DUPLICATE;
                 return new path_tracer_renderer(ctx, rt_opt);
             }
+        case options::DIRECT:
+            {
+                direct_renderer::options rt_opt;
+                (rt_camera_stage::options&)rt_opt = rc_opt;
+                rt_opt.film = opt.film;
+                rt_opt.film_radius = opt.film_radius;
+                rt_opt.sampling_weights = sampling_weights;
+                rt_opt.bounce_mode = opt.bounce_mode;
+                rt_opt.tri_light_mode = opt.tri_light_mode;
+                rt_opt.post_process.tonemap = tonemap;
+                if(opt.temporal_reprojection > 0.0f)
+                    rt_opt.post_process.temporal_reprojection =
+                        temporal_reprojection_stage::options{opt.temporal_reprojection, {}};
+                if(opt.spatial_reprojection.size() > 0)
+                    rt_opt.post_process.spatial_reprojection =
+                        spatial_reprojection_stage::options{};
+                if(opt.taa.sequence_length != 0)
+                    rt_opt.post_process.taa = taa;
+                rt_opt.active_viewport_count =
+                    opt.spatial_reprojection.size() == 0 ?
+                    ctx.get_display_count() :
+                    opt.spatial_reprojection.size();
+                rt_opt.accumulate = opt.accumulation;
+                rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
+                    opt.spatial_reprojection,
+                    ctx.get_display_count()
+                );
+                if(opt.denoiser == options::denoiser_type::SVGF)
+                {
+                    svgf_stage::options svgf_opt{};
+                    svgf_opt.atrous_diffuse_iters = opt.svgf_params.atrous_diffuse_iter;
+                    svgf_opt.atrous_spec_iters = opt.svgf_params.atrous_spec_iter;
+                    svgf_opt.atrous_kernel_radius = opt.svgf_params.atrous_kernel_radius;
+                    svgf_opt.sigma_l = opt.svgf_params.sigma_l;
+                    svgf_opt.sigma_n = opt.svgf_params.sigma_n;
+                    svgf_opt.sigma_z = opt.svgf_params.sigma_z;
+                    svgf_opt.temporal_alpha_color = opt.svgf_params.min_alpha_color;
+                    svgf_opt.temporal_alpha_moments = opt.svgf_params.min_alpha_moments;
+                    rt_opt.post_process.svgf_denoiser = svgf_opt;
+                }
+                else if(opt.denoiser == options::denoiser_type::BMFR)
+                    rt_opt.post_process.bmfr = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY };
+                rt_opt.scene_options = scene_options;
+                rt_opt.distribution.strategy = opt.distribution_strategy;
+                if(ctx.get_devices().size() == 1)
+                    rt_opt.distribution.strategy = DISTRIBUTION_DUPLICATE;
+                return new direct_renderer(ctx, rt_opt);
+            }
         case options::WHITTED:
             {
                 whitted_renderer::options rt_opt;
@@ -518,10 +573,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 sh.temporal_ratio = opt.dshgi_temporal_ratio;
                 sh.indirect_clamping = opt.indirect_clamping;
                 sh.regularization_gamma = opt.regularization;
-                sh.sample_point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;
-                sh.sample_directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
-                sh.sample_envmap = s.get_environment_map() ? opt.sample_envmap : 0.0f;
-                sh.sample_emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
+                sh.sampling_weights = sampling_weights;
                 dr_opt.sh_source = sh;
                 dr_opt.sh_order = opt.sh_order;
                 dr_opt.use_probe_visibility = opt.use_probe_visibility;
@@ -551,10 +603,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.sh.temporal_ratio = opt.dshgi_temporal_ratio;
                 dr_opt.sh.indirect_clamping = opt.indirect_clamping;
                 dr_opt.sh.regularization_gamma = opt.regularization;
-                dr_opt.sh.sample_point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;
-                dr_opt.sh.sample_directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
-                dr_opt.sh.sample_envmap = s.get_environment_map() ? opt.sample_envmap : 0.0f;
-                dr_opt.sh.sample_emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
+                dr_opt.sh.sampling_weights = sampling_weights;
                 dr_opt.max_skinned_meshes = s.get_mesh_count();
                 dr_opt.port_number = opt.port;
                 //dr_opt.scene_options = scene_options;
@@ -628,25 +677,25 @@ void show_stats(scene_data& sd, options& opt)
 {
     if(!opt.scene_stats)
         return;
-    
+
     std::cout << "\nScene statistics: \n";
-    
+
     std::cout << "Number of meshes = " << sd.s->get_mesh_count() << std::endl;
     std::cout << "Number of mesh instances = " << sd.s->get_instance_count() << std::endl;
-     
+
     //Calculating the number of triangles and dynamic objects
-    uint32_t triangle_count = 0; 
+    uint32_t triangle_count = 0;
     uint32_t dyn_obj_count = 0;
     for(auto& mesh_obj: sd.s->get_mesh_objects())
     {
         for (auto& group: *mesh_obj->get_model())
         {
-            triangle_count += group.m->get_indices().size() / 3; 
+            triangle_count += group.m->get_indices().size() / 3;
         }
         dyn_obj_count += mesh_obj->is_static() ? 0:1;
     }
     std::cout << "Number of triangles = " << triangle_count << std::endl;
-    
+
     uint32_t objects_count = sd.s->get_mesh_objects().size();
     std::cout << "\nNumber of objects = " <<  objects_count << std::endl;
     std::cout << "Static objects = " << objects_count - dyn_obj_count << std::endl;

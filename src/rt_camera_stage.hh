@@ -19,6 +19,7 @@ public:
         distribution_params distribution;
         size_t active_viewport_count = 1;
         int samples_per_pixel = 1;
+        int samples_per_pass = 1;
         camera::projection_type projection = camera::PERSPECTIVE;
         bool transparent_background = false;
     };

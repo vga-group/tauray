@@ -1,0 +1,147 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#define TLAS_BINDING 0
+#define SCENE_DATA_BUFFER_BINDING 1
+#define VERTEX_BUFFER_BINDING 2
+#define INDEX_BUFFER_BINDING 3
+#define TEXTURE_ARRAY_BINDING 4
+#define DIRECTIONAL_LIGHT_BUFFER_BINDING 5
+#define POINT_LIGHT_BUFFER_BINDING 6
+#define ENVIRONMENT_MAP_BINDING 7
+#define DISTRIBUTION_DATA_BINDING 8
+#define CAMERA_DATA_BINDING 9
+#define SCENE_METADATA_BUFFER_BINDING 10
+#define SAMPLING_DATA_BINDING 20
+#ifdef NEE_SAMPLE_ENVMAP
+#define ENVIRONMENT_MAP_ALIAS_TABLE_BINDING 21
+#endif
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+#define TRI_LIGHT_BUFFER_BINDING 22
+#endif
+#ifdef USE_COLOR_TARGET
+#define COLOR_TARGET_BINDING 11
+#endif
+#ifdef USE_DIRECT_TARGET
+#define DIRECT_TARGET_BINDING 12
+#endif
+#ifdef USE_DIFFUSE_TARGET
+#define DIFFUSE_TARGET_BINDING 13
+#endif
+#ifdef USE_ALBEDO_TARGET
+#define ALBEDO_TARGET_BINDING 14
+#endif
+#ifdef USE_MATERIAL_TARGET
+#define MATERIAL_TARGET_BINDING 15
+#endif
+#ifdef USE_NORMAL_TARGET
+#define NORMAL_TARGET_BINDING 16
+#endif
+#ifdef USE_POS_TARGET
+#define POS_TARGET_BINDING 17
+#endif
+#ifdef USE_SCREEN_MOTION_TARGET
+#define SCREEN_MOTION_TARGET_BINDING 18
+#endif
+#ifdef USE_INSTANCE_ID_TARGET
+#define INSTANCE_ID_TARGET_BINDING 19
+#endif
+
+layout(push_constant, scalar) uniform push_constant_buffer
+{
+    vec4 environment_factor;
+    uint samples;
+    uint previous_samples;
+    float min_ray_dist;
+    float indirect_clamping;
+    float film_radius;
+    int antialiasing;
+    int environment_proj;
+} control;
+
+#include "path_tracer.glsl"
+
+void evaluate_direct_ray(
+    inout local_sampler lsampler,
+    vec3 pos,
+    vec3 view,
+    out vec3 color,
+    out vec3 diffuse,
+    out pt_vertex_data first_hit_vertex,
+    out sampled_material first_hit_material
+){
+    payload.random_seed = pcg4d(lsampler.rs.seed).x;
+    color = vec3(0);
+    diffuse = vec3(0);
+
+    traceRayEXT(tlas, gl_RayFlagsNoneEXT, 0xFF^0x02, 0, 0, 0, pos, 0.0f, view, RAY_MAX_DIST, 0);
+
+    intersection_pdf nee_pdf;
+    vec3 light;
+    bool terminal = !get_intersection_info(pos, view, first_hit_vertex, nee_pdf, first_hit_material, light);
+
+    color += (light + first_hit_material.emission) * SAMPLES_PER_PASS;
+
+    if(terminal)
+        return;
+
+    mat3 tbn = create_tangent_space(first_hit_vertex.mapped_normal);
+    vec3 shading_view = -view * tbn;
+    if(shading_view.z < 0.00001f)
+        shading_view = vec3(shading_view.xy, max(shading_view.z, 0.00001f));
+    shading_view = normalize(shading_view);
+
+    int ray_sample_index = 0;
+    for(int i = 0; i < SAMPLES_PER_PASS; ++i)
+    {
+        vec3 diffuse_radiance = vec3(0);
+        vec3 specular_radiance = vec3(0);
+        // Do NEE ray
+        next_event_estimation(
+            generate_ray_sample_uint(lsampler, ray_sample_index++), tbn, shading_view,
+            first_hit_material, first_hit_vertex, diffuse_radiance,
+            specular_radiance
+        );
+        color += diffuse_radiance * first_hit_material.albedo.rgb + specular_radiance;
+        diffuse += diffuse_radiance;
+    }
+}
+
+void main()
+{
+    pt_vertex_data first_hit_vertex;
+    sampled_material first_hit_material;
+    local_sampler lsampler = init_local_sampler(
+        uvec4(
+            get_pixel_pos(),
+            gl_LaunchIDEXT.z,
+            control.previous_samples
+        )
+    );
+
+    vec3 origin;
+    vec3 dir;
+    get_world_camera_ray(lsampler, origin, dir);
+
+    vec3 color, diffuse;
+    evaluate_direct_ray(
+        lsampler, origin, dir,
+        color, diffuse, first_hit_vertex, first_hit_material
+    );
+
+    color /= SAMPLES_PER_PASS;
+    diffuse /= SAMPLES_PER_PASS;
+
+    write_all_outputs(
+        color,
+        color,
+        diffuse,
+        first_hit_vertex,
+        first_hit_material
+    );
+}
+
