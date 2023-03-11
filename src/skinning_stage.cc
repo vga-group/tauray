@@ -17,17 +17,17 @@ struct push_constants
 namespace tr
 {
 
-skinning_stage::skinning_stage(device_data& dev, uint32_t max_meshes)
+skinning_stage::skinning_stage(device_data& dev, uint32_t max_instances)
 :   stage(dev),
     comp(dev, {{"shader/skinning.comp"}, {
-        {"source_data", max_meshes},
-        {"skin_data", max_meshes},
-        {"destination_data", max_meshes},
-        {"joint_data", max_meshes}
+        {"source_data", max_instances},
+        {"skin_data", max_instances},
+        {"destination_data", max_instances},
+        {"joint_data", max_instances}
     }}),
     cur_scene(nullptr),
     stage_timer(dev, "skinning"),
-    max_meshes(max_meshes)
+    max_instances(max_instances)
 {
 }
 
@@ -67,10 +67,10 @@ void skinning_stage::set_scene(scene* s)
     clear_commands();
 
     comp.update_descriptor_set({
-        {"source_data", max_meshes},
-        {"destination_data", max_meshes},
-        {"skin_data", max_meshes},
-        {"joint_data", max_meshes}
+        {"source_data", max_instances},
+        {"destination_data", max_instances},
+        {"skin_data", max_instances},
+        {"joint_data", max_instances}
     });
 
     for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -127,10 +127,7 @@ void skinning_stage::set_scene(scene* s)
                 {}, barrier, {}, {}
             );
 
-            // Run BLAS updates
-            for(uint32_t i = 0; i < skinned_models.size(); ++i)
-                for(auto& vg: *skinned_models[i])
-                    vg.m->update_blas(cb, dev->index);
+            cur_scene->refresh_dynamic_acceleration_structures(dev->index, i, cb);
         }
 
         stage_timer.end(cb, i);

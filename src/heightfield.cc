@@ -7,7 +7,6 @@ namespace tr
 heightfield::heightfield(context& ctx, const std::string& path, vec3 scale)
 : mesh(ctx)
 {
-    set_opaque(true);
     std::vector<mesh::vertex>& vertex_data = get_vertices();
     std::vector<uint32_t>& index_data = get_indices();
 

@@ -24,11 +24,11 @@ struct material_buffer
 
 struct instance_buffer
 {
-    uint32_t mesh_id;
     // -1 if not an area light source, otherwise base index to triangle light
     // array.
     int32_t light_base_id;
     int32_t sh_grid_index;
+    uint32_t pad;
     float shadow_terminator_mul;
     pmat4 model;
     pmat4 model_normal;
@@ -177,6 +177,12 @@ struct extract_tri_light_push_constants
     uint32_t instance_id;
 };
 
+struct pre_tranform_push_constants
+{
+    uint32_t vertex_count;
+    uint32_t instance_id;
+};
+
 }
 
 namespace tr
@@ -186,12 +192,18 @@ scene_update_stage::scene_update_stage(device_data& dev, const options& opt)
 :   stage(dev), as_rebuild(true), command_buffers_outdated(true),
     force_instance_refresh_frames(0), cur_scene(nullptr),
     extract_tri_lights(dev, compute_pipeline::params{
-        {"shader/extract_tri_lights.comp"},
+        {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
+            std::map<std::string, std::string>{{"PRE_TRANSFORMED_VERTICES", ""}} :
+            std::map<std::string, std::string>()
+        },
         {
-            {"vertices", (uint32_t)opt.max_meshes},
-            {"indices", (uint32_t)opt.max_meshes}
+            {"vertices", (uint32_t)opt.max_instances},
+            {"indices", (uint32_t)opt.max_instances}
         },
         1
+    }),
+    pre_transform(dev, compute_pipeline::params{
+        {"shader/pre_transform.comp"}, {}, 1, true
     }),
     opt(opt), stage_timer(dev, "scene update")
 {
@@ -253,6 +265,7 @@ void scene_update_stage::update(uint32_t frame_index)
     uint64_t frame_counter = dev->ctx->get_frame_counter();
 
     size_t tri_light_count = 0;
+    size_t vertex_count = 0;
 
     const std::vector<scene::instance>& instances = cur_scene->get_instances();
     sb.scene_data.resize(sizeof(instance_buffer) * instances.size());
@@ -265,6 +278,8 @@ void scene_update_stage::update(uint32_t frame_index)
                 tri_light_count += instances[i].m->get_indices().size() / 3;
             }
             else inst.light_base_id = -1;
+
+            vertex_count += instances[i].m->get_indices().size();
 
             // Skip unchanged instances.
             if(
@@ -282,7 +297,7 @@ void scene_update_stage::update(uint32_t frame_index)
                 !cur_scene->get_sh_grid(model[3], &index)
             ) cur_scene->get_largest_sh_grid(&index);
             inst.sh_grid_index = index;
-            inst.mesh_id = cur_scene->find_mesh_id(instances[i].m);
+            inst.pad = 0;
             inst.shadow_terminator_mul = 1.0f/(
                 1.0f-0.5f * instances[i].o->get_shadow_terminator_offset()
             );
@@ -498,24 +513,6 @@ void scene_update_stage::update(uint32_t frame_index)
 
     if(dev->ctx->is_ray_tracing_supported())
     {
-        auto& as = cur_scene->acceleration_structures[dev->index];
-        auto& f = as.per_frame[frame_index];
-
-        f.instance_count = 0;
-        uint32_t total_max_capacity =
-            cur_scene->mesh_scene::get_max_capacity() +
-            cur_scene->light_scene::get_max_capacity();
-        as.instance_buffer.map<vk::AccelerationStructureInstanceKHR>(
-            frame_index,
-            [&](vk::AccelerationStructureInstanceKHR* as_instances){
-                cur_scene->mesh_scene::add_acceleration_structure_instances(
-                    as_instances, dev->index, frame_index, f.instance_count, total_max_capacity
-                );
-                cur_scene->light_scene::add_acceleration_structure_instances(
-                    as_instances, dev->index, frame_index, f.instance_count, total_max_capacity
-                );
-            }
-        );
         bool need_scene_reset = false;
         cur_scene->light_scene::update_acceleration_structures(
             dev->index,
@@ -529,8 +526,33 @@ void scene_update_stage::update(uint32_t frame_index)
             need_scene_reset,
             command_buffers_outdated
         );
+
+        auto& instance_buffer = cur_scene->tlas->get_instances_buffer(dev->index);
+
+        as_instance_count = 0;
+        uint32_t total_max_capacity =
+            cur_scene->mesh_scene::get_max_capacity() +
+            cur_scene->light_scene::get_max_capacity();
+        instance_buffer.map<vk::AccelerationStructureInstanceKHR>(
+            frame_index,
+            [&](vk::AccelerationStructureInstanceKHR* as_instances){
+                cur_scene->mesh_scene::add_acceleration_structure_instances(
+                    as_instances, dev->index, frame_index, as_instance_count, total_max_capacity
+                );
+                cur_scene->light_scene::add_acceleration_structure_instances(
+                    as_instances, dev->index, frame_index, as_instance_count, total_max_capacity
+                );
+            }
+        );
+
         if(as_rebuild == false)
             as_rebuild = need_scene_reset;
+
+        if(opt.pre_transform_vertices)
+            need_scene_reset |= cur_scene->reserve_pre_transformed_vertices(dev->index, vertex_count);
+        else
+            cur_scene->clear_pre_transformed_vertices(dev->index);
+
         command_buffers_outdated |= need_scene_reset;
     }
 
@@ -547,8 +569,7 @@ void scene_update_stage::record_as_build(
     uint32_t frame_index,
     vk::CommandBuffer cb
 ){
-    auto& as = cur_scene->acceleration_structures[dev->index];
-    auto& f = as.per_frame[frame_index];
+    auto& instance_buffer = cur_scene->tlas->get_instances_buffer(dev->index);
     bool as_update = !as_rebuild;
     cur_scene->mesh_scene::record_acceleration_structure_build(
         cb, dev->index, frame_index, as_update
@@ -558,9 +579,9 @@ void scene_update_stage::record_as_build(
         cb, dev->index, frame_index, as_update
     );
 
-    if(f.instance_count > 0)
+    if(as_instance_count > 0)
     {
-        as.instance_buffer.upload(frame_index, cb);
+        instance_buffer.upload(frame_index, cb);
 
         vk::MemoryBarrier barrier(
             vk::AccessFlagBits::eTransferWrite,
@@ -575,44 +596,7 @@ void scene_update_stage::record_as_build(
         );
     }
 
-    // Barrier to make sure all BLAS's have updated already.
-    vk::MemoryBarrier blas_barrier(
-        vk::AccessFlagBits::eAccelerationStructureWriteKHR,
-        vk::AccessFlagBits::eAccelerationStructureWriteKHR
-    );
-
-    cb.pipelineBarrier(
-        vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-        vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-        {}, blas_barrier, {}, {}
-    );
-
-    vk::AccelerationStructureGeometryKHR tlas_geometry(
-        vk::GeometryTypeKHR::eInstances,
-        vk::AccelerationStructureGeometryInstancesDataKHR{
-            false, as.instance_buffer.get_address()
-        },
-        {}
-    );
-
-    vk::AccelerationStructureBuildGeometryInfoKHR tlas_info(
-        vk::AccelerationStructureTypeKHR::eTopLevel,
-        vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace|
-        vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
-        as_update ? vk::BuildAccelerationStructureModeKHR::eUpdate : vk::BuildAccelerationStructureModeKHR::eBuild,
-        as_update ? as.tlas : vk::AccelerationStructureKHR{},
-        as.tlas,
-        1,
-        &tlas_geometry,
-        nullptr,
-        as.scratch_buffer.get_address()
-    );
-
-    vk::AccelerationStructureBuildRangeInfoKHR build_offset_info(
-        f.instance_count, 0, 0, 0
-    );
-
-    cb.buildAccelerationStructuresKHR({tlas_info}, {&build_offset_info});
+    cur_scene->tlas->rebuild(dev->index, cb, as_instance_count, as_update);
 }
 
 void scene_update_stage::record_command_buffers()
@@ -641,6 +625,8 @@ void scene_update_stage::record_command_buffers()
         if(dev->ctx->is_ray_tracing_supported())
         {
             record_as_build(i, cb);
+            if(opt.pre_transform_vertices)
+                record_pre_transform(cb);
             if(sb.tri_light_data.get_size() != 0)
                 record_tri_light_extraction(cb);
         }
@@ -669,6 +655,48 @@ void scene_update_stage::record_tri_light_extraction(
         extract_tri_lights.push_constants(cb, pc);
         cb.dispatch((pc.triangle_count+255u)/256u, 1, 1);
     }
+}
+
+void scene_update_stage::record_pre_transform(
+    vk::CommandBuffer cb
+){
+    const std::vector<scene::instance>& instances = cur_scene->get_instances();
+    auto& sb = cur_scene->scene_buffers[dev->index];
+    vk::Buffer pre_transformed_vertices = cur_scene->get_pre_transformed_vertices(dev->index);
+    pre_transform.bind(cb);
+    size_t offset = 0;
+    for(size_t i = 0; i < instances.size(); ++i)
+    {
+        const mesh_scene::instance& inst = instances[i];
+
+        pre_tranform_push_constants pc;
+        pc.vertex_count = inst.m->get_vertices().size();
+        pc.instance_id = i;
+
+        size_t bytes = pc.vertex_count * sizeof(mesh::vertex);
+
+        pre_transform.push_descriptors(cb, {
+            {"input_verts", {inst.m->get_vertex_buffer(dev->index), 0, bytes}},
+            {"output_verts", {pre_transformed_vertices, offset, bytes}},
+            {"scene", {*sb.scene_data, 0, VK_WHOLE_SIZE}}
+        });
+
+        pre_transform.push_constants(cb, pc);
+        cb.dispatch((pc.vertex_count+255u)/256u, 1, 1);
+
+        offset += bytes;
+    }
+    cb.pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader,
+        {}, {}, {
+            {
+                vk::AccessFlagBits::eShaderWrite,
+                vk::AccessFlagBits::eShaderRead,
+                {}, {}, pre_transformed_vertices, 0, VK_WHOLE_SIZE
+            },
+        }, {}
+    );
 }
 
 }

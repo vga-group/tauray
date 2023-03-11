@@ -19,25 +19,17 @@ layout(location = 1) rayPayloadInEXT float shadow_visibility;
 void main()
 {
     vec3 view = gl_WorldRayDirectionEXT;
-    material mat = scene.o[gl_InstanceID].mat;
-    float visibility = 0.0f;
+    int instance_id = gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT;
+    material mat = scene.o[instance_id].mat;
 
     vec2 uv;
-    bool back_facing;
-    get_interpolated_vertex_light(view, attribs, gl_InstanceID, gl_PrimitiveID, uv, back_facing);
+    get_interpolated_vertex_light(view, attribs, instance_id, gl_PrimitiveID, uv);
 
-    bool double_sided = mat.emission_factor_double_sided.a > 0.5f;
-    if(!double_sided && back_facing)
-        visibility = 1.0f;
-    else
-    {
-        float alpha = mat.albedo_factor.a;
-        if(mat.albedo_tex_id >= 0)
-            alpha *= texture(textures[nonuniformEXT(mat.albedo_tex_id)], uv).a;
-        visibility = 1.0f-alpha;
-    }
+    float alpha = mat.albedo_factor.a;
+    if(mat.albedo_tex_id >= 0)
+        alpha *= texture(textures[nonuniformEXT(mat.albedo_tex_id)], uv).a;
 
-    shadow_visibility *= visibility;
+    shadow_visibility *= 1.0f-alpha;
     if(shadow_visibility == 0.0f) terminateRayEXT;
     else ignoreIntersectionEXT;
 }

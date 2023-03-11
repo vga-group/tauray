@@ -161,8 +161,7 @@ vk::AccelerationStructureKHR scene::get_acceleration_structure(
         throw std::runtime_error(
             "Trying to use TLAS, but ray tracing is not available!"
         );
-    auto& as = acceleration_structures[device_index];
-    return as.tlas;
+    return *tlas->get_tlas_handle(device_index);
 }
 
 void scene::set_shadow_map_renderer(shadow_map_renderer* smr)
@@ -208,18 +207,8 @@ std::vector<descriptor_state> scene::get_descriptor_info(device_data* dev, int32
     if(ctx->is_ray_tracing_supported())
         tlas = get_acceleration_structure(dev->index);
 
-    const std::vector<std::pair<const mesh*, int>>& meshes =
-        get_meshes();
-    std::vector<vk::DescriptorBufferInfo> dbi_vertex;
-    std::vector<vk::DescriptorBufferInfo> dbi_index;
-    for(size_t i = 0; i < meshes.size(); ++i)
-    {
-        const mesh* m = meshes[i].first;
-        vk::Buffer vertex_buffer = m->get_vertex_buffer(dev->index);
-        vk::Buffer index_buffer = m->get_index_buffer(dev->index);
-        dbi_vertex.push_back({vertex_buffer, 0, VK_WHOLE_SIZE});
-        dbi_index.push_back({index_buffer, 0, VK_WHOLE_SIZE});
-    }
+    std::vector<vk::DescriptorBufferInfo> dbi_vertex = get_vertex_buffer_bindings(dev->index);
+    std::vector<vk::DescriptorBufferInfo> dbi_index = get_index_buffer_bindings(dev->index);
 
     std::vector<descriptor_state> descriptors = {
         {"scene", {*sb.scene_data, 0, VK_WHOLE_SIZE}},
@@ -254,9 +243,7 @@ std::vector<descriptor_state> scene::get_descriptor_info(device_data* dev, int32
 
     if(ctx->is_ray_tracing_supported())
     {
-        descriptors.push_back(
-            {"tlas", {1, acceleration_structures[dev->index].tlas}}
-        );
+        descriptors.push_back({"tlas", {1, this->tlas->get_tlas_handle(dev->index)}});
     }
 
     if(smr)
@@ -336,84 +323,8 @@ void scene::init_acceleration_structures()
 {
     if(!ctx->is_ray_tracing_supported()) return;
 
-    std::vector<device_data>& devices = ctx->get_devices();
-    acceleration_structures.resize(devices.size());
-
-    for(size_t i = 0; i < devices.size(); ++i)
-    {
-        init_tlas(i);
-    }
-}
-
-void scene::init_tlas(size_t i)
-{
-    std::vector<device_data>& devices = ctx->get_devices();
-    auto& as = acceleration_structures[i];
-
     uint32_t total_max_capacity = mesh_scene::get_max_capacity() + light_scene::get_max_capacity();
-    as.instance_buffer = gpu_buffer(
-        devices[i],
-        total_max_capacity * sizeof(VkAccelerationStructureInstanceKHR),
-        vk::BufferUsageFlagBits::eStorageBuffer |
-        vk::BufferUsageFlagBits::eTransferDst |
-        vk::BufferUsageFlagBits::eShaderDeviceAddress|
-        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
-    );
-
-    vk::AccelerationStructureGeometryKHR geom(
-        VULKAN_HPP_NAMESPACE::GeometryTypeKHR::eInstances,
-        vk::AccelerationStructureGeometryInstancesDataKHR{
-            VK_FALSE, as.instance_buffer.get_address()
-        }
-    );
-
-    vk::AccelerationStructureBuildGeometryInfoKHR tlas_info(
-        vk::AccelerationStructureTypeKHR::eTopLevel,
-        vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace|
-        vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
-        vk::BuildAccelerationStructureModeKHR::eBuild,
-        VK_NULL_HANDLE,
-        VK_NULL_HANDLE,
-        1,
-        &geom
-    );
-
-    vk::AccelerationStructureBuildSizesInfoKHR size_info =
-        devices[i].dev.getAccelerationStructureBuildSizesKHR(
-            vk::AccelerationStructureBuildTypeKHR::eDevice, tlas_info, {total_max_capacity}
-        );
-
-    vk::BufferCreateInfo tlas_buffer_info(
-        {}, size_info.accelerationStructureSize,
-        vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR|
-        vk::BufferUsageFlagBits::eShaderDeviceAddress,
-        vk::SharingMode::eExclusive
-    );
-    as.tlas_buffer = create_buffer(devices[i], tlas_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
-
-    vk::AccelerationStructureCreateInfoKHR create_info(
-        {},
-        as.tlas_buffer,
-        {},
-        size_info.accelerationStructureSize,
-        vk::AccelerationStructureTypeKHR::eTopLevel,
-        {}
-    );
-    as.tlas = vkm(devices[i], devices[i].dev.createAccelerationStructureKHR(create_info));
-    tlas_info.dstAccelerationStructure = as.tlas;
-
-    vk::BufferCreateInfo scratch_info(
-        {}, size_info.buildScratchSize,
-        vk::BufferUsageFlagBits::eStorageBuffer|
-        vk::BufferUsageFlagBits::eShaderDeviceAddress,
-        vk::SharingMode::eExclusive
-    );
-
-    as.scratch_buffer = create_buffer_aligned(
-        devices[i], scratch_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-        devices[i].as_props.minAccelerationStructureScratchOffsetAlignment
-    );
-    tlas_info.scratchData = as.scratch_buffer.get_address();
+    tlas.emplace(*ctx, total_max_capacity);
 }
 
 scene::scene_buffer::scene_buffer(device_data& dev)

@@ -1,0 +1,44 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#define SCENE_DATA_BUFFER_BINDING 2
+#include "scene.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(binding = 0, set = 0, scalar) readonly buffer input_vertex_buffer
+{
+    vertex v[];
+} input_verts;
+
+layout(binding = 1, set = 0, scalar) writeonly buffer output_vertex_buffer
+{
+    vertex v[];
+} output_verts;
+
+layout(push_constant, scalar) uniform push_constant_buffer
+{
+    uint vertex_count;
+    uint instance_id;
+} control;
+
+void main()
+{
+    uint i = gl_GlobalInvocationID.x;
+    if(i < control.vertex_count)
+    {
+        instance o = scene.o[control.instance_id];
+        vertex v = input_verts.v[i];
+        v.pos = (o.model * vec4(v.pos, 1)).xyz;
+        v.normal = normalize(mat3(o.model_normal) * v.normal);
+        v.tangent = vec4(normalize(mat3(o.model_normal) * v.tangent.xyz), v.tangent.w);
+        if(determinant(mat3(o.model_normal)) < 0)
+        {
+            v.normal = -v.normal;
+            v.tangent = -v.tangent;
+        }
+        output_verts.v[i] = v;
+    }
+}

@@ -84,6 +84,7 @@ void rt_renderer<Pipeline>::set_scene(scene* s)
     opt.projection = s->get_camera(0)->get_projection_type();
     if(s)
     {
+        s->refresh_instance_cache(true);
         for(size_t i = 0; i < per_device.size(); ++i)
         {
             per_device[i].skinning->set_scene(s);
@@ -252,7 +253,7 @@ void rt_renderer<Pipeline>::init_device_resources(size_t device_index)
 
     per_device_data& r = per_device[device_index];
     r.per_frame.resize(MAX_FRAMES_IN_FLIGHT);
-    r.skinning.reset(new skinning_stage(d, opt.max_meshes));
+    r.skinning.reset(new skinning_stage(d, opt.max_instances));
     r.scene_update.reset(new scene_update_stage(d, opt.scene_options));
     r.dist = get_device_distribution_params(
         ctx->get_size(),

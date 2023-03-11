@@ -160,7 +160,6 @@ void init_ply(
     mat.double_sided = !force_single_sided;
 
     mesh* primitive = new mesh(ctx);
-    primitive->set_opaque(true);
     primitive->get_vertices() = {{}, {}, {}};
     primitive->get_indices() = {0,1,2};
     sg.meshes.emplace_back(primitive);

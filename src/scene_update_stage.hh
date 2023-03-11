@@ -14,8 +14,9 @@ class scene_update_stage: public stage
 public:
     struct options
     {
-        uint32_t max_meshes = 1024;
+        uint32_t max_instances = 1024;
         bool gather_emissive_triangles = false;
+        bool pre_transform_vertices = false;
     };
 
     scene_update_stage(device_data& dev, const options& opt);
@@ -31,11 +32,17 @@ private:
         uint32_t frame_index,
         vk::CommandBuffer cb
     );
+
     void record_tri_light_extraction(
         vk::CommandBuffer cb
     );
 
+    void record_pre_transform(
+        vk::CommandBuffer cb
+    );
+
     bool as_rebuild;
+    size_t as_instance_count;
     bool command_buffers_outdated;
     unsigned force_instance_refresh_frames;
     scene* cur_scene;
@@ -44,6 +51,7 @@ private:
     std::vector<uint8_t> old_camera_data;
 
     compute_pipeline extract_tri_lights;
+    compute_pipeline pre_transform;
 
     options opt;
     timer stage_timer;

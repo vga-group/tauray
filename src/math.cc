@@ -321,4 +321,9 @@ std::vector<vec2> get_camera_jitter_sequence(
     return seq;
 }
 
+size_t hash_combine(size_t a, size_t b)
+{
+    return a ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
+}
+
 }

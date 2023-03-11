@@ -19,42 +19,32 @@ layout(location = 1) rayPayloadInEXT vec3 shadow_transmittance;
 void main()
 {
     vec3 view = gl_WorldRayDirectionEXT;
-    material mat = scene.o[gl_InstanceID].mat;
+    int instance_id = gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT;
+    material mat = scene.o[instance_id].mat;
     vec3 transmittance = vec3(0);
     if(mat.transmittance == 0.0f)
     {// Easy case: no transmittance, only potential alpha.
         vec2 uv;
-        bool back_facing;
-        get_interpolated_vertex_light(view, attribs, gl_InstanceID, gl_PrimitiveID, uv, back_facing);
+        get_interpolated_vertex_light(view, attribs, instance_id, gl_PrimitiveID, uv);
 
         bool double_sided = mat.emission_factor_double_sided.a > 0.5f;
-        if(!double_sided && back_facing)
-            transmittance = vec3(1);
-        else
-        {
-            float alpha = mat.albedo_factor.a;
-            if(mat.albedo_tex_id >= 0)
-                alpha *= texture(textures[nonuniformEXT(mat.albedo_tex_id)], uv).a;
-            transmittance = vec3(1.0f-alpha);
-        }
+        float alpha = mat.albedo_factor.a;
+        if(mat.albedo_tex_id >= 0)
+            alpha *= texture(textures[nonuniformEXT(mat.albedo_tex_id)], uv).a;
+        transmittance = vec3(1.0f-alpha);
     }
     else
     { // Hard case with transmittance & possibly alpha as well.
-        vertex_data v = get_interpolated_vertex(view, attribs, gl_InstanceID, gl_PrimitiveID);
-        sampled_material mat = sample_material(gl_InstanceID, v);
-        if(!mat.double_sided && v.back_facing)
-            transmittance = vec3(1);
-        else
-        {
-            mat3 tbn = create_tangent_space(v.mapped_normal);
-            vec3 refr_dir = refract(
-                view, v.mapped_normal, mat.ior_in/mat.ior_out
-            );
-            vec3 d, s;
-            sharp_btdf(refr_dir * tbn, -view * tbn, mat, d, s);
-            vec3 factor = d;
-            transmittance = mix(vec3(1), factor, mat.albedo.a);
-        }
+        vertex_data v = get_interpolated_vertex(view, attribs, instance_id, gl_PrimitiveID);
+        sampled_material mat = sample_material(instance_id, v);
+        mat3 tbn = create_tangent_space(v.mapped_normal);
+        vec3 refr_dir = refract(
+            view, v.mapped_normal, mat.ior_in/mat.ior_out
+        );
+        vec3 d, s;
+        sharp_btdf(refr_dir * tbn, -view * tbn, mat, d, s);
+        vec3 factor = d;
+        transmittance = mix(vec3(1), factor, mat.albedo.a);
     }
 
     shadow_transmittance *= transmittance;

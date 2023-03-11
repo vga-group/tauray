@@ -10,7 +10,7 @@ layout(location = 0) rayPayloadInEXT hit_payload payload;
 
 void main()
 {
-    payload.instance_id = gl_InstanceID;
+    payload.instance_id = gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT;
     payload.primitive_id = gl_PrimitiveID;
     payload.barycentrics = attribs;
 }

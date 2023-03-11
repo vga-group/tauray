@@ -211,6 +211,7 @@ scene_data load_scenes(context& ctx, const options& opt)
     };
     s.s->set_environment_map(s.sky.get());
     s.s->set_ambient(opt.ambient);
+    s.s->set_blas_strategy(opt.as_strategy);
     for(scene_graph& sg: s.scenes)
     {
         sg.to_scene(*s.s);
@@ -371,15 +372,16 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     }
 
     scene_update_stage::options scene_options;
-    scene_options.max_meshes = s.get_mesh_count();
+    scene_options.max_instances = s.get_instance_count();
     scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles > 0;
+    scene_options.pre_transform_vertices = opt.pre_transform_vertices;
 
     taa_stage::options taa;
     taa.blending_ratio = 1.0f - 1.0f/opt.taa.sequence_length;
 
     rt_camera_stage::options rc_opt;
     rc_opt.projection = s.get_camera()->get_projection_type();
-    rc_opt.max_meshes = s.get_mesh_count();
+    rc_opt.max_instances = s.get_instance_count();
     rc_opt.max_samplers = s.get_sampler_count();
     rc_opt.min_ray_dist = opt.min_ray_dist;
     rc_opt.max_ray_depth = opt.max_ray_depth;
@@ -391,6 +393,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.rng_seed = opt.rng_seed;
     rc_opt.local_sampler = opt.sampler;
     rc_opt.transparent_background = opt.transparent_background;
+    rc_opt.pre_transformed_vertices = opt.pre_transform_vertices;
 
     light_sampling_weights sampling_weights;
     sampling_weights.point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;
@@ -556,7 +559,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rr_opt.pcss_samples = min(opt.pcss, 64);
                 rr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
                 rr_opt.z_pre_pass = opt.use_z_pre_pass;
-                rr_opt.max_skinned_meshes = s.get_mesh_count();
+                rr_opt.max_skinned_meshes = s.get_instance_count();
                 rr_opt.scene_options = scene_options;
                 return new raster_renderer(ctx, rr_opt);
             }
@@ -604,7 +607,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.sh.indirect_clamping = opt.indirect_clamping;
                 dr_opt.sh.regularization_gamma = opt.regularization;
                 dr_opt.sh.sampling_weights = sampling_weights;
-                dr_opt.max_skinned_meshes = s.get_mesh_count();
+                dr_opt.max_skinned_meshes = s.get_instance_count();
                 dr_opt.port_number = opt.port;
                 //dr_opt.scene_options = scene_options;
                 return new dshgi_server(ctx, dr_opt);
@@ -680,8 +683,12 @@ void show_stats(scene_data& sd, options& opt)
 
     std::cout << "\nScene statistics: \n";
 
-    std::cout << "Number of meshes = " << sd.s->get_mesh_count() << std::endl;
+    std::set<const mesh*> meshes;
+    for(const mesh_scene::instance& inst: sd.s->get_instances())
+        meshes.insert(inst.m);
+    std::cout << "Number of unique meshes = " << meshes.size() << std::endl;
     std::cout << "Number of mesh instances = " << sd.s->get_instance_count() << std::endl;
+    std::cout << "Number of BLASes (depends on settings) = " << sd.s->get_blas_group_count() << std::endl;
 
     //Calculating the number of triangles and dynamic objects
     uint32_t triangle_count = 0;
@@ -789,6 +796,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
             {
                 s.set_shadow_map_renderer(nullptr);
                 s.set_sh_grid_textures(nullptr);
+                s.set_blas_strategy(opt.as_strategy);
                 s.set_camera_jitter(get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
                 rr.reset(create_renderer(ctx, opt, s));
                 rr->set_scene(&s);

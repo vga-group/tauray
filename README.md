@@ -3,7 +3,7 @@ Tauray
 
 |![Sponza and lots of teapots rendered in Tauray.](docs/images/teapot_sponza.png)                                                                          |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| The famous "Sponza" scene with teapots. 1920x1080 image (4096 spp, 4 bounces), rendered with Tauray in 18 seconds on a dual-GPU setup with RTX 3090 and RTX 2080 Ti. |
+| The famous "Sponza" scene with teapots. 1920x1080 image (4096 spp, 4 bounces), rendered with Tauray in 15 seconds on a dual-GPU setup with RTX 3090 and RTX 2080 Ti. |
 
 Tauray is a real-time rendering framework, with a focus on distributed computing, scalability,
 portability and low latency. It uses C++17 and Vulkan, primarily relying on the `VK_KHR_ray_tracing`

@@ -14,6 +14,12 @@ layout(binding = DISTRIBUTION_DATA_BINDING, set = 0) uniform distribution_data_b
 } distribution;
 #endif
 
+#ifdef PRE_TRANSFORMED_VERTICES
+#define TRANSFORM_MAT(name, val) val
+#else
+#define TRANSFORM_MAT(name, val) (name * val)
+#endif
+
 // I would prefer this to be INF, but it's hard to write in glsl.
 #define RAY_MAX_DIST float(1e39)
 
@@ -26,13 +32,13 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
 {
     instance o = scene.o[instance_id];
     ivec3 i = ivec3(
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+0],
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+1],
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+2]
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+0],
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+1],
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+2]
     );
-    vertex v0 = vertices[nonuniformEXT(o.mesh_id)].v[i.x];
-    vertex v1 = vertices[nonuniformEXT(o.mesh_id)].v[i.y];
-    vertex v2 = vertices[nonuniformEXT(o.mesh_id)].v[i.z];
+    vertex v0 = vertices[nonuniformEXT(instance_id)].v[i.x];
+    vertex v1 = vertices[nonuniformEXT(instance_id)].v[i.y];
+    vertex v2 = vertices[nonuniformEXT(instance_id)].v[i.z];
 
     vec3 b = vec3(1.0f - barycentrics.x - barycentrics.y, barycentrics);
 
@@ -41,32 +47,38 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
     vertex_data interp;
 
     vec4 model_pos = vec4(v0.pos * b.x + v1.pos * b.y + v2.pos * b.z, 1);
-    interp.pos = (o.model * model_pos).xyz;
+    interp.pos = TRANSFORM_MAT(o.model, model_pos).xyz;
 
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
     if(o.light_base_id >= 0)
     {
         pdf = sample_triangle_light_pdf(
             interp.pos - pos,
-            (o.model * vec4(v0.pos, 1)).xyz - pos,
-            (o.model * vec4(v1.pos, 1)).xyz - pos,
-            (o.model * vec4(v2.pos, 1)).xyz - pos
+            TRANSFORM_MAT(o.model, vec4(v0.pos, 1)).xyz - pos,
+            TRANSFORM_MAT(o.model, vec4(v1.pos, 1)).xyz - pos,
+            TRANSFORM_MAT(o.model, vec4(v2.pos, 1)).xyz - pos
         );
     }
     else pdf = 0.0f;
 #endif
 
 #ifdef CALC_PREV_VERTEX_POS
+#ifdef PRE_TRANSFORMED_VERTICES
+    interp.prev_pos = (o.model_prev * inverse(o.model) * model_pos).xyz;
+#else
     interp.prev_pos = (o.model_prev * model_pos).xyz;
 #endif
-    interp.smooth_normal = normalize(mat3(o.model_normal) *
-        (v0.normal * b.x + v1.normal * b.y + v2.normal * b.z));
-    interp.tangent = normalize(mat3(o.model_normal) * avg_tangent.xyz);
+#endif
+    interp.smooth_normal = normalize(TRANSFORM_MAT(
+        mat3(o.model_normal),
+        (v0.normal * b.x + v1.normal * b.y + v2.normal * b.z)
+    ));
+    interp.tangent = normalize(TRANSFORM_MAT(mat3(o.model_normal), avg_tangent.xyz));
     interp.bitangent = normalize(cross(interp.smooth_normal, interp.tangent) * avg_tangent.w);
     interp.uv = v0.uv * b.x + v1.uv * b.y + v2.uv * b.z;
 
     // Flip normal if back-facing triangle
-    interp.hard_normal = normalize(mat3(o.model_normal) * cross(v1.pos-v0.pos, v2.pos-v0.pos));
+    interp.hard_normal = normalize(TRANSFORM_MAT(mat3(o.model_normal), cross(v1.pos-v0.pos, v2.pos-v0.pos)));
     interp.back_facing = dot(interp.hard_normal, view) > 0;
     if(interp.back_facing)
     {
@@ -80,23 +92,20 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
     return interp;
 }
 
-void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, out vec2 uv, out bool back_facing)
+void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, out vec2 uv)
 {
     instance o = scene.o[instance_id];
     ivec3 i = ivec3(
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+0],
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+1],
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+2]
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+0],
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+1],
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+2]
     );
-    vertex v0 = vertices[nonuniformEXT(o.mesh_id)].v[i.x];
-    vertex v1 = vertices[nonuniformEXT(o.mesh_id)].v[i.y];
-    vertex v2 = vertices[nonuniformEXT(o.mesh_id)].v[i.z];
+    vertex v0 = vertices[nonuniformEXT(instance_id)].v[i.x];
+    vertex v1 = vertices[nonuniformEXT(instance_id)].v[i.y];
+    vertex v2 = vertices[nonuniformEXT(instance_id)].v[i.z];
 
     vec3 b = vec3(1.0f - barycentrics.x - barycentrics.y, barycentrics);
     uv = v0.uv * b.x + v1.uv * b.y + v2.uv * b.z;
-
-    vec3 hard_normal = mat3(o.model_normal) * normalize(cross(v1.pos-v0.pos, v2.pos-v0.pos));
-    back_facing = dot(hard_normal, view) > 0;
 }
 
 sampled_material sample_material(int instance_id, inout vertex_data v)
@@ -108,15 +117,14 @@ sampled_material sample_material(int instance_id, inout vertex_data v)
     return res;
 }
 
-bool is_material_skippable(int instance_id, vec2 uv, bool back_facing, float alpha_cutoff)
+bool is_material_skippable(int instance_id, vec2 uv, float alpha_cutoff)
 {
     material mat = scene.o[instance_id].mat;
     vec4 albedo = mat.albedo_factor;
     if(mat.albedo_tex_id >= 0)
         albedo *= texture(textures[nonuniformEXT(mat.albedo_tex_id)], uv);
 
-    bool double_sided = mat.emission_factor_double_sided.a > 0.5f;
-    return (albedo.a <= alpha_cutoff) || (back_facing && !double_sided);
+    return (albedo.a <= alpha_cutoff);
 }
 
 #endif

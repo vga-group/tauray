@@ -1,12 +1,21 @@
 #ifndef TAURAY_MESH_SCENE_HH
 #define TAURAY_MESH_SCENE_HH
 #include "mesh.hh"
+#include "acceleration_structure.hh"
 #include "mesh_object.hh"
 #include "timer.hh"
 #include <unordered_map>
 
 namespace tr
 {
+
+enum class blas_strategy
+{
+    PER_MATERIAL,
+    PER_MODEL,
+    STATIC_MERGED_DYNAMIC_PER_MODEL,
+    ALL_MERGED_STATIC
+};
 
 class mesh_scene
 {
@@ -20,12 +29,9 @@ public:
     void remove(mesh_object& o);
     void clear_mesh_objects();
     const std::vector<mesh_object*>& get_mesh_objects() const;
-    const std::vector<std::pair<const mesh*, int>>& get_meshes() const;
     size_t get_instance_count() const;
     // This can be very slow!
     size_t get_sampler_count() const;
-    size_t get_mesh_count() const;
-    unsigned find_mesh_id(const mesh* m) const;
 
     struct instance
     {
@@ -43,6 +49,25 @@ public:
     // will update anyway.
     void refresh_instance_cache(bool force = false);
     const std::vector<instance>& get_instances() const;
+
+    bool reserve_pre_transformed_vertices(size_t device_index, size_t max_vertex_count);
+    void clear_pre_transformed_vertices(size_t device_index);
+    vk::Buffer get_pre_transformed_vertices(size_t device_index);
+
+    std::vector<vk::DescriptorBufferInfo> get_vertex_buffer_bindings(
+        size_t device_index
+    ) const;
+    std::vector<vk::DescriptorBufferInfo> get_index_buffer_bindings(
+        size_t device_index
+    ) const;
+
+    void set_blas_strategy(blas_strategy strat);
+    size_t get_blas_group_count() const;
+    void refresh_dynamic_acceleration_structures(
+        size_t device_index,
+        size_t frame_index,
+        vk::CommandBuffer cmd
+    );
 
 protected:
     template<typename F>
@@ -80,21 +105,27 @@ protected:
     ) const;
 
 private:
-    void invalidate_acceleration_structures();
-    void invalidate_mesh_ids();
-    std::vector<std::pair<const mesh*, int>>::iterator find_mesh(const mesh* m);
+    void invalidate_tlas();
+    void ensure_blas();
+    void assign_group_cache(
+        uint64_t id,
+        bool static_mesh,
+        bool static_transformable,
+        size_t object_index,
+        size_t& last_object_index
+    );
 
     context* ctx;
     size_t max_capacity;
     std::vector<mesh_object*> objects;
-    std::vector<std::pair<const mesh*, int/*count*/>> meshes;
-    mutable std::unordered_map<const mesh*, unsigned> mesh_ids;
 
-    // The meshes contain the acceleration structures themselves, so we only
-    // have to track scene & command buffer validity!
-    struct acceleration_structure_data
+    // We have to track scene & command buffer validity! So that's what this
+    // struct is for.
+    struct as_update_data
     {
-        bool scene_reset_needed = true;
+        bool tlas_reset_needed = true;
+        uint32_t pre_transformed_vertex_count = 0;
+        vkm<vk::Buffer> pre_transformed_vertices;
 
         struct per_frame_data
         {
@@ -102,8 +133,24 @@ private:
         };
         per_frame_data per_frame[MAX_FRAMES_IN_FLIGHT];
     };
-    std::vector<acceleration_structure_data> acceleration_structures;
+
+    // For acceleration structures, instances are grouped by which ones go into
+    // the same BLAS. If two groups share the same ID, they will have the same
+    // acceleration structure as well, but are inserted as separate TLAS
+    // instances still.
+    struct instance_group
+    {
+        uint64_t id = 0;
+        size_t size = 0;
+        bool static_mesh = false;
+        bool static_transformable = false;
+    };
+
+    std::vector<as_update_data> as_update;
+    std::unordered_map<uint64_t, bottom_level_acceleration_structure> blas_cache;
     std::vector<instance> instance_cache;
+    std::vector<instance_group> group_cache;
+    blas_strategy group_strategy;
     uint64_t instance_cache_frame;
 };
 

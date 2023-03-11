@@ -39,9 +39,10 @@ struct combined_tex_sampler_hash
 {
     size_t operator()(const combined_tex_sampler & v) const
     {
-        size_t a = std::hash<const texture*>()(v.first);
-        size_t b = std::hash<const sampler*>()(v.second);
-        return a ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
+        return hash_combine(
+            std::hash<const texture*>()(v.first),
+            std::hash<const sampler*>()(v.second)
+        );
     }
 };
 

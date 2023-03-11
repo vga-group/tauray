@@ -5,6 +5,7 @@
 #include "timer.hh"
 #include "sampler_table.hh"
 #include "descriptor_state.hh"
+#include "acceleration_structure.hh"
 
 namespace tr
 {
@@ -81,7 +82,6 @@ private:
     friend class scene_update_stage;
 
     void init_acceleration_structures();
-    void init_tlas(size_t device_index);
 
     context* ctx;
     std::vector<camera*> cameras;
@@ -116,20 +116,7 @@ private:
     };
     std::vector<scene_buffer> scene_buffers;
 
-    struct acceleration_structure_data
-    {
-        vkm<vk::AccelerationStructureKHR> tlas;
-        vkm<vk::Buffer> tlas_buffer;
-        vkm<vk::Buffer> scratch_buffer;
-        gpu_buffer instance_buffer;
-
-        struct per_frame_data
-        {
-            size_t instance_count;
-        };
-        per_frame_data per_frame[MAX_FRAMES_IN_FLIGHT];
-    };
-    std::vector<acceleration_structure_data> acceleration_structures;
+    std::optional<top_level_acceleration_structure> tlas;
 };
 
 std::vector<uint32_t> get_viewport_reorder_mask(

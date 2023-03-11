@@ -32,9 +32,9 @@ struct vertex_data
 
 struct instance
 {
-    uint mesh_id;
     int light_base_id;
     int sh_grid_index;
+    uint pad;
     float shadow_terminator_mul;
     mat4 model;
     mat4 model_normal;

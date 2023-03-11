@@ -42,7 +42,7 @@ namespace feature
             feature = "vec4(get_camera_projection(prev_cam, v.prev_pos), 0, 1)";
             break;
         case feature_stage::INSTANCE_ID:
-            feature = "vec4(gl_InstanceID, gl_PrimitiveID, scene.o[gl_InstanceID].mesh_id, 1)";
+            feature = "vec4(gl_InstanceID, gl_PrimitiveID, 0, 1)";
             break;
         }
         std::map<std::string, std::string> defines;

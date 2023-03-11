@@ -36,8 +36,8 @@ gfx_pipeline::pipeline_state rt_stage::get_common_state(
         viewport,
         src,
         {
-            {"vertices", (uint32_t)opt.max_meshes},
-            {"indices", (uint32_t)opt.max_meshes},
+            {"vertices", (uint32_t)opt.max_instances},
+            {"indices", (uint32_t)opt.max_instances},
             {"textures", (uint32_t)opt.max_samplers},
         },
         mesh::get_bindings(),
@@ -68,6 +68,9 @@ void rt_stage::get_common_defines(
     default:
         break;
     }
+
+    if(opt.pre_transformed_vertices)
+        defines["PRE_TRANSFORMED_VERTICES"];
 }
 
 rt_stage::rt_stage(
@@ -95,7 +98,7 @@ rt_stage::rt_stage(
 void rt_stage::set_scene(scene* s)
 {
     cur_scene = s;
-    if(s->get_meshes().size() > opt.max_meshes)
+    if(s->get_instance_count() > opt.max_instances)
         throw std::runtime_error(
             "The scene has more meshes than this pipeline can support!"
         );
@@ -139,8 +142,8 @@ void rt_stage::init_resources()
     // Init descriptor set references to some placeholder value to silence
     // the validation layer (these should never actually be accessed)
     gfx.update_descriptor_set({
-        {"vertices", opt.max_meshes},
-        {"indices", opt.max_meshes},
+        {"vertices", opt.max_instances},
+        {"indices", opt.max_instances},
         {"textures", opt.max_samplers}
     });
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)

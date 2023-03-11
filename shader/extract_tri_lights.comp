@@ -30,16 +30,22 @@ void main()
         light.emission_factor = o.mat.emission_factor_double_sided.rgb;
 
         ivec3 i = ivec3(
-            indices[nonuniformEXT(o.mesh_id)].i[3*input_index+0],
-            indices[nonuniformEXT(o.mesh_id)].i[3*input_index+1],
-            indices[nonuniformEXT(o.mesh_id)].i[3*input_index+2]
+            indices[nonuniformEXT(control.instance_id)].i[3*input_index+0],
+            indices[nonuniformEXT(control.instance_id)].i[3*input_index+1],
+            indices[nonuniformEXT(control.instance_id)].i[3*input_index+2]
         );
-        vertex v0 = vertices[nonuniformEXT(o.mesh_id)].v[i.x];
-        vertex v1 = vertices[nonuniformEXT(o.mesh_id)].v[i.y];
-        vertex v2 = vertices[nonuniformEXT(o.mesh_id)].v[i.z];
+        vertex v0 = vertices[nonuniformEXT(control.instance_id)].v[i.x];
+        vertex v1 = vertices[nonuniformEXT(control.instance_id)].v[i.y];
+        vertex v2 = vertices[nonuniformEXT(control.instance_id)].v[i.z];
+#ifdef PRE_TRANSFORMED_VERTICES
+        light.pos[0] = v0.pos;
+        light.pos[1] = v1.pos;
+        light.pos[2] = v2.pos;
+#else
         light.pos[0] = (o.model * vec4(v0.pos, 1)).xyz;
         light.pos[1] = (o.model * vec4(v1.pos, 1)).xyz;
         light.pos[2] = (o.model * vec4(v2.pos, 1)).xyz;
+#endif
         light.uv[0] = v0.uv;
         light.uv[1] = v1.uv;
         light.uv[2] = v2.uv;
