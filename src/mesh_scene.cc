@@ -408,6 +408,8 @@ void mesh_scene::invalidate_tlas()
 
 void mesh_scene::ensure_blas()
 {
+    if(!ctx->is_ray_tracing_supported())
+        return;
     // Goes through all groups and ensures they have valid BLASes.
     size_t offset = 0;
     std::vector<bottom_level_acceleration_structure::entry> entries;
