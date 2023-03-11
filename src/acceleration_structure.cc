@@ -83,11 +83,11 @@ void bottom_level_acceleration_structure::rebuild(
             vk::GeometryTypeKHR::eTriangles,
             vk::AccelerationStructureGeometryTrianglesDataKHR(
                 vk::Format::eR32G32B32Sfloat,
-                dev.dev.getBufferAddress({m->get_vertex_buffer(i)}),
+                dev.dev.getBufferAddress({m->get_vertex_buffer(device_index)}),
                 sizeof(mesh::vertex),
                 m->get_vertices().size()-1,
                 vk::IndexType::eUint32,
-                dev.dev.getBufferAddress({m->get_index_buffer(i)}),
+                dev.dev.getBufferAddress({m->get_index_buffer(device_index)}),
                 transform_address
             ),
             (entries[i].opaque ?
