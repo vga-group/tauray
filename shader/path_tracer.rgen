@@ -95,7 +95,11 @@ void main()
     vec3 sum_color = vec3(0);
     vec3 sum_direct = vec3(0);
     vec3 sum_diffuse = vec3(0);
+#if SAMPLES_PER_PASS != 1
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
+#else
+    const int i = 0;
+#endif
     {
         local_sampler lsampler = init_local_sampler(
             uvec4(
