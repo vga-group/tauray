@@ -478,6 +478,12 @@
         "Shows the scene stats including triangles count, static and dynamic objects count, texture count, and the number of light sources.", \
         false \
     ) \
+    TR_BOOL_OPT(pre_transform_vertices, \
+        "Pre-calculate transformed vertices into a separate buffer." \
+        "Increases memory usage, but speeds up multi-bounce path tracing " \
+        "performance.", \
+        false \
+    )
 //==============================================================================
 // END OF OPTIONS
 //==============================================================================

@@ -208,13 +208,12 @@ std::vector<descriptor_state> scene::get_descriptor_info(device_data* dev, int32
     if(ctx->is_ray_tracing_supported())
         tlas = get_acceleration_structure(dev->index);
 
-    const std::vector<std::pair<const mesh*, int>>& meshes =
-        get_meshes();
+    const std::vector<instance>& instances = get_instances();
     std::vector<vk::DescriptorBufferInfo> dbi_vertex;
     std::vector<vk::DescriptorBufferInfo> dbi_index;
-    for(size_t i = 0; i < meshes.size(); ++i)
+    for(size_t i = 0; i < instances.size(); ++i)
     {
-        const mesh* m = meshes[i].first;
+        const mesh* m = instances[i].m;
         vk::Buffer vertex_buffer = m->get_vertex_buffer(dev->index);
         vk::Buffer index_buffer = m->get_index_buffer(dev->index);
         dbi_vertex.push_back({vertex_buffer, 0, VK_WHOLE_SIZE});

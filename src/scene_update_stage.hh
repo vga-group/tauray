@@ -14,7 +14,7 @@ class scene_update_stage: public stage
 public:
     struct options
     {
-        uint32_t max_meshes = 1024;
+        uint32_t max_instances = 1024;
         bool gather_emissive_triangles = false;
     };
 

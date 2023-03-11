@@ -27,7 +27,7 @@ public:
 
     struct options
     {
-        size_t max_meshes = 1024;
+        size_t max_instances = 1024;
         size_t max_samplers = 128;
 
         int max_ray_depth = 8;

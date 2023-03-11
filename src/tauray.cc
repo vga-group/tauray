@@ -371,7 +371,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     }
 
     scene_update_stage::options scene_options;
-    scene_options.max_meshes = s.get_mesh_count();
+    scene_options.max_instances = s.get_instance_count();
     scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles > 0;
 
     taa_stage::options taa;
@@ -379,7 +379,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     rt_camera_stage::options rc_opt;
     rc_opt.projection = s.get_camera()->get_projection_type();
-    rc_opt.max_meshes = s.get_mesh_count();
+    rc_opt.max_instances = s.get_instance_count();
     rc_opt.max_samplers = s.get_sampler_count();
     rc_opt.min_ray_dist = opt.min_ray_dist;
     rc_opt.max_ray_depth = opt.max_ray_depth;
@@ -556,7 +556,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rr_opt.pcss_samples = min(opt.pcss, 64);
                 rr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
                 rr_opt.z_pre_pass = opt.use_z_pre_pass;
-                rr_opt.max_skinned_meshes = s.get_mesh_count();
+                rr_opt.max_skinned_meshes = s.get_instance_count();
                 rr_opt.scene_options = scene_options;
                 return new raster_renderer(ctx, rr_opt);
             }
@@ -604,7 +604,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.sh.indirect_clamping = opt.indirect_clamping;
                 dr_opt.sh.regularization_gamma = opt.regularization;
                 dr_opt.sh.sampling_weights = sampling_weights;
-                dr_opt.max_skinned_meshes = s.get_mesh_count();
+                dr_opt.max_skinned_meshes = s.get_instance_count();
                 dr_opt.port_number = opt.port;
                 //dr_opt.scene_options = scene_options;
                 return new dshgi_server(ctx, dr_opt);
@@ -680,7 +680,10 @@ void show_stats(scene_data& sd, options& opt)
 
     std::cout << "\nScene statistics: \n";
 
-    std::cout << "Number of meshes = " << sd.s->get_mesh_count() << std::endl;
+    std::set<const mesh*> meshes;
+    for(const mesh_scene::instance& inst: sd.s->get_instances())
+        meshes.insert(inst.m);
+    std::cout << "Number of unique meshes = " << meshes.size() << std::endl;
     std::cout << "Number of mesh instances = " << sd.s->get_instance_count() << std::endl;
 
     //Calculating the number of triangles and dynamic objects

@@ -26,13 +26,13 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
 {
     instance o = scene.o[instance_id];
     ivec3 i = ivec3(
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+0],
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+1],
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+2]
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+0],
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+1],
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+2]
     );
-    vertex v0 = vertices[nonuniformEXT(o.mesh_id)].v[i.x];
-    vertex v1 = vertices[nonuniformEXT(o.mesh_id)].v[i.y];
-    vertex v2 = vertices[nonuniformEXT(o.mesh_id)].v[i.z];
+    vertex v0 = vertices[nonuniformEXT(instance_id)].v[i.x];
+    vertex v1 = vertices[nonuniformEXT(instance_id)].v[i.y];
+    vertex v2 = vertices[nonuniformEXT(instance_id)].v[i.z];
 
     vec3 b = vec3(1.0f - barycentrics.x - barycentrics.y, barycentrics);
 
@@ -84,13 +84,13 @@ void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id
 {
     instance o = scene.o[instance_id];
     ivec3 i = ivec3(
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+0],
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+1],
-        indices[nonuniformEXT(o.mesh_id)].i[3*primitive_id+2]
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+0],
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+1],
+        indices[nonuniformEXT(instance_id)].i[3*primitive_id+2]
     );
-    vertex v0 = vertices[nonuniformEXT(o.mesh_id)].v[i.x];
-    vertex v1 = vertices[nonuniformEXT(o.mesh_id)].v[i.y];
-    vertex v2 = vertices[nonuniformEXT(o.mesh_id)].v[i.z];
+    vertex v0 = vertices[nonuniformEXT(instance_id)].v[i.x];
+    vertex v1 = vertices[nonuniformEXT(instance_id)].v[i.y];
+    vertex v2 = vertices[nonuniformEXT(instance_id)].v[i.z];
 
     vec3 b = vec3(1.0f - barycentrics.x - barycentrics.y, barycentrics);
     uv = v0.uv * b.x + v1.uv * b.y + v2.uv * b.z;

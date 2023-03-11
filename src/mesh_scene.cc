@@ -19,42 +19,24 @@ mesh_scene::~mesh_scene()
 void mesh_scene::add(mesh_object& o)
 {
     sorted_insert(objects, &o);
-    const model* m = o.get_model();
-    if(m) for(const auto& vg: *m) find_mesh(vg.m)->second++;
-    invalidate_mesh_ids();
     invalidate_acceleration_structures();
 }
 
 void mesh_scene::remove(mesh_object& o)
 {
     sorted_erase(objects, &o);
-    const model* m = o.get_model();
-    if(m) for(const auto& vg: *m)
-    {
-        auto it = find_mesh(vg.m);
-        it->second--;
-        if(it->second <= 0)
-            meshes.erase(it);
-    }
-    invalidate_mesh_ids();
     invalidate_acceleration_structures();
 }
 
 void mesh_scene::clear_mesh_objects()
 {
     objects.clear();
-    invalidate_mesh_ids();
     invalidate_acceleration_structures();
 }
 
 const std::vector<mesh_object*>& mesh_scene::get_mesh_objects() const
 {
     return objects;
-}
-
-const std::vector<std::pair<const mesh*, int>>& mesh_scene::get_meshes() const
-{
-    return meshes;
 }
 
 size_t mesh_scene::get_instance_count() const
@@ -90,26 +72,6 @@ size_t mesh_scene::get_sampler_count() const
         }
     }
     return samplers.size();
-}
-
-size_t mesh_scene::get_mesh_count() const
-{
-    return meshes.size();
-}
-
-unsigned mesh_scene::find_mesh_id(const mesh* m) const
-{
-    if(mesh_ids.size() != meshes.size())
-    {
-        mesh_ids.clear();
-        for(unsigned i = 0; i < meshes.size(); ++i)
-            mesh_ids[meshes[i].first] = i;
-    }
-
-    auto it = mesh_ids.find(m);
-    if(it == mesh_ids.end())
-        throw std::runtime_error("Mesh instance is not from this scene!");
-    return it->second;
 }
 
 size_t mesh_scene::get_max_capacity() const
@@ -254,25 +216,6 @@ void mesh_scene::invalidate_acceleration_structures()
         for(auto& f: as.per_frame)
             f.command_buffers_outdated = true;
     }
-}
-
-void mesh_scene::invalidate_mesh_ids()
-{
-    mesh_ids.clear();
-}
-
-std::vector<std::pair<const mesh*, int>>::iterator mesh_scene::find_mesh(const mesh* m)
-{
-    auto it = std::lower_bound(
-        meshes.begin(), meshes.end(), m,
-        [](const std::pair<const mesh*, int>& a, const mesh* b)
-        {
-            return a.first < b;
-        }
-    );
-    if(it == meshes.end() || it->first != m)
-        return meshes.insert(it, {m, 0});
-    return it;
 }
 
 }

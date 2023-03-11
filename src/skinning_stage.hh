@@ -15,7 +15,7 @@ class scene;
 class skinning_stage: public stage
 {
 public:
-    skinning_stage(device_data& dev, uint32_t max_meshes);
+    skinning_stage(device_data& dev, uint32_t max_instances);
 
     void set_scene(scene* s);
     scene* get_scene();
@@ -26,7 +26,7 @@ private:
     compute_pipeline comp;
     scene* cur_scene;
     timer stage_timer;
-    uint32_t max_meshes;
+    uint32_t max_instances;
 };
 
 }

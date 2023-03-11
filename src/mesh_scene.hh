@@ -20,12 +20,9 @@ public:
     void remove(mesh_object& o);
     void clear_mesh_objects();
     const std::vector<mesh_object*>& get_mesh_objects() const;
-    const std::vector<std::pair<const mesh*, int>>& get_meshes() const;
     size_t get_instance_count() const;
     // This can be very slow!
     size_t get_sampler_count() const;
-    size_t get_mesh_count() const;
-    unsigned find_mesh_id(const mesh* m) const;
 
     struct instance
     {
@@ -81,20 +78,17 @@ protected:
 
 private:
     void invalidate_acceleration_structures();
-    void invalidate_mesh_ids();
-    std::vector<std::pair<const mesh*, int>>::iterator find_mesh(const mesh* m);
 
     context* ctx;
     size_t max_capacity;
     std::vector<mesh_object*> objects;
-    std::vector<std::pair<const mesh*, int/*count*/>> meshes;
-    mutable std::unordered_map<const mesh*, unsigned> mesh_ids;
 
     // The meshes contain the acceleration structures themselves, so we only
     // have to track scene & command buffer validity!
     struct acceleration_structure_data
     {
         bool scene_reset_needed = true;
+        vkm<vk::Buffer> pre_transformed_vertices;
 
         struct per_frame_data
         {

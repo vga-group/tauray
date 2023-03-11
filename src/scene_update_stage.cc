@@ -24,11 +24,11 @@ struct material_buffer
 
 struct instance_buffer
 {
-    uint32_t mesh_id;
     // -1 if not an area light source, otherwise base index to triangle light
     // array.
     int32_t light_base_id;
     int32_t sh_grid_index;
+    uint32_t pad;
     float shadow_terminator_mul;
     pmat4 model;
     pmat4 model_normal;
@@ -188,8 +188,8 @@ scene_update_stage::scene_update_stage(device_data& dev, const options& opt)
     extract_tri_lights(dev, compute_pipeline::params{
         {"shader/extract_tri_lights.comp"},
         {
-            {"vertices", (uint32_t)opt.max_meshes},
-            {"indices", (uint32_t)opt.max_meshes}
+            {"vertices", (uint32_t)opt.max_instances},
+            {"indices", (uint32_t)opt.max_instances}
         },
         1
     }),
@@ -282,7 +282,7 @@ void scene_update_stage::update(uint32_t frame_index)
                 !cur_scene->get_sh_grid(model[3], &index)
             ) cur_scene->get_largest_sh_grid(&index);
             inst.sh_grid_index = index;
-            inst.mesh_id = cur_scene->find_mesh_id(instances[i].m);
+            inst.pad = 0;
             inst.shadow_terminator_mul = 1.0f/(
                 1.0f-0.5f * instances[i].o->get_shadow_terminator_offset()
             );

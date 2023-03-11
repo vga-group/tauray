@@ -252,7 +252,7 @@ void rt_renderer<Pipeline>::init_device_resources(size_t device_index)
 
     per_device_data& r = per_device[device_index];
     r.per_frame.resize(MAX_FRAMES_IN_FLIGHT);
-    r.skinning.reset(new skinning_stage(d, opt.max_meshes));
+    r.skinning.reset(new skinning_stage(d, opt.max_instances));
     r.scene_update.reset(new scene_update_stage(d, opt.scene_options));
     r.dist = get_device_distribution_params(
         ctx->get_size(),
