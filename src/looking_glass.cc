@@ -1,5 +1,6 @@
 #include "looking_glass.hh"
 #include "misc.hh"
+#include "log.hh"
 #include "camera.hh"
 #include <iostream>
 #include <nng/nng.h>
@@ -204,30 +205,25 @@ void looking_glass::get_lkg_metadata()
     nng_dialer_close(dialer);
     nng_close(sock);
 
-    std::cout
-        << "Using " << metadata.hardware_id << " ("
-        << metadata.hardware_version << ")" << std::endl;
+    TR_LOG("Using ", metadata.hardware_id, " (", metadata.hardware_version, ")");
 
-    /*
-    std::cout
-        << "dpi: " << metadata.dpi << "\n"
-        << "center: " << metadata.center << "\n"
-        << "pitch: " << metadata.pitch << "\n"
-        << "corrected_pitch: " << metadata.corrected_pitch << "\n"
-        << "size.x: " << metadata.size.x << "\n"
-        << "size.y: " << metadata.size.y << "\n"
-        << "slope: " << metadata.slope << "\n"
-        << "tilt: " << metadata.tilt << "\n"
-        << "vertical_angle: " << metadata.vertical_angle << "\n"
-        << "view_cone: " << metadata.view_cone << "\n"
-        << "quilt_aspect: " << metadata.quilt_aspect << "\n"
-        << "quilt_size.x: " << metadata.quilt_size.x << "\n"
-        << "quilt_size.y: " << metadata.quilt_size.y << "\n"
-        << "tile_count.x: " << metadata.tile_count.x << "\n"
-        << "tile_count.y: " << metadata.tile_count.y << "\n"
-        << "window_coords.x: " << metadata.window_coords.x << "\n"
-        << "window_coords.y: " << metadata.window_coords.y << "\n";
-        */
+    TR_DBG("dpi: ", metadata.dpi);
+    TR_DBG("center: ", metadata.center);
+    TR_DBG("pitch: ", metadata.pitch);
+    TR_DBG("corrected_pitch: ", metadata.corrected_pitch);
+    TR_DBG("size.x: ", metadata.size.x);
+    TR_DBG("size.y: ", metadata.size.y);
+    TR_DBG("slope: ", metadata.slope);
+    TR_DBG("tilt: ", metadata.tilt);
+    TR_DBG("vertical_angle: ", metadata.vertical_angle);
+    TR_DBG("view_cone: ", metadata.view_cone);
+    TR_DBG("quilt_aspect: ", metadata.quilt_aspect);
+    TR_DBG("quilt_size.x: ", metadata.quilt_size.x);
+    TR_DBG("quilt_size.y: ", metadata.quilt_size.y);
+    TR_DBG("tile_count.x: ", metadata.tile_count.x);
+    TR_DBG("tile_count.y: ", metadata.tile_count.y);
+    TR_DBG("window_coords.x: ", metadata.window_coords.x);
+    TR_DBG("window_coords.y: ", metadata.window_coords.y);
 
     if(error.size() != 0)
         throw std::runtime_error(error);
@@ -360,10 +356,11 @@ void looking_glass::init_swapchain()
         }
     }
     if(!found_format)
-        std::cerr <<
+        TR_ERR(
             "Could not find any suitable swap chain format!"
             "Using the first available format instead, results may look "
-            "incorrect.\n";
+            "incorrect."
+        );
     image_format = swapchain_format.format;
     expected_image_layout = vk::ImageLayout::eGeneral;
 
@@ -409,9 +406,10 @@ void looking_glass::init_swapchain()
         }
     }
     if(!found_mode)
-        std::cerr <<
+        TR_ERR(
             "Could not find desired present mode, falling back to first "
-            "available mode.\n";
+            "available mode."
+        );
 
     // Find the size that matches our looking_glass size
     vk::SurfaceCapabilitiesKHR caps =
@@ -561,7 +559,7 @@ void looking_glass::init_render_target()
         ));
     } catch(std::runtime_error& err)
     {
-        printf("%s\n", err.what());
+        TR_ERR(err.what());
         std::abort();
     }
 }

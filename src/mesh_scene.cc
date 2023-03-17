@@ -1,5 +1,6 @@
 #include "mesh_scene.hh"
 #include "misc.hh"
+#include "log.hh"
 #include <unordered_set>
 
 namespace tr
@@ -410,6 +411,7 @@ void mesh_scene::ensure_blas()
 {
     if(!ctx->is_ray_tracing_supported())
         return;
+    bool built_one = false;
     // Goes through all groups and ensures they have valid BLASes.
     size_t offset = 0;
     std::vector<bottom_level_acceleration_structure::entry> entries;
@@ -421,6 +423,11 @@ void mesh_scene::ensure_blas()
             offset += group.size;
             continue;
         }
+
+        if(!built_one)
+            TR_LOG("Building acceleration structures");
+
+        built_one = true;
 
         entries.clear();
         bool double_sided = false;
@@ -445,6 +452,8 @@ void mesh_scene::ensure_blas()
             )
         );
     }
+    if(built_one)
+        TR_LOG("Finished building acceleration structures");
 }
 
 void mesh_scene::assign_group_cache(

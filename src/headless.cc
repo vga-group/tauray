@@ -1,5 +1,6 @@
 #include "headless.hh"
 #include "misc.hh"
+#include "log.hh"
 #include "tinyexr.h"
 #include "stb_image_write.h"
 #include <iostream>
@@ -317,14 +318,16 @@ void headless::save_image(uint32_t swapchain_index)
         if(!opt.skip_nan_check)
         {
             for(size_t j = 0; j < image_pixels; ++j)
+            {
                 if(any(isnan(vec4(
                     mem[j*4+0],
                     mem[j*4+1],
                     mem[j*4+2],
                     mem[j*4+3]
-                ))))
-                    std::cout << "NaN pixel at: "
-                        << (j%opt.size.x) << ", " << (j/opt.size.x) << std::endl;
+                )))){
+                    TR_LOG("NaN pixel at: ", (j%opt.size.x), ", ", (j/opt.size.x));
+                }
+            }
         }
 
         if(opt.output_file_type == headless::EXR)
@@ -405,7 +408,7 @@ void headless::save_image(uint32_t swapchain_index)
 
                 {
                     std::lock_guard<std::mutex> lock(save_workers_mutex);
-                    std::cout << "Saved " << filename << std::endl;
+                    TR_LOG("Saved ", filename);
                     w->finished = true;
                 }
                 save_workers_cv.notify_one();
@@ -438,7 +441,7 @@ void headless::save_image(uint32_t swapchain_index)
 
                 {
                     std::lock_guard<std::mutex> lock(save_workers_mutex);
-                    std::cout << "Saved " << filename << std::endl;
+                    TR_LOG("Saved ", filename);
                     w->finished = true;
                 }
                 save_workers_cv.notify_one();
@@ -466,7 +469,7 @@ void headless::save_image(uint32_t swapchain_index)
 
                 {
                     std::lock_guard<std::mutex> lock(save_workers_mutex);
-                    std::cout << "Saved " << filename << std::endl;
+                    TR_LOG("Saved ", filename);
                     w->finished = true;
                 }
                 save_workers_cv.notify_one();

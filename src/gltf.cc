@@ -1,5 +1,6 @@
 #include "gltf.hh"
 #include "scene.hh"
+#include "log.hh"
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #include "tiny_gltf.h"
 #include "stb_image.h"
@@ -522,6 +523,7 @@ scene_graph load_gltf(
     bool force_single_sided,
     bool force_double_sided
 ){
+    TR_LOG("Started loading glTF scene from ", path);
     scene_graph md;
 
     std::string err, warn;
@@ -702,11 +704,12 @@ scene_graph load_gltf(
             bool generate_tangents = false;
             if(vert_tangent.size() == 0 && primitive_material.normal_tex.first)
             {
-                std::cerr
-                    << path << ": " << tg_mesh.name
-                    << " uses a normal map but is missing tangent data. Please "
-                    << "export the asset with [Geometry > Tangents] ticked in "
-                    << "Blender." << std::endl;
+                TR_ERR(
+                    path, ": ", tg_mesh.name,
+                    " uses a normal map but is missing tangent data. Please "
+                    "export the asset with [Geometry > Tangents] ticked in "
+                    "Blender."
+                );
                 generate_tangents = true;
             }
 
@@ -801,6 +804,7 @@ scene_graph load_gltf(
         md.animation_models.emplace_back(animation_model);
     }
 
+    TR_LOG("Finished loading glTF scene", path);
     return md;
 }
 

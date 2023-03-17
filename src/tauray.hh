@@ -4,6 +4,7 @@
 #include "environment_map.hh"
 #include "scene.hh"
 #include "ply.hh"
+#include "log.hh"
 #include <memory>
 #include <vector>
 

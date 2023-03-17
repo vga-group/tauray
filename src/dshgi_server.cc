@@ -1,6 +1,7 @@
 #include "dshgi_server.hh"
 #include "sh_grid.hh"
 #include "misc.hh"
+#include "log.hh"
 #include <thread>
 #include <iostream>
 #include <czmq.h>
@@ -186,7 +187,7 @@ void dshgi_server::sender_worker(dshgi_server* s)
             frame = zmsg_next(msg);
             if(tag != 0) s->subscriber_count++;
             else s->subscriber_count--;
-            std::cout << "Client count: " << s->subscriber_count << std::endl;
+            TR_LOG("Client count: ", s->subscriber_count);
             zmsg_destroy(&msg);
         }
     };

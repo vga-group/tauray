@@ -609,7 +609,7 @@ void profile_tick()
 
 void profile_tock(const char* message)
 {
-    auto begin = profile_begin.back(); 
+    auto begin = profile_begin.back();
     profile_begin.pop_back();
     auto profile_end = std::chrono::high_resolution_clock::now();
     auto duration = profile_end - begin;
