@@ -129,7 +129,7 @@ void window::init_swapchain()
         }
     }
     if(!found_format)
-        TR_ERR(
+        TR_WARN(
             "Could not find any suitable swap chain format!"
             "Using the first available format instead, results may look "
             "incorrect."
@@ -179,7 +179,7 @@ void window::init_swapchain()
         }
     }
     if(!found_mode)
-        TR_ERR("Could not find desired present mode, falling back to first "
+        TR_WARN("Could not find desired present mode, falling back to first "
             "available mode.");
 
     // Find the size that matches our window size

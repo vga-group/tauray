@@ -984,7 +984,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
     camera default_cam;
     if(s.get_camera() == nullptr)
     {
-        TR_ERR(
+        TR_WARN(
             "Warning: no camera is defined in the scene, so a default camera "
             "setup is used. You probably do not want this in replay mode."
         );

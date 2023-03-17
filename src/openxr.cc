@@ -609,7 +609,7 @@ void openxr::init_xr_swapchain()
         }
     }
     if(!found_format)
-        TR_ERR(
+        TR_WARN(
             "Could not find any suitable swap chain format for XR!"
             "Using the first available format instead, results may look "
             "incorrect."
@@ -750,7 +750,7 @@ void openxr::init_window_swapchain()
         }
     }
     if(!found_format)
-        TR_ERR("Could not find any suitable swap chain format for preview window!");
+        TR_WARN("Could not find any suitable swap chain format for preview window!");
 
     window_image_format = swapchain_format.format;
 
@@ -769,7 +769,7 @@ void openxr::init_window_swapchain()
         found_mode = true;
     }
     if(!found_mode)
-        TR_ERR(
+        TR_WARN(
             "Could not find desired present mode, falling back to first "
             "available mode."
         );

@@ -704,7 +704,7 @@ scene_graph load_gltf(
             bool generate_tangents = false;
             if(vert_tangent.size() == 0 && primitive_material.normal_tex.first)
             {
-                TR_ERR(
+                TR_WARN(
                     path, ": ", tg_mesh.name,
                     " uses a normal map but is missing tangent data. Please "
                     "export the asset with [Geometry > Tangents] ticked in "

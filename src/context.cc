@@ -292,7 +292,7 @@ void context::init_vulkan(PFN_vkGetInstanceProcAddr getInstanceProcAddr)
             if(found) ++it;
             else
             {
-                TR_ERR("Unable to find validation layer ", *it, ", skipping.");
+                TR_WARN("Unable to find validation layer ", *it, ", skipping.");
                 validation_layers.erase(it);
             }
         }
@@ -527,7 +527,7 @@ void context::init_devices()
             has_extensions(required_device_extensions, available_extensions) &&
             dev_data.has_graphics && dev_data.has_compute
         ){
-            TR_ERR("Using device: ", props.deviceName);
+            TR_LOG("Using device: ", props.deviceName);
 
             float priority = 1.0f;
             std::vector<vk::DeviceQueueCreateInfo> queue_infos = {

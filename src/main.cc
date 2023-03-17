@@ -13,7 +13,10 @@ int main(int, char** argv) try
     std::optional<std::ofstream> timing_output_file;
 
     if(opt.silent)
+    {
         tr::enabled_log_types[(uint32_t)tr::log_type::GENERAL] = false;
+        tr::enabled_log_types[(uint32_t)tr::log_type::WARNING] = false;
+    }
 
     if(opt.timing_output.size() != 0)
     {

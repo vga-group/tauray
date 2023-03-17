@@ -21,6 +21,7 @@
 
 #define TR_LOG(...) tr::log_message(tr::log_type::GENERAL, __LINE__, __FILENAME__, __VA_ARGS__)
 #define TR_ERR(...) tr::log_message(tr::log_type::ERROR, __LINE__, __FILENAME__, __VA_ARGS__)
+#define TR_WARN(...) tr::log_message(tr::log_type::WARNING, __LINE__, __FILENAME__, __VA_ARGS__)
 #define TR_TIME(...) tr::log_message(tr::log_type::TIMING, __LINE__, __FILENAME__, __VA_ARGS__)
 
 namespace tr
@@ -53,12 +54,15 @@ enum class log_type: uint32_t
 {
     GENERAL = 0,
     ERROR,
+    WARNING,
     DEBUG,
     TIMING
 };
 
-extern bool enabled_log_types[4];
-extern std::ostream* log_output_streams[4];
+extern bool enabled_log_types[5];
+extern std::ostream* log_output_streams[5];
+
+void apply_color(log_type type, std::ostream& os);
 
 template<typename... Args>
 void log_message(
@@ -75,6 +79,7 @@ void log_message(
 
         std::ostream& o = *log_output_streams[(uint32_t)type];
 
+        apply_color(type, o);
         if(type != log_type::TIMING)
         {
             o << "[" << std::fixed << std::setprecision(3) <<
@@ -84,6 +89,7 @@ void log_message(
                 << "](" << file << ":" << line << ") ";
         }
         o << make_string(rest...) << std::endl;
+        apply_color(log_type::GENERAL, o);
     }
 }
 
