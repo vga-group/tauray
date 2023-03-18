@@ -1,6 +1,7 @@
 #include "context.hh"
 #include "placeholders.hh"
 #include "misc.hh"
+#include "log.hh"
 #include "radix_sort/radix_sort_vk.h"
 #include <iostream>
 
@@ -21,7 +22,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     (void)severity;
     (void)type;
     (void)pUserData;
-    std::cerr << data->pMessage << std::endl;
+    TR_ERR(data->pMessage);
 
     // Handy assert for debugging where validation errors happen
     //assert(false);
@@ -291,8 +292,7 @@ void context::init_vulkan(PFN_vkGetInstanceProcAddr getInstanceProcAddr)
             if(found) ++it;
             else
             {
-                std::cerr << "Unable to find validation layer " << *it
-                    << ", skipping.\n";
+                TR_WARN("Unable to find validation layer ", *it, ", skipping.");
                 validation_layers.erase(it);
             }
         }
@@ -527,9 +527,7 @@ void context::init_devices()
             has_extensions(required_device_extensions, available_extensions) &&
             dev_data.has_graphics && dev_data.has_compute
         ){
-            // TODO: come up with a better way to not have these if piping
-            // trace output to file
-            std::cerr << "Using device: " << props.deviceName << std::endl;
+            TR_LOG("Using device: ", props.deviceName);
 
             float priority = 1.0f;
             std::vector<vk::DeviceQueueCreateInfo> queue_infos = {

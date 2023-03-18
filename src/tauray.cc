@@ -808,7 +808,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
             catch(std::runtime_error& err)
             {
                 if(crash_on_exception) throw err;
-                else std::cerr << err.what() << std::endl;
+                else TR_ERR(err.what());
             }
             show_stats(sd, opt);
 
@@ -984,10 +984,10 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
     camera default_cam;
     if(s.get_camera() == nullptr)
     {
-        std::cerr
-            << "Warning: no camera is defined in the scene, so a default camera "
-               "setup is used. You probably do not want this in replay mode."
-            << std::endl;
+        TR_WARN(
+            "Warning: no camera is defined in the scene, so a default camera "
+            "setup is used. You probably do not want this in replay mode."
+        );
         default_cam.set_position(vec3(0,0,2));
         default_cam.perspective(90, opt.width/(float)opt.height, 0.1f, 300.0f);
         s.set_camera(&default_cam);
@@ -1128,7 +1128,7 @@ void headless_server(context& ctx, scene_data& sd, options& opt)
 
     // Ensure everything is finished before going to destructors.
     ctx.sync();
-    std::cout << "Server shutting down." << std::endl;
+    TR_LOG("Server shutting down.");
 }
 
 void run(context& ctx, scene_data& sd, options& opt)

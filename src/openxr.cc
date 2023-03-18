@@ -1,6 +1,7 @@
 #include "openxr.hh"
 #include "camera.hh"
 #include "misc.hh"
+#include "log.hh"
 #include <iostream>
 #include <thread>
 
@@ -58,7 +59,7 @@ XRAPI_ATTR XrBool32 XRAPI_CALL debug_callback(
     (void)severity;
     (void)type;
     (void)pUserData;
-    std::cerr << data->message << std::endl;
+    TR_ERR(data->message);
 
     // Handy assert for debugging where validation errors happen
     //assert(false);
@@ -432,7 +433,7 @@ void openxr::init_xr()
     };
     xrGetInstanceProperties(xr_instance, &xr_instance_props);
 
-    std::cout << "OpenXR runtime: " << xr_instance_props.runtimeName << std::endl;
+    TR_LOG("OpenXR runtime: ", xr_instance_props.runtimeName);
 
     XrSystemGetInfo system_info {
         XR_TYPE_SYSTEM_GET_INFO,
@@ -446,7 +447,7 @@ void openxr::init_xr()
     system_props.next = nullptr;
     xrGetSystemProperties(xr_instance, system_id, &system_props);
 
-    std::cout << "OpenXR system: " << system_props.systemName << std::endl;
+    TR_LOG("OpenXR system: ", system_props.systemName);
 
     uint32_t view_config_count = 0;
     xrEnumerateViewConfigurations(xr_instance, system_id, 0, &view_config_count, nullptr);
@@ -608,10 +609,11 @@ void openxr::init_xr_swapchain()
         }
     }
     if(!found_format)
-        std::cerr <<
+        TR_WARN(
             "Could not find any suitable swap chain format for XR!"
             "Using the first available format instead, results may look "
-            "incorrect.\n";
+            "incorrect."
+        );
 
     image_format = vk::Format((VkFormat)swapchain_format);
     expected_image_layout = vk::ImageLayout::eTransferSrcOptimal;
@@ -748,8 +750,7 @@ void openxr::init_window_swapchain()
         }
     }
     if(!found_format)
-        std::cerr <<
-            "Could not find any suitable swap chain format for preview window!\n";
+        TR_WARN("Could not find any suitable swap chain format for preview window!");
 
     window_image_format = swapchain_format.format;
 
@@ -768,9 +769,10 @@ void openxr::init_window_swapchain()
         found_mode = true;
     }
     if(!found_mode)
-        std::cerr <<
+        TR_WARN(
             "Could not find desired present mode, falling back to first "
-            "available mode.\n";
+            "available mode."
+        );
 
     // Find the size that matches our window size
     vk::SurfaceCapabilitiesKHR caps =
@@ -1003,11 +1005,11 @@ bool openxr::poll()
                         view_config
                     };
                     xrBeginSession(xr_session, &begin_info);
-                    std::cout << "XR session begin" << std::endl;
+                    TR_LOG("XR session begin");
                 }
                 else if(state.state == XR_SESSION_STATE_STOPPING)
                 {
-                    std::cout << "XR session end" << std::endl;
+                    TR_LOG("XR session end");
                     xrEndSession(xr_session);
                     return true;
                 }

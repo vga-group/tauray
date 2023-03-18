@@ -1,5 +1,6 @@
 #include "tracing.hh"
 #include "context.hh"
+#include "log.hh"
 #include "json.hpp"
 #include <iostream>
 
@@ -229,39 +230,35 @@ const tracing_record::timing_result* tracing_record::find_latest_finished_frame(
 
 void tracing_record::print_simple_trace(const timing_result& res)
 {
-    std::cout << "FRAME " << res.frame_number << ":\n";
+    TR_TIME("FRAME ", res.frame_number, ":");
     for(size_t i = 0; i < res.device_traces.size(); ++i)
     {
         const std::vector<trace_event>& times = res.device_traces[i];
 
-        std::cout << "\tDEVICE " << i << ": ";
         if(times.size() == 0)
-            std::cout << "\n";
+            TR_TIME("\tDEVICE ", i, ": ");
         else
         {
             double delta_ns = times.back().start_ns + times.back().duration_ns - times.front().start_ns;
-            std::cout << delta_ns/1e6 << " ms\n";
+            TR_TIME("\tDEVICE ", i, ": ", delta_ns/1e6, " ms");
         }
 
         for(const trace_event& t: times)
         {
-            std::cout << "\t\t[" << t.name << "] " << t.duration_ns/1e6 << " ms"
-                << "\n";
+            TR_TIME("\t\t[", t.name, "] ", t.duration_ns/1e6, " ms");
         }
     }
 
-    std::cout << "\tHOST: ";
     if(res.host_traces.size() == 0)
-        std::cout << "\n";
+        TR_TIME("\tHOST: ");
     else
     {
         double delta_ns = res.host_traces.back().start_ns + res.host_traces.back().duration_ns - res.host_traces.front().start_ns;
-        std::cout << delta_ns/1e6 << " ms\n";
+        TR_TIME("\tHOST: ", delta_ns/1e6, " ms");
     }
     for(const trace_event& t: res.host_traces)
     {
-        std::cout << "\t\t[" << t.name << "] " << t.duration_ns/1e6 << " ms"
-            << "\n";
+        TR_TIME("\t\t[", t.name, "] ", t.duration_ns/1e6, " ms");
     }
 }
 
@@ -270,7 +267,7 @@ void tracing_record::print_tef_trace(const timing_result& res)
     static bool first_call = true;
     if(first_call)
     {
-        std::cout << "[";
+        TR_TIME("[");
         first_call = false;
     }
     for(const trace_event& t: res.host_traces)
@@ -284,7 +281,7 @@ void tracing_record::print_tef_trace(const timing_result& res)
             {"name", t.name},
             {"args", {"frame", res.frame_number}}
         };
-        std::cout << output.dump(-1, '\t') << ",\n";
+        TR_TIME(output.dump(-1, '\t'), ",");
     }
     const auto& devices = ctx->get_devices();
     for(size_t i = 0; i < res.device_traces.size(); ++i)
@@ -301,7 +298,7 @@ void tracing_record::print_tef_trace(const timing_result& res)
                 {"name", t.name},
                 {"args", {"frame", res.frame_number}}
             };
-            std::cout << output.dump(-1, '\t') << ",\n";
+            TR_TIME(output.dump(-1, '\t'), ",");
         }
     }
 }

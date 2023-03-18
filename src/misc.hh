@@ -8,6 +8,12 @@ namespace tr
 struct device_data;
 class context;
 
+template<typename T, size_t count>
+inline std::string to_string(const vk::ArrayWrapper1D<T, count>& vkstring)
+{
+    return vkstring.data();
+}
+
 // These are for one-off command buffers.
 vk::CommandBuffer begin_command_buffer(device_data& d);
 void end_command_buffer(device_data& d, vk::CommandBuffer cb);

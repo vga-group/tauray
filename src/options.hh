@@ -497,6 +497,14 @@
         {"per-model", blas_strategy::PER_MODEL}, \
         {"static-merged-dynamic-per-model", blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL}, \
         {"all-merged", blas_strategy::ALL_MERGED_STATIC} \
+    ) \
+    TR_BOOL_OPT(silent, \
+        "Disables general prints. Errors and timing data is still shown.", \
+        false \
+    ) \
+    TR_STRING_OPT(timing_output, \
+        "Sets the timing data output file. Default is stdout.", \
+        "" \
     )
 //==============================================================================
 // END OF OPTIONS

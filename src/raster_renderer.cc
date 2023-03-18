@@ -1,6 +1,7 @@
 #include "raster_renderer.hh"
 #include "scene.hh"
 #include "misc.hh"
+#include "log.hh"
 #include <iostream>
 
 namespace tr
@@ -74,9 +75,9 @@ void raster_renderer::init_common_resources()
     int fixed_msaa = min((int)next_power_of_two(opt.msaa_samples), max_msaa);
     if(opt.msaa_samples != fixed_msaa)
     {
-        std::cerr << "Sample count " << opt.msaa_samples
-            << " is not available on this platform. Using " << fixed_msaa
-            << " instead." << std::endl;
+        TR_LOG("Sample count ", opt.msaa_samples,
+            " is not available on this platform. Using ", fixed_msaa,
+            " instead.");
         opt.msaa_samples = fixed_msaa;
     }
 

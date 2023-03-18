@@ -50,6 +50,11 @@ function(add_openxr)
 endfunction()
 add_openxr()
 
+
+set(TAURAY_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+string(LENGTH "${TAURAY_PROJECT_ROOT}/" TAURAY_PROJECT_ROOT_PATH_SIZE)
+add_compile_definitions("TAURAY_PROJECT_ROOT_PATH_SIZE=${TAURAY_PROJECT_ROOT_PATH_SIZE}")
+
 add_subdirectory(external/fuchsia_radix_sort)
 
 find_package(SDL2 REQUIRED)
@@ -98,6 +103,7 @@ add_library(tauray-core STATIC
   src/light.cc
   src/light_scene.cc
   src/load_balancer.cc
+  src/log.cc
   src/looking_glass.cc
   src/looking_glass_composition_stage.cc
   src/material.cc

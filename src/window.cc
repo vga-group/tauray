@@ -1,4 +1,5 @@
 #include "window.hh"
+#include "log.hh"
 #include <iostream>
 
 namespace tr
@@ -128,10 +129,11 @@ void window::init_swapchain()
         }
     }
     if(!found_format)
-        std::cerr <<
+        TR_WARN(
             "Could not find any suitable swap chain format!"
             "Using the first available format instead, results may look "
-            "incorrect.\n";
+            "incorrect."
+        );
     image_format = swapchain_format.format;
     expected_image_layout = vk::ImageLayout::ePresentSrcKHR;
 
@@ -177,9 +179,8 @@ void window::init_swapchain()
         }
     }
     if(!found_mode)
-        std::cerr <<
-            "Could not find desired present mode, falling back to first "
-            "available mode.\n";
+        TR_WARN("Could not find desired present mode, falling back to first "
+            "available mode.");
 
     // Find the size that matches our window size
     vk::SurfaceCapabilitiesKHR caps =
