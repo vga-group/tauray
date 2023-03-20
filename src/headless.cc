@@ -414,9 +414,13 @@ void headless::save_image(uint32_t swapchain_index)
                 save_workers_cv.notify_one();
             });
         }
-        else if(opt.output_file_type == headless::PNG)
-        {
-            filename += ".png";
+        // Saving these is similiar enough and they both use stbi_write_*.
+        // Implementations can be separated in the future if they diverge.
+        else if(
+            opt.output_file_type == headless::PNG || 
+            opt.output_file_type == headless::BMP
+        ){
+            filename += opt.output_file_type == headless::PNG ? ".png" : ".bmp";
 
             std::vector<uint8_t> pixel_data(4*image_pixels);
             for(size_t j = 0; j < image_pixels*4; ++j)
@@ -430,10 +434,22 @@ void headless::save_image(uint32_t swapchain_index)
                 pixel_data = std::move(pixel_data),
                 w
             ]() mutable {
-                int ret = stbi_write_png(
-                    filename.c_str(), opt.size.x, opt.size.y, 4, pixel_data.data(),
-                    opt.size.x*4
-                );
+                int ret = opt.output_file_type == headless::PNG ?
+                    stbi_write_png(
+                        filename.c_str(),
+                        opt.size.x,
+                        opt.size.y,
+                        4,
+                        pixel_data.data(),
+                        opt.size.x*4
+                    ) :
+                    stbi_write_bmp(
+                        filename.c_str(),
+                        opt.size.x,
+                        opt.size.y,
+                        4,
+                        pixel_data.data()
+                    );
                 if(ret == 0)
                 {
                     throw std::runtime_error("Failed to write " + filename);

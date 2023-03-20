@@ -59,6 +59,7 @@
         headless::EXR, \
         {"exr", headless::EXR}, \
         {"png", headless::PNG}, \
+        {"bmp", headless::BMP}, \
         {"raw", headless::RAW}, \
         {"none", headless::EMPTY} \
     )\
