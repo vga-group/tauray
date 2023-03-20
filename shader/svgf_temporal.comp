@@ -152,7 +152,7 @@ void main()
         vec4 current_color = imageLoad(in_color, p);
         vec4 current_diffuse = imageLoad(in_diffuse, p);
         vec4 current_albedo = imageLoad(in_albedo, p);
-        vec4 current_specular = current_color - current_diffuse * current_albedo;
+        vec4 current_specular = max(vec4(0.0), current_color - current_diffuse * current_albedo);
         if (any(isnan(current_color))) current_color = vec4(0.0);
         if (any(isnan(current_diffuse))) current_diffuse = vec4(0.0);
         if (any(isnan(current_specular))) current_specular = vec4(0.0);
@@ -169,7 +169,7 @@ void main()
         moments.y = moments.x * moments.x;
         moments = mix(prev_moments.xy, moments, alpha_moments);
 
-        float variance = max(0.f, moments.y - moments.x * moments.x);
+        float variance = max(1e-8, moments.y - moments.x * moments.x);
 
         vec3 out_diff = mix(prev_color.rgb, current_diffuse.rgb, alpha);
         vec3 out_spec = mix(prev_specular.rgb, current_specular.rgb, alpha);
