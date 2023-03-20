@@ -43,6 +43,7 @@ public:
     {
         EXR = 0,
         PNG,
+        BMP,
         RAW,
         EMPTY
     };
