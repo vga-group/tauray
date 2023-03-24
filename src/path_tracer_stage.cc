@@ -117,24 +117,31 @@ path_tracer_stage::path_tracer_stage(
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(
-        dev, output_target,
-        rt_stage::get_common_state(
-            ray_count, uvec4(0,0,output_target.get_size()),
-            path_tracer::load_sources(opt, output_target), opt
-        ),
-        opt,
-        "path tracing",
+        dev, output_target, opt, "path tracing",
         opt.samples_per_pixel / opt.samples_per_pass
     ),
+    gfx(dev, rt_stage::get_common_state(
+        ray_count, uvec4(0,0,output_target.get_size()),
+        path_tracer::load_sources(opt, output_target), opt
+    )),
     opt(opt)
 {
 }
 
-void path_tracer_stage::record_command_buffer_push_constants(
+void path_tracer_stage::init_scene_resources()
+{
+    rt_camera_stage::init_descriptors(gfx);
+}
+
+void path_tracer_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
-    uint32_t /*frame_index*/,
-    uint32_t pass_index
+    uint32_t frame_index,
+    uint32_t pass_index,
+    uvec3 expected_dispatch_size
 ){
+    if(pass_index == 0)
+        gfx.bind(cb, frame_index);
+
     scene* cur_scene = get_scene();
     path_tracer::push_constant_buffer control;
 
@@ -161,6 +168,7 @@ void path_tracer_stage::record_command_buffer_push_constants(
     control.antialiasing = opt.film != film_filter::POINT ? 1 : 0;
 
     gfx.push_constants(cb, control);
+    gfx.trace_rays(cb, expected_dispatch_size);
 }
 
 }

@@ -75,12 +75,10 @@ void rt_stage::get_common_defines(
 
 rt_stage::rt_stage(
     device_data& dev,
-    const gfx_pipeline::pipeline_state& state,
     const options& opt,
     const std::string& timer_name,
     unsigned pass_count
 ):  stage(dev),
-    gfx(dev, state),
     opt(opt),
     pass_count(pass_count),
     rt_timer(dev, timer_name),
@@ -92,7 +90,6 @@ rt_stage::rt_stage(
     sampling_frame_counter_increment(1),
     sample_counter(0)
 {
-    init_resources();
 }
 
 void rt_stage::set_scene(scene* s)
@@ -137,25 +134,23 @@ void rt_stage::update(uint32_t frame_index)
     sample_counter += sampling_frame_counter_increment;
 }
 
-void rt_stage::init_resources()
+void rt_stage::init_scene_resources() {}
+
+void rt_stage::init_descriptors(basic_pipeline& pp)
 {
     // Init descriptor set references to some placeholder value to silence
     // the validation layer (these should never actually be accessed)
-    gfx.update_descriptor_set({
+    pp.update_descriptor_set({
         {"vertices", opt.max_instances},
         {"indices", opt.max_instances},
         {"textures", opt.max_samplers}
     });
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        gfx.update_descriptor_set({
+        pp.update_descriptor_set({
             {"sampling_data", {*sampling_data, 0, VK_WHOLE_SIZE}}
         }, i);
     }
-}
-
-void rt_stage::init_scene_resources()
-{
 }
 
 unsigned rt_stage::get_pass_count() const

@@ -40,12 +40,11 @@ void rt_camera_stage::get_common_defines(
 rt_camera_stage::rt_camera_stage(
     device_data& dev,
     const gbuffer_target& output_target,
-    const gfx_pipeline::pipeline_state& state,
     const options& opt,
     const std::string& timer_name,
     unsigned pass_count
 ):  rt_stage(
-        dev, state, opt,
+        dev, opt,
         timer_name + " ("+ std::to_string(opt.active_viewport_count) +" viewports)",
         pass_count
     ),
@@ -105,14 +104,14 @@ void rt_camera_stage::update(uint32_t frame_index)
     accumulated_samples += opt.samples_per_pixel;
 }
 
-void rt_camera_stage::init_scene_resources()
+void rt_camera_stage::init_descriptors(basic_pipeline& pp)
 {
-    rt_stage::init_scene_resources();
+    rt_stage::init_descriptors(pp);
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        get_scene()->bind(gfx, i);
-        gfx.update_descriptor_set({
+        get_scene()->bind(pp, i);
+        pp.update_descriptor_set({
 #define TR_GBUFFER_ENTRY(name, ...)\
             {#name "_target", {\
                 {}, target.name ? target.name[i].view : VK_NULL_HANDLE, vk::ImageLayout::eGeneral\
@@ -169,13 +168,12 @@ void rt_camera_stage::record_command_buffer(
             vk::PipelineStageFlagBits::eRayTracingShaderKHR,
             {}, {}, {}, in_barriers
         );
-
-        gfx.bind(cb, frame_index);
     }
 
-    record_command_buffer_push_constants(cb, frame_index, pass_index);
-
-    gfx.trace_rays(cb, uvec3(get_ray_count(opt.distribution), opt.active_viewport_count));
+    record_command_buffer_pass(
+        cb, frame_index, pass_index,
+        uvec3(get_ray_count(opt.distribution), opt.active_viewport_count)
+    );
 
     if(pass_index == get_pass_count()-1)
     {
