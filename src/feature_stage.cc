@@ -83,28 +83,34 @@ feature_stage::feature_stage(
     uvec2 ray_count,
     const gbuffer_target& output_target,
     const options& opt
-):  rt_camera_stage(
-        dev, output_target,
-        rt_stage::get_common_state(
-            ray_count, uvec4(0, 0, output_target.get_size()),
-            ::feature::load_sources(opt), opt
-        ),
-        opt
-    ),
+):  rt_camera_stage(dev, output_target, opt),
+    gfx(dev, rt_stage::get_common_state(
+        ray_count, uvec4(0, 0, output_target.get_size()),
+        ::feature::load_sources(opt), opt
+    )),
     opt(opt)
 {
 }
 
-void feature_stage::record_command_buffer_push_constants(
+void feature_stage::init_scene_resources()
+{
+    rt_camera_stage::init_descriptors(gfx);
+}
+
+void feature_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
-    uint32_t /*frame_index*/,
-    uint32_t /*pass_index*/
+    uint32_t frame_index,
+    uint32_t /*pass_index*/,
+    uvec3 expected_dispatch_size
 ){
+    gfx.bind(cb, frame_index);
+
     ::feature::push_constant_buffer control;
     control.default_value = opt.default_value;
     control.min_ray_dist = opt.min_ray_dist;
 
     gfx.push_constants(cb, control);
+    gfx.trace_rays(cb, expected_dispatch_size);
 }
 
 }

@@ -43,6 +43,8 @@ protected:
         vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index
     ) override;
 
+    gfx_pipeline gfx;
+
 private:
     void record_command_buffer_push_constants(
         vk::CommandBuffer cb,

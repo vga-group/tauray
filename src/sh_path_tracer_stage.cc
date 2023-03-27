@@ -107,18 +107,16 @@ sh_path_tracer_stage::sh_path_tracer_stage(
     texture& output_grid,
     vk::ImageLayout output_layout,
     const options& opt
-):  rt_stage(
-        dev,
-        rt_stage::get_common_state(
-            uvec2(0), uvec4(0), sh_path_tracer::load_sources(opt), opt
-        ),
-        opt, "SH path tracing", 1
-    ),
+):  rt_stage(dev, opt, "SH path tracing", 1),
+    gfx(dev, rt_stage::get_common_state(
+        uvec2(0), uvec4(0), sh_path_tracer::load_sources(opt), opt
+    )),
     opt(opt),
     output_grid(&output_grid),
     output_layout(output_layout),
     grid_data(dev, sizeof(grid_data_buffer), vk::BufferUsageFlagBits::eUniformBuffer)
 {
+    init_descriptors(gfx);
     rt_stage::set_local_sampler_parameters(
         output_grid.get_dimensions(),
         opt.samples_per_probe

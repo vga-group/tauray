@@ -32,7 +32,6 @@ public:
     rt_camera_stage(
         device_data& dev,
         const gbuffer_target& output_target,
-        const gfx_pipeline::pipeline_state& state,
         const options& opt,
         const std::string& timer_name = "ray tracing",
         unsigned pass_count = 1
@@ -45,16 +44,18 @@ public:
 
 protected:
     void update(uint32_t frame_index) override;
-    void init_scene_resources() override;
     void record_command_buffer(
         vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index
     ) override;
     int get_accumulated_samples() const;
 
-    virtual void record_command_buffer_push_constants(
+    void init_descriptors(basic_pipeline& pp);
+
+    virtual void record_command_buffer_pass(
         vk::CommandBuffer cb,
         uint32_t frame_index,
-        uint32_t pass_index
+        uint32_t pass_index,
+        uvec3 expected_dispatch_size
     ) = 0;
 
 private:
