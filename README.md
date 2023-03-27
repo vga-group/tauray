@@ -104,7 +104,7 @@ initialization still runs, so please exclude those if possible.
 
 ## Citation
 
-If you use Tauray in a research paper, please cite our forthcoming paper with the
+If you use Tauray in a research paper, please cite our paper with the
 format below:
 
 ```bibtex
