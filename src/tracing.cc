@@ -104,7 +104,7 @@ void tracing_record::device_finish_frame()
             max_timestamps*2u,
             results.size()*sizeof(uint64_t),
             results.data(),
-            0,
+            sizeof(uint64_t),
             vk::QueryResultFlagBits::e64
         );
         for(const auto& pair: t.reserved_queries)
