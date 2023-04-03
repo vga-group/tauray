@@ -463,6 +463,42 @@ void headless::save_image(uint32_t swapchain_index)
                 save_workers_cv.notify_one();
             });
         }
+        else if(opt.output_file_type == headless::HDR)
+        {
+            filename += ".hdr";
+
+            std::vector<float> pixel_data(4*image_pixels);
+            for(size_t j = 0; j < image_pixels*4; ++j)
+                pixel_data[j] = mem[j];
+
+            worker* w = new worker;
+            save_workers.emplace_back(w);
+            save_workers.back()->t = std::thread([
+                this,
+                filename,
+                pixel_data = std::move(pixel_data),
+                w
+            ]() mutable {
+                int ret = stbi_write_hdr(
+                    filename.c_str(),
+                    opt.size.x,
+                    opt.size.y,
+                    4,
+                    pixel_data.data()
+                );
+                if(ret == 0)
+                {
+                    throw std::runtime_error("Failed to write " + filename);
+                }
+
+                {
+                    std::lock_guard<std::mutex> lock(save_workers_mutex);
+                    TR_LOG("Saved ", filename);
+                    w->finished = true;
+                }
+                save_workers_cv.notify_one();
+            });
+        }
         else if(opt.output_file_type == headless::RAW)
         {
             filename += ".raw";
