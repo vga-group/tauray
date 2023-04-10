@@ -29,7 +29,7 @@ z_pass_stage::z_pass_stage(
 {
     for(const render_target& depth_buffer: depth_buffer_arrays)
     {
-        array_pipelines.emplace_back(new gfx_pipeline(dev, {
+        array_pipelines.emplace_back(new raster_pipeline(dev, {
             depth_buffer.get_size(),
             uvec4(0,0,depth_buffer.get_size()),
             {
@@ -40,7 +40,7 @@ z_pass_stage::z_pass_stage(
             mesh::get_bindings(),
             {mesh::get_attributes()[0]},
             {},
-            gfx_pipeline::pipeline_state::depth_attachment_state{
+            raster_pipeline::pipeline_state::depth_attachment_state{
                 depth_buffer,
                 {
                     {},
@@ -54,8 +54,7 @@ z_pass_stage::z_pass_stage(
                     vk::ImageLayout::eDepthStencilAttachmentOptimal
                 }
             },
-            {},
-            {false, false, true}
+            false, false, true
         }));
     }
 }
@@ -72,7 +71,7 @@ void z_pass_stage::set_scene(scene* s)
         z_pass_timer.begin(cb, i);
 
         size_t j = 0;
-        for(std::unique_ptr<gfx_pipeline>& gfx: array_pipelines)
+        for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             // Bind descriptors
             cur_scene->bind(*gfx, i, j);

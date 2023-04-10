@@ -27,7 +27,7 @@ struct push_constant_buffer
     pvec3 ambient_color;
 };
 
-shader_sources load_sources(const raster_stage::options& opt, const gbuffer_target& gbuf)
+raster_shader_sources load_sources(const raster_stage::options& opt, const gbuffer_target& gbuf)
 {
     std::map<std::string, std::string> defines;
     defines["SH_ORDER"] = std::to_string(opt.sh_order);
@@ -43,7 +43,7 @@ shader_sources load_sources(const raster_stage::options& opt, const gbuffer_targ
     };
 }
 
-using color_attachment_state = gfx_pipeline::pipeline_state::color_attachment_state;
+using color_attachment_state = raster_pipeline::pipeline_state::color_attachment_state;
 std::vector<color_attachment_state> get_color_attachments(
     const raster_stage::options& opt,
     const gbuffer_target& gbuf
@@ -83,7 +83,7 @@ std::vector<color_attachment_state> get_color_attachments(
     return states;
 }
 
-using depth_attachment_state = gfx_pipeline::pipeline_state::depth_attachment_state;
+using depth_attachment_state = raster_pipeline::pipeline_state::depth_attachment_state;
 depth_attachment_state get_depth_attachment(
     const raster_stage::options& opt,
     const gbuffer_target& gbuf
@@ -148,7 +148,7 @@ raster_stage::raster_stage(
 
     for(const gbuffer_target& target: output_array_targets)
     {
-        array_pipelines.emplace_back(new gfx_pipeline(dev, {
+        array_pipelines.emplace_back(new raster_pipeline(dev, {
             target.get_size(),
             uvec4(0, 0, target.get_size()),
             load_sources(opt, target),
@@ -160,8 +160,7 @@ raster_stage::raster_stage(
             mesh::get_attributes(),
             get_color_attachments(opt, target),
             get_depth_attachment(opt, target),
-            {},
-            {opt.sample_shading, (bool)target.color || opt.force_alpha_to_coverage, true}
+            opt.sample_shading, (bool)target.color || opt.force_alpha_to_coverage, true
         }));
 
         scene::bind_placeholders(
@@ -196,7 +195,7 @@ void raster_stage::set_scene(scene* s)
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         size_t j = 0;
-        for(std::unique_ptr<gfx_pipeline>& gfx: array_pipelines)
+        for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             // Bind descriptors
             cur_scene->bind(*gfx, i, j);
@@ -219,7 +218,7 @@ void raster_stage::record_command_buffers()
         vk::CommandBuffer cb = begin_graphics();
 
         raster_timer.begin(cb, i);
-        for(std::unique_ptr<gfx_pipeline>& gfx: array_pipelines)
+        for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);

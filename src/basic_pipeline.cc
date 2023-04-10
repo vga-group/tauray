@@ -6,19 +6,20 @@ namespace tr
 
 basic_pipeline::basic_pipeline(
     device_data& dev,
-    const shader_sources& src,
-    const binding_array_length_info& array_info,
+    std::vector<vk::DescriptorSetLayoutBinding>&& bindings,
+    std::map<std::string, uint32_t>&& binding_names,
+    std::vector<vk::PushConstantRange>&& push_constant_ranges,
     uint32_t max_descriptor_sets,
     vk::PipelineBindPoint bind_point,
     bool use_push_descriptors
 ):  dev(&dev),
     bind_point(bind_point),
-    bindings(src.get_bindings(array_info)),
-    binding_names(src.get_binding_names()),
-    push_constant_ranges(src.get_push_constant_ranges())
+    bindings(std::move(bindings)),
+    binding_names(std::move(binding_names)),
+    push_constant_ranges(std::move(push_constant_ranges))
 {
     vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_info(
-        {}, bindings.size(), bindings.data()
+        {}, this->bindings.size(), this->bindings.data()
     );
 
     if(use_push_descriptors)
@@ -36,8 +37,8 @@ basic_pipeline::basic_pipeline(
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info(
         {}, 1, descriptor_set_layout,
-        push_constant_ranges.size(),
-        push_constant_ranges.data()
+        this->push_constant_ranges.size(),
+        this->push_constant_ranges.data()
     );
 
     pipeline_layout = vkm(dev, dev.dev.createPipelineLayout(pipeline_layout_info));
@@ -186,5 +187,20 @@ void basic_pipeline::bind(vk::CommandBuffer cmd) const
 {
     cmd.bindPipeline(bind_point, *pipeline);
 }
+
+void basic_pipeline::load_shader_module(
+    shader_source src,
+    vk::ShaderStageFlagBits stage,
+    std::vector<vk::PipelineShaderStageCreateInfo>& stages,
+    const vk::SpecializationInfo& specialization
+){
+    if(src.data.empty()) return;
+
+    vkm<vk::ShaderModule> mod = vkm(*dev, dev->dev.createShaderModule({
+        {}, src.data.size()*sizeof(uint32_t), src.data.data()
+    }));
+    stages.push_back({{}, stage, mod, "main", specialization.pData != nullptr ? &specialization : nullptr});
+}
+
 
 }

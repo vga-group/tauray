@@ -20,7 +20,7 @@ struct grid_data_buffer
 
 namespace sh_path_tracer
 {
-    shader_sources load_sources(const sh_path_tracer_stage::options& opt)
+    rt_shader_sources load_sources(const sh_path_tracer_stage::options& opt)
     {
         shader_source pl_rint("shader/path_tracer_point_light.rint");
         shader_source shadow_chit("shader/path_tracer_shadow.rchit");
@@ -45,7 +45,6 @@ namespace sh_path_tracer
         rt_stage::get_common_defines(defines, opt);
 
         return {
-            {}, {},
             {"shader/sh_path_tracer.rgen", defines},
             {
                 {
@@ -108,9 +107,7 @@ sh_path_tracer_stage::sh_path_tracer_stage(
     vk::ImageLayout output_layout,
     const options& opt
 ):  rt_stage(dev, opt, "SH path tracing", 1),
-    gfx(dev, rt_stage::get_common_state(
-        uvec2(0), uvec4(0), sh_path_tracer::load_sources(opt), opt
-    )),
+    gfx(dev, rt_stage::get_common_options(sh_path_tracer::load_sources(opt), opt)),
     opt(opt),
     output_grid(&output_grid),
     output_layout(output_layout),

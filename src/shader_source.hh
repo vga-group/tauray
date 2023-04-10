@@ -34,10 +34,14 @@ struct shader_source
     static void clear_binary_cache();
 };
 
-struct shader_sources
+struct raster_shader_sources
 {
     shader_source vert = {};
     shader_source frag = {};
+};
+
+struct rt_shader_sources
+{
     shader_source rgen = {};
 
     struct hit_group
@@ -51,21 +55,37 @@ struct shader_sources
 
     std::vector<hit_group> rhit = {};
     std::vector<shader_source> rmiss = {};
-
-    shader_source comp = {};
-
-    std::map<std::string /* name */, uint32_t /* binding */>
-        get_binding_names() const;
-
-    std::vector<vk::DescriptorSetLayoutBinding> get_bindings(
-        const std::map<
-            std::string /* binding name */,
-            uint32_t /* count */
-        >& count_overrides = {}
-    ) const;
-
-    std::vector<vk::PushConstantRange> get_push_constant_ranges() const;
 };
+
+
+std::map<std::string /* name */, uint32_t /* binding */>
+    get_binding_names(const rt_shader_sources& src);
+
+std::map<std::string /* name */, uint32_t /* binding */>
+    get_binding_names(const raster_shader_sources& src);
+
+std::map<std::string /* name */, uint32_t /* binding */>
+    get_binding_names(const shader_source& compute_src);
+
+std::vector<vk::DescriptorSetLayoutBinding> get_bindings(
+    const rt_shader_sources& src,
+    const std::map<
+        std::string /* binding name */,
+        uint32_t /* count */
+    >& count_overrides = {}
+);
+std::vector<vk::DescriptorSetLayoutBinding> get_bindings(
+    const raster_shader_sources& src,
+    const std::map<std::string, uint32_t>& count_overrides = {}
+);
+std::vector<vk::DescriptorSetLayoutBinding> get_bindings(
+    const shader_source& compute_src,
+    const std::map<std::string, uint32_t>& count_overrides = {}
+);
+
+std::vector<vk::PushConstantRange> get_push_constant_ranges(const rt_shader_sources& src);
+std::vector<vk::PushConstantRange> get_push_constant_ranges(const raster_shader_sources& src);
+std::vector<vk::PushConstantRange> get_push_constant_ranges(const shader_source& compute_src);
 
 }
 

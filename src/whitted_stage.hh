@@ -16,7 +16,6 @@ public:
 
     whitted_stage(
         device_data& dev,
-        uvec2 ray_count,
         const gbuffer_target& output_target,
         const options& opt
     );
@@ -31,7 +30,7 @@ protected:
     ) override;
 
 private:
-    gfx_pipeline gfx;
+    rt_pipeline gfx;
     options opt;
 };
 

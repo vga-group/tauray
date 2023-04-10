@@ -1,7 +1,7 @@
 #ifndef TAURAY_SHADOW_MAP_STAGE_HH
 #define TAURAY_SHADOW_MAP_STAGE_HH
 #include "context.hh"
-#include "gfx_pipeline.hh"
+#include "raster_pipeline.hh"
 #include "camera.hh"
 #include "sampler_table.hh"
 #include "timer.hh"
@@ -33,7 +33,7 @@ public:
 private:
     void update(uint32_t frame_index) override;
 
-    gfx_pipeline gfx;
+    raster_pipeline gfx;
     options opt;
     gpu_buffer camera_data;
 
