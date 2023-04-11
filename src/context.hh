@@ -6,6 +6,7 @@
 #include "dependency.hh"
 #include "render_target.hh"
 #include "tracing.hh"
+#include "progress_tracker.hh"
 #include <set>
 #include <map>
 #include <memory>
@@ -120,6 +121,7 @@ public:
     void sync();
 
     tracing_record& get_timing();
+    progress_tracker& get_progress_tracker();
 
     // You can add functions to be called when the current frame is guaranteed
     // to be finished on the GPU side.
@@ -200,6 +202,7 @@ private:
     std::unique_ptr<placeholders> placeholder_data;
 
     tracing_record timing;
+    progress_tracker tracker;
 
     // Callbacks for the end of each frame.
     std::vector<std::function<void()>> frame_end_actions[MAX_FRAMES_IN_FLIGHT];
