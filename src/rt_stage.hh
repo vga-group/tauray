@@ -1,14 +1,15 @@
-#ifndef TAURAY_RT_PIPELINE_HH
-#define TAURAY_RT_PIPELINE_HH
+#ifndef TAURAY_RT_STAGE_HH
+#define TAURAY_RT_STAGE_HH
 #include "context.hh"
 #include "texture.hh"
-#include "gfx_pipeline.hh"
+#include "basic_pipeline.hh"
 #include "material.hh"
 #include "distribution_strategy.hh"
 #include "sampler_table.hh"
 #include "timer.hh"
 #include "gpu_buffer.hh"
 #include "stage.hh"
+#include "rt_pipeline.hh"
 
 namespace tr
 {
@@ -39,10 +40,8 @@ public:
         sampler_type local_sampler  = sampler_type::UNIFORM_RANDOM;
     };
 
-    static gfx_pipeline::pipeline_state get_common_state(
-        uvec2 output_size,
-        uvec4 viewport,
-        const shader_sources& s,
+    static rt_pipeline::options get_common_options(
+        const rt_shader_sources& s,
         const options& opt,
         vk::SpecializationInfo specialization = {}
     );
@@ -99,4 +98,3 @@ private:
 }
 
 #endif
-

@@ -95,7 +95,6 @@ add_library(tauray-core STATIC
   src/frame_delay_stage.cc
   src/frame_server.cc
   src/gbuffer.cc
-  src/gfx_pipeline.cc
   src/gltf.cc
   src/gpu_buffer.cc
   src/headless.cc
@@ -122,14 +121,16 @@ add_library(tauray-core STATIC
   src/ply.cc
   src/post_processing_renderer.cc
   src/radix_sort.cc
+  src/raster_pipeline.cc
   src/raster_stage.cc
   src/raster_renderer.cc
   src/rectangle_packer.cc
   src/render_target.cc
   src/rt_camera_stage.cc
   src/rt_common.cc
-  src/rt_stage.cc
+  src/rt_pipeline.cc
   src/rt_renderer.cc
+  src/rt_stage.cc
   src/sampler.cc
   src/sampler_table.cc
   src/scene.cc

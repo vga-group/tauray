@@ -3,7 +3,7 @@
 #include "context.hh"
 #include "timer.hh"
 #include "texture.hh"
-#include "gfx_pipeline.hh"
+#include "raster_pipeline.hh"
 #include "sampler.hh"
 #include "gbuffer.hh"
 #include "gpu_buffer.hh"
@@ -57,7 +57,7 @@ public:
 private:
     void record_command_buffers();
 
-    std::vector<std::unique_ptr<gfx_pipeline>> array_pipelines;
+    std::vector<std::unique_ptr<raster_pipeline>> array_pipelines;
     std::vector<gbuffer_target> output_targets;
     options opt;
 

@@ -22,10 +22,10 @@ struct push_constant_buffer
 
 namespace shadow
 {
-    shader_sources load_sources()
+    raster_shader_sources load_sources()
     {
         static bool loaded = false;
-        static shader_sources src;
+        static raster_shader_sources src;
         if(!loaded)
         {
             src = {{"shader/shadow_map.vert"}, {"shader/shadow_map.frag"}};
@@ -57,7 +57,7 @@ shadow_map_stage::shadow_map_stage(
         mesh::get_bindings(),
         {mesh::get_attributes()[0], mesh::get_attributes()[2]},
         {},
-        gfx_pipeline::pipeline_state::depth_attachment_state{
+        raster_pipeline::pipeline_state::depth_attachment_state{
             depth_buffer,
             {
                 {},

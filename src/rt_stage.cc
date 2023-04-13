@@ -24,25 +24,19 @@ struct sampling_data_buffer
 namespace tr
 {
 
-gfx_pipeline::pipeline_state rt_stage::get_common_state(
-    uvec2 output_size,
-    uvec4 viewport,
-    const shader_sources& src,
+rt_pipeline::options rt_stage::get_common_options(
+    const rt_shader_sources& src,
     const options& opt,
     vk::SpecializationInfo specialization
 ){
-    gfx_pipeline::pipeline_state state = {
-        output_size,
-        viewport,
+    rt_pipeline::options state = {
         src,
         {
             {"vertices", (uint32_t)opt.max_instances},
             {"indices", (uint32_t)opt.max_instances},
             {"textures", (uint32_t)opt.max_samplers},
         },
-        mesh::get_bindings(),
-        mesh::get_attributes(),
-        {}, {},
+        1, {}, false
     };
     state.specialization = specialization;
     return state;

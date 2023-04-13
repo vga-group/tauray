@@ -32,7 +32,7 @@ envmap_stage::envmap_stage(
     set_scene(nullptr);
     for(const render_target& target: color_arrays)
     {
-        array_pipelines.emplace_back(new gfx_pipeline(dev, {
+        array_pipelines.emplace_back(new raster_pipeline(dev, {
             target.get_size(),
             uvec4(0, 0, target.get_size()),
             {{"shader/envmap.vert"}, {"shader/envmap.frag"}},
@@ -53,8 +53,7 @@ envmap_stage::envmap_stage(
                 }
             }},
             {},
-            {},
-            {false, false, true}
+            false, false, true
         }));
     }
 }
@@ -86,7 +85,7 @@ void envmap_stage::set_scene(scene* s)
         envmap_timer.begin(cb, i);
 
         size_t j = 0;
-        for(std::unique_ptr<gfx_pipeline>& gfx: array_pipelines)
+        for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             // Bind descriptors
             cur_scene->bind(*gfx, i, j);

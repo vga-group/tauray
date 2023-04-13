@@ -2,25 +2,15 @@
 #include "misc.hh"
 #include <map>
 
-namespace
-{
-using namespace tr;
-
-shader_sources sources(const shader_source& src)
-{
-    shader_sources srcs;
-    srcs.comp = src;
-    return srcs;
-}
-
-}
-
 namespace tr
 {
 
 compute_pipeline::compute_pipeline(device_data& dev, const params& p)
 :   basic_pipeline(
-        dev, sources(p.src), p.binding_array_lengths,
+        dev,
+        get_bindings(p.src, p.binding_array_lengths),
+        get_binding_names(p.src),
+        get_push_constant_ranges(p.src),
         p.max_descriptor_sets, vk::PipelineBindPoint::eCompute,
         p.use_push_descriptors
     )

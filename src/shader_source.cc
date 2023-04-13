@@ -143,7 +143,7 @@ shader_source::shader_source(
 
     // Splice defines into the source
     std::string definition_src = generate_definition_src(defines);
-   
+
     size_t offset = src.find("#version");
     if(offset == std::string::npos) src = definition_src + src;
     else
@@ -158,7 +158,7 @@ shader_source::shader_source(
         glslang::InitializeProcess();
 
         // Prepare the shader source for glslang
-        EShLanguage type = detect_shader_language(ext); 
+        EShLanguage type = detect_shader_language(ext);
         glslang::TShader shader(type);
         const char* c_str = src.c_str();
         shader.setStrings(&c_str, 1);
@@ -255,50 +255,114 @@ void shader_source::clear_binary_cache()
     binaries.clear();
 }
 
-std::map<std::string, uint32_t> shader_sources::get_binding_names() const
+std::map<std::string, uint32_t> get_binding_names(const rt_shader_sources& src)
 {
     std::map<std::string, uint32_t> names;
-    append_shader_names(names, vert);
-    append_shader_names(names, frag);
-    append_shader_names(names, rgen);
+    append_shader_names(names, src.rgen);
 
-    for(const hit_group& hg: rhit)
+    for(const rt_shader_sources::hit_group& hg: src.rhit)
     {
         append_shader_names(names, hg.rchit);
         append_shader_names(names, hg.rahit);
         append_shader_names(names, hg.rint);
     }
 
-    for(const shader_source& src: rmiss)
+    for(const shader_source& src: src.rmiss)
         append_shader_names(names, src);
-
-    append_shader_names(names, comp);
 
     return names;
 }
 
-std::vector<vk::DescriptorSetLayoutBinding> shader_sources::get_bindings(
-    const std::map<std::string, uint32_t>& count_overrides
-) const
+std::map<std::string, uint32_t> get_binding_names(const raster_shader_sources& src)
 {
-    std::vector<vk::DescriptorSetLayoutBinding> bindings;
-    append_shader_bindings(bindings, vert);
-    append_shader_bindings(bindings, frag);
-    append_shader_bindings(bindings, rgen);
+    std::map<std::string, uint32_t> names;
+    append_shader_names(names, src.vert);
+    append_shader_names(names, src.frag);
+    return names;
+}
 
-    for(const hit_group& hg: rhit)
+std::map<std::string, uint32_t> get_binding_names(const shader_source& compute_src)
+{
+    std::map<std::string, uint32_t> names;
+    append_shader_names(names, compute_src);
+    return names;
+}
+
+std::vector<vk::DescriptorSetLayoutBinding> get_bindings(
+    const rt_shader_sources& src,
+    const std::map<std::string, uint32_t>& count_overrides
+){
+    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+    append_shader_bindings(bindings, src.rgen);
+
+    for(const rt_shader_sources::hit_group& hg: src.rhit)
     {
         append_shader_bindings(bindings, hg.rchit);
         append_shader_bindings(bindings, hg.rahit);
         append_shader_bindings(bindings, hg.rint);
     }
 
-    for(const shader_source& src: rmiss)
-        append_shader_bindings(bindings, src);
+    for(const shader_source& s: src.rmiss)
+        append_shader_bindings(bindings, s);
 
-    append_shader_bindings(bindings, comp);
+    auto binding_names = get_binding_names(src);
 
-    auto binding_names = get_binding_names();
+    for(auto pair: count_overrides)
+    {
+        auto it = binding_names.find(pair.first);
+        if(it == binding_names.end())
+            continue;
+
+        for(auto& o: bindings)
+        {
+            if(o.binding == it->second)
+            {
+                o.descriptorCount = pair.second;
+                break;
+            }
+        }
+    }
+
+    return bindings;
+}
+
+std::vector<vk::DescriptorSetLayoutBinding> get_bindings(
+    const raster_shader_sources& src,
+    const std::map<std::string, uint32_t>& count_overrides
+){
+    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+    append_shader_bindings(bindings, src.vert);
+    append_shader_bindings(bindings, src.frag);
+
+    auto binding_names = get_binding_names(src);
+
+    for(auto pair: count_overrides)
+    {
+        auto it = binding_names.find(pair.first);
+        if(it == binding_names.end())
+            continue;
+
+        for(auto& o: bindings)
+        {
+            if(o.binding == it->second)
+            {
+                o.descriptorCount = pair.second;
+                break;
+            }
+        }
+    }
+
+    return bindings;
+}
+
+std::vector<vk::DescriptorSetLayoutBinding> get_bindings(
+    const shader_source& compute_src,
+    const std::map<std::string, uint32_t>& count_overrides
+){
+    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+    append_shader_bindings(bindings, compute_src);
+
+    auto binding_names = get_binding_names(compute_src);
 
     for(auto pair: count_overrides)
     {
@@ -320,25 +384,38 @@ std::vector<vk::DescriptorSetLayoutBinding> shader_sources::get_bindings(
 }
 
 std::vector<vk::PushConstantRange>
-shader_sources::get_push_constant_ranges() const
+get_push_constant_ranges(const rt_shader_sources& src)
 {
     std::vector<vk::PushConstantRange> ranges;
-    append_shader_pc_ranges(ranges, vert);
-    append_shader_pc_ranges(ranges, frag);
-    append_shader_pc_ranges(ranges, rgen);
+    append_shader_pc_ranges(ranges, src.rgen);
 
-    for(const hit_group& hg: rhit)
+    for(const rt_shader_sources::hit_group& hg: src.rhit)
     {
         append_shader_pc_ranges(ranges, hg.rchit);
         append_shader_pc_ranges(ranges, hg.rahit);
         append_shader_pc_ranges(ranges, hg.rint);
     }
 
-    for(const shader_source& src: rmiss)
+    for(const shader_source& src: src.rmiss)
         append_shader_pc_ranges(ranges, src);
 
-    append_shader_pc_ranges(ranges, comp);
+    return ranges;
+}
 
+std::vector<vk::PushConstantRange>
+get_push_constant_ranges(const raster_shader_sources& src)
+{
+    std::vector<vk::PushConstantRange> ranges;
+    append_shader_pc_ranges(ranges, src.vert);
+    append_shader_pc_ranges(ranges, src.frag);
+    return ranges;
+}
+
+std::vector<vk::PushConstantRange>
+get_push_constant_ranges(const shader_source& compute_src)
+{
+    std::vector<vk::PushConstantRange> ranges;
+    append_shader_pc_ranges(ranges, compute_src);
     return ranges;
 }
 
