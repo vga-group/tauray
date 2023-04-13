@@ -120,6 +120,7 @@ add_library(tauray-core STATIC
   src/plane.cc
   src/ply.cc
   src/post_processing_renderer.cc
+  src/progress_tracker.cc
   src/radix_sort.cc
   src/raster_pipeline.cc
   src/raster_stage.cc

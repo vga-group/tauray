@@ -67,7 +67,7 @@ namespace tr
 context::context(const options& opt)
 :   image_array_layers(0), opt(opt), frame_counter(0),
     displayed_frame_counter(0), swapchain_index(0), frame_index(0),
-    is_displaying(true), timing(this)
+    is_displaying(true), timing(this), tracker(this)
 {}
 
 context::~context() {}
@@ -245,6 +245,11 @@ void context::sync()
 tracing_record& context::get_timing()
 {
     return timing;
+}
+
+progress_tracker& context::get_progress_tracker()
+{
+    return tracker;
 }
 
 void context::queue_frame_finish_callback(std::function<void()>&& func)
@@ -735,6 +740,7 @@ void context::deinit_resources()
     frame_finished.clear();
     image_fences.clear();
     timing.deinit();
+    tracker.end();
 }
 
 void context::call_frame_end_actions(uint32_t frame_index)

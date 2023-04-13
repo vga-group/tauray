@@ -11,6 +11,10 @@
     TR_INT_SOPT(height, 'h', "Set viewport height.", 720, 0, INT_MAX) \
     TR_BOOL_SOPT(fullscreen, 'f', "Enable fullscreen mode.") \
     TR_BOOL_SOPT(vsync, 's', "Enable vertical synchronization.") \
+    TR_BOOL_SOPT( \
+        progress, 'p', \
+        "Add a progress bar, useful for long offline renders." \
+    ) \
     TR_BOOL_OPT(hdr, "Try to find an HDR swap chain.", false) \
     TR_BOOL_SOPT(timing, 't', "Print frame times.") \
     TR_SETINT_OPT(devices, \

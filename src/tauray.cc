@@ -1027,6 +1027,20 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
     bool is_animated = s.is_playing();
     if(!opt.frames && !is_animated) frame_count = 1;
 
+    if(opt.progress && frame_count != size_t(-1))
+    {
+        progress_tracker::options popt;
+        popt.expected_frame_count = frame_count;
+        popt.expected_steps_per_frame = 1;
+        if(auto rtype = std::get_if<options::basic_pipeline_type>(&opt.renderer))
+        {
+            if(*rtype == options::PATH_TRACER || *rtype == options::DIRECT)
+                popt.expected_steps_per_frame = opt.samples_per_pixel;
+        }
+
+        ctx.get_progress_tracker().begin(popt);
+    }
+
     for(size_t i = 0; i < frame_count; ++i)
     {
         if(!opt.frames && is_animated && !s.is_playing())
