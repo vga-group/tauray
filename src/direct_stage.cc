@@ -114,9 +114,10 @@ void direct_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
     uint32_t frame_index,
     uint32_t pass_index,
-    uvec3 expected_dispatch_size
+    uvec3 expected_dispatch_size,
+    bool first_in_command_buffer
 ){
-    if(pass_index == 0)
+    if(first_in_command_buffer)
         gfx.bind(cb, frame_index);
 
     scene* cur_scene = get_scene();

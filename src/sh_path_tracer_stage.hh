@@ -40,7 +40,8 @@ protected:
     void update(uint32_t frame_index) override;
     void init_scene_resources() override;
     void record_command_buffer(
-        vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index
+        vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index,
+        bool first_in_command_buffer
     ) override;
 
     rt_pipeline gfx;

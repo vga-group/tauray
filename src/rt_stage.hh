@@ -38,6 +38,10 @@ public:
 
         int rng_seed = 0;
         sampler_type local_sampler  = sampler_type::UNIFORM_RANDOM;
+
+        // Small values add overhead but allow more detailed progression
+        // tracking. 0 puts all in one command buffer and is fastest.
+        size_t max_passes_per_command_buffer = 0;
     };
 
     static rt_pipeline::options get_common_options(
@@ -75,7 +79,8 @@ protected:
     virtual void record_command_buffer(
         vk::CommandBuffer cb,
         uint32_t frame_index,
-        uint32_t pass_index
+        uint32_t pass_index,
+        bool first_in_command_buffer
     ) = 0;
     virtual void init_scene_resources() = 0;
     void init_descriptors(basic_pipeline& pp);

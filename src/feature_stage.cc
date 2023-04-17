@@ -95,7 +95,8 @@ void feature_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
     uint32_t frame_index,
     uint32_t /*pass_index*/,
-    uvec3 expected_dispatch_size
+    uvec3 expected_dispatch_size,
+    bool
 ){
     gfx.bind(cb, frame_index);
 

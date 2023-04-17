@@ -7,6 +7,7 @@
 #include "misc.hh"
 #include "texture.hh"
 #include "sampler.hh"
+#include "log.hh"
 
 namespace
 {
@@ -157,13 +158,21 @@ void rt_stage::record_command_buffers()
     clear_commands();
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        vk::CommandBuffer cb = begin_graphics();
-        rt_timer.begin(cb, i);
-        sampling_data.upload(i, cb);
-        for(size_t j = 0; j < pass_count; ++j)
-            record_command_buffer(cb, i, j);
-        rt_timer.end(cb, i);
-        end_graphics(cb, i);
+        size_t pass_count_left = pass_count;
+        while(pass_count_left != 0)
+        {
+            vk::CommandBuffer cb = begin_graphics();
+            rt_timer.begin(cb, i);
+            sampling_data.upload(i, cb);
+            size_t local_pass_count = opt.max_passes_per_command_buffer == 0 ?
+                pass_count :
+                min(pass_count_left, opt.max_passes_per_command_buffer);
+            for(size_t j = 0; j < local_pass_count; ++j)
+                record_command_buffer(cb, i, (pass_count - pass_count_left) + j, j == 0);
+            pass_count_left -= local_pass_count;
+            rt_timer.end(cb, i);
+            end_graphics(cb, i);
+        }
     }
 }
 

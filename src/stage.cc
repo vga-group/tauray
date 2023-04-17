@@ -5,8 +5,9 @@ namespace tr
 {
 
 stage::stage(device_data& dev, command_buffer_strategy strategy)
-: dev(&dev), local_frame_counter(0), strategy(strategy)
+: dev(&dev), local_step_counter(0), strategy(strategy)
 {
+    progress = create_timeline_semaphore(dev);
     switch(strategy)
     {
     case COMMAND_BUFFER_PER_FRAME:
@@ -21,9 +22,13 @@ stage::stage(device_data& dev, command_buffer_strategy strategy)
     }
 }
 
+stage::~stage()
+{
+    dev->ctx->get_progress_tracker().erase_timeline(*progress);
+}
+
 dependency stage::run(dependencies deps)
 {
-    local_frame_counter++;
     dependency dep;
 
     uint32_t swapchain_index = 0, frame_index = 0;
@@ -33,23 +38,23 @@ dependency stage::run(dependencies deps)
 
     size_t cb_index = get_command_buffer_index(frame_index, swapchain_index);
 
+    dev->ctx->get_progress_tracker().set_timeline(dev->index, progress, command_buffers[cb_index].size());
+
     for(size_t i = 0; i < command_buffers[cb_index].size(); ++i)
     {
         const vkm<vk::CommandBuffer>& cmd = command_buffers[cb_index][i];
-        const vkm<vk::Semaphore>& cur = finished[i];
 
-        if(local_frame_counter > 1 && i == 0)
-            deps.add({*finished.back(), local_frame_counter-1});
-        else if(i > 0)
+        if(i > 0)
             deps.add(dep);
 
         vk::TimelineSemaphoreSubmitInfo timeline_info = deps.get_timeline_info();
+        local_step_counter++;
         timeline_info.signalSemaphoreValueCount = 1;
-        timeline_info.pSignalSemaphoreValues = &local_frame_counter;
+        timeline_info.pSignalSemaphoreValues = &local_step_counter;
 
         vk::SubmitInfo submit_info = deps.get_submit_info(timeline_info);
         submit_info.signalSemaphoreCount = 1;
-        submit_info.pSignalSemaphores = cur.get();
+        submit_info.pSignalSemaphores = progress.get();
         submit_info.commandBufferCount = 1;
         submit_info.pCommandBuffers = cmd.get();
 
@@ -60,10 +65,10 @@ dependency stage::run(dependencies deps)
         if(cmd.get_pool() == dev->transfer_pool)
             dev->transfer_queue.submit(submit_info, {});
 
-        if((local_frame_counter > 1 && i == 0) || i > 0)
+        if(i > 0)
             deps.pop();
 
-        dep = {*cur, local_frame_counter};
+        dep = {*progress, local_step_counter};
     }
 
     return dep;
@@ -135,8 +140,6 @@ void stage::end_commands(vk::CommandBuffer buf, vk::CommandPool pool, uint32_t f
     buf.end();
     size_t index = get_command_buffer_index(frame_index, swapchain_index);
     command_buffers[index].emplace_back(*dev, buf, pool);
-    while(finished.size() < command_buffers[index].size())
-        finished.push_back(create_timeline_semaphore(*dev));
 }
 
 void stage::clear_commands()

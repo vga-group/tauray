@@ -25,43 +25,6 @@ void progress_tracker::begin(options opt)
     end();
     running = true;
     this->opt = opt;
-
-    std::vector<device_data>& devices = ctx->get_devices();
-    tracking_resources.resize(devices.size());
-
-    for(size_t i = 0; i < devices.size(); ++i)
-    {
-        vk::BufferCreateInfo create_info;
-        create_info.size = sizeof(tracking_stamp);
-        create_info.usage =
-            vk::BufferUsageFlagBits::eTransferDst|vk::BufferUsageFlagBits::eTransferSrc;
-        create_info.sharingMode = vk::SharingMode::eExclusive;
-
-        vk::Buffer res;
-        VmaAllocation alloc;
-        VmaAllocationInfo info;
-        VmaAllocationCreateInfo alloc_info = {};
-        alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
-        alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT|VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-        vmaCreateBuffer(
-            devices[i].allocator, (VkBufferCreateInfo*)&create_info,
-            &alloc_info, reinterpret_cast<VkBuffer*>(&res),
-            &alloc, &info
-        );
-        tracking_resources[i].tracking_data = vkm<vk::Buffer>(devices[i], res, alloc);
-        tracking_resources[i].tracking_data_ptr = (tracking_stamp*)info.pMappedData;
-
-        create_info.size = sizeof(uint32_t) * MAX_FRAMES_IN_FLIGHT;
-        vmaCreateBuffer(
-            devices[i].allocator, (VkBufferCreateInfo*)&create_info,
-            &alloc_info, reinterpret_cast<VkBuffer*>(&res),
-            &alloc, &info
-        );
-        tracking_resources[i].frame_buffer = vkm<vk::Buffer>(devices[i], res, alloc);
-        tracking_resources[i].frame_buffer_ptr = (uint32_t*)info.pMappedData;
-    }
-
     poll_thread.emplace(poll_worker, this);
 }
 
@@ -69,69 +32,52 @@ void progress_tracker::end()
 {
     if(!running) return;
 
-    running = false;
+    {
+        std::unique_lock<std::mutex> lk(tracking_mutex);
+        tracking_resources.clear();
+        running = false;
+    }
     cv.notify_all();
     poll_thread->join();
-    tracking_resources.clear();
     // Show cursor again
     std::cout << "\x1b[?25h";
 }
 
-void progress_tracker::prepare_frame(size_t device_index, uint32_t frame_index, uint64_t frame)
+void progress_tracker::set_timeline(size_t device_index, vk::Semaphore timeline, size_t expected_steps_per_frame)
 {
-    if(running)
-    {
-        tracking_resources[device_index].frame_buffer_ptr[frame_index] = frame;
-    }
-}
+    if(!running) return;
 
-void progress_tracker::record_tracking(size_t device_index, vk::CommandBuffer cmd, uint32_t frame_index, uint32_t step)
-{
-    if(running)
+    std::unique_lock<std::mutex> lk(tracking_mutex);
+    for(tracking_data& d: tracking_resources)
     {
-        if(step == 0)
+        if(d.timeline == timeline)
         {
-            cmd.copyBuffer(
-                *tracking_resources[device_index].frame_buffer,
-                *tracking_resources[device_index].tracking_data,
-                vk::BufferCopy(frame_index * sizeof(uint32_t), 0, sizeof(uint32_t))
-            );
+            d.expected_steps_per_frame = expected_steps_per_frame;
+            return;
         }
-        cmd.updateBuffer(
-            *tracking_resources[device_index].tracking_data,
-            sizeof(uint32_t),
-            sizeof(uint32_t),
-            &step
-        );
     }
+    tracking_resources.push_back({
+        device_index,
+        timeline,
+        expected_steps_per_frame
+    });
 }
 
-bool progress_tracker::tracking_stamp::operator<(const tracking_stamp& other) const
+void progress_tracker::erase_timeline(vk::Semaphore timeline)
 {
-    if(frame < other.frame) return true;
-    else if(frame > other.frame) return false;
-    else return step < other.step;
-}
+    if(!running) return;
 
-bool progress_tracker::tracking_stamp::operator==(const tracking_stamp& other) const
-{
-    return frame == other.frame && step == other.step;
+    for(auto it = tracking_resources.begin(); it != tracking_resources.end();)
+    {
+        if(it->timeline == timeline) it = tracking_resources.erase(it);
+        else ++it;
+    }
 }
 
 void progress_tracker::update_progress_bar(
     std::chrono::steady_clock::time_point start,
-    const tracking_stamp& latest
+    float progress
 ){
-    if(latest.frame >= opt.expected_frame_count)
-        opt.expected_frame_count = latest.frame;
-
-    if(latest.step >= opt.expected_steps_per_frame)
-        opt.expected_steps_per_frame = latest.step;
-
-    size_t total_steps = opt.expected_frame_count * opt.expected_steps_per_frame;
-    size_t cur_steps = (latest.frame-1) * opt.expected_steps_per_frame + latest.step;
-    float progress = float(cur_steps) / float(total_steps);
-
     auto delta = std::chrono::duration_cast<std::chrono::duration<float>>(
         std::chrono::steady_clock::now() - start).count();
 
@@ -144,68 +90,79 @@ void progress_tracker::update_progress_bar(
     for(int i = 0; i < bar_width; ++i)
     {
         char c = ' ';
-        if(i < fill_width || cur_steps == total_steps) c = '=';
+        if(i < fill_width || progress >= 1.0f) c = '=';
         else if(i == fill_width) c = '>';
 
         std::cout << c;
     }
     std::cout << "] ";
 
-    std::cout << std::setprecision(1) << 100.0f * progress << "%, ";
-    int hours = time_left / 3600;
-    if(hours > 0) std::cout << hours << "h ";
-    time_left %= 3600;
+    std::cout << std::setprecision(1) << 100.0f * progress << "%";
 
-    int minutes = time_left / 60;
-    if(minutes > 0) std::cout << minutes << "m ";
-    time_left %= 60;
+    if(progress != 0.0f)
+    {
+        std::cout << ", ";
+        int hours = time_left / 3600;
+        if(hours > 0) std::cout << hours << "h ";
+        time_left %= 3600;
 
-    std::cout << time_left << "s left";
+        int minutes = time_left / 60;
+        if(minutes > 0) std::cout << minutes << "m ";
+        time_left %= 60;
+
+        std::cout << time_left << "s left";
+    }
 
     std::cout << std::flush;
 }
 
 void progress_tracker::poll_worker(progress_tracker* self)
 {
-    std::mutex wait_mutex;
-    std::unique_lock<std::mutex> lk(wait_mutex);
-    tracking_stamp latest = {0, 0};
-
     std::vector<device_data>& devices = self->ctx->get_devices();
 
     std::chrono::steady_clock::time_point start_time;
     bool first = true;
+    float last_progress = -1.0f;
 
-    while(self->running)
+    std::vector<size_t> device_total_steps(devices.size(), 0);
+    std::vector<size_t> device_finished_steps(devices.size(), 0);
+
+    for(;;)
     {
+        std::unique_lock<std::mutex> lk(self->tracking_mutex);
         self->cv.wait_for(lk, std::chrono::milliseconds(self->opt.poll_ms));
+        if(!self->running)
+            return;
 
-        tracking_stamp oldest;
+        device_total_steps.assign(devices.size(), 0);
+        device_finished_steps.assign(devices.size(), 0);
+        for(tracking_data& d: self->tracking_resources)
+        {
+            size_t steps = d.expected_steps_per_frame * self->opt.expected_frame_count;
+            device_total_steps[d.device_index] += steps;
+            uint64_t finished = devices[d.device_index].dev.getSemaphoreCounterValue(d.timeline);
+            device_finished_steps[d.device_index] += finished;
+        }
 
-        bool failed = false;
+        float progress = 10.0f;
         for(size_t i = 0; i < devices.size(); ++i)
         {
-            tracking_stamp stamp = *self->tracking_resources[i].tracking_data_ptr;
-            if(stamp < self->tracking_resources[i].last_value)
-            {
-                failed = true;
-                break;
-            }
-            self->tracking_resources[i].last_value = stamp;
-            if(i == 0 || stamp < oldest)
-                oldest = stamp;
-        }
-        if(failed) continue;
+            if(device_total_steps[i] == 0) continue;
 
-        if(!(latest == oldest))
+            float device_progress = float(device_finished_steps[i]) / float(device_total_steps[i]);
+            if(device_progress < progress)
+                progress = device_progress;
+        }
+
+        if(last_progress != progress && progress <= 1.0f)
         {
-            latest = oldest;
+            last_progress = progress;
             if(first)
             {
                 start_time = std::chrono::steady_clock::now();
                 first = false;
             }
-            self->update_progress_bar(start_time, latest);
+            self->update_progress_bar(start_time, progress);
         }
     }
 }

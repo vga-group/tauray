@@ -157,7 +157,8 @@ void sh_path_tracer_stage::init_scene_resources()
 }
 
 void sh_path_tracer_stage::record_command_buffer(
-    vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index
+    vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index,
+    bool /*first_in_command_buffer*/
 ){
     grid_data.upload(frame_index, cb);
 

@@ -31,7 +31,8 @@ protected:
         vk::CommandBuffer cb,
         uint32_t frame_index,
         uint32_t pass_index,
-        uvec3 expected_dispatch_size
+        uvec3 expected_dispatch_size,
+        bool first_in_command_buffer
     ) override;
 
 private:

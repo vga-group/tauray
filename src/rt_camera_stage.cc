@@ -91,9 +91,6 @@ void rt_camera_stage::update(uint32_t frame_index)
         }
     );
 
-    uint64_t frame = dev->ctx->get_frame_counter();
-    dev->ctx->get_progress_tracker().prepare_frame(dev->index, frame_index, frame);
-
     for(size_t i = 0; i < opt.active_viewport_count; ++i)
     {
         camera* cam = get_scene()->get_camera(i);
@@ -129,7 +126,8 @@ void rt_camera_stage::init_descriptors(basic_pipeline& pp)
 }
 
 void rt_camera_stage::record_command_buffer(
-    vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index
+    vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index,
+    bool first_in_command_buffer
 ){
     std::vector<vk::ImageMemoryBarrier> in_barriers;
     std::vector<vk::ImageMemoryBarrier> out_barriers;
@@ -165,7 +163,6 @@ void rt_camera_stage::record_command_buffer(
 
     if(pass_index == 0)
     {
-        dev->ctx->get_progress_tracker().record_tracking(dev->index, cb, frame_index, 0);
         distribution_data.upload(frame_index, cb);
         cb.pipelineBarrier(
             vk::PipelineStageFlagBits::eTopOfPipe,
@@ -176,7 +173,8 @@ void rt_camera_stage::record_command_buffer(
 
     record_command_buffer_pass(
         cb, frame_index, pass_index,
-        uvec3(get_ray_count(opt.distribution), opt.active_viewport_count)
+        uvec3(get_ray_count(opt.distribution), opt.active_viewport_count),
+        first_in_command_buffer
     );
 
     if(pass_index == get_pass_count()-1)
@@ -196,13 +194,6 @@ void rt_camera_stage::record_command_buffer(
             {}, {}, {}, out_barriers
         );
     }
-
-    dev->ctx->get_progress_tracker().record_tracking(
-        dev->index,
-        cb,
-        frame_index,
-        opt.samples_per_pixel * (pass_index+1)/ get_pass_count()
-    );
 }
 
 }
