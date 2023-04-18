@@ -46,8 +46,8 @@
     TR_VECFLOAT_OPT(workload, \
         "Specify initial workload ratios per device, default is even workload.") \
     TR_ENUM_OPT(format, headless::pixel_format, \
-        "Data format for the pixels in captured frames." \
-        "This option is respected only when using the EXR filetype." \
+        "Data format for the pixels in captured frames. " \
+        "This option is respected only when using the EXR filetype. " \
         "PNG uses 8-bit rgba, BMP uses 8-bit rgb, and HDR uses 8 bits per " \
         "color and a shared 8-bit exponent, 32 bits per pixel in total.", \
         headless::RGB16, \
