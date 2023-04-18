@@ -60,6 +60,16 @@ vkm<vk::CommandBuffer> create_graphics_command_buffer(device_data& d)
     );
 }
 
+vkm<vk::CommandBuffer> create_transfer_command_buffer(device_data& d)
+{
+    return vkm<vk::CommandBuffer>(d,
+        d.dev.allocateCommandBuffers({
+            d.transfer_pool, vk::CommandBufferLevel::ePrimary, 1
+        })[0],
+        d.transfer_pool
+    );
+}
+
 vkm<vk::Semaphore> create_binary_semaphore(device_data& d)
 {
     return vkm<vk::Semaphore>(

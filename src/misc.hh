@@ -20,6 +20,7 @@ void end_command_buffer(device_data& d, vk::CommandBuffer cb);
 
 vkm<vk::CommandBuffer> create_compute_command_buffer(device_data& d);
 vkm<vk::CommandBuffer> create_graphics_command_buffer(device_data& d);
+vkm<vk::CommandBuffer> create_transfer_command_buffer(device_data& d);
 
 vkm<vk::Semaphore> create_binary_semaphore(device_data& d);
 vkm<vk::Semaphore> create_timeline_semaphore(device_data& d);

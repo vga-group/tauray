@@ -150,7 +150,7 @@ void rt_renderer<Pipeline>::render()
 
             vk::PipelineStageFlags wait_stage =
                 vk::PipelineStageFlagBits::eTopOfPipe;
-            dev.graphics_queue.submit(submit_info, {});
+            dev.transfer_queue.submit(submit_info, {});
 
             timeline_info.waitSemaphoreValueCount = 0;
             timeline_info.pWaitSemaphoreValues = nullptr;
@@ -164,7 +164,7 @@ void rt_renderer<Pipeline>::render()
             submit_info.signalSemaphoreCount = 1;
             submit_info.pSignalSemaphores = f.cpu_to_gpu_sem.get();
 
-            display_device.graphics_queue.submit(submit_info, {});
+            display_device.transfer_queue.submit(submit_info, {});
             display_deps.add({f.cpu_to_gpu_sem, frame_counter});
         }
         else
@@ -518,15 +518,15 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
     device_data& primary,
     device_data& secondary
 ){
-    f.gpu_to_cpu_cb = create_graphics_command_buffer(secondary);
+    f.gpu_to_cpu_cb = create_transfer_command_buffer(secondary);
 
     f.gpu_to_cpu_cb->begin(vk::CommandBufferBeginInfo{});
-    r.gpu_to_cpu_timer.begin(f.gpu_to_cpu_cb, frame_index);
+    //r.gpu_to_cpu_timer.begin(f.gpu_to_cpu_cb, frame_index);
 
-    f.cpu_to_gpu_cb = create_graphics_command_buffer(primary);
+    f.cpu_to_gpu_cb = create_transfer_command_buffer(primary);
 
     f.cpu_to_gpu_cb->begin(vk::CommandBufferBeginInfo{});
-    r.cpu_to_gpu_timer.begin(f.cpu_to_gpu_cb, frame_index);
+    //r.cpu_to_gpu_timer.begin(f.cpu_to_gpu_cb, frame_index);
 
     gbuffer_target target = r.gbuffer.get_array_target();
     gbuffer_target target_copy = r.gbuffer_copy.get_array_target();
@@ -592,9 +592,9 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
         ++j;
     }
 
-    r.gpu_to_cpu_timer.end(f.gpu_to_cpu_cb, frame_index);
+    //r.gpu_to_cpu_timer.end(f.gpu_to_cpu_cb, frame_index);
     f.gpu_to_cpu_cb->end();
-    r.cpu_to_gpu_timer.end(f.cpu_to_gpu_cb, frame_index);
+    //r.cpu_to_gpu_timer.end(f.cpu_to_gpu_cb, frame_index);
     f.cpu_to_gpu_cb->end();
 }
 
