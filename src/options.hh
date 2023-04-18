@@ -28,8 +28,7 @@
         "viewers support all algorithms, and some algorithms can cause " \
         "massive delays in saving. Uncompressed images have very large " \
         "on-disk footprint. All available algorithms are lossless. " \
-        "This option is respected only when using the EXR filetype." \
-        "PNG and HDR use RLE compression, and BMP uses no compression.", \
+        "This option is respected only when using the EXR filetype.", \
         headless::PIZ, \
         {"zip", headless::ZIP}, \
         {"zips", headless::ZIPS}, \
