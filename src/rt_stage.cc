@@ -162,7 +162,8 @@ void rt_stage::record_command_buffers()
         while(pass_count_left != 0)
         {
             vk::CommandBuffer cb = begin_graphics();
-            rt_timer.begin(cb, i);
+            if(pass_count_left == pass_count)
+                rt_timer.begin(cb, i);
             sampling_data.upload(i, cb);
             size_t local_pass_count = opt.max_passes_per_command_buffer == 0 ?
                 pass_count :
@@ -170,7 +171,8 @@ void rt_stage::record_command_buffers()
             for(size_t j = 0; j < local_pass_count; ++j)
                 record_command_buffer(cb, i, (pass_count - pass_count_left) + j, j == 0);
             pass_count_left -= local_pass_count;
-            rt_timer.end(cb, i);
+            if(pass_count_left == 0)
+                rt_timer.end(cb, i);
             end_graphics(cb, i);
         }
     }
