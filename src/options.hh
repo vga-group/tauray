@@ -31,7 +31,8 @@
         "Compression algorithm for use with captured frames. Not all EXR " \
         "viewers support all algorithms, and some algorithms can cause " \
         "massive delays in saving. Uncompressed images have very large " \
-        "on-disk footprint. All available algorithms are lossless.", \
+        "on-disk footprint. All available algorithms are lossless. " \
+        "This option is respected only when using the EXR filetype.", \
         headless::PIZ, \
         {"zip", headless::ZIP}, \
         {"zips", headless::ZIPS}, \
@@ -49,7 +50,10 @@
     TR_VECFLOAT_OPT(workload, \
         "Specify initial workload ratios per device, default is even workload.") \
     TR_ENUM_OPT(format, headless::pixel_format, \
-        "Data format for the pixels in captured frames.", \
+        "Data format for the pixels in captured frames. " \
+        "This option is respected only when using the EXR filetype. " \
+        "PNG uses 8-bit rgba, BMP uses 8-bit rgb, and HDR uses 8 bits per " \
+        "color and a shared 8-bit exponent, 32 bits per pixel in total.", \
         headless::RGB16, \
         {"rgb16", headless::RGB16}, \
         {"rgb32", headless::RGB32}, \
@@ -59,7 +63,10 @@
     TR_ENUM_OPT(filetype, headless::image_file_type, \
         "Image format for the output image. EXR files are the default, but " \
         "if you just want to look at pretty pictures, go for png. The " \
-        "special 'none' type can be used to omit output.", \
+        "special 'none' type can be used to omit output. Note that the dynamic " \
+        "range of the HDR filetype is not utilized by default. The (default) " \
+        "filmic tonemapper clamps the output to [0, 1]. E.g. the linear " \
+        "tonemapper allows larger values.", \
         headless::EXR, \
         {"exr", headless::EXR}, \
         {"png", headless::PNG}, \
