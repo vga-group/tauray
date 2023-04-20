@@ -14,8 +14,13 @@ class bottom_level_acceleration_structure
 public:
     struct entry
     {
+        // If nullptr, this entry is AABBs instead of a triangle mesh.
         const mesh* m = nullptr;
-        mat4 transform = mat4(1);
+        size_t aabb_count = 0;
+        // Pointer to array of AABB buffers, indexed by device index
+        gpu_buffer* aabb_buffer = nullptr;
+
+        mat4 transform = mat4(1.0f);
         bool opaque = true;
     };
 

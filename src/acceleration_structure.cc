@@ -20,7 +20,10 @@ bottom_level_acceleration_structure::bottom_level_acceleration_structure(
     for(size_t i = 0; i < devices.size(); ++i)
     {
         buffers[i].transform_buffer = gpu_buffer(
-            devices[i], sizeof(vk::TransformMatrixKHR) * entries.size(),
+            devices[i],
+            sizeof(vk::TransformMatrixKHR) * entries.size(),
+            vk::BufferUsageFlagBits::eStorageBuffer |
+            vk::BufferUsageFlagBits::eTransferDst |
             vk::BufferUsageFlagBits::eShaderDeviceAddress |
             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
         );
@@ -76,14 +79,16 @@ void bottom_level_acceleration_structure::rebuild(
     buffer_data& bd = buffers[device_index];
     for(size_t i = 0; i < entries.size(); ++i)
     {
-        const mesh* m = entries[i].m;
         vk::DeviceOrHostAddressConstKHR transform_address{};
         transform_address.deviceAddress =
             bd.transform_buffer.get_address() + sizeof(vk::TransformMatrixKHR) * i;
 
-        geometries[i] = {
-            vk::GeometryTypeKHR::eTriangles,
-            vk::AccelerationStructureGeometryTrianglesDataKHR(
+        vk::AccelerationStructureGeometryKHR geom;
+        const mesh* m = entries[i].m;
+        if(m)
+        {
+            geom.geometryType = vk::GeometryTypeKHR::eTriangles;
+            geom.geometry = vk::AccelerationStructureGeometryTrianglesDataKHR(
                 vk::Format::eR32G32B32Sfloat,
                 dev.dev.getBufferAddress({m->get_vertex_buffer(device_index)}),
                 sizeof(mesh::vertex),
@@ -91,14 +96,28 @@ void bottom_level_acceleration_structure::rebuild(
                 vk::IndexType::eUint32,
                 dev.dev.getBufferAddress({m->get_index_buffer(device_index)}),
                 transform_address
-            ),
-            (entries[i].opaque ?
-                vk::GeometryFlagBitsKHR::eOpaque :
-                vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation)
-        };
-        uint32_t triangle_count = m->get_indices().size()/3;
-        ranges[i] = vk::AccelerationStructureBuildRangeInfoKHR{triangle_count, 0, 0, 0};
-        primitive_count[i] = triangle_count;
+            );
+            uint32_t triangle_count = m->get_indices().size()/3;
+            ranges[i] = vk::AccelerationStructureBuildRangeInfoKHR{triangle_count, 0, 0, 0};
+            primitive_count[i] = triangle_count;
+        }
+        else
+        {
+            geom.geometryType = vk::GeometryTypeKHR::eAabbs;
+            geom.geometry = vk::AccelerationStructureGeometryAabbsDataKHR(
+                entries[i].aabb_buffer[device_index].get_address(),
+                sizeof(vk::AabbPositionsKHR)
+            );
+            ranges[i] = vk::AccelerationStructureBuildRangeInfoKHR{
+                (uint32_t)entries[i].aabb_count, 0, 0, 0
+            };
+            primitive_count[i] = entries[i].aabb_count;
+        }
+        geom.setFlags(entries[i].opaque ?
+            vk::GeometryFlagBitsKHR::eOpaque :
+            vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation
+        );
+        geometries[i] = geom;
     }
 
     vk::AccelerationStructureBuildGeometryInfoKHR blas_info(
