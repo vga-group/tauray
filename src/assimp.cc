@@ -40,7 +40,7 @@ std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
     std::vector<mesh::vertex> mesh_vert;
     mesh_vert.reserve(ai_mesh->mNumVertices);
 
-    for (unsigned int j = 0; j < ai_mesh->mNumVertices; j++)
+    for(unsigned int j = 0; j < ai_mesh->mNumVertices; j++)
     {
         mesh::vertex v;
         v.pos = vec3(
@@ -49,14 +49,14 @@ std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
             ai_mesh->mVertices[j].z
         );
 
-        if (ai_mesh->HasNormals())
+        if(ai_mesh->HasNormals())
             v.normal = vec3(
                 ai_mesh->mNormals[j].x,
                 ai_mesh->mNormals[j].y,
                 ai_mesh->mNormals[j].z
             );
         
-        if (ai_mesh->HasTangentsAndBitangents())
+        if(ai_mesh->HasTangentsAndBitangents())
             v.tangent = vec4(
                 ai_mesh->mTangents[j].x,
                 ai_mesh->mTangents[j].y,
@@ -65,7 +65,7 @@ std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
                 1.0f
             );
 
-        if (ai_mesh->HasTextureCoords(0))
+        if(ai_mesh->HasTextureCoords(0))
             v.uv = vec2(
                 ai_mesh->mTextureCoords[0][j].x,
                 ai_mesh->mTextureCoords[0][j].y
@@ -95,7 +95,7 @@ scene_graph load_assimp(context& ctx, const std::string& path)
         aiProcess_SortByPType
     );
 
-    if (!scene)
+    if(!scene)
     {
         throw std::runtime_error(
             "Failed to load scene: " + std::string(importer.GetErrorString())
@@ -106,7 +106,7 @@ scene_graph load_assimp(context& ctx, const std::string& path)
     material mat;
 
     // Meshes
-    for (unsigned int i = 0; i < scene->mNumMeshes; i++)
+    for(unsigned int i = 0; i < scene->mNumMeshes; i++)
     {
         aiMesh* ai_mesh = scene->mMeshes[i];
 
@@ -118,10 +118,10 @@ scene_graph load_assimp(context& ctx, const std::string& path)
 
         std::vector<uint32_t>& mesh_ind = out_mesh->get_indices();
 
-        for (unsigned int j = 0; j < ai_mesh->mNumFaces; j++)
+        for(unsigned int j = 0; j < ai_mesh->mNumFaces; j++)
         {
             aiFace face = ai_mesh->mFaces[j];
-            for (unsigned int k = 0; k < face.mNumIndices; k++)
+            for(unsigned int k = 0; k < face.mNumIndices; k++)
             {
                 mesh_ind.push_back(face.mIndices[k]);
             }
