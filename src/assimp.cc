@@ -4,6 +4,9 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <numeric>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -102,9 +105,12 @@ vec4 to_vec4(aiColor3D& color)
     return vec4(color.r, color.g, color.b, 1.0);
 }
 
-
-material create_material(aiMaterial* mat)
-{
+material create_material(
+    context& ctx,
+    scene_graph& md,
+    fs::path& base_path,
+    aiMaterial* mat
+){
     // Assimp material docs: https://assimp.sourceforge.net/lib_html/materials.html
 
     material m;
@@ -123,12 +129,34 @@ material create_material(aiMaterial* mat)
         m.albedo_factor.a = opacity;
     }
 
+    aiString diffuse_path;
+    if(
+        mat->Get(AI_MATKEY_TEXTURE(aiTextureType_DIFFUSE, 0), diffuse_path) ==
+        AI_SUCCESS
+    ){
+        md.textures.emplace_back(
+            new texture(ctx, base_path / diffuse_path.C_Str())
+        );
+        m.albedo_tex.first = md.textures.back().get();
+    }
+
     // TODO: Make metals look ok
     // float shininess;
     // if(mat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
     //     m.metallic_factor = shininess;
     //     m.roughness_factor = shininess;
     // }
+
+    aiString normal_path;
+    if(
+        mat->Get(AI_MATKEY_TEXTURE(aiTextureType_NORMALS, 0), normal_path) ==
+        AI_SUCCESS
+    ){
+        md.textures.emplace_back(
+            new texture(ctx, base_path / normal_path.C_Str())
+        );
+        m.normal_tex.first = md.textures.back().get();
+    }
 
     float ior;
     if(mat->Get(AI_MATKEY_REFRACTI, ior) == AI_SUCCESS) {
@@ -140,10 +168,20 @@ material create_material(aiMaterial* mat)
         m.emission_factor = to_vec3(emissive);
     }
 
+    aiString emissive_path;
+    if(
+        mat->Get(AI_MATKEY_TEXTURE(aiTextureType_EMISSIVE, 0), emissive_path) ==
+        AI_SUCCESS
+    ){
+        md.textures.emplace_back(
+            new texture(ctx, base_path / emissive_path.C_Str())
+        );
+        m.emission_tex.first = md.textures.back().get();
+    }
+
     bool twosided;
     if(mat->Get(AI_MATKEY_TWOSIDED, twosided) == AI_SUCCESS) {
         m.double_sided = twosided;
-        TR_LOG("Two sided:", twosided);
     }
 
     return m;
@@ -157,6 +195,8 @@ namespace tr
 scene_graph load_assimp(context& ctx, const std::string& path)
 {
     TR_LOG("Started loading OBJ scene from ", path);
+    fs::path base_path = fs::path(path).parent_path();
+
     scene_graph md;
 
     Assimp::Importer importer;
@@ -193,7 +233,12 @@ scene_graph load_assimp(context& ctx, const std::string& path)
 
         md.meshes.emplace_back(out_mesh);
 
-        material mat = create_material(scene->mMaterials[ai_mesh->mMaterialIndex]);
+        material mat = create_material(
+            ctx,
+            md,
+            base_path,
+            scene->mMaterials[ai_mesh->mMaterialIndex]
+        );
         m.add_vertex_group(mat, out_mesh);
         
         std::string tmp_name = ai_mesh->mName.C_Str();
@@ -210,7 +255,6 @@ scene_graph load_assimp(context& ctx, const std::string& path)
 
     for(auto& m: md.meshes)
         m->refresh_buffers();
-
 
     TR_LOG("Finished loading OBJ scene ", path);
     return md;
