@@ -21,6 +21,7 @@
 #include "plane.hh"
 #include "material.hh"
 #include "gltf.hh"
+#include "obj.hh"
 #include "ply.hh"
 #include "misc.hh"
 #include "load_balancer.hh"
@@ -138,6 +139,10 @@ scene_data load_scenes(context& ctx, const options& opt)
                 ));
             }
             else sg_temp = load_ply(ctx, path, opt.force_single_sided);
+        }
+        else if(fsp.extension() == ".obj")
+        {
+            sg_temp = load_obj(ctx, path);
         }
         else
         {

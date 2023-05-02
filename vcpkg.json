@@ -7,6 +7,7 @@
     "czmq",
     "nng",
     "libcbor",
+    "assimp",
     {
       "name": "sdl2",
       "default-features": false,
