@@ -423,7 +423,6 @@ void rt_renderer<Pipeline>::init_device_resources(size_t device_index)
 
     r.ray_tracer.reset(new Pipeline(
         d,
-        get_distribution_render_size(rt_opt.distribution),
         transfer_target,
         rt_opt
     ));

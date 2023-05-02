@@ -7,6 +7,7 @@
 #include "misc.hh"
 #include "texture.hh"
 #include "sampler.hh"
+#include "log.hh"
 
 namespace
 {
@@ -24,25 +25,19 @@ struct sampling_data_buffer
 namespace tr
 {
 
-gfx_pipeline::pipeline_state rt_stage::get_common_state(
-    uvec2 output_size,
-    uvec4 viewport,
-    const shader_sources& src,
+rt_pipeline::options rt_stage::get_common_options(
+    const rt_shader_sources& src,
     const options& opt,
     vk::SpecializationInfo specialization
 ){
-    gfx_pipeline::pipeline_state state = {
-        output_size,
-        viewport,
+    rt_pipeline::options state = {
         src,
         {
             {"vertices", (uint32_t)opt.max_instances},
             {"indices", (uint32_t)opt.max_instances},
             {"textures", (uint32_t)opt.max_samplers},
         },
-        mesh::get_bindings(),
-        mesh::get_attributes(),
-        {}, {},
+        1, {}, false
     };
     state.specialization = specialization;
     return state;
@@ -163,13 +158,23 @@ void rt_stage::record_command_buffers()
     clear_commands();
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        vk::CommandBuffer cb = begin_graphics();
-        rt_timer.begin(cb, i);
-        sampling_data.upload(i, cb);
-        for(size_t j = 0; j < pass_count; ++j)
-            record_command_buffer(cb, i, j);
-        rt_timer.end(cb, i);
-        end_graphics(cb, i);
+        size_t pass_count_left = pass_count;
+        while(pass_count_left != 0)
+        {
+            vk::CommandBuffer cb = begin_graphics();
+            if(pass_count_left == pass_count)
+                rt_timer.begin(cb, i);
+            sampling_data.upload(i, cb);
+            size_t local_pass_count = opt.max_passes_per_command_buffer == 0 ?
+                pass_count :
+                min(pass_count_left, opt.max_passes_per_command_buffer);
+            for(size_t j = 0; j < local_pass_count; ++j)
+                record_command_buffer(cb, i, (pass_count - pass_count_left) + j, j == 0);
+            pass_count_left -= local_pass_count;
+            if(pass_count_left == 0)
+                rt_timer.end(cb, i);
+            end_graphics(cb, i);
+        }
     }
 }
 

@@ -70,6 +70,7 @@ private:
 
         std::set<int> available_queries;
         std::map<int, std::string> reserved_queries;
+        std::vector<uint64_t> last_results;
 
         double device_reference_ns;
     };

@@ -400,6 +400,14 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.transparent_background = opt.transparent_background;
     rc_opt.pre_transformed_vertices = opt.pre_transform_vertices;
 
+    if(opt.progress)
+    {
+        rc_opt.max_passes_per_command_buffer = max(
+            rc_opt.samples_per_pixel / rc_opt.samples_per_pass / 100,
+            1
+        );
+    }
+
     light_sampling_weights sampling_weights;
     sampling_weights.point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;
     sampling_weights.directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
@@ -1031,6 +1039,13 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
     size_t frame_count = opt.frames ? opt.frames : -1;
     bool is_animated = s.is_playing();
     if(!opt.frames && !is_animated) frame_count = 1;
+
+    if(opt.progress && frame_count != size_t(-1))
+    {
+        progress_tracker::options popt;
+        popt.expected_frame_count = frame_count;
+        ctx.get_progress_tracker().begin(popt);
+    }
 
     for(size_t i = 0; i < frame_count; ++i)
     {

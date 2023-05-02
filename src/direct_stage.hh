@@ -21,7 +21,6 @@ public:
 
     direct_stage(
         device_data& dev,
-        uvec2 ray_count,
         const gbuffer_target& output_target,
         const options& opt
     );
@@ -32,11 +31,12 @@ protected:
         vk::CommandBuffer cb,
         uint32_t frame_index,
         uint32_t pass_index,
-        uvec3 expected_dispatch_size
+        uvec3 expected_dispatch_size,
+        bool first_in_command_buffer
     ) override;
 
 private:
-    gfx_pipeline gfx;
+    rt_pipeline gfx;
     options opt;
 };
 

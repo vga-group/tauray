@@ -44,6 +44,7 @@ public:
         EXR = 0,
         PNG,
         BMP,
+        HDR,
         RAW,
         EMPTY
     };

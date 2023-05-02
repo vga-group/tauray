@@ -1,7 +1,7 @@
 #ifndef TAURAY_ENVMAP_STAGE_HH
 #define TAURAY_ENVMAP_STAGE_HH
 #include "stage.hh"
-#include "gfx_pipeline.hh"
+#include "raster_pipeline.hh"
 #include "sampler.hh"
 #include "timer.hh"
 #include "gpu_buffer.hh"
@@ -23,7 +23,7 @@ public:
 
 protected:
 private:
-    std::vector<std::unique_ptr<gfx_pipeline>> array_pipelines;
+    std::vector<std::unique_ptr<raster_pipeline>> array_pipelines;
     timer envmap_timer;
 
     scene* cur_scene;

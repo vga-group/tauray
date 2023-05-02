@@ -8,7 +8,7 @@ using namespace tr;
 
 namespace feature
 {
-    shader_sources load_sources(feature_stage::options opt)
+    rt_shader_sources load_sources(feature_stage::options opt)
     {
         std::string feature;
         switch(opt.feat)
@@ -49,8 +49,7 @@ namespace feature
         rt_camera_stage::get_common_defines(defines, opt);
         defines["FEATURE"] = feature;
 
-        shader_sources fsrc = {
-            {}, {},
+        return {
             {"shader/rt_feature.rgen", defines},
             {
                 {
@@ -61,7 +60,6 @@ namespace feature
             },
             {{"shader/rt_feature.rmiss"}}
         };
-        return fsrc;
     }
 
     struct push_constant_buffer
@@ -80,14 +78,10 @@ namespace tr
 
 feature_stage::feature_stage(
     device_data& dev,
-    uvec2 ray_count,
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(dev, output_target, opt),
-    gfx(dev, rt_stage::get_common_state(
-        ray_count, uvec4(0, 0, output_target.get_size()),
-        ::feature::load_sources(opt), opt
-    )),
+    gfx(dev, rt_stage::get_common_options(::feature::load_sources(opt), opt)),
     opt(opt)
 {
 }
@@ -101,7 +95,8 @@ void feature_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
     uint32_t frame_index,
     uint32_t /*pass_index*/,
-    uvec3 expected_dispatch_size
+    uvec3 expected_dispatch_size,
+    bool
 ){
     gfx.bind(cb, frame_index);
 

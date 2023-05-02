@@ -8,12 +8,11 @@ using namespace tr;
 
 namespace whitted
 {
-    shader_sources load_sources(whitted_stage::options opt)
+    rt_shader_sources load_sources(whitted_stage::options opt)
     {
         std::map<std::string, std::string> defines;
         rt_camera_stage::get_common_defines(defines, opt);
         return {
-            {}, {},
             {"shader/whitted.rgen", defines},
             {
                 {
@@ -50,11 +49,11 @@ namespace whitted
     static_assert(sizeof(push_constant_buffer) <= 128);
 }
 
-gfx_pipeline::pipeline_state build_state(
-    gfx_pipeline::pipeline_state state,
+rt_pipeline::options build_state(
+    rt_pipeline::options state,
     const whitted_stage::options& opt
 ){
-    state.rt_options.max_recursion_depth = max(opt.max_ray_depth, 1);
+    state.max_recursion_depth = max(opt.max_ray_depth, 1);
     return state;
 }
 
@@ -65,15 +64,13 @@ namespace tr
 
 whitted_stage::whitted_stage(
     device_data& dev,
-    uvec2 ray_count,
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(
         dev, output_target,
         opt
     ),
-    gfx(dev, build_state(rt_stage::get_common_state(
-        ray_count, uvec4(0,0,output_target.get_size()),
+    gfx(dev, build_state(rt_stage::get_common_options(
         whitted::load_sources(opt), opt
     ), opt)),
     opt(opt)
@@ -89,7 +86,8 @@ void whitted_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
     uint32_t frame_index,
     uint32_t /*pass_index*/,
-    uvec3 expected_dispatch_size
+    uvec3 expected_dispatch_size,
+    bool
 ){
     gfx.bind(cb, frame_index);
 

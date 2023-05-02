@@ -2,7 +2,7 @@
 #define TAURAY_Z_PASS_STAGE_HH
 #include "context.hh"
 #include "timer.hh"
-#include "gfx_pipeline.hh"
+#include "raster_pipeline.hh"
 #include "gpu_buffer.hh"
 #include "stage.hh"
 
@@ -22,7 +22,7 @@ public:
     scene* get_scene();
 
 private:
-    std::vector<std::unique_ptr<gfx_pipeline>> array_pipelines;
+    std::vector<std::unique_ptr<raster_pipeline>> array_pipelines;
 
     scene* cur_scene;
     timer z_pass_timer;

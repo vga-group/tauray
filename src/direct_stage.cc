@@ -9,7 +9,7 @@ using namespace tr;
 
 namespace direct
 {
-    shader_sources load_sources(
+    rt_shader_sources load_sources(
         direct_stage::options opt,
         const gbuffer_target& gbuf
     ){
@@ -36,7 +36,6 @@ namespace direct
         rt_camera_stage::get_common_defines(defines, opt);
 
         return {
-            {}, {},
             {"shader/direct.rgen", defines},
             {
                 {
@@ -93,15 +92,13 @@ namespace tr
 
 direct_stage::direct_stage(
     device_data& dev,
-    uvec2 ray_count,
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(
         dev, output_target, opt, "direct light",
         opt.samples_per_pixel / opt.samples_per_pass
     ),
-    gfx(dev, rt_stage::get_common_state(
-        ray_count, uvec4(0,0,output_target.get_size()),
+    gfx(dev, rt_stage::get_common_options(
         direct::load_sources(opt, output_target), opt
     )),
     opt(opt)
@@ -117,9 +114,10 @@ void direct_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
     uint32_t frame_index,
     uint32_t pass_index,
-    uvec3 expected_dispatch_size
+    uvec3 expected_dispatch_size,
+    bool first_in_command_buffer
 ){
-    if(pass_index == 0)
+    if(first_in_command_buffer)
         gfx.bind(cb, frame_index);
 
     scene* cur_scene = get_scene();

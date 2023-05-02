@@ -20,7 +20,7 @@ public:
     stage(device_data& dev, command_buffer_strategy strategy = COMMAND_BUFFER_PER_FRAME);
     stage(const stage& other) = delete;
     stage(stage&& other) = delete;
-    virtual ~stage() = default;
+    virtual ~stage();
 
     dependency run(dependencies deps);
 
@@ -45,9 +45,9 @@ private:
     vk::CommandBuffer begin_commands(vk::CommandPool pool, bool single_use);
     void end_commands(vk::CommandBuffer buf, vk::CommandPool pool, uint32_t frame_index, uint32_t swapchain_index);
 
-    uint64_t local_frame_counter;
     std::vector<std::vector<vkm<vk::CommandBuffer>>> command_buffers;
-    std::vector<vkm<vk::Semaphore>> finished;
+    uint64_t local_step_counter;
+    vkm<vk::Semaphore> progress;
     command_buffer_strategy strategy;
 };
 

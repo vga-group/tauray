@@ -45,7 +45,8 @@ public:
 protected:
     void update(uint32_t frame_index) override;
     void record_command_buffer(
-        vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index
+        vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index,
+        bool first_in_command_buffer
     ) override;
     int get_accumulated_samples() const;
 
@@ -55,7 +56,8 @@ protected:
         vk::CommandBuffer cb,
         uint32_t frame_index,
         uint32_t pass_index,
-        uvec3 expected_dispatch_size
+        uvec3 expected_dispatch_size,
+        bool first_in_command_buffer
     ) = 0;
 
 private:

@@ -126,7 +126,8 @@ void rt_camera_stage::init_descriptors(basic_pipeline& pp)
 }
 
 void rt_camera_stage::record_command_buffer(
-    vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index
+    vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index,
+    bool first_in_command_buffer
 ){
     std::vector<vk::ImageMemoryBarrier> in_barriers;
     std::vector<vk::ImageMemoryBarrier> out_barriers;
@@ -172,7 +173,8 @@ void rt_camera_stage::record_command_buffer(
 
     record_command_buffer_pass(
         cb, frame_index, pass_index,
-        uvec3(get_ray_count(opt.distribution), opt.active_viewport_count)
+        uvec3(get_ray_count(opt.distribution), opt.active_viewport_count),
+        first_in_command_buffer
     );
 
     if(pass_index == get_pass_count()-1)
