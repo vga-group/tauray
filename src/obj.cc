@@ -152,9 +152,6 @@ scene_graph load_obj(context& ctx, const std::string& path)
     for(auto& m: md.meshes)
         m->refresh_buffers();
 
-    md.directional_lights["default"] = directional_light(vec3(-0.5, -0.5, -0.5));
-
-    md.cameras["default"] = camera();
 
     TR_LOG("Finished loading OBJ scene ", path);
     return md;
