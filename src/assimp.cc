@@ -91,6 +91,64 @@ std::vector<uint32_t> read_indices(aiMesh* ai_mesh)
     return mesh_ind;
 }
 
+
+vec3 to_vec3(aiColor3D& color)
+{
+    return vec3(color.r, color.g, color.b);
+}
+
+vec4 to_vec4(aiColor3D& color)
+{
+    return vec4(color.r, color.g, color.b, 1.0);
+}
+
+
+material create_material(aiMaterial* mat)
+{
+    // Assimp material docs: https://assimp.sourceforge.net/lib_html/materials.html
+
+    material m;
+
+    aiString name;
+    if(mat->Get(AI_MATKEY_NAME, name) == AI_SUCCESS) {
+        m.name = name.C_Str();
+    }
+
+    aiColor3D albedo;
+    if(mat->Get(AI_MATKEY_COLOR_DIFFUSE, albedo) == AI_SUCCESS) {
+        m.albedo_factor = to_vec4(albedo);
+    }
+    float opacity;
+    if(mat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
+        m.albedo_factor.a = opacity;
+    }
+
+    // TODO: Make metals look ok
+    // float shininess;
+    // if(mat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
+    //     m.metallic_factor = shininess;
+    //     m.roughness_factor = shininess;
+    // }
+
+    float ior;
+    if(mat->Get(AI_MATKEY_REFRACTI, ior) == AI_SUCCESS) {
+        m.ior = ior;
+    }
+
+    aiColor3D emissive;
+    if(mat->Get(AI_MATKEY_COLOR_EMISSIVE, emissive) == AI_SUCCESS) {
+        m.emission_factor = to_vec3(emissive);
+    }
+
+    bool twosided;
+    if(mat->Get(AI_MATKEY_TWOSIDED, twosided) == AI_SUCCESS) {
+        m.double_sided = twosided;
+        TR_LOG("Two sided:", twosided);
+    }
+
+    return m;
+}
+
 }
 
 namespace tr
@@ -135,8 +193,8 @@ scene_graph load_assimp(context& ctx, const std::string& path)
 
         md.meshes.emplace_back(out_mesh);
 
-        material primitive_material;
-        m.add_vertex_group(primitive_material, out_mesh);
+        material mat = create_material(scene->mMaterials[ai_mesh->mMaterialIndex]);
+        m.add_vertex_group(mat, out_mesh);
         
         std::string tmp_name = ai_mesh->mName.C_Str();
         std::string name = gen_free_name(tmp_name, md.models);
