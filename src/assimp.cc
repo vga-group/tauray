@@ -76,6 +76,21 @@ std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
     return mesh_vert;
 }
 
+std::vector<uint32_t> read_indices(aiMesh* ai_mesh)
+{
+    std::vector<uint32_t> mesh_ind;
+    mesh_ind.reserve(ai_mesh->mNumFaces * 3);
+    for(unsigned int j = 0; j < ai_mesh->mNumFaces; j++)
+    {
+        aiFace face = ai_mesh->mFaces[j];
+        for(unsigned int k = 0; k < face.mNumIndices; k++)
+        {
+            mesh_ind.push_back(face.mIndices[k]);
+        }
+    }
+    return mesh_ind;
+}
+
 }
 
 namespace tr
@@ -102,10 +117,7 @@ scene_graph load_assimp(context& ctx, const std::string& path)
         );
     }
 
-    // TEST MAT
-    material mat;
 
-    // Meshes
     for(unsigned int i = 0; i < scene->mNumMeshes; i++)
     {
         aiMesh* ai_mesh = scene->mMeshes[i];
@@ -113,20 +125,9 @@ scene_graph load_assimp(context& ctx, const std::string& path)
         model m;
         mesh* out_mesh = new mesh(ctx);
 
-        std::vector<mesh::vertex>& mesh_vert = out_mesh->get_vertices();
-        mesh_vert = read_vertices(ai_mesh);
-
-        std::vector<uint32_t>& mesh_ind = out_mesh->get_indices();
-
-        for(unsigned int j = 0; j < ai_mesh->mNumFaces; j++)
-        {
-            aiFace face = ai_mesh->mFaces[j];
-            for(unsigned int k = 0; k < face.mNumIndices; k++)
-            {
-                mesh_ind.push_back(face.mIndices[k]);
-            }
-        }
-
+        out_mesh->get_vertices() = read_vertices(ai_mesh);
+        out_mesh->get_indices() = read_indices(ai_mesh);
+       
         if(!ai_mesh->HasNormals())
             out_mesh->calculate_normals();
         if(!ai_mesh->HasTangentsAndBitangents())
