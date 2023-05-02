@@ -113,7 +113,7 @@ add_library(tauray-core STATIC
   src/mesh_scene.cc
   src/misc.cc
   src/model.cc
-  src/obj.cc
+  src/assimp.cc
   src/openxr.cc
   src/options.cc
   src/patched_sphere.cc

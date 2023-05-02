@@ -1,4 +1,4 @@
-#include "obj.hh"
+#include "assimp.hh"
 #include "log.hh"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -81,7 +81,7 @@ std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
 namespace tr
 {
 
-scene_graph load_obj(context& ctx, const std::string& path)
+scene_graph load_assimp(context& ctx, const std::string& path)
 {
     TR_LOG("Started loading OBJ scene from ", path);
     scene_graph md;
