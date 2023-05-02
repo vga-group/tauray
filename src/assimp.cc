@@ -194,7 +194,7 @@ namespace tr
 
 scene_graph load_assimp(context& ctx, const std::string& path)
 {
-    TR_LOG("Started loading OBJ scene from ", path);
+    TR_LOG("Started loading scene from ", path);
     fs::path base_path = fs::path(path).parent_path();
 
     scene_graph md;
@@ -256,7 +256,7 @@ scene_graph load_assimp(context& ctx, const std::string& path)
     for(auto& m: md.meshes)
         m->refresh_buffers();
 
-    TR_LOG("Finished loading OBJ scene ", path);
+    TR_LOG("Finished loading scene ", path);
     return md;
 }
 
