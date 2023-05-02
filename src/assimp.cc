@@ -32,7 +32,7 @@ std::string gen_free_name(std::string& name, T& map)
     {
         candidate_name = name + std::to_string(count++);
     }
-    candidate_name;
+    return candidate_name;
 }
 
 std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
