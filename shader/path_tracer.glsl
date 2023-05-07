@@ -58,7 +58,7 @@ float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
     shadow_visibility = 1.0f;
     traceRayEXT(
         tlas,
-        gl_RayFlagsNoneEXT,
+        gl_RayFlagsTerminateOnFirstHitEXT,
         0x02^0xFF, // Exclude lights from shadow rays
         1,
         0,
@@ -69,7 +69,6 @@ float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
         max_dist,
         1
     );
-
     return shadow_visibility;
 }
 
