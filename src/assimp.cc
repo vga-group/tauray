@@ -1,5 +1,6 @@
 #include "assimp.hh"
 #include "log.hh"
+#include "stb_image.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -94,6 +95,92 @@ std::vector<uint32_t> read_indices(aiMesh* ai_mesh)
     return mesh_ind;
 }
 
+bool is_opaque(std::vector<uint8_t>& data) {
+    for (uint32_t i = 3; i < data.size(); i += 4) {
+        if (data[i] < 255) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::unique_ptr<texture> read_texture(
+    aiTextureType type,
+    context& ctx,
+    const aiScene* ai_scene,
+    const aiMaterial* ai_mat,
+    fs::path& base_path
+){
+    aiString path;
+    if(ai_mat->Get(AI_MATKEY_TEXTURE(type, 0), path) != AI_SUCCESS)
+    {
+        return nullptr;
+    }
+    
+    // Check if texture is embedded (e.g in fbx models)
+    if(auto ai_texture = ai_scene->GetEmbeddedTexture(path.C_Str()))
+    {
+        int width, height, components;
+        std::vector <uint8_t> image_data;
+
+        // If height is set to 0, the texture is compressed, stbi handles that
+        if (ai_texture->mHeight == 0)
+        {
+            stbi_set_flip_vertically_on_load(false);
+            unsigned char *data = stbi_load_from_memory(
+                reinterpret_cast<unsigned char*>(ai_texture->pcData),
+                ai_texture->mWidth, &width, &height, &components, 4
+            );
+            image_data = std::vector<uint8_t>(
+                data,
+                data + width * height * components
+            );
+            stbi_image_free(data);
+        }
+        else
+        {
+            image_data.reserve(ai_texture->mWidth * ai_texture->mHeight * 4);
+            for(
+                unsigned int i = 0;
+                i < ai_texture->mWidth * ai_texture->mHeight;
+                i++
+            ){
+                image_data.push_back(ai_texture->pcData[i].r);
+                image_data.push_back(ai_texture->pcData[i].g);
+                image_data.push_back(ai_texture->pcData[i].b);
+                image_data.push_back(ai_texture->pcData[i].a);
+            }
+            width = ai_texture->mWidth;
+            height = ai_texture->mHeight;
+            components = 4;
+        }
+
+        bool opaque = is_opaque(image_data);
+
+        auto t = std::unique_ptr<texture>(new texture(
+            ctx, 
+            uvec2(width, height),
+            1,
+            vk::Format::eR8G8B8A8Unorm,
+            image_data.size(),
+            image_data.data(),
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eSampled,
+            vk::ImageLayout::eShaderReadOnlyOptimal
+        ));
+
+        t->set_opaque(opaque);
+
+        return t;
+    }
+    
+    // Texture is not embedded. 
+    // It should be in a file relative to the model file.
+    return std::unique_ptr<texture>(
+        new texture(ctx, base_path / path.C_Str())
+    );
+}
+
 
 vec3 to_vec3(aiColor3D& color)
 {
@@ -109,82 +196,151 @@ material create_material(
     context& ctx,
     scene_graph& md,
     fs::path& base_path,
-    aiMaterial* mat
+    const aiScene* ai_scene,
+    const aiMaterial* ai_mat
 ){
-    // Assimp material docs: https://assimp.sourceforge.net/lib_html/materials.html
+    // Almost up to date material docs (doesn't include PBR properties): 
+    // https://assimp-docs.readthedocs.io/en/latest/usage/use_the_lib.html?highlight=matkey#constants
 
-    material m;
+    material mat;
 
     aiString name;
-    if(mat->Get(AI_MATKEY_NAME, name) == AI_SUCCESS) {
-        m.name = name.C_Str();
+    if(ai_mat->Get(AI_MATKEY_NAME, name) == AI_SUCCESS)
+    {
+        mat.name = name.C_Str();
     }
 
-    aiColor3D albedo;
-    if(mat->Get(AI_MATKEY_COLOR_DIFFUSE, albedo) == AI_SUCCESS) {
-        m.albedo_factor = to_vec4(albedo);
+    bool is_pbr = false;
+    aiShadingMode shading_mode;
+    if(ai_mat->Get(AI_MATKEY_SHADING_MODEL, shading_mode) == AI_SUCCESS)
+    {
+        if (shading_mode == aiShadingMode_PBR_BRDF) {
+            is_pbr = true;
+        }
     }
+
+    // Check if pbr is using metallic/roughness or specular/glossiness workflow
+    if(is_pbr)
+    {   
+        // If Specular/glossiness is used, fall back to phong
+        float glossiness;
+        if (ai_mat->Get(AI_MATKEY_GLOSSINESS_FACTOR, glossiness) == AI_SUCCESS)
+        {
+            is_pbr = false;
+        }
+    }
+
+    if(is_pbr)
+    {
+        // Read pbr properties.
+        aiColor3D base;
+        if(ai_mat->Get(AI_MATKEY_BASE_COLOR, base) == AI_SUCCESS)
+        {
+            mat.albedo_factor = to_vec4(base);
+        }
+        if(auto t = read_texture(aiTextureType_BASE_COLOR,
+            ctx, ai_scene, ai_mat, base_path))
+        {
+            md.textures.push_back(std::move(t));
+            mat.albedo_tex.first = md.textures.back().get();
+        }
+
+        float metallic;
+        if(ai_mat->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == AI_SUCCESS)
+        {
+            mat.metallic_factor = metallic;
+        }
+        float roughness;
+        if(ai_mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness) == AI_SUCCESS)
+        {
+            mat.roughness_factor = roughness;
+        }
+        if(auto t = read_texture(aiTextureType_DIFFUSE_ROUGHNESS,
+            ctx, ai_scene, ai_mat, base_path))
+        {
+            md.textures.push_back(std::move(t));
+            mat.metallic_roughness_tex.first = md.textures.back().get();
+        }
+
+        // Not sure if correct
+        float transmission;
+        if(ai_mat->Get(AI_MATKEY_TRANSMISSION_FACTOR, transmission) == AI_SUCCESS)
+        {
+            mat.transmittance = transmission;
+        }
+    }
+    else
+    {
+        // Read phong properties. This mode is assumed, although shading_mode 
+        // could specify something else.
+        aiColor3D albedo;
+        if(ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, albedo) == AI_SUCCESS) {
+            mat.albedo_factor = to_vec4(albedo);
+        }
+        if(auto t = read_texture(aiTextureType_DIFFUSE,
+            ctx, ai_scene, ai_mat, base_path))
+        {
+            md.textures.push_back(std::move(t));
+            mat.albedo_tex.first = md.textures.back().get();
+        }
+
+        // Not sure if correct
+        aiColor3D transparent;
+        if(ai_mat->Get(AI_MATKEY_COLOR_TRANSPARENT, transparent) == AI_SUCCESS)
+        {
+            mat.transmittance = 
+                1.0f - (transparent.r + transparent.g + transparent.b) / 3.0f;
+        }
+
+
+        // TODO: Make metals look ok when pbr values don't exist
+        // float shininess;
+        // if(mat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
+        //     m.metallic_factor = shininess;
+        //     m.roughness_factor = shininess;
+        // }
+    }
+    
+    // Read parameter shared by both pbr and phong
+
     float opacity;
-    if(mat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
-        m.albedo_factor.a = opacity;
+    if(ai_mat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS)
+    {
+        mat.albedo_factor.a = opacity;
     }
 
-    aiString diffuse_path;
-    if(
-        mat->Get(AI_MATKEY_TEXTURE(aiTextureType_DIFFUSE, 0), diffuse_path) ==
-        AI_SUCCESS
-    ){
-        md.textures.emplace_back(
-            new texture(ctx, base_path / diffuse_path.C_Str())
-        );
-        m.albedo_tex.first = md.textures.back().get();
-    }
-
-    // TODO: Make metals look ok
-    // float shininess;
-    // if(mat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
-    //     m.metallic_factor = shininess;
-    //     m.roughness_factor = shininess;
-    // }
-
-    aiString normal_path;
-    if(
-        mat->Get(AI_MATKEY_TEXTURE(aiTextureType_NORMALS, 0), normal_path) ==
-        AI_SUCCESS
-    ){
-        md.textures.emplace_back(
-            new texture(ctx, base_path / normal_path.C_Str())
-        );
-        m.normal_tex.first = md.textures.back().get();
+    if(auto t = read_texture(aiTextureType_NORMALS,
+        ctx, ai_scene, ai_mat, base_path))
+    {
+        md.textures.push_back(std::move(t));
+        mat.normal_tex.first = md.textures.back().get();
     }
 
     float ior;
-    if(mat->Get(AI_MATKEY_REFRACTI, ior) == AI_SUCCESS) {
-        m.ior = ior;
+    if(ai_mat->Get(AI_MATKEY_REFRACTI, ior) == AI_SUCCESS)
+    {
+        mat.ior = ior;
     }
 
     aiColor3D emissive;
-    if(mat->Get(AI_MATKEY_COLOR_EMISSIVE, emissive) == AI_SUCCESS) {
-        m.emission_factor = to_vec3(emissive);
+    if(ai_mat->Get(AI_MATKEY_COLOR_EMISSIVE, emissive) == AI_SUCCESS)
+    {
+        mat.emission_factor = to_vec3(emissive);
     }
-
-    aiString emissive_path;
-    if(
-        mat->Get(AI_MATKEY_TEXTURE(aiTextureType_EMISSIVE, 0), emissive_path) ==
-        AI_SUCCESS
-    ){
-        md.textures.emplace_back(
-            new texture(ctx, base_path / emissive_path.C_Str())
-        );
-        m.emission_tex.first = md.textures.back().get();
+    if(auto t = read_texture(aiTextureType_EMISSIVE,
+        ctx, ai_scene, ai_mat, base_path))
+    {
+        md.textures.push_back(std::move(t));
+        mat.emission_tex.first = md.textures.back().get();
     }
 
     bool twosided;
-    if(mat->Get(AI_MATKEY_TWOSIDED, twosided) == AI_SUCCESS) {
-        m.double_sided = twosided;
+    if(ai_mat->Get(AI_MATKEY_TWOSIDED, twosided) == AI_SUCCESS)
+    {
+        mat.double_sided = twosided;
     }
 
-    return m;
+    return mat;
 }
 
 }
@@ -200,7 +356,7 @@ scene_graph load_assimp(context& ctx, const std::string& path)
     scene_graph md;
 
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(
+    const aiScene* ai_scene = importer.ReadFile(
         path, 
         aiProcess_CalcTangentSpace |
         aiProcess_Triangulate |
@@ -208,7 +364,7 @@ scene_graph load_assimp(context& ctx, const std::string& path)
         aiProcess_SortByPType
     );
 
-    if(!scene)
+    if(!ai_scene)
     {
         throw std::runtime_error(
             "Failed to load scene: " + std::string(importer.GetErrorString())
@@ -216,9 +372,10 @@ scene_graph load_assimp(context& ctx, const std::string& path)
     }
 
 
-    for(unsigned int i = 0; i < scene->mNumMeshes; i++)
+    for(unsigned int i = 0; i < ai_scene->mNumMeshes; i++)
     {
-        aiMesh* ai_mesh = scene->mMeshes[i];
+        TR_LOG("Loading mesh ", i);
+        aiMesh* ai_mesh = ai_scene->mMeshes[i];
 
         model m;
         mesh* out_mesh = new mesh(ctx);
@@ -237,15 +394,14 @@ scene_graph load_assimp(context& ctx, const std::string& path)
             ctx,
             md,
             base_path,
-            scene->mMaterials[ai_mesh->mMaterialIndex]
+            ai_scene,
+            ai_scene->mMaterials[ai_mesh->mMaterialIndex]
         );
         m.add_vertex_group(mat, out_mesh);
         
         std::string tmp_name = ai_mesh->mName.C_Str();
         std::string name = gen_free_name(tmp_name, md.models);
         md.models[name] = std::move(m);
-
-        TR_LOG("Finished loading mesh ", name);
 
         // Mesh is loaded, still need to an object for it
         std::string obj_name = name + "-obj";
