@@ -39,9 +39,14 @@ std::string gen_free_name(std::string& name, T& map)
     return candidate_name;
 }
 
-vec3 to_vec3(aiVector3D& color)
+vec2 to_vec2(aiVector3D& v)
 {
-    return vec3(color.x, color.y, color.z);
+    return vec2(v.x, v.y);
+}
+
+vec3 to_vec3(aiVector3D& v)
+{
+    return vec3(v.x, v.y, v.z);
 }
 
 vec3 to_vec3(aiColor3D& color)
@@ -56,32 +61,17 @@ vec4 to_vec4(aiColor3D& color)
 
 std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
 {
-    std::vector<mesh::vertex> mesh_vert;
-    mesh_vert.reserve(ai_mesh->mNumVertices);
+    std::vector<mesh::vertex> mesh_vert(ai_mesh->mNumVertices, mesh::vertex());
 
     for(unsigned int i = 0; i < ai_mesh->mNumVertices; i++)
-    {
-        mesh::vertex v;
-        v.pos = vec3(
-            ai_mesh->mVertices[i].x,
-            ai_mesh->mVertices[i].y,
-            ai_mesh->mVertices[i].z
-        );
-        mesh_vert.push_back(v);
-    }
+        mesh_vert[i].pos = to_vec3(ai_mesh->mVertices[i]);
 
     if(ai_mesh->HasNormals())
     {
         for(unsigned int i = 0; i < ai_mesh->mNumVertices; i++)
-        {
-            mesh_vert[i].normal = vec3(
-                ai_mesh->mNormals[i].x,
-                ai_mesh->mNormals[i].y,
-                ai_mesh->mNormals[i].z
-            );
-        }
+            mesh_vert[i].normal = to_vec3(ai_mesh->mNormals[i]);
     }
- 
+
     if(ai_mesh->HasNormals() && ai_mesh->HasTangentsAndBitangents())
     {
         for(unsigned int i = 0; i < ai_mesh->mNumVertices; i++)
@@ -91,25 +81,15 @@ std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
                 to_vec3(ai_mesh->mTangents[i])
             );
             float w = sign(dot(to_vec3(ai_mesh->mBitangents[i]), c));
-            
-            mesh_vert[i].tangent = vec4(
-                ai_mesh->mTangents[i].x,
-                ai_mesh->mTangents[i].y,
-                ai_mesh->mTangents[i].z,
-                w
-            );
+
+            mesh_vert[i].tangent = vec4(to_vec3(ai_mesh->mTangents[i]), w);
         }
     }
 
     if(ai_mesh->HasTextureCoords(0))
     {
         for(unsigned int i = 0; i < ai_mesh->mNumVertices; i++)
-        {
-            mesh_vert[i].uv = vec2(
-                ai_mesh->mTextureCoords[0][i].x,
-                ai_mesh->mTextureCoords[0][i].y
-            );
-        }
+            mesh_vert[i].uv = to_vec2(ai_mesh->mTextureCoords[0][i]);
     }
     
     return mesh_vert;
