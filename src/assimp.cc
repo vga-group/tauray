@@ -39,6 +39,21 @@ std::string gen_free_name(std::string& name, T& map)
     return candidate_name;
 }
 
+vec3 to_vec3(aiVector3D& color)
+{
+    return vec3(color.x, color.y, color.z);
+}
+
+vec3 to_vec3(aiColor3D& color)
+{
+    return vec3(color.r, color.g, color.b);
+}
+
+vec4 to_vec4(aiColor3D& color)
+{
+    return vec4(color.r, color.g, color.b, 1.0);
+}
+
 std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
 {
     std::vector<mesh::vertex> mesh_vert;
@@ -60,14 +75,20 @@ std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
                 ai_mesh->mNormals[j].z
             );
         
-        if(ai_mesh->HasTangentsAndBitangents())
+        if(ai_mesh->HasNormals() && ai_mesh->HasTangentsAndBitangents()) {
+            vec3 c = cross(
+                to_vec3(ai_mesh->mNormals[j]),
+                to_vec3(ai_mesh->mTangents[j])
+            );
+            float w = sign(dot(to_vec3(ai_mesh->mBitangents[j]), c));
+            
             v.tangent = vec4(
                 ai_mesh->mTangents[j].x,
                 ai_mesh->mTangents[j].y,
                 ai_mesh->mTangents[j].z,
-                // Not sure if this is correct
-                1.0f
+                w
             );
+        }
 
         if(ai_mesh->HasTextureCoords(0))
             v.uv = vec2(
@@ -181,17 +202,6 @@ std::unique_ptr<texture> read_texture(
     );
 }
 
-
-vec3 to_vec3(aiColor3D& color)
-{
-    return vec3(color.r, color.g, color.b);
-}
-
-vec4 to_vec4(aiColor3D& color)
-{
-    return vec4(color.r, color.g, color.b, 1.0);
-}
-
 material create_material(
     context& ctx,
     scene_graph& md,
@@ -262,7 +272,6 @@ material create_material(
             mat.metallic_roughness_tex.first = md.textures.back().get();
         }
 
-        // Not sure if correct
         float transmission;
         if(ai_mat->Get(AI_MATKEY_TRANSMISSION_FACTOR, transmission) == AI_SUCCESS)
         {
@@ -284,7 +293,6 @@ material create_material(
             mat.albedo_tex.first = md.textures.back().get();
         }
 
-        // Not sure if correct
         aiColor3D transparent;
         if(ai_mat->Get(AI_MATKEY_COLOR_TRANSPARENT, transparent) == AI_SUCCESS)
         {
