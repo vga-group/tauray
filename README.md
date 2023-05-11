@@ -55,7 +55,7 @@ Clone the repository recursively with
 Tauray has been tested on the Ubuntu 22.04 operating system. Building on Ubuntu
 22.04 can be done as follows:
 
-1. Install dependencies: `sudo apt install build-essential cmake libsdl2-dev libglm-dev libczmq-dev libnng-dev libcbor-dev vulkan-tools libvulkan-dev vulkan-validationlayers libxcb-glx0-dev glslang-tools`
+1. Install dependencies: `sudo apt install build-essential cmake libsdl2-dev libglm-dev libczmq-dev libnng-dev libcbor-dev vulkan-tools libvulkan-dev vulkan-validationlayers libxcb-glx0-dev glslang-tools libassimp-dev`
 2. `cmake -S . -B build`
 3. `cmake --build build`
 4. `build/tauray my_scene.glb`

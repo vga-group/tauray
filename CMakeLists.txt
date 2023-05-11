@@ -63,6 +63,7 @@ find_package(czmq QUIET)
 find_package(nng QUIET)
 find_package(libcbor QUIET)
 find_package(Vulkan REQUIRED)
+find_package(assimp REQUIRED)
 
 add_library(tauray-core STATIC
   external/stb_image.c
@@ -112,6 +113,7 @@ add_library(tauray-core STATIC
   src/mesh_scene.cc
   src/misc.cc
   src/model.cc
+  src/assimp.cc
   src/openxr.cc
   src/options.cc
   src/patched_sphere.cc
@@ -174,7 +176,7 @@ target_include_directories(tauray-core PUBLIC SYSTEM
     "external/SPIRV-Headers/include"
     "external/Vulkan-Headers/include"
 )
-target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort)
+target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp)
 target_link_libraries(tauray PUBLIC tauray-core SDL2::SDL2main)
 
 if(MSVC)

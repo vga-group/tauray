@@ -21,6 +21,7 @@
 #include "plane.hh"
 #include "material.hh"
 #include "gltf.hh"
+#include "assimp.hh"
 #include "ply.hh"
 #include "misc.hh"
 #include "load_balancer.hh"
@@ -139,11 +140,15 @@ scene_data load_scenes(context& ctx, const options& opt)
             }
             else sg_temp = load_ply(ctx, path, opt.force_single_sided);
         }
-        else
+        else if(fsp.extension() == ".gltf" || fsp.extension() == ".glb")
         {
             sg_temp = load_gltf(
                 ctx, path, opt.force_single_sided, opt.force_double_sided
             );
+        }
+        else
+        {
+            sg_temp = load_assimp(ctx, path);
         }
         scenes.emplace_back(std::move(sg_temp));
         scene_graph& sg = scenes.back();
