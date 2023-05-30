@@ -7,6 +7,9 @@
 #include <iostream>
 #include <iomanip>
 
+// Thanks microsoft...
+#undef ERROR
+
 #ifndef TAURAY_PROJECT_ROOT_PATH_SIZE
 #define TAURAY_PROJECT_ROOT_PATH_SIZE 0
 #endif

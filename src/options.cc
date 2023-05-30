@@ -203,6 +203,12 @@ std::string build_option_string(
 namespace tr
 {
 
+// You can thank MSVC for these macros. They can't compile an
+// else-if chain longer than 127 entries, which breaks our auto-generated
+// options parsing.
+#define IF(condition) if((passed = (condition)))
+#define ELSEIF(condition) if(!passed && (passed = (condition)))
+
 void parse_command_line_options(char** argv, options& opt)
 {
     const char* program_name = *argv++;
@@ -215,19 +221,20 @@ void parse_command_line_options(char** argv, options& opt)
         {
             if(prefix(arg, "-"))
             {
-                if(*arg == 0) skip_flags = true;
-                else if(cmp(arg, "help"))
+                bool passed = false;
+                IF(*arg == 0) skip_flags = true;
+                ELSEIF(cmp(arg, "help"))
                 {
                     print_help(program_name);
                     throw option_parse_error("");
                 }
-                else if(prefix(arg, "config="))
+                ELSEIF(prefix(arg, "config="))
                     parse_config_options(
                         load_text_file(arg).c_str(),
                         fs::path(arg).parent_path(),
                         opt
                     );
-                else if(prefix(arg, "preset="))
+                ELSEIF(prefix(arg, "preset="))
                 {
                     parse_config_options(
                         load_text_file(get_resource_path(std::string("data/presets/")+arg+".cfg")).c_str(),
@@ -236,32 +243,32 @@ void parse_command_line_options(char** argv, options& opt)
                     );
                 }
 #define TR_BOOL_OPT(name, description, default) \
-                else if(cmp(arg, DASHIFY(name))) opt.name = true; \
-                else if(prefix(arg, DASHIFY(name)+"=")) \
+                ELSEIF(cmp(arg, DASHIFY(name))) opt.name = true; \
+                ELSEIF(prefix(arg, DASHIFY(name)+"=")) \
                     opt.name = parse_toggle(DASHIFY(name), arg);
 #define TR_BOOL_SOPT(name, shorthand, description) \
                 TR_BOOL_OPT(name, description, false)
 #define TR_INT_OPT(name, description, default, min, max) \
-                else if(prefix(arg, DASHIFY(name)+"=")) \
+                ELSEIF(prefix(arg, DASHIFY(name)+"=")) \
                     opt.name = parse_int(DASHIFY(name), arg, min, max);
 #define TR_INT_SOPT(name, shorthand, description, default, min, max) \
                 TR_INT_OPT(name, description, default, min, max)
 #define TR_FLOAT_OPT(name, description, default, min, max) \
-                else if(prefix(arg, DASHIFY(name)+"=")) \
+                ELSEIF(prefix(arg, DASHIFY(name)+"=")) \
                     opt.name = parse_float(DASHIFY(name), arg, min, max);
 #define TR_STRING_OPT(name, description, default) \
-                else if(prefix(arg, DASHIFY(name)+"=")) \
+                ELSEIF(prefix(arg, DASHIFY(name)+"=")) \
                     opt.name = arg;
 #define TR_FLAG_STRING_OPT(name, description, default) \
-                else if(cmp(arg, DASHIFY(name))) \
+                ELSEIF(cmp(arg, DASHIFY(name))) \
                     opt.name##_flag = true; \
-                else if(prefix(arg, DASHIFY(name)+"=")) \
+                ELSEIF(prefix(arg, DASHIFY(name)+"=")) \
                 {\
                     opt.name##_flag = true; \
                     opt.name = arg; \
                 }
 #define TR_VEC3_OPT(name, description, default, min, max) \
-                else if(prefix(arg, DASHIFY(name)+"=")) \
+                ELSEIF(prefix(arg, DASHIFY(name)+"=")) \
                 {\
                     opt.name.x = parse_float(DASHIFY(name)+".x", arg, min.x, max.x, ','); \
                     if(*arg == ',') arg++; \
@@ -270,10 +277,10 @@ void parse_command_line_options(char** argv, options& opt)
                     opt.name.z = parse_float(DASHIFY(name)+".z", arg, min.z, max.z); \
                 }
 #define TR_ENUM_OPT(name, type, description, default, ...) \
-                else if(prefix(arg, DASHIFY(name)+"=")) \
+                ELSEIF(prefix(arg, DASHIFY(name)+"=")) \
                     enum_str(DASHIFY(name), opt.name, arg, { __VA_ARGS__ });
 #define TR_SETINT_OPT(name, description) \
-                else if(prefix(arg, DASHIFY(name)+"=")) \
+                ELSEIF(prefix(arg, DASHIFY(name)+"=")) \
                 {\
                     while(true) \
                     {\
@@ -283,7 +290,7 @@ void parse_command_line_options(char** argv, options& opt)
                     }\
                 }
 #define TR_VECFLOAT_OPT(name, description) \
-                else if(prefix(arg, DASHIFY(name)+"=")) \
+                ELSEIF(prefix(arg, DASHIFY(name)+"=")) \
                 {\
                     while(true) \
                     {\
@@ -303,7 +310,7 @@ void parse_command_line_options(char** argv, options& opt)
                     if(*arg == ',') arg++; \
                 }
 #define TR_STRUCT_OPT(name, description, ...)\
-                else if(prefix(arg, DASHIFY(name)+"=")) \
+                ELSEIF(prefix(arg, DASHIFY(name)+"=")) \
                 {\
                     std::string name_prefix = DASHIFY(name)+"."; \
                     auto& s = opt.name; \
@@ -341,7 +348,7 @@ void parse_command_line_options(char** argv, options& opt)
 #define TR_SETINT_OPT(...)
 #define TR_VECFLOAT_OPT(...)
 #define TR_STRUCT_OPT(...)
-                else throw option_parse_error(
+                if(!passed) throw option_parse_error(
                     "Unknown long flag " + std::string(arg));
             }
 #undef TR_INT_SOPT
@@ -764,7 +771,7 @@ void print_options(options& opt, bool full)
 #define TR_INT_SOPT(name, shorthand, description, default, min, max) \
     if(full || opt.name != default) dump(DASHIFY(name), std::to_string(opt.name))
 #define TR_FLOAT_OPT(name, description, default, min, max) \
-    if(full || (opt.name != default && (!isnan(default) || !isnan(opt.name)))) dump(DASHIFY(name), std::to_string(opt.name))
+    if(full || (opt.name != default && (!isnan(double(default)) || !isnan(opt.name)))) dump(DASHIFY(name), std::to_string(opt.name))
 #define TR_STRING_OPT(name, description, default) \
     if(full || opt.name != default) dump(DASHIFY(name), "\""+opt.name+"\"")
 #define TR_FLAG_STRING_OPT(name, ...) \

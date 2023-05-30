@@ -66,6 +66,10 @@ private:
 
     struct timing_data
     {
+        timing_data() = default;
+        timing_data(timing_data&& other) = default;
+        timing_data(const timing_data& other) = delete;
+
         std::vector<vkm<vk::QueryPool>> timestamp_pools;
 
         std::set<int> available_queries;
