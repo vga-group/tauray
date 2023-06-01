@@ -325,10 +325,16 @@ context* create_context(const options& opt)
         (context::options&)lkg_opt = ctx_opt;
         lkg_opt.vsync = opt.vsync;
         lkg_opt.viewport_size = uvec2(opt.width, opt.height);
-        lkg_opt.viewport_count = opt.lkg_params.v;
-        lkg_opt.mid_plane_dist = opt.lkg_params.m;
-        lkg_opt.depthiness = opt.lkg_params.d;
-        lkg_opt.relative_view_distance = opt.lkg_params.r;
+        lkg_opt.viewport_count = opt.lkg_params.viewports;
+        lkg_opt.mid_plane_dist = opt.lkg_params.midplane;
+        lkg_opt.depthiness = opt.lkg_params.depth;
+        lkg_opt.relative_view_distance = opt.lkg_params.relative_dist;
+        if(opt.lkg_calibration.display_index >= 0)
+        {
+            looking_glass::options::calibration_data calib;
+            memcpy(&calib, &opt.lkg_calibration, sizeof(calib));
+            lkg_opt.calibration_override.emplace(calib);
+        }
         return new looking_glass(lkg_opt);
     }
     else if(opt.display == options::display_type::FRAME_SERVER)
