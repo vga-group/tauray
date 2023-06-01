@@ -192,7 +192,7 @@ std::unique_ptr<texture> read_texture(
     // Texture is not embedded. 
     // It should be in a file relative to the model file.
     return std::unique_ptr<texture>(
-        new texture(ctx, base_path / path.C_Str())
+        new texture(ctx, (base_path / path.C_Str()).string())
     );
 }
 
