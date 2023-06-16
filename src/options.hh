@@ -381,10 +381,30 @@
         "convergence from the camera, d is the \"depthiness\", and " \
         "r is the view distance (relative to display size) used for "\
         "calculating the vertical FOV.", \
-        TR_STRUCT_OPT_INT(v, 48, 1, INT_MAX) \
-        TR_STRUCT_OPT_FLOAT(m, 2.0f, 0.001f, FLT_MAX) \
-        TR_STRUCT_OPT_FLOAT(d, 2.0f, 0.001f, FLT_MAX) \
-        TR_STRUCT_OPT_FLOAT(r, 2.0f, 0.001f, FLT_MAX) \
+        TR_STRUCT_OPT_INT(viewports, 48, 1, INT_MAX) \
+        TR_STRUCT_OPT_FLOAT(midplane, 2.0f, 0.001f, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(depth, 2.0f, 0.001f, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(relative_dist, 2.0f, 0.001f, FLT_MAX) \
+    )\
+    TR_STRUCT_OPT(lkg_calibration, \
+        "Overrides calibration parameters for a Looking Glass display. " \
+        "Can be used to run one such display without the USB connection. " \
+        "These values can be found from the LKG_calibration folder if you " \
+        "mount the display USB as a drive.", \
+        TR_STRUCT_OPT_INT(display_index, -1, 0, INT_MAX) \
+        TR_STRUCT_OPT_FLOAT(pitch, 0, -FLT_MAX, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(slope, 0, -FLT_MAX, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(center, 0, -FLT_MAX, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(fringe, 0, -FLT_MAX, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(viewCone, 0, 0.0f, FLT_MAX) \
+        TR_STRUCT_OPT_INT(invView, 0, 0, 1) \
+        TR_STRUCT_OPT_FLOAT(verticalAngle, 0, -FLT_MAX, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(DPI, 0, 0, FLT_MAX) \
+        TR_STRUCT_OPT_INT(screenW, 0, 1, INT_MAX) \
+        TR_STRUCT_OPT_INT(screenH, 0, 1, INT_MAX) \
+        TR_STRUCT_OPT_INT(flipImageX, 0, 0, 1) \
+        TR_STRUCT_OPT_INT(flipImageY, 0, 0, 1) \
+        TR_STRUCT_OPT_INT(flipSubp, 0, 0, 1) \
     )\
     TR_STRUCT_OPT(taa, \
         "Sets parameters for temporal antialiasing.", \
