@@ -622,6 +622,8 @@ void scene_update_stage::record_command_buffers()
         sb.camera_data.upload(i, cb);
         sb.scene_metadata.upload(i, cb);
 
+        bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
+
         if(dev->ctx->is_ray_tracing_supported())
         {
             record_as_build(i, cb);

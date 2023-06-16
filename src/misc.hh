@@ -105,6 +105,10 @@ vkm<vk::Image> sync_create_gpu_image(
 
 // The hammer for all problems (if you don't care about performance at all)
 void full_barrier(vk::CommandBuffer cb);
+void bulk_upload_barrier(
+    vk::CommandBuffer cb,
+    vk::PipelineStageFlags usage_flags = vk::PipelineStageFlagBits::eAllCommands
+);
 
 vk::SampleCountFlagBits get_max_available_sample_count(context& ctx);
 

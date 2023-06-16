@@ -351,11 +351,6 @@ void deduce_layout_access_stage(
 ){
     switch(layout)
     {
-    case vk::ImageLayout::eUndefined:
-    case vk::ImageLayout::ePresentSrcKHR:
-        access = {};
-        stage = vk::PipelineStageFlagBits::eTopOfPipe;
-        break;
     case vk::ImageLayout::eTransferDstOptimal:
         access = vk::AccessFlagBits::eTransferWrite;
         stage = vk::PipelineStageFlagBits::eTransfer;
@@ -381,9 +376,11 @@ void deduce_layout_access_stage(
             vk::AccessFlagBits::eDepthStencilAttachmentWrite;
         stage = vk::PipelineStageFlagBits::eEarlyFragmentTests;
         break;
+    case vk::ImageLayout::eUndefined:
     case vk::ImageLayout::eGeneral:
+    case vk::ImageLayout::ePresentSrcKHR:
         access = vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite;
-        stage = vk::PipelineStageFlagBits::eTopOfPipe;
+        stage = vk::PipelineStageFlagBits::eAllCommands;
         break;
     default:
         throw std::runtime_error("Unknown layout " + std::to_string((uint64_t)layout));
@@ -510,6 +507,20 @@ void full_barrier(vk::CommandBuffer cb)
     cb.pipelineBarrier(
         vk::PipelineStageFlagBits::eAllCommands,
         vk::PipelineStageFlagBits::eAllCommands,
+        {}, barrier, {}, {}
+    );
+}
+
+void bulk_upload_barrier(vk::CommandBuffer cb, vk::PipelineStageFlags usage_flags)
+{
+    vk::MemoryBarrier barrier(
+        vk::AccessFlagBits::eMemoryWrite,
+        vk::AccessFlagBits::eMemoryRead
+    );
+
+    cb.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        usage_flags,
         {}, barrier, {}, {}
     );
 }

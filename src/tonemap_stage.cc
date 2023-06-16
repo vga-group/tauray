@@ -96,6 +96,7 @@ tonemap_stage::tonemap_stage(
         output.transition_layout_temporary(cb, j, vk::ImageLayout::eGeneral, true);
 
         index_data.upload(i, cb);
+        bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
         tonemap_timer.begin(cb, i);
 
         comp.bind(cb, cb_index);
