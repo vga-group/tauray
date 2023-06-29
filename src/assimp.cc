@@ -380,7 +380,7 @@ scene_graph load_assimp(device_mask dev, const std::string& path)
         aiMesh* ai_mesh = ai_scene->mMeshes[i];
 
         model m;
-        mesh* out_mesh = new mesh(*dev.get_context());
+        mesh* out_mesh = new mesh(dev);
 
         out_mesh->get_vertices() = read_vertices(ai_mesh);
         out_mesh->get_indices() = read_indices(ai_mesh);

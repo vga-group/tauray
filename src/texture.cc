@@ -21,6 +21,8 @@ void create_tex(
     size_t data_size,
     void* pixel_data
 ){
+    layer_views.clear();
+    multiview_block_views.clear();
     img = sync_create_gpu_image(
         dev,
         info,
@@ -400,7 +402,6 @@ size_t texture::get_multiview_block_count() const
 void texture::resize(uvec2 size)
 {
     pixel_data.clear();
-    buffers.clear();
     dim = uvec3(size, 1u);
     create(0, nullptr);
 }

@@ -715,7 +715,7 @@ scene_graph load_gltf(
 
             bool generate_normals = vert_norm.size() == 0;
 
-            mesh* prim_mesh = new mesh(*dev.get_context());
+            mesh* prim_mesh = new mesh(dev);
             std::vector<mesh::vertex>& mesh_vert = prim_mesh->get_vertices();
             std::vector<mesh::skin_data>& mesh_skin = prim_mesh->get_skin();
             std::vector<uint32_t>& mesh_ind = prim_mesh->get_indices();

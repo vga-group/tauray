@@ -6,21 +6,22 @@ namespace tr
 
 uint64_t mesh::id_counter = 1;
 
-mesh::mesh(context& ctx): ctx(&ctx), id(0), animation_source(nullptr) {}
+mesh::mesh(device_mask dev): id(0), animation_source(nullptr), buffers(dev) {}
 
 mesh::mesh(
-    context& ctx,
+    device_mask dev,
     std::vector<vertex>&& vertices,
     std::vector<uint32_t>&& indices,
     std::vector<skin_data>&& skin
-):  ctx(&ctx), vertices(std::move(vertices)), indices(std::move(indices)),
-    skin(std::move(skin)), animation_source(nullptr)
+):  vertices(std::move(vertices)), indices(std::move(indices)),
+    skin(std::move(skin)), animation_source(nullptr), buffers(dev)
 {
     init_buffers();
 }
 
 mesh::mesh(mesh* animation_source)
-:   ctx(animation_source->ctx), animation_source(animation_source)
+:   animation_source(animation_source),
+    buffers(animation_source->buffers.get_mask())
 {
     init_buffers();
 }
@@ -66,23 +67,23 @@ const std::vector<mesh::skin_data>& mesh::get_skin() const
     return skin;
 }
 
-vk::Buffer mesh::get_vertex_buffer(size_t device_index) const
+vk::Buffer mesh::get_vertex_buffer(device_id id) const
 {
-    return buffers[device_index].vertex_buffer;
+    return buffers[id].vertex_buffer;
 }
 
-vk::Buffer mesh::get_index_buffer(size_t device_index) const
+vk::Buffer mesh::get_index_buffer(device_id id) const
 {
     if(animation_source)
-        return animation_source->buffers[device_index].index_buffer;
-    return buffers[device_index].index_buffer;
+        return animation_source->buffers[id].index_buffer;
+    return buffers[id].index_buffer;
 }
 
-vk::Buffer mesh::get_skin_buffer(size_t device_index) const
+vk::Buffer mesh::get_skin_buffer(device_id id) const
 {
     if(animation_source)
-        return animation_source->buffers[device_index].skin_buffer;
-    return buffers[device_index].skin_buffer;
+        return animation_source->buffers[id].skin_buffer;
+    return buffers[id].skin_buffer;
 }
 
 bool mesh::is_skinned() const
@@ -99,7 +100,6 @@ void mesh::refresh_buffers()
 {
     // TODO: Make this smarter, no need to reinit if buffer size is the same
     // as before.
-    buffers.clear();
     init_buffers();
 }
 
@@ -181,9 +181,6 @@ void mesh::init_buffers()
 {
     id = id_counter++;
 
-    std::vector<device_data>& devices = ctx->get_devices();
-    buffers.resize(devices.size());
-
     const std::vector<vertex>& vertices = animation_source ? animation_source->vertices : this->vertices;
     const std::vector<uint32_t>& indices = animation_source ? animation_source->indices : this->indices;
     const std::vector<skin_data>& skin = animation_source ? animation_source->skin : this->skin;
@@ -192,17 +189,16 @@ void mesh::init_buffers()
     size_t index_bytes = indices.size() * sizeof(indices[0]);
     size_t skin_bytes = skin.size() * sizeof(skin[0]);
 
-    for(size_t i = 0; i < devices.size(); ++i)
-    {
+    buffers([&](device& dev, buffer_data& buf){
         vk::BufferUsageFlags buf_flags =
             vk::BufferUsageFlagBits::eStorageBuffer;
-        if(ctx->is_ray_tracing_supported())
+        if(dev.ctx->is_ray_tracing_supported())
             buf_flags = buf_flags | vk::BufferUsageFlagBits::eShaderDeviceAddress|
                 vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
-        vk::CommandBuffer cb = begin_command_buffer(devices[i]);
+        vk::CommandBuffer cb = begin_command_buffer(dev);
 
-        buffers[i].vertex_buffer = create_buffer(
-            devices[i],
+        buf.vertex_buffer = create_buffer(
+            dev,
             {
                 {}, vertex_bytes,
                 vk::BufferUsageFlagBits::eVertexBuffer|buf_flags,
@@ -215,8 +211,8 @@ void mesh::init_buffers()
 
         if(!animation_source)
         {
-            buffers[i].index_buffer = create_buffer(
-                devices[i],
+            buf.index_buffer = create_buffer(
+                dev,
                 {
                     {}, index_bytes,
                     vk::BufferUsageFlagBits::eIndexBuffer|buf_flags,
@@ -228,8 +224,8 @@ void mesh::init_buffers()
             );
             if(skin_bytes > 0)
             {
-                buffers[i].skin_buffer = create_buffer(
-                    devices[i],
+                buf.skin_buffer = create_buffer(
+                    dev,
                     {
                         {}, skin_bytes,
                         vk::BufferUsageFlagBits::eStorageBuffer,
@@ -242,8 +238,8 @@ void mesh::init_buffers()
             }
         }
 
-        end_command_buffer(devices[i], cb);
-    }
+        end_command_buffer(dev, cb);
+    });
 }
 
 std::vector<vk::VertexInputBindingDescription> mesh::get_bindings()

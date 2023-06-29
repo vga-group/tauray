@@ -11,18 +11,14 @@
 #include "dshgi_server.hh"
 #include "frame_client.hh"
 #include "rt_renderer.hh"
-#include "patched_sphere.hh"
 #include "scene.hh"
 #include "camera.hh"
 #include "texture.hh"
 #include "environment_map.hh"
 #include "sampler.hh"
-#include "heightfield.hh"
-#include "plane.hh"
 #include "material.hh"
 #include "gltf.hh"
 #include "assimp.hh"
-#include "ply.hh"
 #include "misc.hh"
 #include "load_balancer.hh"
 #include <chrono>
@@ -124,7 +120,6 @@ scene_data load_scenes(context& ctx, const options& opt)
         sky.reset(new environment_map(dev, opt.envmap));
 
     std::vector<scene_graph> scenes;
-    std::unique_ptr<ply_streamer> ply_stream;
     size_t instance_capacity = 0;
     size_t light_capacity = 0;
     for(const std::string& path: opt.scene_paths)
@@ -132,17 +127,7 @@ scene_data load_scenes(context& ctx, const options& opt)
         scene_graph sg_temp;
 
         fs::path fsp(path);
-        if(fsp.extension() == ".ply")
-        {
-            if(opt.ply_streaming)
-            {
-                ply_stream.reset(new ply_streamer(
-                    ctx, sg_temp, path, opt.force_single_sided
-                ));
-            }
-            else sg_temp = load_ply(ctx, path, opt.force_single_sided);
-        }
-        else if(fsp.extension() == ".gltf" || fsp.extension() == ".glb")
+        if(fsp.extension() == ".gltf" || fsp.extension() == ".glb")
         {
             sg_temp = load_gltf(
                 dev, path, opt.force_single_sided, opt.force_double_sided
@@ -154,7 +139,6 @@ scene_data load_scenes(context& ctx, const options& opt)
         }
         scenes.emplace_back(std::move(sg_temp));
         scene_graph& sg = scenes.back();
-        if(ply_stream) ply_stream->sg = &sg;
         light_capacity += sg.point_lights.size() + sg.spotlights.size();
 
         for(const auto& pair: sg.mesh_objects)
@@ -213,8 +197,7 @@ scene_data load_scenes(context& ctx, const options& opt)
     scene_data s{
         std::move(sky),
         std::move(scenes),
-        std::make_unique<scene>(ctx, max(instance_capacity, 1lu), max(light_capacity, 1lu)),
-        std::move(ply_stream)
+        std::make_unique<scene>(ctx, max(instance_capacity, 1lu), max(light_capacity, 1lu))
     };
     s.s->set_environment_map(s.sky.get());
     s.s->set_ambient(opt.ambient);
@@ -948,12 +931,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
             // with some samplers in the future.
             //if(rr) rr->reset_accumulation(opt.accumulation);
             if(rr) rr->reset_accumulation(false);
-        }
-
-        if(sd.ply_stream && sd.ply_stream->refresh())
-        {
-            ctx.sync();
-            if(rr) rr->set_scene(&s);
         }
 
         s.update(paused || !opt.animation_flag ? 0 : delta * 1000000);

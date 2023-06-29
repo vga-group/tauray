@@ -100,7 +100,6 @@ add_library(tauray-core STATIC
   src/gltf.cc
   src/gpu_buffer.cc
   src/headless.cc
-  src/heightfield.cc
   src/light.cc
   src/light_scene.cc
   src/load_balancer.cc
@@ -117,11 +116,8 @@ add_library(tauray-core STATIC
   src/assimp.cc
   src/openxr.cc
   src/options.cc
-  src/patched_sphere.cc
   src/path_tracer_stage.cc
   src/placeholders.cc
-  src/plane.cc
-  src/ply.cc
   src/post_processing_renderer.cc
   src/progress_tracker.cc
   src/radix_sort.cc
