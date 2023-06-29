@@ -21,7 +21,7 @@ frame_delay_stage::frame_delay_stage(
     spec.depth_usage = vk::ImageUsageFlagBits::eSampled|
         vk::ImageUsageFlagBits::eTransferDst;
     textures->add(spec);
-    output_features = textures->get_array_target();
+    output_features = textures->get_array_target(dev.index);
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {

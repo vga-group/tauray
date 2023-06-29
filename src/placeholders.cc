@@ -7,7 +7,7 @@ namespace tr
 placeholders::placeholders(context& ctx)
 :   ctx(&ctx),
     sample2d(
-        ctx,
+        device_mask::all(ctx),
         uvec2(1),
         1,
         vk::Format::eR8G8B8A8Unorm,
@@ -17,7 +17,7 @@ placeholders::placeholders(context& ctx)
         vk::ImageLayout::eShaderReadOnlyOptimal
     ),
     sample3d(
-        ctx,
+        device_mask::all(ctx),
         uvec3(1),
         vk::Format::eR8G8B8A8Unorm,
         vk::ImageTiling::eOptimal,
@@ -25,7 +25,7 @@ placeholders::placeholders(context& ctx)
         vk::ImageLayout::eShaderReadOnlyOptimal
     ),
     depth_test_sample(
-        ctx,
+        device_mask::all(ctx),
         uvec2(1),
         1,
         vk::Format::eD32Sfloat,

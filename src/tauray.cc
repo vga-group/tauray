@@ -117,9 +117,11 @@ scene_data load_scenes(context& ctx, const options& opt)
     if(opt.display == options::display_type::FRAME_CLIENT)
         return {};
 
+    device_mask dev = device_mask::all(ctx);
+
     std::unique_ptr<environment_map> sky;
     if(opt.envmap.size())
-        sky.reset(new environment_map(ctx, opt.envmap));
+        sky.reset(new environment_map(dev, opt.envmap));
 
     std::vector<scene_graph> scenes;
     std::unique_ptr<ply_streamer> ply_stream;
@@ -143,12 +145,12 @@ scene_data load_scenes(context& ctx, const options& opt)
         else if(fsp.extension() == ".gltf" || fsp.extension() == ".glb")
         {
             sg_temp = load_gltf(
-                ctx, path, opt.force_single_sided, opt.force_double_sided
+                dev, path, opt.force_single_sided, opt.force_double_sided
             );
         }
         else
         {
-            sg_temp = load_assimp(ctx, path);
+            sg_temp = load_assimp(dev, path);
         }
         scenes.emplace_back(std::move(sg_temp));
         scene_graph& sg = scenes.back();

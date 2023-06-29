@@ -15,7 +15,7 @@ public:
     };
 
     environment_map(
-        context& ctx,
+        device_mask dev,
         const std::string& path,
         projection proj = LAT_LONG,
         vec3 factor = vec3(1.0f)
@@ -42,7 +42,8 @@ private:
         float alias_pdf;
     };
     std::vector<alias_table_entry> alias_table;
-    std::vector<vkm<vk::Buffer>> alias_table_buffers;
+
+    per_device<vkm<vk::Buffer>> alias_table_buffers;
 };
 
 }

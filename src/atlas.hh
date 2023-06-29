@@ -13,7 +13,7 @@ public:
     // If sub_sizes is empty, a 1x1 texture is created so that samplers don't
     // cause errors.
     atlas(
-        device_data& dev,
+        device_mask dev,
         const std::vector<uvec2>& sub_sizes = {},
         unsigned pad_size = 1,
         vk::Format fmt = vk::Format::eR8G8B8A8Unorm,

@@ -7,9 +7,8 @@ namespace tr
 {
 
 // These placeholder assets are used when some resource is missing.
-class placeholders
+struct placeholders
 {
-    public:
     placeholders(context& ctx);
 
     context* ctx;

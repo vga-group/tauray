@@ -10,14 +10,14 @@
 namespace tr
 {
 
-struct device_data;
+struct device;
 
 template<typename T>
 class vkm_generic
 {
 public:
     vkm_generic();
-    vkm_generic(device_data& dev, T resource);
+    vkm_generic(device& dev, T resource);
     vkm_generic(const vkm_generic<T>& other) = delete;
     vkm_generic(vkm_generic<T>&& other);
 
@@ -46,7 +46,7 @@ protected:
     vk::Device get_device();
     void queue_destroy();
 
-    device_data* dev;
+    device* dev;
     T resource;
 };
 
@@ -55,7 +55,7 @@ class vkm: public vkm_generic<T>
 {
 public:
     vkm() = default;
-    vkm(device_data& dev, T resource);
+    vkm(device& dev, T resource);
     vkm(vkm<T>&& other) = default;
     ~vkm();
 
@@ -71,7 +71,7 @@ class vkm<vk::Image>: public vkm_generic<vk::Image>
 {
 public:
     vkm() = default;
-    vkm(device_data& dev, vk::Image img, VmaAllocation alloc = VK_NULL_HANDLE);
+    vkm(device& dev, vk::Image img, VmaAllocation alloc = VK_NULL_HANDLE);
     vkm(vkm<vk::Image>&& other) = default;
     ~vkm();
 
@@ -88,7 +88,7 @@ class vkm<vk::CommandBuffer>: public vkm_generic<vk::CommandBuffer>
 {
 public:
     vkm() = default;
-    vkm(device_data& dev, vk::CommandBuffer cmd, vk::CommandPool pool);
+    vkm(device& dev, vk::CommandBuffer cmd, vk::CommandPool pool);
     vkm(vkm<vk::CommandBuffer>&& other) = default;
     ~vkm();
 
@@ -106,7 +106,7 @@ class vkm<vk::Buffer>: public vkm_generic<vk::Buffer>
 {
 public:
     vkm() = default;
-    vkm(device_data& dev, vk::Buffer buf, VmaAllocation alloc = VK_NULL_HANDLE);
+    vkm(device& dev, vk::Buffer buf, VmaAllocation alloc = VK_NULL_HANDLE);
     vkm(vkm<vk::Buffer>&& other) = default;
     ~vkm();
 

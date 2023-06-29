@@ -35,7 +35,7 @@ rt_renderer<Pipeline>::rt_renderer(context& ctx, const options& opt)
          opt.projection == camera::ORTHOGRAPHIC)
     ) use_raster_gbuffer = true;
 
-    std::vector<device_data>& devices = ctx.get_devices();
+    std::vector<device>& devices = ctx.get_devices();
     per_device.resize(devices.size());
     for(size_t i = 0; i < per_device.size(); ++i)
     {
@@ -48,8 +48,8 @@ rt_renderer<Pipeline>::rt_renderer(context& ctx, const options& opt)
 template<typename Pipeline>
 rt_renderer<Pipeline>::~rt_renderer()
 {
-    std::vector<device_data>& devices = ctx->get_devices();
-    device_data& display_device = ctx->get_display_device();
+    std::vector<device>& devices = ctx->get_devices();
+    device& display_device = ctx->get_display_device();
     ctx->sync();
 
     // Ensure each pipeline is deleted before the assets they may use
@@ -57,7 +57,7 @@ rt_renderer<Pipeline>::~rt_renderer()
 
     for(size_t i = 0; i < per_device.size(); ++i)
     {
-        device_data& dev = devices[i];
+        device& dev = devices[i];
         per_device_data& d = per_device[i];
         d.ray_tracer.reset();
         for(auto& f: d.per_frame)
@@ -125,13 +125,13 @@ void rt_renderer<Pipeline>::render()
     ctx->get_indices(swapchain_index, frame_index);
     uint64_t frame_counter = ctx->get_frame_counter();
 
-    device_data& display_device = ctx->get_display_device();
-    std::vector<device_data>& devices = ctx->get_devices();
+    device& display_device = ctx->get_display_device();
+    std::vector<device>& devices = ctx->get_devices();
 
     for(size_t i = 0; i < devices.size(); ++i)
     {
         dependencies device_deps = per_device[i].skinning->run(per_device[i].last_frame_deps);
-        device_data& dev = devices[i];
+        device& dev = devices[i];
         device_deps = per_device[i].scene_update->run(device_deps);
         if(i == ctx->get_display_device().index)
             device_deps.concat(post_processing.get_gbuffer_write_dependencies());
@@ -199,7 +199,7 @@ void rt_renderer<Pipeline>::set_device_workloads(const std::vector<double>& rati
         opt.distribution.strategy == DISTRIBUTION_DUPLICATE
     ) return;
 
-    device_data& display_device = ctx->get_display_device();
+    device& display_device = ctx->get_display_device();
 
     double cumulative = 0;
     for(size_t i = 0; i < per_device.size(); ++i)
@@ -247,7 +247,7 @@ void rt_renderer<Pipeline>::set_device_workloads(const std::vector<double>& rati
 template<typename Pipeline>
 void rt_renderer<Pipeline>::init_device_resources(size_t device_index)
 {
-    device_data& d = ctx->get_devices()[device_index];
+    device& d = ctx->get_devices()[device_index];
     bool is_display_device = d.index == ctx->get_display_device().index;
     double even_workload_ratio = 1.0/ctx->get_devices().size();
 
@@ -325,7 +325,7 @@ void rt_renderer<Pipeline>::init_device_resources(size_t device_index)
 
     if(!is_display_device)
     {
-        device_data& display_device = ctx->get_display_device();
+        device& display_device = ctx->get_display_device();
         r.gbuffer_copy.reset(display_device, max_target_size, ctx->get_display_count());
         r.gbuffer_copy.add(copy_spec);
     }
@@ -336,7 +336,7 @@ void rt_renderer<Pipeline>::init_device_resources(size_t device_index)
 
         if(!is_display_device)
         {
-            device_data& display_device = ctx->get_display_device();
+            device& display_device = ctx->get_display_device();
 
             size_t sz = max_target_size.x*max_target_size.y*color_format_size*ctx->get_display_count();
             for(size_t j = 0; j < r.gbuffer_copy.entry_count(); ++j)
@@ -408,7 +408,7 @@ void rt_renderer<Pipeline>::init_device_resources(size_t device_index)
         }
     }
 
-    gbuffer_target transfer_target = r.gbuffer.get_array_target();
+    gbuffer_target transfer_target = r.gbuffer.get_array_target(d.index);
     if(use_raster_gbuffer)
     {
         gbuffer_target limited_target;
@@ -432,19 +432,20 @@ template<typename Pipeline>
 void rt_renderer<Pipeline>::init_primary_device_resources()
 {
     size_t device_count = ctx->get_devices().size();
+    device& display_device = ctx->get_display_device();
     if(device_count > 1)
     { // If multi-device, use parallel implementation
         std::vector<gbuffer_target> dimgs;
         for(size_t i = 0; i < per_device.size(); ++i)
         {
             gbuffer_target dimg;
-            if(i == ctx->get_display_device().index)
+            if(i == display_device.index)
             {
-                dimg = per_device[i].gbuffer.get_array_target();
+                dimg = per_device[i].gbuffer.get_array_target(display_device.index);
             }
             else
             {
-                dimg = per_device[i].gbuffer_copy.get_array_target();
+                dimg = per_device[i].gbuffer_copy.get_array_target(display_device.index);
             }
 
             if(use_raster_gbuffer)
@@ -474,7 +475,7 @@ void rt_renderer<Pipeline>::init_primary_device_resources()
         ));
     }
 
-    gbuffer_texture& gbuf_tex = per_device[ctx->get_display_device().index].gbuffer;
+    gbuffer_texture& gbuf_tex = per_device[display_device.index].gbuffer;
     if(use_raster_gbuffer)
     {
         raster_stage::options raster_opt;
@@ -489,7 +490,7 @@ void rt_renderer<Pipeline>::init_primary_device_resources()
         std::vector<gbuffer_target> gbuffer_block_targets;
         for(size_t i = 0; i < gbuf_tex.get_multiview_block_count(); ++i)
         {
-            gbuffer_target mv_target = gbuf_tex.get_multiview_block_target(i);
+            gbuffer_target mv_target = gbuf_tex.get_multiview_block_target(display_device.index, i);
             mv_target.color = render_target();
             mv_target.diffuse = render_target();
             mv_target.direct = render_target();
@@ -499,12 +500,12 @@ void rt_renderer<Pipeline>::init_primary_device_resources()
         if(gbuffer_block_targets[0].entry_count() != 0)
         {
             gbuffer_rasterizer.reset(new raster_stage(
-                ctx->get_display_device(), gbuffer_block_targets, raster_opt
+                display_device, gbuffer_block_targets, raster_opt
             ));
         }
     }
 
-    gbuffer_target pp_target = gbuf_tex.get_array_target();
+    gbuffer_target pp_target = gbuf_tex.get_array_target(display_device.index);
     pp_target.set_layout(vk::ImageLayout::eGeneral);
     post_processing.set_display(pp_target);
 }
@@ -515,8 +516,8 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
     per_device_data& r,
     per_frame_data& f,
     uvec2 transfer_size,
-    device_data& primary,
-    device_data& secondary
+    device& primary,
+    device& secondary
 ){
     f.gpu_to_cpu_cb = create_graphics_command_buffer(secondary);
 
@@ -528,8 +529,8 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
     f.cpu_to_gpu_cb->begin(vk::CommandBufferBeginInfo{});
     r.cpu_to_gpu_timer.begin(f.cpu_to_gpu_cb, frame_index);
 
-    gbuffer_target target = r.gbuffer.get_array_target();
-    gbuffer_target target_copy = r.gbuffer_copy.get_array_target();
+    gbuffer_target target = r.gbuffer.get_array_target(secondary.index);
+    gbuffer_target target_copy = r.gbuffer_copy.get_array_target(primary.index);
 
     size_t j = 0;
     for(size_t i = 0; i < MAX_GBUFFER_ENTRIES; ++i)

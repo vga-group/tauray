@@ -6,7 +6,7 @@ namespace tr
 {
 
 scene_graph load_gltf(
-    context& ctx,
+    device_mask dev,
     const std::string& path,
     bool force_single_sided = false,
     bool force_double_sided = false

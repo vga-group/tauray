@@ -16,7 +16,7 @@ struct dependency
     vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eTopOfPipe;
 };
 
-struct device_data;
+struct device;
 
 // Bundles of dependencies are stored in this structure instead of a vector,
 // because this makes it easier to pass to Vulkan mostly.
@@ -36,7 +36,7 @@ public:
     void clear();
     size_t size() const;
 
-    void wait(device_data& dev);
+    void wait(device& dev);
     uint64_t value(size_t index) const;
 
     vk::TimelineSemaphoreSubmitInfo get_timeline_info() const;

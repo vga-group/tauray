@@ -83,6 +83,7 @@ add_library(tauray-core STATIC
   src/context.cc
   src/dependency.cc
   src/descriptor_state.cc
+  src/device.cc
   src/direct_stage.cc
   src/distribution_strategy.cc
   src/dshgi_renderer.cc

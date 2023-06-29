@@ -518,7 +518,7 @@ namespace tr
 {
 
 scene_graph load_gltf(
-    context& ctx,
+    device_mask dev,
     const std::string& path,
     bool force_single_sided,
     bool force_double_sided
@@ -566,7 +566,7 @@ scene_graph load_gltf(
             flip_vector_image(image.image, image.height);
 
             md.textures.emplace_back(new texture(
-                ctx,
+                dev,
                 uvec2(image.width, image.height),
                 1,
                 format,
@@ -582,7 +582,7 @@ scene_graph load_gltf(
         }
         else
         {// URI
-            md.textures.emplace_back(new texture(ctx, image.uri));
+            md.textures.emplace_back(new texture(dev, image.uri));
         }
     }
 
@@ -715,7 +715,7 @@ scene_graph load_gltf(
 
             bool generate_normals = vert_norm.size() == 0;
 
-            mesh* prim_mesh = new mesh(ctx);
+            mesh* prim_mesh = new mesh(*dev.get_context());
             std::vector<mesh::vertex>& mesh_vert = prim_mesh->get_vertices();
             std::vector<mesh::skin_data>& mesh_skin = prim_mesh->get_skin();
             std::vector<uint32_t>& mesh_ind = prim_mesh->get_indices();
@@ -793,7 +793,7 @@ scene_graph load_gltf(
         pair.second.set_animation_pool(nullptr);
 
         model* animation_model = new model(*pair.second.get_model());
-        animation_model->init_joints_buffer(ctx);
+        animation_model->init_joints_buffer(*dev.get_context());
         for(auto& vg: *animation_model)
         {
             mesh* animation_mesh = new mesh(vg.m);

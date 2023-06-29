@@ -37,7 +37,7 @@ size_t dependencies::size() const
     return values.size();
 }
 
-void dependencies::wait(device_data& dev)
+void dependencies::wait(device& dev)
 {
     (void)dev.dev.waitSemaphores({{}, semaphores, values}, UINT64_MAX);
 }

@@ -110,7 +110,7 @@ void raster_renderer::init_common_resources()
     std::vector<gbuffer_target> gbuffer_block_targets;
     for(size_t i = 0; i < gbuffer.get_multiview_block_count(); ++i)
     {
-        gbuffer_target mv_target = gbuffer.get_multiview_block_target(i);
+        gbuffer_target mv_target = gbuffer.get_multiview_block_target(d.index, i);
         color_block_targets.push_back(mv_target.color);
         depth_block_targets.push_back(mv_target.depth);
         gbuffer_block_targets.push_back(mv_target);
@@ -127,7 +127,7 @@ void raster_renderer::init_common_resources()
     raster_opt.output_layout = vk::ImageLayout::eGeneral;
     raster.reset(new raster_stage(d, gbuffer_block_targets, raster_opt));
 
-    gbuffer_target array_target = gbuffer.get_array_target();
+    gbuffer_target array_target = gbuffer.get_array_target(d.index);
     array_target.set_layout(vk::ImageLayout::eGeneral);
 
     post_processing.set_display(array_target);

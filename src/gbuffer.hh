@@ -110,7 +110,7 @@ namespace tr
     public:
         gbuffer_texture();
         gbuffer_texture(
-            device_data& dev,
+            device_mask dev,
             uvec2 size,
             unsigned layer_count,
             vk::SampleCountFlagBits msaa = vk::SampleCountFlagBits::e1
@@ -120,7 +120,7 @@ namespace tr
         gbuffer_texture& operator=(gbuffer_texture&& other) = default;
 
         void reset(
-            device_data& dev,
+            device_mask dev,
             uvec2 size,
             unsigned layer_count,
             vk::SampleCountFlagBits msaa = vk::SampleCountFlagBits::e1
@@ -137,15 +137,15 @@ namespace tr
 
         void add(gbuffer_spec spec);
 
-        gbuffer_target get_array_target() const;
-        gbuffer_target get_layer_target(uint32_t layer_index) const;
-        gbuffer_target get_multiview_block_target(uint32_t block_index) const;
+        gbuffer_target get_array_target(device_id id) const;
+        gbuffer_target get_layer_target(device_id id, uint32_t layer_index) const;
+        gbuffer_target get_multiview_block_target(device_id id, uint32_t block_index) const;
         size_t entry_count() const;
         size_t get_layer_count() const;
         size_t get_multiview_block_count() const;
 
     private:
-        device_data* dev;
+        device_mask mask;
         uvec2 size;
         unsigned layer_count;
         vk::SampleCountFlagBits msaa;

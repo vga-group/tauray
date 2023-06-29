@@ -112,9 +112,9 @@ size_t gbuffer_spec::present_count() const
     return count;
 }
 
-gbuffer_texture::gbuffer_texture(): dev(nullptr), size(0) {}
+gbuffer_texture::gbuffer_texture(): size(0) {}
 gbuffer_texture::gbuffer_texture(
-    device_data& dev,
+    device_mask dev,
     uvec2 size,
     unsigned layer_count,
     vk::SampleCountFlagBits msaa
@@ -123,7 +123,7 @@ gbuffer_texture::gbuffer_texture(
 }
 
 void gbuffer_texture::reset(
-    device_data& dev,
+    device_mask dev,
     uvec2 size,
     unsigned layer_count,
     vk::SampleCountFlagBits msaa
@@ -131,7 +131,7 @@ void gbuffer_texture::reset(
 #define TR_GBUFFER_ENTRY(name, ...) name.reset();
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
-    this->dev = &dev;
+    this->mask = dev;
     this->size = size;
     this->layer_count = layer_count;
     this->msaa = msaa;
@@ -147,7 +147,7 @@ void gbuffer_texture::reset(
         else if(usage & vk::ImageUsageFlagBits::eDepthStencilAttachment) \
             layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;\
         name.reset(new texture(\
-            *dev,\
+            mask,\
             size,\
             layer_count,\
             fmt,\
@@ -173,31 +173,31 @@ void gbuffer_texture::add(gbuffer_spec spec)
 #undef TR_GBUFFER_ENTRY
 }
 
-gbuffer_target gbuffer_texture::get_array_target() const
+gbuffer_target gbuffer_texture::get_array_target(device_id id) const
 {
     gbuffer_target gbuf;
 #define TR_GBUFFER_ENTRY(name, ...) \
-    if(name) gbuf.name = name->get_array_render_target(0);
+    if(name) gbuf.name = name->get_array_render_target(id);
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
     return gbuf;
 }
 
-gbuffer_target gbuffer_texture::get_layer_target(uint32_t layer_index) const
+gbuffer_target gbuffer_texture::get_layer_target(device_id id, uint32_t layer_index) const
 {
     gbuffer_target gbuf;
 #define TR_GBUFFER_ENTRY(name, ...) \
-    if(name) gbuf.name = name->get_layer_render_target(layer_index, 0);
+    if(name) gbuf.name = name->get_layer_render_target(layer_index, id);
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
     return gbuf;
 }
 
-gbuffer_target gbuffer_texture::get_multiview_block_target(uint32_t block_index) const
+gbuffer_target gbuffer_texture::get_multiview_block_target(device_id id, uint32_t block_index) const
 {
     gbuffer_target gbuf;
 #define TR_GBUFFER_ENTRY(name, ...) \
-    if(name) gbuf.name = name->get_multiview_block_render_target(block_index, 0);
+    if(name) gbuf.name = name->get_multiview_block_render_target(block_index, id);
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
     return gbuf;
