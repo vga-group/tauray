@@ -44,7 +44,7 @@ void environment_map::generate_alias_table()
             {"shader/alias_table_importance.comp", {}}, {}, 0, true
         }
     );
-    sampler envmap_sampler(*dev.ctx);
+    sampler envmap_sampler(dev);
     ivec2 size = texture::get_size();
     unsigned pixel_count = size.x * size.y;
     size_t bytes = sizeof(float) * pixel_count;

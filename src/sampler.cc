@@ -4,17 +4,14 @@ namespace tr
 {
 
 sampler::sampler(
-    context& ctx, vk::Filter min, vk::Filter mag,
+    device_mask dev, vk::Filter min, vk::Filter mag,
     vk::SamplerAddressMode extend_x,
     vk::SamplerAddressMode extend_y,
     vk::SamplerMipmapMode mip,
     int anisotropy, bool normalized, bool use_mipmaps,
     bool shadow, float mip_bias
-): ctx(&ctx)
-{
-    std::vector<device_data>& devices = ctx.get_devices();
-    samplers.resize(devices.size());
-    info = vk::SamplerCreateInfo{
+){
+    vk::SamplerCreateInfo info = vk::SamplerCreateInfo{
         {},
         min, mag, mip, extend_x, extend_y, extend_x, mip_bias,
         anisotropy > 0, (float)anisotropy,
@@ -23,13 +20,14 @@ sampler::sampler(
         vk::BorderColor::eFloatTransparentBlack,
         !normalized
     };
-    for(size_t i = 0; i < devices.size(); ++i)
-        samplers[i] = vkm(devices[i], devices[i].dev.createSampler(info));
+    samplers.init(dev, [&](device& d){
+        return vkm(d, d.dev.createSampler(info));
+    });
 }
 
-vk::Sampler sampler::get_sampler(size_t device_index) const
+vk::Sampler sampler::get_sampler(device_id id) const
 {
-    return samplers[device_index];
+    return samplers[id];
 }
 
 }

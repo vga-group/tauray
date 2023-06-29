@@ -7,7 +7,7 @@ namespace tr
 
 sampler_table::sampler_table(device_data& dev, bool use_mipmaps)
 :   dev(&dev), default_sampler(
-        *dev.ctx, vk::Filter::eLinear, vk::Filter::eLinear,
+        dev, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerAddressMode::eRepeat,
         vk::SamplerAddressMode::eRepeat,
         vk::SamplerMipmapMode::eLinear,

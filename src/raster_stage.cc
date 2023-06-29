@@ -123,7 +123,7 @@ raster_stage::raster_stage(
     output_targets(output_array_targets),
     opt(opt),
     brdf_integration_sampler(
-        *dev.ctx,
+        dev,
         vk::Filter::eLinear,
         vk::Filter::eLinear,
         vk::SamplerAddressMode::eClampToEdge,

@@ -29,7 +29,7 @@ looking_glass_composition_stage::looking_glass_composition_stage(
         (uint32_t)output.get_frame_count()
     }),
     input_sampler(
-        *dev.ctx, vk::Filter::eLinear, vk::Filter::eLinear,
+        dev, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerMipmapMode::eNearest,

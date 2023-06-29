@@ -44,7 +44,7 @@ public:
 
     vk::WriteDescriptorSet get_write(
         placeholders& pl,
-        uint32_t device_index,
+        device_id id,
         const vk::DescriptorSet& ds,
         const vk::DescriptorSetLayoutBinding& binding,
         std::vector<std::vector<vk::DescriptorBufferInfo>>& buffer_holder,
@@ -53,7 +53,7 @@ public:
 
     vk::WriteDescriptorSet get_placeholder_write(
         placeholders& pl,
-        uint32_t device_index,
+        device_id id,
         const vk::DescriptorSet& ds,
         const vk::DescriptorSetLayoutBinding& binding,
         std::vector<std::vector<vk::DescriptorBufferInfo>>& buffer_holder,

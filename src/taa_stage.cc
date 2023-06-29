@@ -47,7 +47,7 @@ taa_stage::taa_stage(
     ),
     jitter_buffer(dev, sizeof(pvec4)*opt.active_viewport_count, vk::BufferUsageFlagBits::eStorageBuffer),
     history_sampler(
-        *dev.ctx, vk::Filter::eLinear, vk::Filter::eLinear,
+        dev, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerMipmapMode::eNearest, 0, true, false

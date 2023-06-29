@@ -338,14 +338,14 @@ scene::scene_buffer::scene_buffer(device_data& dev)
     shadow_map_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     camera_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     envmap_sampler(
-        *dev.ctx, vk::Filter::eLinear, vk::Filter::eLinear,
+        dev, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerAddressMode::eRepeat,
         vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerMipmapMode::eNearest,
         0, true, false
     ),
     shadow_sampler(
-        *dev.ctx,
+        dev,
         vk::Filter::eLinear,
         vk::Filter::eLinear,
         vk::SamplerAddressMode::eClampToEdge,
@@ -357,7 +357,7 @@ scene::scene_buffer::scene_buffer(device_data& dev)
         true
     ),
     sh_grid_sampler(
-        *dev.ctx,
+        dev,
         vk::Filter::eLinear,
         vk::Filter::eLinear,
         vk::SamplerAddressMode::eClampToEdge,
