@@ -217,7 +217,7 @@ void raster_stage::record_command_buffers()
     {
         vk::CommandBuffer cb = begin_graphics();
 
-        raster_timer.begin(cb, i);
+        raster_timer.begin(cb, dev->index, i);
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             gfx->begin_render_pass(cb, i);
@@ -253,7 +253,7 @@ void raster_stage::record_command_buffers()
             }
             gfx->end_render_pass(cb);
         }
-        raster_timer.end(cb, i);
+        raster_timer.end(cb, dev->index, i);
         end_graphics(cb, i);
     }
 }

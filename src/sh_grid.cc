@@ -13,7 +13,7 @@ sh_grid::sh_grid(
 }
 
 texture sh_grid::create_target_texture(
-    device_data& dev,
+    device_mask dev,
     int samples_per_probe
 ){
     int samples_per_invocation = 1;
@@ -36,19 +36,20 @@ texture sh_grid::create_target_texture(
 }
 
 void sh_grid::get_target_sampling_info(
-    device_data& dev,
+    device_mask dev,
     int& samples_per_probe,
     int& samples_per_invocation
 ){
     uint32_t z = resolution.z * samples_per_probe;
-    samples_per_invocation =
-        (z + dev.props.limits.maxImageDimension3D - 1) /
-        dev.props.limits.maxImageDimension3D;
+    uint32_t max_dim = UINT32_MAX;
+    for(device& d: dev)
+        max_dim = min(max_dim, d.props.limits.maxImageDimension3D);
+    samples_per_invocation = (z + max_dim - 1) / max_dim;
     samples_per_probe = (samples_per_probe / samples_per_invocation)
         * samples_per_invocation;
 }
 
-texture sh_grid::create_texture(device_data& dev)
+texture sh_grid::create_texture(device_mask dev)
 {
     return texture(
         dev,

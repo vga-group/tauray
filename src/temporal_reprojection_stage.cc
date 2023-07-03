@@ -64,7 +64,7 @@ void temporal_reprojection_stage::record_command_buffers()
     {
         vk::CommandBuffer cb = begin_compute();
 
-        stage_timer.begin(cb, i);
+        stage_timer.begin(cb, dev->index, i);
 
         comp.bind(cb, i);
 
@@ -76,7 +76,7 @@ void temporal_reprojection_stage::record_command_buffers()
         comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, opt.active_viewport_count);
 
-        stage_timer.end(cb, i);
+        stage_timer.end(cb, dev->index, i);
         end_compute(cb, i);
     }
 }

@@ -19,7 +19,7 @@ void record_blas_update(
     if(total_aabb_count == 0)
         return;
 
-    update_timer.begin(cb, frame_index);
+    update_timer.begin(cb, id, frame_index);
     aabb_buffer.upload(id, frame_index, cb);
 
     vk::MemoryBarrier barrier(
@@ -61,7 +61,7 @@ void record_blas_update(
     );
 
     cb.buildAccelerationStructuresKHR({blas_build_info}, {&offset});
-    update_timer.end(cb, frame_index);
+    update_timer.end(cb, id, frame_index);
 }
 
 }

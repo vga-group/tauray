@@ -80,7 +80,7 @@ void spatial_reprojection_stage::set_scene(scene* s)
     {
         vk::CommandBuffer cb = begin_compute();
 
-        stage_timer.begin(cb, i);
+        stage_timer.begin(cb, dev->index, i);
 
         target_viewport.color.transition_layout_temporary(
             cb, i, vk::ImageLayout::eGeneral, true
@@ -99,7 +99,7 @@ void spatial_reprojection_stage::set_scene(scene* s)
         comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, target_viewport.get_layer_count() - control.source_count);
 
-        stage_timer.end(cb, i);
+        stage_timer.end(cb, dev->index, i);
         end_compute(cb, i);
     }
 }

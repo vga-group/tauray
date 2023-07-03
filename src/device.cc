@@ -104,4 +104,64 @@ device& device_mask::get_device(device_id id) const
     return ctx->get_devices()[id];
 }
 
+device_mask device_mask::operator-(device_mask other) const
+{
+    device_mask res;
+    res.ctx = ctx;
+    res.bitmask = bitmask & ~other.bitmask;
+    return res;
+}
+
+device_mask device_mask::operator|(device_mask other) const
+{
+    device_mask res;
+    res.ctx = ctx;
+    res.bitmask = bitmask | other.bitmask;
+    return res;
+}
+
+device_mask device_mask::operator&(device_mask other) const
+{
+    device_mask res;
+    res.ctx = ctx;
+    res.bitmask = bitmask & other.bitmask;
+    return res;
+}
+
+device_mask device_mask::operator^(device_mask other) const
+{
+    device_mask res;
+    res.ctx = ctx;
+    res.bitmask = bitmask ^ other.bitmask;
+    return res;
+}
+
+device_mask device_mask::operator~() const
+{
+    device_mask res;
+    res.ctx = ctx;
+    res.bitmask = (~bitmask) & ((1llu<<ctx->get_devices().size()) - 1llu);
+    return res;
+}
+
+device_mask& device_mask::operator-=(device_mask other)
+{
+    return *this = *this - other;
+}
+
+device_mask& device_mask::operator|=(device_mask other)
+{
+    return *this = *this | other;
+}
+
+device_mask& device_mask::operator&=(device_mask other)
+{
+    return *this = *this & other;
+}
+
+device_mask& device_mask::operator^=(device_mask other)
+{
+    return *this = *this ^ other;
+}
+
 }

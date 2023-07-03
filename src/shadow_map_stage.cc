@@ -96,7 +96,7 @@ void shadow_map_stage::set_scene(scene* s)
         // Record command buffer
         vk::CommandBuffer cb = begin_graphics();
 
-        shadow_timer.begin(cb, i);
+        shadow_timer.begin(cb, dev->index, i);
         camera_data.upload(dev->index, i, cb);
 
         gfx.begin_render_pass(cb, i);
@@ -124,7 +124,7 @@ void shadow_map_stage::set_scene(scene* s)
             cb.drawIndexed(m->get_indices().size(), 1, 0, 0, 0);
         }
         cb.endRenderPass();
-        shadow_timer.end(cb, i);
+        shadow_timer.end(cb, dev->index, i);
         end_graphics(cb, i);
     }
 }

@@ -39,7 +39,7 @@ sh_compact_stage::sh_compact_stage(
 
         // Record command buffer
         vk::CommandBuffer cb = begin_compute();
-        compact_timer.begin(cb, i);
+        compact_timer.begin(cb, dev.index, i);
 
         vk::ImageMemoryBarrier img_barrier(
             {}, vk::AccessFlagBits::eShaderWrite,
@@ -78,7 +78,7 @@ sh_compact_stage::sh_compact_stage(
             {}, {}, {}, img_barrier
         );
 
-        compact_timer.end(cb, i);
+        compact_timer.end(cb, dev.index, i);
         end_compute(cb, i);
     }
 }

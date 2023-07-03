@@ -93,7 +93,7 @@ void skinning_stage::set_scene(scene* s)
 
         // Record command buffer
         vk::CommandBuffer cb = begin_compute();
-        stage_timer.begin(cb, i);
+        stage_timer.begin(cb, dev->index, i);
         for(model* m: skinned_models)
             m->upload_joints(cb, dev->index, i);
 
@@ -130,7 +130,7 @@ void skinning_stage::set_scene(scene* s)
             cur_scene->refresh_dynamic_acceleration_structures(dev->index, i, cb);
         }
 
-        stage_timer.end(cb, i);
+        stage_timer.end(cb, dev->index, i);
         end_compute(cb, i);
     }
 }

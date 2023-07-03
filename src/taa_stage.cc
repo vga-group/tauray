@@ -101,7 +101,7 @@ void taa_stage::record_command_buffers()
     {
         vk::CommandBuffer cb = begin_compute();
 
-        stage_timer.begin(cb, i);
+        stage_timer.begin(cb, dev->index, i);
 
         // Run the actual TAA code
         jitter_buffer.upload(dev->index, i, cb);
@@ -150,7 +150,7 @@ void taa_stage::record_command_buffers()
         );
         previous_color_rt.set_layout(old_layout);
 
-        stage_timer.end(cb, i);
+        stage_timer.end(cb, dev->index, i);
         end_compute(cb, i);
     }
 }

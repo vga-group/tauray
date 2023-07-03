@@ -48,7 +48,7 @@ public:
         {
             // Record command buffer
             vk::CommandBuffer cb = begin_compute();
-            stage_timer.begin(cb, i);
+            stage_timer.begin(cb, dev->index, i);
 
             for(sh_grid* grid: grids)
             {
@@ -79,7 +79,7 @@ public:
                 );
             }
 
-            stage_timer.end(cb, i);
+            stage_timer.end(cb, dev->index, i);
             end_compute(cb, i);
         }
     }

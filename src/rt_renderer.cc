@@ -218,18 +218,20 @@ void rt_renderer<Pipeline>::set_device_workloads(const std::vector<double>& rati
         );
         cumulative += ratio;
         per_device[i].ray_tracer->reset_distribution_params(r.dist);
-        // Only the primary device renders in-place, so it's the only device
-        // that can actually accumulate samples normally when workload ratio
-        // changes.
         if(i != display_device.index)
-            per_device[i].ray_tracer->reset_accumulated_samples();
-        uvec2 target_size = get_distribution_target_size(r.dist);
-        for(size_t j = 0; j < MAX_FRAMES_IN_FLIGHT; ++j)
         {
-            reset_transfer_command_buffers(
-                j, per_device[i], per_device[i].per_frame[j],
-                target_size, ctx->get_display_device(), ctx->get_devices()[i]
-            );
+            // Only the primary device renders in-place, so it's the only device
+            // that can actually accumulate samples normally when workload ratio
+            // changes.
+            per_device[i].ray_tracer->reset_accumulated_samples();
+            uvec2 target_size = get_distribution_target_size(r.dist);
+            for(size_t j = 0; j < MAX_FRAMES_IN_FLIGHT; ++j)
+            {
+                reset_transfer_command_buffers(
+                    j, per_device[i], per_device[i].per_frame[j],
+                    target_size, ctx->get_display_device(), ctx->get_devices()[i]
+                );
+            }
         }
     }
 
@@ -522,12 +524,12 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
     f.gpu_to_cpu_cb = create_graphics_command_buffer(secondary);
 
     f.gpu_to_cpu_cb->begin(vk::CommandBufferBeginInfo{});
-    r.gpu_to_cpu_timer.begin(f.gpu_to_cpu_cb, frame_index);
+    r.gpu_to_cpu_timer.begin(f.gpu_to_cpu_cb, secondary.index, frame_index);
 
     f.cpu_to_gpu_cb = create_graphics_command_buffer(primary);
 
     f.cpu_to_gpu_cb->begin(vk::CommandBufferBeginInfo{});
-    r.cpu_to_gpu_timer.begin(f.cpu_to_gpu_cb, frame_index);
+    r.cpu_to_gpu_timer.begin(f.cpu_to_gpu_cb, primary.index, frame_index);
 
     gbuffer_target target = r.gbuffer.get_array_target(secondary.index);
     gbuffer_target target_copy = r.gbuffer_copy.get_array_target(primary.index);
@@ -593,9 +595,9 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
         ++j;
     }
 
-    r.gpu_to_cpu_timer.end(f.gpu_to_cpu_cb, frame_index);
+    r.gpu_to_cpu_timer.end(f.gpu_to_cpu_cb, secondary.index, frame_index);
     f.gpu_to_cpu_cb->end();
-    r.cpu_to_gpu_timer.end(f.cpu_to_gpu_cb, frame_index);
+    r.cpu_to_gpu_timer.end(f.cpu_to_gpu_cb, primary.index, frame_index);
     f.cpu_to_gpu_cb->end();
 }
 

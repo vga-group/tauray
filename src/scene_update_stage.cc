@@ -612,7 +612,7 @@ void scene_update_stage::record_command_buffers()
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vk::CommandBuffer cb = begin_graphics();
-        stage_timer.begin(cb, i);
+        stage_timer.begin(cb, dev->index, i);
         cur_scene->scene_data.upload(dev->index, i, cb);
         cur_scene->directional_light_data.upload(dev->index, i, cb);
         cur_scene->point_light_data.upload(dev->index, i, cb);
@@ -632,7 +632,7 @@ void scene_update_stage::record_command_buffers()
                 record_tri_light_extraction(cb);
         }
 
-        stage_timer.end(cb, i);
+        stage_timer.end(cb, dev->index, i);
 
         end_graphics(cb, i);
     }

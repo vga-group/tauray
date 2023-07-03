@@ -68,7 +68,7 @@ void z_pass_stage::set_scene(scene* s)
     {
         // Record command buffer
         vk::CommandBuffer cb = begin_graphics();
-        z_pass_timer.begin(cb, i);
+        z_pass_timer.begin(cb, dev->index, i);
 
         size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
@@ -105,7 +105,7 @@ void z_pass_stage::set_scene(scene* s)
             }
             gfx->end_render_pass(cb);
         }
-        z_pass_timer.end(cb, i);
+        z_pass_timer.end(cb, dev->index, i);
         end_graphics(cb, i);
     }
 }

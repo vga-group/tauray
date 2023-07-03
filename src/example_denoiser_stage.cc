@@ -73,7 +73,7 @@ void example_denoiser_stage::record_command_buffers()
     {
         vk::CommandBuffer cb = begin_compute();
 
-        denoiser_timer.begin(cb, i);
+        denoiser_timer.begin(cb, dev->index, i);
 
         comp.bind(cb, i);
 
@@ -104,7 +104,7 @@ void example_denoiser_stage::record_command_buffers()
             cb.dispatch(wg.x, wg.y, input_features.get_layer_count());
         }
 
-        denoiser_timer.end(cb, i);
+        denoiser_timer.end(cb, dev->index, i);
         end_compute(cb, i);
     }
 }

@@ -26,7 +26,7 @@ frame_delay_stage::frame_delay_stage(
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vk::CommandBuffer cb = begin_compute();
-        delay_timer.begin(cb, i);
+        delay_timer.begin(cb, dev.index, i);
 
         input_features.visit([&](render_target& target){
             target.transition_layout_temporary(cb, i, vk::ImageLayout::eTransferSrcOptimal);
@@ -61,7 +61,7 @@ frame_delay_stage::frame_delay_stage(
             target.set_layout(old_layout);
         });
 
-        delay_timer.end(cb, i);
+        delay_timer.end(cb, dev.index, i);
         end_compute(cb, i);
     }
     input_features.visit([&](render_target& target){

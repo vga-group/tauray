@@ -79,7 +79,7 @@ public:
         {
             // Record command buffer
             vk::CommandBuffer cb = begin_compute();
-            stage_timer.begin(cb, i);
+            stage_timer.begin(cb, dev->index, i);
             blend_infos.upload(dev->index, i, cb);
 
             size_t j = 0;
@@ -165,7 +165,7 @@ public:
                 set_index++;
             }
 
-            stage_timer.end(cb, i);
+            stage_timer.end(cb, dev->index, i);
             end_compute(cb, i);
         }
     }

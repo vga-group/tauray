@@ -97,14 +97,14 @@ tonemap_stage::tonemap_stage(
 
         index_data.upload(dev.index, i, cb);
         bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
-        tonemap_timer.begin(cb, i);
+        tonemap_timer.begin(cb, dev.index, i);
 
         comp.bind(cb, cb_index);
 
         uvec2 wg = (output_target.get_size()+15u)/16u;
         cb.dispatch(wg.x, wg.y, input.get_layer_count());
 
-        tonemap_timer.end(cb, i);
+        tonemap_timer.end(cb, dev.index, i);
         if(opt.transition_output_layout)
         {
             vk::ImageLayout old_layout = output.get_layout();

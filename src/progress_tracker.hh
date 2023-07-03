@@ -1,7 +1,7 @@
 #ifndef TAURAY_PROGRESS_TRACKER_HH
 #define TAURAY_PROGRESS_TRACKER_HH
 
-#include "vkm.hh"
+#include "device.hh"
 #include <chrono>
 #include <optional>
 #include <condition_variable>
@@ -27,7 +27,7 @@ public:
     void begin(options opt);
     void end();
 
-    void set_timeline(size_t device_index, vk::Semaphore timeline, size_t expected_steps_per_frame);
+    void set_timeline(device_id id, vk::Semaphore timeline, size_t expected_steps_per_frame);
     void erase_timeline(vk::Semaphore timeline);
 
 private:
@@ -45,7 +45,7 @@ private:
 
     struct tracking_data
     {
-        size_t device_index;
+        device_id id;
         vk::Semaphore timeline;
         size_t expected_steps_per_frame;
     };

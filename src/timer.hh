@@ -12,7 +12,7 @@ class timer
 {
 public:
     timer();
-    timer(device_data& dev, const std::string& name);
+    timer(device_mask dev, const std::string& name);
     timer(timer&& other);
     ~timer();
 
@@ -20,18 +20,19 @@ public:
 
     void begin(
         vk::CommandBuffer cb,
+        device_id id,
         uint32_t frame_index,
         vk::PipelineStageFlagBits stage = vk::PipelineStageFlagBits::eTopOfPipe
     );
     void end(
         vk::CommandBuffer cb,
+        device_id id,
         uint32_t frame_index,
         vk::PipelineStageFlagBits stage = vk::PipelineStageFlagBits::eBottomOfPipe
     );
 
 private:
-    device_data* dev;
-    int timer_id;
+    per_device<int> timer_id;
 };
 
 }

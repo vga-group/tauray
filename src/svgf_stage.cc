@@ -135,7 +135,7 @@ void svgf_stage::record_command_buffers()
     {
         vk::CommandBuffer cb = begin_compute();
 
-        svgf_timer.begin(cb, i);
+        svgf_timer.begin(cb, dev->index, i);
 
         jitter_buffer.upload(dev->index, i, cb);
 
@@ -221,7 +221,7 @@ void svgf_stage::record_command_buffers()
             {}, barrier, {}, {}
         );
 
-        svgf_timer.end(cb, i);
+        svgf_timer.end(cb, dev->index, i);
         end_compute(cb, i);
     }
 }

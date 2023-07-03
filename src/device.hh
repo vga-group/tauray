@@ -92,6 +92,17 @@ public:
     context* get_context() const;
     device& get_device(device_id id) const;
 
+    device_mask operator-(device_mask other) const;
+    device_mask operator|(device_mask other) const;
+    device_mask operator&(device_mask other) const;
+    device_mask operator^(device_mask other) const;
+    device_mask operator~() const;
+
+    device_mask& operator-=(device_mask other);
+    device_mask& operator|=(device_mask other);
+    device_mask& operator&=(device_mask other);
+    device_mask& operator^=(device_mask other);
+
 private:
     context* ctx;
     uint64_t bitmask;

@@ -242,7 +242,7 @@ void bmfr_stage::record_command_buffers()
     {
         vk::CommandBuffer cb = begin_compute();
 
-        stage_timer.begin(cb, i);
+        stage_timer.begin(cb, dev->index, i);
 
         ubos.upload(dev->index, i, cb);
         uvec2 workset_size = ((current_features.get_size()+(31u))/32u) + 1u; // One workset = one 32*32 block
@@ -254,9 +254,9 @@ void bmfr_stage::record_command_buffers()
 
         bmfr_preprocess_comp.bind(cb, i);
         bmfr_preprocess_comp.push_constants(cb, control);
-        bmfr_preprocess_timer.begin(cb, i);
+        bmfr_preprocess_timer.begin(cb, dev->index, i);
         cb.dispatch(workset_size.x * 2, workset_size.y * 2, current_features.get_layer_count());
-        bmfr_preprocess_timer.end(cb, i);
+        bmfr_preprocess_timer.end(cb, dev->index, i);
 
         vk::MemoryBarrier barrier{
             vk::AccessFlagBits::eShaderWrite,
@@ -271,9 +271,9 @@ void bmfr_stage::record_command_buffers()
 
         bmfr_fit_comp.bind(cb, i);
         bmfr_fit_comp.push_constants(cb, control);
-        bmfr_fit_timer.begin(cb, i);
+        bmfr_fit_timer.begin(cb, dev->index, i);
         cb.dispatch(workset_size.x, workset_size.y, current_features.get_layer_count());
-        bmfr_fit_timer.end(cb, i);
+        bmfr_fit_timer.end(cb, dev->index, i);
 
         cb.pipelineBarrier(
             vk::PipelineStageFlagBits::eComputeShader,
@@ -285,9 +285,9 @@ void bmfr_stage::record_command_buffers()
         // wg = (current_features.get_size()+15u)/16u;
         bmfr_weighted_sum_comp.bind(cb, i);
         bmfr_weighted_sum_comp.push_constants(cb, control);
-        bmfr_weighted_sum_timer.begin(cb, i);
+        bmfr_weighted_sum_timer.begin(cb, dev->index, i);
         cb.dispatch(wg.x, wg.y, current_features.get_layer_count());
-        bmfr_weighted_sum_timer.end(cb, i);
+        bmfr_weighted_sum_timer.end(cb, dev->index, i);
 
         cb.pipelineBarrier(
             vk::PipelineStageFlagBits::eComputeShader,
@@ -298,9 +298,9 @@ void bmfr_stage::record_command_buffers()
         wg = (current_features.get_size()+15u)/16u;
         bmfr_accumulate_output_comp.bind(cb, i);
         bmfr_accumulate_output_comp.push_constants(cb, control);
-        bmfr_accumulate_output_timer.begin(cb, i);
+        bmfr_accumulate_output_timer.begin(cb, dev->index, i);
         cb.dispatch(wg.x, wg.y, current_features.get_layer_count());
-        bmfr_accumulate_output_timer.end(cb, i);
+        bmfr_accumulate_output_timer.end(cb, dev->index, i);
 
         cb.pipelineBarrier(
             vk::PipelineStageFlagBits::eComputeShader,
@@ -308,14 +308,14 @@ void bmfr_stage::record_command_buffers()
             {}, barrier, {}, {}
         );
 
-        image_copy_timer.begin(cb, i);
+        image_copy_timer.begin(cb, dev->index, i);
         copy_image(cb, i, tmp_filtered[0], filtered_hist[0]);
         copy_image(cb, i, tmp_filtered[1], filtered_hist[1]);
         copy_image(cb, i, tmp_noisy[0], diffuse_hist);
         copy_image(cb, i, tmp_noisy[1], specular_hist);
-        image_copy_timer.end(cb, i);
+        image_copy_timer.end(cb, dev->index, i);
 
-        stage_timer.end(cb, i);
+        stage_timer.end(cb, dev->index, i);
         end_compute(cb, i);
     }
 }

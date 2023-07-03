@@ -82,7 +82,7 @@ void envmap_stage::set_scene(scene* s)
     {
         // Record command buffer
         vk::CommandBuffer cb = begin_graphics();
-        envmap_timer.begin(cb, i);
+        envmap_timer.begin(cb, dev->index, i);
 
         size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
@@ -101,7 +101,7 @@ void envmap_stage::set_scene(scene* s)
 
             gfx->end_render_pass(cb);
         }
-        envmap_timer.end(cb, i);
+        envmap_timer.end(cb, dev->index, i);
         end_graphics(cb, i);
     }
 }
