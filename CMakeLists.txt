@@ -72,7 +72,6 @@ add_library(tauray-core STATIC
   external/tinyexr.cc
   external/tinyply.cc
   external/vk_mem_alloc.cc
-  src/aabb_scene.cc
   src/acceleration_structure.cc
   src/animation.cc
   src/atlas.cc
