@@ -47,7 +47,7 @@ shadow_map_stage::shadow_map_stage(
     const options& opt
 ):  stage(dev),
     gfx(dev, {
-        depth_buffer.get_size(),
+        depth_buffer.size,
         local_rect,
         shadow::load_sources(),
         {
@@ -61,14 +61,14 @@ shadow_map_stage::shadow_map_stage(
             depth_buffer,
             {
                 {},
-                depth_buffer.get_format(),
+                depth_buffer.format,
                 vk::SampleCountFlagBits::e1,
                 vk::AttachmentLoadOp::eClear,
                 vk::AttachmentStoreOp::eStore,
                 vk::AttachmentLoadOp::eDontCare,
                 vk::AttachmentStoreOp::eDontCare,
-                depth_buffer.get_layout(),
-                depth_buffer.get_layout()
+                depth_buffer.layout,
+                depth_buffer.layout
             }
         }
     }),

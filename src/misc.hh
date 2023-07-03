@@ -168,8 +168,15 @@ template<typename T>
 size_t count_array_layers(const std::vector<T>& targets)
 {
     size_t count = 0;
-    for(const T& t: targets)
-        count += t.get_layer_count();
+    for(const T& t: targets) count += t.layer_count;
+    return count;
+}
+
+template<typename T>
+size_t count_gbuffer_array_layers(const std::vector<T>& targets)
+{
+    size_t count = 0;
+    for(const T& t: targets) count += t.get_layer_count();
     return count;
 }
 

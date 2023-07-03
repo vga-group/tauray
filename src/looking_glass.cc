@@ -506,26 +506,25 @@ void looking_glass::init_swapchain()
                 {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
             })
         );
-
-        vk::ImageCreateInfo info{
-            {},
-            vk::ImageType::e2D,
-            swapchain_format.format,
-            {opt.viewport_size.x, opt.viewport_size.y, 1},
-            1,
-            opt.viewport_count,
-            vk::SampleCountFlagBits::e1,
-            vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eSampled|
-            vk::ImageUsageFlagBits::eStorage|
-            vk::ImageUsageFlagBits::eTransferDst|
-            vk::ImageUsageFlagBits::eTransferSrc,
-            vk::SharingMode::eExclusive
-        };
-        images.emplace_back(sync_create_gpu_image(
-            dev_data, info, vk::ImageLayout::eGeneral
-        ));
     }
+    vk::ImageCreateInfo info{
+        {},
+        vk::ImageType::e2D,
+        swapchain_format.format,
+        {opt.viewport_size.x, opt.viewport_size.y, 1},
+        1,
+        opt.viewport_count,
+        vk::SampleCountFlagBits::e1,
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eSampled|
+        vk::ImageUsageFlagBits::eStorage|
+        vk::ImageUsageFlagBits::eTransferDst|
+        vk::ImageUsageFlagBits::eTransferSrc,
+        vk::SharingMode::eExclusive
+    };
+    images.emplace_back(sync_create_gpu_image(
+        dev_data, info, vk::ImageLayout::eGeneral
+    ));
     reset_image_views();
 }
 
@@ -542,32 +541,28 @@ void looking_glass::deinit_swapchain()
 
 void looking_glass::init_render_target()
 {
-    render_target input = get_array_render_target();
-    input.set_layout(expected_image_layout);
+    render_target input = get_array_render_target()[0];
+    input.layout = expected_image_layout;
 
-    std::vector<render_target::frame> output_frames;
+    std::vector<render_target> output_frames;
     for(size_t i = 0; i < window_images.size(); ++i)
     {
-        output_frames.push_back({
+        output_frames.emplace_back(
+            metadata.size, 0, 1,
             window_images[i],
             window_image_views[i],
-            vk::ImageLayout::eUndefined
-        });
+            vk::ImageLayout::eUndefined,
+            image_format,
+            vk::SampleCountFlagBits::e1
+        );
     }
-
-    render_target output(
-        metadata.size, 0, 1,
-        output_frames,
-        image_format,
-        vk::SampleCountFlagBits::e1
-    );
 
     try
     {
         composition.reset(new looking_glass_composition_stage(
             get_display_device(),
             input,
-            output,
+            output_frames,
             {
                 opt.viewport_count,
                 metadata.corrected_pitch,

@@ -30,8 +30,8 @@ z_pass_stage::z_pass_stage(
     for(const render_target& depth_buffer: depth_buffer_arrays)
     {
         array_pipelines.emplace_back(new raster_pipeline(dev, {
-            depth_buffer.get_size(),
-            uvec4(0,0,depth_buffer.get_size()),
+            depth_buffer.size,
+            uvec4(0,0,depth_buffer.size),
             {
                 {"shader/z_pass.vert"},
                 {"shader/z_pass.frag"}
@@ -44,8 +44,8 @@ z_pass_stage::z_pass_stage(
                 depth_buffer,
                 {
                     {},
-                    depth_buffer.get_format(),
-                    (vk::SampleCountFlagBits)depth_buffer.get_msaa(),
+                    depth_buffer.format,
+                    (vk::SampleCountFlagBits)depth_buffer.msaa,
                     vk::AttachmentLoadOp::eClear,
                     vk::AttachmentStoreOp::eStore,
                     vk::AttachmentLoadOp::eDontCare,

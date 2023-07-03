@@ -355,25 +355,22 @@ uvec3 texture::get_dimensions() const
 
 render_target texture::get_array_render_target(device_id id) const
 {
-    std::vector<render_target::frame> frames;
     const auto& buf = buffers[id];
-    return render_target(dim, 0, array_layers, {{buf.img, buf.array_view, layout}}, fmt, msaa);
+    return render_target(dim, 0, array_layers, buf.img, buf.array_view, layout, fmt, msaa);
 }
 
 render_target texture::get_layer_render_target(
     uint32_t layer_index,
     device_id id
 ) const {
-    std::vector<render_target::frame> frames;
     const auto& buf = buffers[id];
-    return render_target(dim, layer_index, 1, {{buf.img, buf.layer_views[layer_index], layout}}, fmt, msaa);
+    return render_target(dim, layer_index, 1, buf.img, buf.layer_views[layer_index], layout, fmt, msaa);
 }
 
 render_target texture::get_multiview_block_render_target(
     uint32_t block_index,
     device_id id
 ) const {
-    std::vector<render_target::frame> frames;
     const auto& buf = buffers[id];
     uint32_t block_size = buffers.get_device(id).mv_props.maxMultiviewViewCount;
     return render_target(
@@ -383,7 +380,7 @@ render_target texture::get_multiview_block_render_target(
             array_layers - block_index * block_size,
             block_size
         ),
-        {{buf.img, buf.multiview_block_views[block_index], layout}},
+        buf.img, buf.multiview_block_views[block_index], layout,
         fmt,
         msaa
     );

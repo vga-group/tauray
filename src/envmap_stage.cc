@@ -33,8 +33,8 @@ envmap_stage::envmap_stage(
     for(const render_target& target: color_arrays)
     {
         array_pipelines.emplace_back(new raster_pipeline(dev, {
-            target.get_size(),
-            uvec4(0, 0, target.get_size()),
+            target.size,
+            uvec4(0, 0, target.size),
             {{"shader/envmap.vert"}, {"shader/envmap.frag"}},
             {},
             {}, {},
@@ -42,8 +42,8 @@ envmap_stage::envmap_stage(
                 target,
                 {
                     {},
-                    target.get_format(),
-                    target.get_msaa(),
+                    target.format,
+                    target.msaa,
                     vk::AttachmentLoadOp::eDontCare,
                     vk::AttachmentStoreOp::eStore,
                     vk::AttachmentLoadOp::eDontCare,

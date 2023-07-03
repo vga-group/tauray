@@ -39,7 +39,7 @@ private:
     void record_command_buffers();
     static shader_source load_shader_source(const std::string& path, const options& opt);
 
-    void copy_image(vk::CommandBuffer& cb, uint32_t frame_index, render_target& src, render_target& dst);
+    void copy_image(vk::CommandBuffer& cb, render_target& src, render_target& dst);
 
     compute_pipeline bmfr_preprocess_comp;
     compute_pipeline bmfr_fit_comp;

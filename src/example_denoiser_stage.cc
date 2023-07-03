@@ -55,13 +55,13 @@ void example_denoiser_stage::init_resources()
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         comp.update_descriptor_set({
-            {"in_color", {{}, input_features.color[i].view, vk::ImageLayout::eGeneral}},
-            {"in_normal", {{}, input_features.normal[i].view, vk::ImageLayout::eGeneral}},
-            {"in_pos", {{}, input_features.pos[i].view, vk::ImageLayout::eGeneral}},
-            {"in_albedo", {{}, input_features.albedo[i].view, vk::ImageLayout::eGeneral}},
+            {"in_color", {{}, input_features.color.view, vk::ImageLayout::eGeneral}},
+            {"in_normal", {{}, input_features.normal.view, vk::ImageLayout::eGeneral}},
+            {"in_pos", {{}, input_features.pos.view, vk::ImageLayout::eGeneral}},
+            {"in_albedo", {{}, input_features.albedo.view, vk::ImageLayout::eGeneral}},
             {"inout_color", {
-                {{}, tmp_color[1][i].view, vk::ImageLayout::eGeneral},
-                {{}, tmp_color[0][i].view, vk::ImageLayout::eGeneral}
+                {{}, tmp_color[1].view, vk::ImageLayout::eGeneral},
+                {{}, tmp_color[0].view, vk::ImageLayout::eGeneral}
             }},
         }, i);
     }

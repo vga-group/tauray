@@ -25,7 +25,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     TR_ERR(data->pMessage);
 
     // Handy assert for debugging where validation errors happen
-    //assert(false);
+    assert(false);
     return false;
 }
 
@@ -119,24 +119,22 @@ size_t context::get_swapchain_image_count() const
     return images.size();
 }
 
-render_target context::get_array_render_target()
+std::vector<render_target> context::get_array_render_target()
 {
-    std::vector<render_target::frame> frames;
+    std::vector<render_target> frames;
     for(size_t i = 0; i < get_swapchain_image_count(); ++i)
     {
-        frames.push_back({
+        frames.emplace_back(
+            image_size,
+            0, image_array_layers,
             images[i],
             array_image_views[i],
-            vk::ImageLayout::eUndefined
-        });
+            vk::ImageLayout::eUndefined,
+            image_format,
+            vk::SampleCountFlagBits::e1
+        );
     }
-    return render_target(
-        image_size,
-        0, image_array_layers,
-        frames,
-        image_format,
-        vk::SampleCountFlagBits::e1
-    );
+    return frames;
 }
 
 placeholders& context::get_placeholders()

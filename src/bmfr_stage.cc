@@ -66,7 +66,7 @@ void bmfr_stage::init_resources()
     {
         rt_textures[i].reset(new texture(
                 *dev,
-                current_features.color.get_size(),
+                current_features.color.size,
                 current_features.get_layer_count(),
                 vk::Format::eR16G16B16A16Sfloat,
                 0, nullptr,
@@ -86,7 +86,7 @@ void bmfr_stage::init_resources()
     {
         rt_textures[i].reset(new texture(
             *dev,
-            current_features.color.get_size(),
+            current_features.color.size,
             current_features.get_layer_count(),
             vk::Format::eR16G16B16A16Sfloat,
             0, nullptr,
@@ -106,7 +106,7 @@ void bmfr_stage::init_resources()
     {
         rt_textures[i].reset(new texture(
             *dev,
-            current_features.color.get_size(),
+            current_features.color.size,
             current_features.get_layer_count(),
             vk::Format::eR16G16B16A16Sfloat,
             0, nullptr,
@@ -169,20 +169,20 @@ void bmfr_stage::init_resources()
         ubos = gpu_buffer(*dev, 4, vk::BufferUsageFlagBits::eUniformBuffer);
 
         bmfr_preprocess_comp.update_descriptor_set({
-            {"in_color", {{}, current_features.color[i].view, vk::ImageLayout::eGeneral}},
-            {"in_normal", {{}, current_features.normal[i].view, vk::ImageLayout::eGeneral}},
-            {"in_pos", {{}, current_features.pos[i].view, vk::ImageLayout::eGeneral}},
-            {"in_screen_motion", {{}, current_features.screen_motion[i].view, vk::ImageLayout::eGeneral}},
-            {"previous_normal", {{}, prev_features.normal[i].view, vk::ImageLayout::eGeneral}},
-            {"previous_pos", {{}, prev_features.pos[i].view, vk::ImageLayout::eGeneral}},
-            {"in_albedo", {{}, current_features.albedo[i].view, vk::ImageLayout::eGeneral}},
-            {"in_diffuse", {{}, current_features.diffuse[i].view, vk::ImageLayout::eGeneral}},
+            {"in_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
+            {"in_normal", {{}, current_features.normal.view, vk::ImageLayout::eGeneral}},
+            {"in_pos", {{}, current_features.pos.view, vk::ImageLayout::eGeneral}},
+            {"in_screen_motion", {{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}},
+            {"previous_normal", {{}, prev_features.normal.view, vk::ImageLayout::eGeneral}},
+            {"previous_pos", {{}, prev_features.pos.view, vk::ImageLayout::eGeneral}},
+            {"in_albedo", {{}, current_features.albedo.view, vk::ImageLayout::eGeneral}},
+            {"in_diffuse", {{}, current_features.diffuse.view, vk::ImageLayout::eGeneral}},
             {"tmp_noisy", {
-                {{}, tmp_noisy[0][i].view, vk::ImageLayout::eGeneral},
-                {{}, tmp_noisy[1][i].view, vk::ImageLayout::eGeneral}
+                {{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral},
+                {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}
             }},
-            {"bmfr_diffuse_hist", {{}, diffuse_hist[i].view, vk::ImageLayout::eGeneral}},
-            {"bmfr_specular_hist", {{}, specular_hist[i].view, vk::ImageLayout::eGeneral}},
+            {"bmfr_diffuse_hist", {{}, diffuse_hist.view, vk::ImageLayout::eGeneral}},
+            {"bmfr_specular_hist", {{}, specular_hist.view, vk::ImageLayout::eGeneral}},
             {"tmp_buffer", {tmp_data[i], 0, VK_WHOLE_SIZE}},
             {"uniform_buffer", {ubos[dev->index], 0, VK_WHOLE_SIZE}},
             {"accept_buffer", {accepts[i], 0, VK_WHOLE_SIZE}},
@@ -192,45 +192,45 @@ void bmfr_stage::init_resources()
             {"mins_maxs_buffer", {min_max_buffer[i], 0, VK_WHOLE_SIZE}},
             {"weights_buffer", {weights[i], 0, VK_WHOLE_SIZE}},
             {"uniform_buffer", {ubos[dev->index], 0, VK_WHOLE_SIZE}},
-            {"in_color", {{}, current_features.color[i].view, vk::ImageLayout::eGeneral}},
+            {"in_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
         }, i);
         bmfr_weighted_sum_comp.update_descriptor_set({
             {"weights_buffer", {weights[i], 0, VK_WHOLE_SIZE}},
-            {"in_color", {{}, current_features.color[i].view, vk::ImageLayout::eGeneral}},
-            {"in_normal", {{}, current_features.normal[i].view, vk::ImageLayout::eGeneral}},
-            {"in_pos", {{}, current_features.pos[i].view, vk::ImageLayout::eGeneral}},
+            {"in_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
+            {"in_normal", {{}, current_features.normal.view, vk::ImageLayout::eGeneral}},
+            {"in_pos", {{}, current_features.pos.view, vk::ImageLayout::eGeneral}},
             {"mins_maxs_buffer", {min_max_buffer[i], 0, VK_WHOLE_SIZE}},
-            {"in_diffuse", {{}, current_features.diffuse[i].view, vk::ImageLayout::eGeneral}},
+            {"in_diffuse", {{}, current_features.diffuse.view, vk::ImageLayout::eGeneral}},
             {"uniform_buffer", {ubos[dev->index], 0, VK_WHOLE_SIZE}},
             {"weighted_out", {
-                {{}, weighted_sum[0][i].view, vk::ImageLayout::eGeneral},
-                {{}, weighted_sum[1][i].view, vk::ImageLayout::eGeneral}
+                {{}, weighted_sum[0].view, vk::ImageLayout::eGeneral},
+                {{}, weighted_sum[1].view, vk::ImageLayout::eGeneral}
             }},
             {"tmp_noisy", {
-                {{}, tmp_noisy[0][i].view, vk::ImageLayout::eGeneral},
-                {{}, tmp_noisy[1][i].view, vk::ImageLayout::eGeneral}
+                {{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral},
+                {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}
             }},
         }, i);
         bmfr_accumulate_output_comp.update_descriptor_set({
-            {"out_color", {{}, current_features.color[i].view, vk::ImageLayout::eGeneral}},
-            {"in_screen_motion", {{}, current_features.screen_motion[i].view, vk::ImageLayout::eGeneral}},
-            {"in_albedo", {{}, current_features.albedo[i].view, vk::ImageLayout::eGeneral}},
+            {"out_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
+            {"in_screen_motion", {{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}},
+            {"in_albedo", {{}, current_features.albedo.view, vk::ImageLayout::eGeneral}},
             {"filtered_hist", {
-                {{}, filtered_hist[0][i].view, vk::ImageLayout::eGeneral},
-                {{}, filtered_hist[1][i].view, vk::ImageLayout::eGeneral}
+                {{}, filtered_hist[0].view, vk::ImageLayout::eGeneral},
+                {{}, filtered_hist[1].view, vk::ImageLayout::eGeneral}
             }},
             {"accept_buffer", {accepts[i], 0, VK_WHOLE_SIZE}},
             {"tmp_hist", {
-                {{}, tmp_filtered[0][i].view, vk::ImageLayout::eGeneral},
-                {{}, tmp_filtered[1][i].view, vk::ImageLayout::eGeneral}
+                {{}, tmp_filtered[0].view, vk::ImageLayout::eGeneral},
+                {{}, tmp_filtered[1].view, vk::ImageLayout::eGeneral}
             }},
             {"weighted_in", {
-                {{}, weighted_sum[0][i].view, vk::ImageLayout::eGeneral},
-                {{}, weighted_sum[1][i].view, vk::ImageLayout::eGeneral}
+                {{}, weighted_sum[0].view, vk::ImageLayout::eGeneral},
+                {{}, weighted_sum[1].view, vk::ImageLayout::eGeneral}
             }},
             {"tmp_noisy", {
-                {{}, tmp_noisy[0][i].view, vk::ImageLayout::eGeneral},
-                {{}, tmp_noisy[1][i].view, vk::ImageLayout::eGeneral}
+                {{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral},
+                {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}
             }},
         }, i);
     }
@@ -309,10 +309,10 @@ void bmfr_stage::record_command_buffers()
         );
 
         image_copy_timer.begin(cb, dev->index, i);
-        copy_image(cb, i, tmp_filtered[0], filtered_hist[0]);
-        copy_image(cb, i, tmp_filtered[1], filtered_hist[1]);
-        copy_image(cb, i, tmp_noisy[0], diffuse_hist);
-        copy_image(cb, i, tmp_noisy[1], specular_hist);
+        copy_image(cb, tmp_filtered[0], filtered_hist[0]);
+        copy_image(cb, tmp_filtered[1], filtered_hist[1]);
+        copy_image(cb, tmp_noisy[0], diffuse_hist);
+        copy_image(cb, tmp_noisy[1], specular_hist);
         image_copy_timer.end(cb, dev->index, i);
 
         stage_timer.end(cb, dev->index, i);
@@ -326,19 +326,19 @@ void bmfr_stage::update(uint32_t frame_index)
     ubos.update(frame_index, &frame_counter, 0, sizeof(uint32_t));
 }
 
-void bmfr_stage::copy_image(vk::CommandBuffer& cb, uint32_t frame_index, render_target& src, render_target& dst)
+void bmfr_stage::copy_image(vk::CommandBuffer& cb, render_target& src, render_target& dst)
 {
     uvec3 size = uvec3(current_features.get_size(), 1);
 
-    src.transition_layout_temporary(cb, frame_index, vk::ImageLayout::eTransferSrcOptimal);
+    src.transition_layout_temporary(cb, vk::ImageLayout::eTransferSrcOptimal);
     dst.transition_layout_temporary(
-        cb, frame_index, vk::ImageLayout::eTransferDstOptimal, true, true
+        cb, vk::ImageLayout::eTransferDstOptimal, true, true
     );
 
     cb.copyImage(
-        src[frame_index].image,
+        src.image,
         vk::ImageLayout::eTransferSrcOptimal,
-        dst[frame_index].image,
+        dst.image,
         vk::ImageLayout::eTransferDstOptimal,
         vk::ImageCopy(
             src.get_layers(),
@@ -349,17 +349,17 @@ void bmfr_stage::copy_image(vk::CommandBuffer& cb, uint32_t frame_index, render_
         )
     );
 
-    vk::ImageLayout old_layout = src.get_layout();
-    src.set_layout(vk::ImageLayout::eTransferSrcOptimal);
-    src.transition_layout_temporary(cb, frame_index, vk::ImageLayout::eGeneral);
-    src.set_layout(old_layout);
+    vk::ImageLayout old_layout = src.layout;
+    src.layout = vk::ImageLayout::eTransferSrcOptimal;
+    src.transition_layout_temporary(cb, vk::ImageLayout::eGeneral);
+    src.layout = old_layout;
 
-    old_layout = dst.get_layout();
-    dst.set_layout(vk::ImageLayout::eTransferDstOptimal);
+    old_layout = dst.layout;
+    dst.layout = vk::ImageLayout::eTransferDstOptimal;
     dst.transition_layout_temporary(
-        cb, frame_index, vk::ImageLayout::eGeneral, true, true
+        cb, vk::ImageLayout::eGeneral, true, true
     );
-    dst.set_layout(old_layout);
+    dst.layout = old_layout;
 }
 
 }

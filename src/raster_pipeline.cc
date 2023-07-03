@@ -70,14 +70,14 @@ uint32_t raster_pipeline::get_multiview_layer_count() const
     for(const auto& att: state.color_attachments)
     {
         if(att.target)
-            layer_count = std::max(att.target.get_layer_count(), layer_count);
+            layer_count = std::max(att.target.layer_count, layer_count);
         else
-            layer_count = std::max(att.target.get_layer_count(), layer_count);
+            layer_count = std::max(att.target.layer_count, layer_count);
     }
     if(state.depth_attachment)
     {
         layer_count = std::max(
-            state.depth_attachment->target.get_layer_count(),
+            state.depth_attachment->target.layer_count,
             layer_count
         );
     }
@@ -280,14 +280,14 @@ void raster_pipeline::init_framebuffers()
         {
             if(att.target)
             {
-                assert(att.target.get_size() == state.output_size);
-                fb_attachments.push_back(att.target[i].view);
+                assert(att.target.size == state.output_size);
+                fb_attachments.push_back(att.target.view);
             }
         }
         if(auto& att = state.depth_attachment)
         {
-            assert(att->target.get_size() == state.output_size);
-            fb_attachments.push_back(att->target[i].view);
+            assert(att->target.size == state.output_size);
+            fb_attachments.push_back(att->target.view);
         }
 
         vk::FramebufferCreateInfo framebuffer_info(

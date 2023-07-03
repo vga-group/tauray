@@ -506,6 +506,7 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
     device& primary,
     device& secondary
 ){
+
     f.gpu_to_cpu_cb = create_graphics_command_buffer(secondary);
 
     f.gpu_to_cpu_cb->begin(vk::CommandBufferBeginInfo{});
@@ -520,64 +521,61 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
     gbuffer_target target_copy = r.gbuffer_copy.get_array_target(primary.index);
 
     size_t j = 0;
-    for(size_t i = 0; i < MAX_GBUFFER_ENTRIES; ++i)
+    if(transfer_size.x * transfer_size.y != 0)
     {
-        if(!target_copy[i])
-            continue;
-
-        if(transfer_size.x * transfer_size.y == 0)
+        for(size_t i = 0; i < MAX_GBUFFER_ENTRIES; ++i)
         {
-            j++;
-            continue;
+            if(!target_copy[i])
+                continue;
+
+            // GPU -> CPU
+            vk::BufferImageCopy region(
+                0, 0, 0,
+                {vk::ImageAspectFlagBits::eColor, 0, 0, (uint32_t)opt.active_viewport_count},
+                {0,0,0}, {transfer_size.x, transfer_size.y, 1}
+            );
+
+            f.gpu_to_cpu_cb->copyImageToBuffer(
+                target[i].image, vk::ImageLayout::eTransferSrcOptimal,
+                f.transfer_buffers[j].gpu_to_cpu, 1, &region
+            );
+
+            // CPU -> GPU
+            vk::ImageMemoryBarrier img_barrier(
+                {}, vk::AccessFlagBits::eTransferWrite,
+                vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eTransferDstOptimal,
+                VK_QUEUE_FAMILY_IGNORED,
+                VK_QUEUE_FAMILY_IGNORED,
+                target_copy[i].image,
+                {vk::ImageAspectFlagBits::eColor, 0, 1, 0, VK_REMAINING_ARRAY_LAYERS}
+            );
+
+            f.cpu_to_gpu_cb->pipelineBarrier(
+                vk::PipelineStageFlagBits::eTopOfPipe,
+                vk::PipelineStageFlagBits::eTransfer,
+                {},
+                {}, {},
+                img_barrier
+            );
+
+            f.cpu_to_gpu_cb->copyBufferToImage(
+                f.transfer_buffers[j].cpu_to_gpu, target_copy[i].image,
+                vk::ImageLayout::eTransferDstOptimal, 1, &region
+            );
+
+            img_barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+            img_barrier.dstAccessMask = {};
+            img_barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+            img_barrier.newLayout = vk::ImageLayout::eGeneral;
+            f.cpu_to_gpu_cb->pipelineBarrier(
+                vk::PipelineStageFlagBits::eTransfer,
+                vk::PipelineStageFlagBits::eBottomOfPipe,
+                {}, {}, {}, img_barrier
+            );
+
+            ++j;
         }
-
-        // GPU -> CPU
-        vk::BufferImageCopy region(
-            0, 0, 0,
-            {vk::ImageAspectFlagBits::eColor, 0, 0, (uint32_t)opt.active_viewport_count},
-            {0,0,0}, {transfer_size.x, transfer_size.y, 1}
-        );
-
-        f.gpu_to_cpu_cb->copyImageToBuffer(
-            target[i][frame_index].image, vk::ImageLayout::eTransferSrcOptimal,
-            f.transfer_buffers[j].gpu_to_cpu, 1, &region
-        );
-
-        // CPU -> GPU
-        vk::ImageMemoryBarrier img_barrier(
-            {}, vk::AccessFlagBits::eTransferWrite,
-            vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eTransferDstOptimal,
-            VK_QUEUE_FAMILY_IGNORED,
-            VK_QUEUE_FAMILY_IGNORED,
-            target_copy[i][frame_index].image,
-            {vk::ImageAspectFlagBits::eColor, 0, 1, 0, VK_REMAINING_ARRAY_LAYERS}
-        );
-
-        f.cpu_to_gpu_cb->pipelineBarrier(
-            vk::PipelineStageFlagBits::eTopOfPipe,
-            vk::PipelineStageFlagBits::eTransfer,
-            {},
-            {}, {},
-            img_barrier
-        );
-
-        f.cpu_to_gpu_cb->copyBufferToImage(
-            f.transfer_buffers[j].cpu_to_gpu, target_copy[i][frame_index].image,
-            vk::ImageLayout::eTransferDstOptimal, 1, &region
-        );
-
-        img_barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-        img_barrier.dstAccessMask = {};
-        img_barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-        img_barrier.newLayout = vk::ImageLayout::eGeneral;
-        f.cpu_to_gpu_cb->pipelineBarrier(
-            vk::PipelineStageFlagBits::eTransfer,
-            vk::PipelineStageFlagBits::eBottomOfPipe,
-            {}, {}, {}, img_barrier
-        );
-
-        ++j;
     }
 
     gpu_to_cpu_timer.end(f.gpu_to_cpu_cb, secondary.index, frame_index);

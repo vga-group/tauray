@@ -63,7 +63,8 @@ public:
     // one display per image (and not that one image is divided into multiple
     // separate viewports).
     size_t get_display_count() const;
-    render_target get_array_render_target();
+    // If vector length is > 1, one render target per in-flight frame.
+    std::vector<render_target> get_array_render_target();
 
     placeholders& get_placeholders();
 

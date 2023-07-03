@@ -69,11 +69,11 @@ std::vector<color_attachment_state> get_color_attachments(
             return;
         color_attachment_state att = proto;
         att.target = entry;
-        att.desc.format = entry.get_format();
+        att.desc.format = entry.format;
         bool clear = opt.clear_color || &entry != &gbuf.color;
         att.desc.initialLayout = clear?
             vk::ImageLayout::eUndefined :
-            entry.get_layout();
+            entry.layout;
         if(clear)
             att.desc.loadOp = vk::AttachmentLoadOp::eClear;
         att.desc.finalLayout = opt.output_layout;
@@ -92,7 +92,7 @@ depth_attachment_state get_depth_attachment(
         gbuf.depth,
         {
             {},
-            gbuf.depth.get_format(),
+            gbuf.depth.format,
             (vk::SampleCountFlagBits)gbuf.get_msaa(),
             opt.clear_depth ? vk::AttachmentLoadOp::eClear :
                 vk::AttachmentLoadOp::eLoad,
@@ -140,7 +140,7 @@ raster_stage::raster_stage(
     raster_timer(
         dev,
         std::string(output_array_targets[0].color ? "forward" : "gbuffer") +
-        " rasterization (" + std::to_string(count_array_layers(output_array_targets)) +
+        " rasterization (" + std::to_string(count_gbuffer_array_layers(output_array_targets)) +
         " viewports)"
     )
 {

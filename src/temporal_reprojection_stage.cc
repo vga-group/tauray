@@ -46,14 +46,14 @@ void temporal_reprojection_stage::init_resources()
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         comp.update_descriptor_set({
-            {"current_color", {{}, current_features.color[i].view, vk::ImageLayout::eGeneral}},
-            {"current_normal", {{}, current_features.normal[i].view, vk::ImageLayout::eGeneral}},
-            {"current_pos", {{}, current_features.pos[i].view, vk::ImageLayout::eGeneral}},
-            {"current_screen_motion", {{}, current_features.screen_motion[i].view, vk::ImageLayout::eGeneral}},
+            {"current_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
+            {"current_normal", {{}, current_features.normal.view, vk::ImageLayout::eGeneral}},
+            {"current_pos", {{}, current_features.pos.view, vk::ImageLayout::eGeneral}},
+            {"current_screen_motion", {{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}},
 
-            {"previous_color", {{}, previous_features.color[i].view, vk::ImageLayout::eGeneral}},
-            {"previous_normal", {{}, previous_features.normal[i].view, vk::ImageLayout::eGeneral}},
-            {"previous_pos", {{}, previous_features.pos[i].view, vk::ImageLayout::eGeneral}}
+            {"previous_color", {{}, previous_features.color.view, vk::ImageLayout::eGeneral}},
+            {"previous_normal", {{}, previous_features.normal.view, vk::ImageLayout::eGeneral}},
+            {"previous_pos", {{}, previous_features.pos.view, vk::ImageLayout::eGeneral}}
         }, i);
     }
 }

@@ -32,20 +32,20 @@ const render_target& gbuffer_target::operator[](size_t i) const
 void gbuffer_target::set_raster_layouts()
 {
     visit([&](render_target& img){
-        img.set_layout(vk::ImageLayout::eColorAttachmentOptimal);
+        img.layout = vk::ImageLayout::eColorAttachmentOptimal;
     });
-    depth.set_layout(vk::ImageLayout::eDepthAttachmentOptimal);
+    depth.layout = vk::ImageLayout::eDepthAttachmentOptimal;
 }
 
 void gbuffer_target::set_layout(vk::ImageLayout layout)
 {
-    visit([&](render_target& img){ img.set_layout(layout); });
+    visit([&](render_target& img){ img.layout = layout; });
 }
 
 uvec2 gbuffer_target::get_size() const
 {
 #define TR_GBUFFER_ENTRY(name, ...) \
-    if(name) return name.get_size();
+    if(name) return name.size;
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
     return uvec2(0);
@@ -54,7 +54,7 @@ uvec2 gbuffer_target::get_size() const
 unsigned gbuffer_target::get_layer_count() const
 {
 #define TR_GBUFFER_ENTRY(name, ...) \
-    if(name) return name.get_layer_count();
+    if(name) return name.layer_count;
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
     return 0;
@@ -64,7 +64,7 @@ vk::SampleCountFlagBits gbuffer_target::get_msaa() const
 {
     vk::SampleCountFlagBits flags = vk::SampleCountFlagBits::e1;
 #define TR_GBUFFER_ENTRY(name, ...) \
-    if(name) flags = std::max(flags, name.get_msaa());
+    if(name) flags = std::max(flags, name.msaa);
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
     return flags;
@@ -86,10 +86,10 @@ void gbuffer_target::get_location_defines(
 gbuffer_spec gbuffer_target::get_spec() const
 {
     gbuffer_spec ret;
-#define TR_GBUFFER_ENTRY(name, format) \
+#define TR_GBUFFER_ENTRY(name, ...) \
     if(name) {\
         ret.name##_present = true; \
-        ret.name##_format = name.get_format(); \
+        ret.name##_format = name.format; \
     }
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY

@@ -36,9 +36,9 @@ taa_stage::taa_stage(
     current_features(current_features),
     previous_color(
         dev,
-        current_features.color.get_size(),
+        current_features.color.size,
         current_features.get_layer_count(),
-        current_features.color.get_format(),
+        current_features.color.format,
         0, nullptr,
         vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
@@ -85,8 +85,8 @@ void taa_stage::init_resources()
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         comp.update_descriptor_set({
-            {"current_color", {{}, current_features.color[i].view, vk::ImageLayout::eGeneral}},
-            {"current_screen_motion", {{}, current_features.screen_motion[i].view, vk::ImageLayout::eGeneral}},
+            {"current_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
+            {"current_screen_motion", {{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}},
             {"previous_color", {history_sampler.get_sampler(dev->index), previous_color.get_array_image_view(dev->index), vk::ImageLayout::eShaderReadOnlyOptimal}},
             {"jitter_info", {jitter_buffer[dev->index], 0, VK_WHOLE_SIZE}}
         }, i);
@@ -118,16 +118,16 @@ void taa_stage::record_command_buffers()
 
         // Store the previous color buffer.
 
-        current_features.color.transition_layout_temporary(cb, i, vk::ImageLayout::eTransferSrcOptimal);
+        current_features.color.transition_layout_temporary(cb, vk::ImageLayout::eTransferSrcOptimal);
         previous_color_rt.transition_layout_temporary(
-            cb, i, vk::ImageLayout::eTransferDstOptimal, true, true
+            cb, vk::ImageLayout::eTransferDstOptimal, true, true
         );
 
         uvec3 size = uvec3(current_features.get_size(), 1);
         cb.copyImage(
-            current_features.color[i].image,
+            current_features.color.image,
             vk::ImageLayout::eTransferSrcOptimal,
-            previous_color_rt[i].image,
+            previous_color_rt.image,
             vk::ImageLayout::eTransferDstOptimal,
             vk::ImageCopy(
                 current_features.color.get_layers(),
@@ -138,17 +138,17 @@ void taa_stage::record_command_buffers()
             )
         );
 
-        vk::ImageLayout old_layout = current_features.color.get_layout();
-        current_features.color.set_layout(vk::ImageLayout::eTransferSrcOptimal);
-        current_features.color.transition_layout_temporary(cb, i, vk::ImageLayout::eGeneral);
-        current_features.color.set_layout(old_layout);
+        vk::ImageLayout old_layout = current_features.color.layout;
+        current_features.color.layout = vk::ImageLayout::eTransferSrcOptimal;
+        current_features.color.transition_layout_temporary(cb, vk::ImageLayout::eGeneral);
+        current_features.color.layout = old_layout;
 
-        old_layout = previous_color_rt.get_layout();
-        previous_color_rt.set_layout(vk::ImageLayout::eTransferDstOptimal);
+        old_layout = previous_color_rt.layout;
+        previous_color_rt.layout = vk::ImageLayout::eTransferDstOptimal;
         previous_color_rt.transition_layout_temporary(
-            cb, i, vk::ImageLayout::eShaderReadOnlyOptimal, true, true
+            cb, vk::ImageLayout::eShaderReadOnlyOptimal, true, true
         );
-        previous_color_rt.set_layout(old_layout);
+        previous_color_rt.layout = old_layout;
 
         stage_timer.end(cb, dev->index, i);
         end_compute(cb, i);

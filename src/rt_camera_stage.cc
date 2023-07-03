@@ -114,7 +114,7 @@ void rt_camera_stage::init_descriptors(basic_pipeline& pp)
         pp.update_descriptor_set({
 #define TR_GBUFFER_ENTRY(name, ...)\
             {#name "_target", {\
-                {}, target.name ? target.name[i].view : VK_NULL_HANDLE, vk::ImageLayout::eGeneral\
+                {}, target.name ? target.name.view : VK_NULL_HANDLE, vk::ImageLayout::eGeneral\
             }},
             TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
@@ -137,7 +137,7 @@ void rt_camera_stage::record_command_buffer(
             {}, vk::AccessFlagBits::eShaderWrite,
             vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
             VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-            target[frame_index].image,
+            target.image,
             target.get_range()
         );
         if(get_pass_count() > 0)
@@ -150,7 +150,7 @@ void rt_camera_stage::record_command_buffer(
             barrier.srcAccessMask = barrier.dstAccessMask;
             barrier.dstAccessMask = {};
             barrier.oldLayout = vk::ImageLayout::eGeneral;
-            barrier.newLayout = target.get_layout();
+            barrier.newLayout = target.layout;
         }
         else
         {

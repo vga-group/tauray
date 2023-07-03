@@ -82,27 +82,24 @@ stitch_stage::stitch_stage(
     params(params),
     stitch_timer(dev, "stitch (" + std::to_string(opt.active_viewport_count) + " viewports)")
 {
-    for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    // Bind descriptors
+    std::vector<vk::DescriptorImageInfo> input_images;
+    std::vector<vk::DescriptorImageInfo> output_images;
+
+    for(size_t j = 0; j < images.size(); ++j)
     {
-        // Bind descriptors
-        std::vector<vk::DescriptorImageInfo> input_images;
-        std::vector<vk::DescriptorImageInfo> output_images;
+        auto* target_vec = params[j].primary ?
+            &output_images : &input_images;
 
-        for(size_t j = 0; j < images.size(); ++j)
-        {
-            auto* target_vec = params[j].primary ?
-                &output_images : &input_images;
-
-            images[j].visit([&](const render_target& img){
-                target_vec->push_back({{}, img[i].view, vk::ImageLayout::eGeneral});
-            });
-        }
-
-        comp.update_descriptor_set({
-            {"input_images", input_images},
-            {"output_images", output_images}
-        }, i);
+        images[j].visit([&](const render_target& img){
+            target_vec->push_back({{}, img.view, vk::ImageLayout::eGeneral});
+        });
     }
+
+    comp.update_descriptor_set({
+        {"input_images", input_images},
+        {"output_images", output_images}
+    });
     record_commands();
 }
 

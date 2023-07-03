@@ -126,7 +126,7 @@ dependencies post_processing_renderer::render(dependencies deps)
 void post_processing_renderer::init_pipelines()
 {
     gbuffer_target input_target = input_gbuffer;
-    vk::SampleCountFlagBits msaa = input_target.color.get_msaa();
+    vk::SampleCountFlagBits msaa = input_target.color.msaa;
 
     if(opt.spatial_reprojection.has_value())
     {
@@ -259,7 +259,7 @@ void post_processing_renderer::init_pipelines()
 
     opt.tonemap.input_msaa = (int)msaa;
     opt.tonemap.transition_output_layout = true;
-    render_target display = dev->ctx->get_array_render_target();
+    std::vector<render_target> display = dev->ctx->get_array_render_target();
     tonemap.reset(new tonemap_stage(
         *dev,
         in_color,
