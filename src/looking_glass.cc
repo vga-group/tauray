@@ -130,10 +130,10 @@ void looking_glass::get_lkg_metadata()
         // TODO: Use the official API instead, if it turns out to be available and
         // usable in Tauray.
         nng_socket sock;
-        if (int err = nng_req0_open(&sock))
+        if(int err = nng_req0_open(&sock))
             throw std::runtime_error(nng_strerror(err));
         nng_dialer dialer;
-        if (int err = nng_dial(sock, "ipc:///tmp/holoplay-driver.ipc", &dialer, 0))
+        if(nng_dial(sock, "ipc:///tmp/holoplay-driver.ipc", &dialer, 0))
             throw std::runtime_error("HoloPlay service doesn't seem to be running.");
 
         // Initial handshake message

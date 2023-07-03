@@ -14,7 +14,7 @@ class camera;
 class light_scene: public aabb_scene
 {
 public:
-    light_scene(context& ctx, size_t max_capacity = 1024);
+    light_scene(device_mask dev, size_t max_capacity = 1024);
     light_scene(const light_scene& s) = delete;
     light_scene(light_scene&& s) = delete;
     ~light_scene();

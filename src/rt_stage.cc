@@ -143,7 +143,7 @@ void rt_stage::init_descriptors(basic_pipeline& pp)
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         pp.update_descriptor_set({
-            {"sampling_data", {*sampling_data, 0, VK_WHOLE_SIZE}}
+            {"sampling_data", {sampling_data[dev->index], 0, VK_WHOLE_SIZE}}
         }, i);
     }
 }
@@ -164,7 +164,7 @@ void rt_stage::record_command_buffers()
             vk::CommandBuffer cb = begin_graphics();
             if(pass_count_left == pass_count)
                 rt_timer.begin(cb, i);
-            sampling_data.upload(i, cb);
+            sampling_data.upload(dev->index, i, cb);
             size_t local_pass_count = opt.max_passes_per_command_buffer == 0 ?
                 pass_count :
                 min(pass_count_left, opt.max_passes_per_command_buffer);

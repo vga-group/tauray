@@ -13,13 +13,14 @@ void record_blas_update(
     vkm<vk::Buffer>& scratch_buffer,
     bool update,
     timer& update_timer,
-    uint32_t frame_index
+    uint32_t frame_index,
+    device_id id
 ){
     if(total_aabb_count == 0)
         return;
 
     update_timer.begin(cb, frame_index);
-    aabb_buffer.upload(frame_index, cb);
+    aabb_buffer.upload(id, frame_index, cb);
 
     vk::MemoryBarrier barrier(
         vk::AccessFlagBits::eTransferWrite,
@@ -36,7 +37,7 @@ void record_blas_update(
     vk::AccelerationStructureGeometryKHR geom(
         vk::GeometryTypeKHR::eAabbs,
         vk::AccelerationStructureGeometryAabbsDataKHR(
-            aabb_buffer.get_address(),
+            aabb_buffer.get_address(id),
             sizeof(vk::AabbPositionsKHR)
         ),
         vk::GeometryFlagBitsKHR::eOpaque
@@ -69,11 +70,11 @@ namespace tr
 {
 
 aabb_scene::aabb_scene(
-    context& ctx,
+    device_mask dev,
     const char* timer_name,
     size_t sbt_offset,
     size_t max_capacity
-):  ctx(&ctx), max_capacity(max_capacity), sbt_offset(sbt_offset)
+):  max_capacity(max_capacity), sbt_offset(sbt_offset), acceleration_structures(dev)
 {
     init_acceleration_structures(timer_name);
 }
@@ -84,16 +85,16 @@ size_t aabb_scene::get_max_capacity() const
 }
 
 void aabb_scene::update_acceleration_structures(
-    size_t device_index,
+    device_id id,
     uint32_t frame_index,
     bool& need_scene_reset,
     bool& command_buffers_outdated
 ){
-    auto& as = acceleration_structures[device_index];
+    auto& as = acceleration_structures[id];
     auto& f = as.per_frame[frame_index];
 
     // Update area point light buffer
-    as.aabb_buffer.map<vk::AabbPositionsKHR>(
+    aabb_buffer.map<vk::AabbPositionsKHR>(
         frame_index,
         [&](vk::AabbPositionsKHR* aabb){
             f.aabb_count = get_aabbs(aabb);
@@ -109,34 +110,35 @@ void aabb_scene::update_acceleration_structures(
 
 void aabb_scene::record_acceleration_structure_build(
     vk::CommandBuffer& cb,
-    size_t device_index,
+    device_id id,
     uint32_t frame_index,
     bool update_only
 ){
-    auto& as = acceleration_structures[device_index];
+    auto& as = acceleration_structures[id];
     auto& f = as.per_frame[frame_index];
 
     record_blas_update(
         cb,
         as.blas,
         f.aabb_count,
-        as.aabb_buffer,
+        aabb_buffer,
         as.scratch_buffer,
         update_only,
         as.blas_update_timer,
-        frame_index
+        frame_index,
+        id
     );
 }
 
 void aabb_scene::add_acceleration_structure_instances(
     vk::AccelerationStructureInstanceKHR* instances,
-    size_t device_index,
+    device_id id,
     uint32_t frame_index,
     size_t& instance_index,
     size_t capacity
 ) const
 {
-    auto& as = acceleration_structures[device_index];
+    auto& as = acceleration_structures[id];
     auto& f = as.per_frame[frame_index];
 
     if(f.aabb_count != 0 && instance_index < capacity)
@@ -154,26 +156,21 @@ void aabb_scene::add_acceleration_structure_instances(
 
 void aabb_scene::init_acceleration_structures(const char* timer_name)
 {
-    if(!ctx->is_ray_tracing_supported()) return;
+    if(!acceleration_structures.get_context()->is_ray_tracing_supported()) return;
 
-    std::vector<device_data>& devices = ctx->get_devices();
-    acceleration_structures.resize(devices.size());
+    aabb_buffer = gpu_buffer(
+        acceleration_structures.get_mask(), max_capacity * sizeof(vk::AabbPositionsKHR),
+        vk::BufferUsageFlagBits::eStorageBuffer |
+        vk::BufferUsageFlagBits::eTransferDst |
+        vk::BufferUsageFlagBits::eShaderDeviceAddress|
+        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
+    );
 
-    for(size_t i = 0; i < devices.size(); ++i)
-    {
-        auto& as = acceleration_structures[i];
-        as.aabb_buffer = gpu_buffer(
-            devices[i], max_capacity * sizeof(vk::AabbPositionsKHR),
-            vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eTransferDst |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress|
-            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
-        );
-
+    acceleration_structures([&](device& dev, acceleration_structure_data& as){
         vk::AccelerationStructureGeometryKHR geom(
             VULKAN_HPP_NAMESPACE::GeometryTypeKHR::eAabbs,
             vk::AccelerationStructureGeometryAabbsDataKHR(
-                as.aabb_buffer.get_address(), sizeof(vk::AabbPositionsKHR)
+                aabb_buffer.get_address(dev.index), sizeof(vk::AabbPositionsKHR)
             ),
             vk::GeometryFlagBitsKHR::eOpaque
         );
@@ -190,7 +187,7 @@ void aabb_scene::init_acceleration_structures(const char* timer_name)
         );
 
         vk::AccelerationStructureBuildSizesInfoKHR size_info =
-            devices[i].dev.getAccelerationStructureBuildSizesKHR(
+            dev.dev.getAccelerationStructureBuildSizesKHR(
                 vk::AccelerationStructureBuildTypeKHR::eDevice, blas_info,
                 {(uint32_t)max_capacity}
             );
@@ -202,7 +199,7 @@ void aabb_scene::init_acceleration_structures(const char* timer_name)
             vk::SharingMode::eExclusive
         );
         as.blas_buffer = create_buffer(
-            devices[i],
+            dev,
             blas_buffer_info,
             VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
         );
@@ -216,8 +213,8 @@ void aabb_scene::init_acceleration_structures(const char* timer_name)
             {}
         );
         as.blas = vkm(
-            devices[i],
-            devices[i].dev.createAccelerationStructureKHR(create_info)
+            dev,
+            dev.dev.createAccelerationStructureKHR(create_info)
         );
         blas_info.dstAccelerationStructure = as.blas;
 
@@ -228,24 +225,23 @@ void aabb_scene::init_acceleration_structures(const char* timer_name)
             vk::SharingMode::eExclusive
         );
         as.scratch_buffer = create_buffer_aligned(
-            devices[i],
+            dev,
             scratch_info,
             VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-            devices[i].as_props.minAccelerationStructureScratchOffsetAlignment
+            dev.as_props.minAccelerationStructureScratchOffsetAlignment
         );
 
-        as.blas_update_timer = timer(devices[i], timer_name);
-    }
+        as.blas_update_timer = timer(dev, timer_name);
+    });
 }
 
 void aabb_scene::invalidate_acceleration_structures()
 {
-    for(auto& as: acceleration_structures)
-    {
+    acceleration_structures([&](device&, acceleration_structure_data& as){
         as.scene_reset_needed = true;
         for(auto& f: as.per_frame)
             f.command_buffers_outdated = true;
-    }
+    });
 }
 
 }

@@ -6,34 +6,29 @@ namespace tr
 {
 
 bottom_level_acceleration_structure::bottom_level_acceleration_structure(
-    context& ctx,
+    device_mask dev,
     const std::vector<entry>& entries,
     bool backface_culled,
     bool dynamic,
     bool compact
-):  ctx(&ctx), updates_since_rebuild(0), geometry_count(entries.size()),
-    backface_culled(backface_culled), dynamic(dynamic), compact(!dynamic && compact)
+):  updates_since_rebuild(0), geometry_count(entries.size()),
+    backface_culled(backface_culled), dynamic(dynamic), compact(!dynamic && compact),
+    buffers(dev)
 {
-    std::vector<device_data>& devices = ctx.get_devices();
-    buffers.resize(devices.size());
-
-    for(size_t i = 0; i < devices.size(); ++i)
-    {
-        buffers[i].transform_buffer = gpu_buffer(
-            devices[i], sizeof(vk::TransformMatrixKHR) * entries.size(),
-            vk::BufferUsageFlagBits::eShaderDeviceAddress |
-            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
-        );
-    }
+    transform_buffer = gpu_buffer(
+        dev, sizeof(vk::TransformMatrixKHR) * entries.size(),
+        vk::BufferUsageFlagBits::eShaderDeviceAddress |
+        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
+    );
 
     for(size_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index)
         update_transforms(frame_index, entries);
 
-    for(size_t i = 0; i < devices.size(); ++i)
+    for(device& d: dev)
     {
-        vk::CommandBuffer cb = begin_command_buffer(devices[i]);
-        rebuild(i, 0, cb, entries, false);
-        end_command_buffer(devices[i], cb);
+        vk::CommandBuffer cb = begin_command_buffer(d);
+        rebuild(d.index, 0, cb, entries, false);
+        end_command_buffer(d, cb);
     }
 }
 
@@ -41,55 +36,52 @@ void bottom_level_acceleration_structure::update_transforms(
     size_t frame_index,
     const std::vector<entry>& entries
 ){
-    for(size_t i = 0; i < ctx->get_devices().size(); ++i)
+    transform_buffer.map<uint8_t>(frame_index, [&](uint8_t* data)
     {
-        buffers[i].transform_buffer.map<uint8_t>(frame_index, [&](uint8_t* data)
+        for(size_t j = 0; j < entries.size(); ++j)
         {
-            for(size_t j = 0; j < entries.size(); ++j)
-            {
-                mat4 transform = transpose(entries[j].transform);
-                memcpy(
-                    data + sizeof(vk::TransformMatrixKHR) * j,
-                    (void*)&transform,
-                    sizeof(vk::TransformMatrixKHR)
-                );
-            }
-        });
-    }
+            mat4 transform = transpose(entries[j].transform);
+            memcpy(
+                data + sizeof(vk::TransformMatrixKHR) * j,
+                (void*)&transform,
+                sizeof(vk::TransformMatrixKHR)
+            );
+        }
+    });
 }
 
 void bottom_level_acceleration_structure::rebuild(
-    size_t device_index,
+    device_id id,
     size_t frame_index,
     vk::CommandBuffer cb,
     const std::vector<entry>& entries,
     bool update
 ) {
     if(!update) updates_since_rebuild = 0;
-    device_data& dev = ctx->get_devices()[device_index];
+    device& dev = buffers.get_device(id);
+    buffer_data& bd = buffers[id];
 
     std::vector<vk::AccelerationStructureGeometryKHR> geometries(entries.size());
     std::vector<vk::TransformMatrixKHR> transforms(entries.size());
     std::vector<vk::AccelerationStructureBuildRangeInfoKHR> ranges(entries.size());
     std::vector<uint32_t> primitive_count(entries.size());
 
-    buffer_data& bd = buffers[device_index];
     for(size_t i = 0; i < entries.size(); ++i)
     {
         const mesh* m = entries[i].m;
         vk::DeviceOrHostAddressConstKHR transform_address{};
         transform_address.deviceAddress =
-            bd.transform_buffer.get_address() + sizeof(vk::TransformMatrixKHR) * i;
+            transform_buffer.get_address(id) + sizeof(vk::TransformMatrixKHR) * i;
 
         geometries[i] = {
             vk::GeometryTypeKHR::eTriangles,
             vk::AccelerationStructureGeometryTrianglesDataKHR(
                 vk::Format::eR32G32B32Sfloat,
-                dev.dev.getBufferAddress({m->get_vertex_buffer(device_index)}),
+                dev.dev.getBufferAddress({m->get_vertex_buffer(id)}),
                 sizeof(mesh::vertex),
                 m->get_vertices().size()-1,
                 vk::IndexType::eUint32,
-                dev.dev.getBufferAddress({m->get_index_buffer(device_index)}),
+                dev.dev.getBufferAddress({m->get_index_buffer(id)}),
                 transform_address
             ),
             (entries[i].opaque ?
@@ -164,7 +156,7 @@ void bottom_level_acceleration_structure::rebuild(
     if(compact)
     {
         initial_cb = begin_command_buffer(dev);
-        bd.transform_buffer.upload(frame_index, initial_cb);
+        transform_buffer.upload(id, frame_index, initial_cb);
         query_pool = vkm(dev, dev.dev.createQueryPool({
             {},
             vk::QueryType::eAccelerationStructureCompactedSizeKHR,
@@ -239,7 +231,7 @@ void bottom_level_acceleration_structure::rebuild(
     }
     else
     {
-        bd.transform_buffer.upload(frame_index, cb);
+        transform_buffer.upload(id, frame_index, cb);
         cb.buildAccelerationStructuresKHR({blas_info}, range_ptr);
     }
     bd.blas_address = dev.dev.getAccelerationStructureAddressKHR({bd.blas});
@@ -250,14 +242,14 @@ size_t bottom_level_acceleration_structure::get_updates_since_rebuild() const
     return updates_since_rebuild;
 }
 
-vk::AccelerationStructureKHR bottom_level_acceleration_structure::get_blas_handle(size_t device_index) const
+vk::AccelerationStructureKHR bottom_level_acceleration_structure::get_blas_handle(device_id id) const
 {
-    return *buffers[device_index].blas;
+    return *buffers[id].blas;
 }
 
-vk::DeviceAddress bottom_level_acceleration_structure::get_blas_address(size_t device_index) const
+vk::DeviceAddress bottom_level_acceleration_structure::get_blas_address(device_id id) const
 {
-    return buffers[device_index].blas_address;
+    return buffers[id].blas_address;
 }
 
 size_t bottom_level_acceleration_structure::get_geometry_count() const
@@ -271,28 +263,25 @@ bool bottom_level_acceleration_structure::is_backface_culled() const
 }
 
 top_level_acceleration_structure::top_level_acceleration_structure(
-    context& ctx,
+    device_mask dev,
     size_t capacity
-):  ctx(&ctx), updates_since_rebuild(0), instance_count(0),
-    instance_capacity(capacity), require_rebuild(true)
+):  updates_since_rebuild(0), instance_count(0),
+    instance_capacity(capacity), require_rebuild(true), buffers(dev)
 {
-    std::vector<device_data>& devices = ctx.get_devices();
-    buffers.resize(devices.size());
-    for(size_t i = 0; i < devices.size(); ++i)
-    {
-        buffer_data& bd = buffers[i];
-        bd.instance_buffer = gpu_buffer(
-            devices[i],
-            capacity * sizeof(VkAccelerationStructureInstanceKHR),
-            vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eTransferDst |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress|
-            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
-        );
+    instance_buffer = gpu_buffer(
+        dev,
+        capacity * sizeof(VkAccelerationStructureInstanceKHR),
+        vk::BufferUsageFlagBits::eStorageBuffer |
+        vk::BufferUsageFlagBits::eTransferDst |
+        vk::BufferUsageFlagBits::eShaderDeviceAddress|
+        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
+    );
+
+    buffers([&](device& dev, buffer_data& bd){
         vk::AccelerationStructureGeometryKHR geom(
             VULKAN_HPP_NAMESPACE::GeometryTypeKHR::eInstances,
             vk::AccelerationStructureGeometryInstancesDataKHR{
-                VK_FALSE, bd.instance_buffer.get_address()
+                VK_FALSE, instance_buffer.get_address(dev.index)
             }
         );
 
@@ -308,7 +297,7 @@ top_level_acceleration_structure::top_level_acceleration_structure(
         );
 
         vk::AccelerationStructureBuildSizesInfoKHR size_info =
-            devices[i].dev.getAccelerationStructureBuildSizesKHR(
+            dev.dev.getAccelerationStructureBuildSizesKHR(
                 vk::AccelerationStructureBuildTypeKHR::eDevice, tlas_info, {(uint32_t)capacity}
             );
 
@@ -318,7 +307,7 @@ top_level_acceleration_structure::top_level_acceleration_structure(
             vk::BufferUsageFlagBits::eShaderDeviceAddress,
             vk::SharingMode::eExclusive
         );
-        bd.tlas_buffer = create_buffer(devices[i], tlas_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+        bd.tlas_buffer = create_buffer(dev, tlas_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
 
         vk::AccelerationStructureCreateInfoKHR create_info(
             {},
@@ -328,7 +317,7 @@ top_level_acceleration_structure::top_level_acceleration_structure(
             vk::AccelerationStructureTypeKHR::eTopLevel,
             {}
         );
-        bd.tlas = vkm(devices[i], devices[i].dev.createAccelerationStructureKHR(create_info));
+        bd.tlas = vkm(dev, dev.dev.createAccelerationStructureKHR(create_info));
         tlas_info.dstAccelerationStructure = bd.tlas;
 
         vk::BufferCreateInfo scratch_info(
@@ -339,26 +328,26 @@ top_level_acceleration_structure::top_level_acceleration_structure(
         );
 
         bd.scratch_buffer = create_buffer_aligned(
-            devices[i], scratch_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-            devices[i].as_props.minAccelerationStructureScratchOffsetAlignment
+            dev, scratch_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+            dev.as_props.minAccelerationStructureScratchOffsetAlignment
         );
         tlas_info.scratchData = bd.scratch_buffer.get_address();
-        bd.tlas_address = devices[i].dev.getAccelerationStructureAddressKHR({bd.tlas});
-    }
+        bd.tlas_address = dev.dev.getAccelerationStructureAddressKHR({bd.tlas});
+    });
 }
 
-gpu_buffer& top_level_acceleration_structure::get_instances_buffer(size_t device_index)
+gpu_buffer& top_level_acceleration_structure::get_instances_buffer()
 {
-    return buffers[device_index].instance_buffer;
+    return instance_buffer;
 }
 
 void top_level_acceleration_structure::rebuild(
-    size_t device_index,
+    device_id id,
     vk::CommandBuffer cb,
     size_t instance_count,
     bool update
 ){
-    buffer_data& bd = buffers[device_index];
+    buffer_data& bd = buffers[id];
 
     // Barrier to make sure all BLAS's have updated already.
     vk::MemoryBarrier blas_barrier(
@@ -375,7 +364,7 @@ void top_level_acceleration_structure::rebuild(
     vk::AccelerationStructureGeometryKHR tlas_geometry(
         vk::GeometryTypeKHR::eInstances,
         vk::AccelerationStructureGeometryInstancesDataKHR{
-            false, bd.instance_buffer.get_address()
+            false, instance_buffer.get_address(id)
         },
         {}
     );
@@ -405,14 +394,14 @@ size_t top_level_acceleration_structure::get_updates_since_rebuild() const
     return updates_since_rebuild;
 }
 
-const vk::AccelerationStructureKHR* top_level_acceleration_structure::get_tlas_handle(size_t device_index) const
+const vk::AccelerationStructureKHR* top_level_acceleration_structure::get_tlas_handle(device_id id) const
 {
-    return buffers[device_index].tlas;
+    return buffers[id].tlas;
 }
 
-vk::DeviceAddress top_level_acceleration_structure::get_tlas_address(size_t device_index) const
+vk::DeviceAddress top_level_acceleration_structure::get_tlas_address(device_id id) const
 {
-    return buffers[device_index].tlas_address;
+    return buffers[id].tlas_address;
 }
 
 }

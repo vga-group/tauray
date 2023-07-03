@@ -5,14 +5,14 @@ namespace tr
 {
 
 gpu_buffer::gpu_buffer()
-:   dev(nullptr), capacity(0), size(0), flags(0)
+: capacity(0), size(0), flags(0)
 {}
 
 gpu_buffer::gpu_buffer(
-    device_data& dev,
+    device_mask dev,
     size_t size,
     vk::BufferUsageFlags flags
-):  dev(&dev), capacity(0), size(size), flags(flags)
+):  capacity(0), size(size), flags(flags), buffers(dev)
 {
     resize(size);
 }
@@ -23,6 +23,9 @@ bool gpu_buffer::resize(size_t size)
     this->size = size;
     if(this->capacity >= size) return false;
 
+    if(buffers.get_mask().size() > 1)
+        shared_data.reset();
+
     this->capacity = size;
 
     vk::BufferCreateInfo gpu_buffer_info(
@@ -31,9 +34,11 @@ bool gpu_buffer::resize(size_t size)
         vk::SharingMode::eExclusive
     );
 
-    buffer = create_buffer(*dev, gpu_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-        staging[i] = create_staging_buffer(*dev, this->capacity, nullptr);
+    buffers([&](device& dev, buffer_data& buf){
+        buf.buffer = create_buffer(dev, gpu_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+        for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+            buf.staging[i] = create_staging_buffer(dev, this->capacity, nullptr);
+    });
     return true;
 }
 
@@ -44,17 +49,17 @@ size_t gpu_buffer::get_size() const
 
 gpu_buffer::operator bool() const
 {
-    return dev && size > 0;
+    return buffers.get_mask().size() > 0 && size > 0;
 }
 
-vk::Buffer gpu_buffer::operator*() const
+vk::Buffer gpu_buffer::operator[](device_id id) const
 {
-    return buffer;
+    return buffers[id].buffer;
 }
 
-vk::DeviceAddress gpu_buffer::get_address() const
+vk::DeviceAddress gpu_buffer::get_address(device_id id) const
 {
-    return dev->dev.getBufferAddress({*buffer});
+    return buffers.get_device(id).dev.getBufferAddress({*buffers[id].buffer});
 }
 
 void gpu_buffer::update(uint32_t frame_index, const void* data, size_t offset, size_t bytes)
@@ -64,29 +69,58 @@ void gpu_buffer::update(uint32_t frame_index, const void* data, size_t offset, s
     if(bytes == 0 || bytes > size - offset)
         bytes = size - offset;
 
-    char* ptr = nullptr;
-    vkm<vk::Buffer>& staging_buffer = staging[frame_index];
-    vmaMapMemory(dev->allocator, staging_buffer.get_allocation(), (void**)&ptr);
+    if(bytes == 0)
+        return;
 
-    memcpy(ptr + offset, data, bytes);
-
-    vmaUnmapMemory(dev->allocator, staging_buffer.get_allocation());
+    buffers([&](device& dev, buffer_data& buf){
+        vkm<vk::Buffer>& staging_buffer = buf.staging[frame_index];
+        char* ptr = nullptr;
+        vmaMapMemory(dev.allocator, staging_buffer.get_allocation(), (void**)&ptr);
+        memcpy(ptr + offset, data, bytes);
+        vmaUnmapMemory(dev.allocator, staging_buffer.get_allocation());
+    });
 }
 
-void gpu_buffer::upload(uint32_t frame_index, vk::CommandBuffer cb)
+void gpu_buffer::update_one(device_id id, uint32_t frame_index, const void* data, size_t offset, size_t bytes)
+{
+    if(!*this) return;
+
+    if(bytes == 0 || bytes > size - offset)
+        bytes = size - offset;
+
+    if(bytes == 0)
+        return;
+
+    device& dev = buffers.get_device(id);
+    buffer_data& buf = buffers[id];
+
+    vkm<vk::Buffer>& staging_buffer = buf.staging[frame_index];
+    char* ptr = nullptr;
+    vmaMapMemory(dev.allocator, staging_buffer.get_allocation(), (void**)&ptr);
+    memcpy(ptr + offset, data, bytes);
+    vmaUnmapMemory(dev.allocator, staging_buffer.get_allocation());
+}
+
+void gpu_buffer::upload(device_id id, uint32_t frame_index, vk::CommandBuffer cb)
 {
     if(size > 0)
     {
-        vk::Buffer src = staging[frame_index];
-        cb.copyBuffer(src, *buffer, {{0, 0, size}});
+        buffer_data& buf = buffers[id];
+        vk::Buffer src = buf.staging[frame_index];
+        cb.copyBuffer(src, *buf.buffer, {{0, 0, size}});
     }
 }
 
-size_t gpu_buffer::calc_buffer_entry_alignment(size_t entry_size) const
+size_t gpu_buffer::calc_buffer_entry_alignment(device_id id, size_t entry_size) const
 {
-    uint32_t min_uniform_offset = dev->props.limits.minUniformBufferOffsetAlignment;
-    return (entry_size+min_uniform_offset-1)/min_uniform_offset
-        *min_uniform_offset;
+    uint32_t min_uniform_offset = buffers.get_device(id).props.limits.minUniformBufferOffsetAlignment;
+    return (entry_size+min_uniform_offset-1)/min_uniform_offset*min_uniform_offset;
+}
+
+void gpu_buffer::ensure_shared_data()
+{
+    if(!shared_data)
+        shared_data.reset(new char[size]);
 }
 
 }

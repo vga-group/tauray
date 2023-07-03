@@ -62,7 +62,7 @@ spatial_reprojection_stage::spatial_reprojection_stage(
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         comp.update_descriptor_set({
-            {"camera_data", {*camera_data, 0, VK_WHOLE_SIZE}},
+            {"camera_data", {camera_data[dev.index], 0, VK_WHOLE_SIZE}},
             {"color_tex", {{}, target_viewport.color[i].view, vk::ImageLayout::eGeneral}},
             {"normal_tex", {{}, target_viewport.normal[i].view, vk::ImageLayout::eGeneral}},
             {"position_tex", {{}, target_viewport.pos[i].view, vk::ImageLayout::eGeneral}}
@@ -85,7 +85,7 @@ void spatial_reprojection_stage::set_scene(scene* s)
         target_viewport.color.transition_layout_temporary(
             cb, i, vk::ImageLayout::eGeneral, true
         );
-        camera_data.upload(i, cb);
+        camera_data.upload(dev->index, i, cb);
 
         comp.bind(cb, i);
 

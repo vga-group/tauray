@@ -57,7 +57,7 @@ private:
     vkm<vk::Buffer> tmp_data[MAX_FRAMES_IN_FLIGHT];
     vkm<vk::Buffer> weights[MAX_FRAMES_IN_FLIGHT];
     vkm<vk::Buffer> accepts[MAX_FRAMES_IN_FLIGHT];
-    gpu_buffer ubos[MAX_FRAMES_IN_FLIGHT];
+    gpu_buffer ubos;
     std::unique_ptr<texture> rt_textures[10];
     options opt;
     timer stage_timer, bmfr_preprocess_timer, bmfr_fit_timer, bmfr_weighted_sum_timer, bmfr_accumulate_output_timer, image_copy_timer;

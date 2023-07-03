@@ -90,14 +90,14 @@ void shadow_map_stage::set_scene(scene* s)
         // Bind descriptors
         cur_scene->bind(gfx, i, -1);
         gfx.update_descriptor_set({
-            {"camera", {*camera_data, 0, VK_WHOLE_SIZE}}
+            {"camera", {camera_data[dev->index], 0, VK_WHOLE_SIZE}}
         }, i);
 
         // Record command buffer
         vk::CommandBuffer cb = begin_graphics();
 
         shadow_timer.begin(cb, i);
-        camera_data.upload(i, cb);
+        camera_data.upload(dev->index, i, cb);
 
         gfx.begin_render_pass(cb, i);
         gfx.bind(cb, i);

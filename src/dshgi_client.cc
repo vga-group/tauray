@@ -80,7 +80,7 @@ public:
             // Record command buffer
             vk::CommandBuffer cb = begin_compute();
             stage_timer.begin(cb, i);
-            blend_infos.upload(i, cb);
+            blend_infos.upload(dev->index, i, cb);
 
             size_t j = 0;
             for(sh_grid* grid: grids)
@@ -138,7 +138,7 @@ public:
                     {"input_sh", {{}, new_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
                     {"inout_sh", {{}, tmp_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
                     {"output_sh", {{}, out_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
-                    {"info", {*blend_infos, j*sizeof(blend_info), sizeof(blend_info)}}
+                    {"info", {blend_infos[dev->index], j*sizeof(blend_info), sizeof(blend_info)}}
                 }, set_index);
 
                 comp->bind(cb, set_index);

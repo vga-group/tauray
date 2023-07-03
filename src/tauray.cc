@@ -197,7 +197,7 @@ scene_data load_scenes(context& ctx, const options& opt)
     scene_data s{
         std::move(sky),
         std::move(scenes),
-        std::make_unique<scene>(ctx, max(instance_capacity, 1lu), max(light_capacity, 1lu))
+        std::make_unique<scene>(device_mask::all(ctx), max(instance_capacity, 1lu), max(light_capacity, 1lu))
     };
     s.s->set_environment_map(s.sky.get());
     s.s->set_ambient(opt.ambient);

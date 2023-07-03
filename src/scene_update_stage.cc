@@ -219,7 +219,6 @@ void scene_update_stage::set_scene(scene* target)
         cur_scene->get_point_lights().size() +
         cur_scene->get_spotlights().size();
 
-    auto& sb = cur_scene->scene_buffers[dev->index];
     size_t point_light_mem = sizeof(point_light_entry) * point_light_count;
     size_t directional_light_mem =
         sizeof(directional_light_entry) * cur_scene->get_directional_lights().size();
@@ -231,16 +230,16 @@ void scene_update_stage::set_scene(scene* target)
             tri_light_count += i.m->get_indices().size() / 3;
     }
 
-    sb.point_light_data.resize(point_light_mem);
-    sb.directional_light_data.resize(directional_light_mem);
+    cur_scene->point_light_data.resize(point_light_mem);
+    cur_scene->directional_light_data.resize(directional_light_mem);
     if(opt.gather_emissive_triangles)
-        sb.tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
+        cur_scene->tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
     else
-        sb.tri_light_data.resize(0);
+        cur_scene->tri_light_data.resize(0);
 
-    sb.scene_metadata.resize(sizeof(scene_metadata_buffer));
+    cur_scene->scene_metadata.resize(sizeof(scene_metadata_buffer));
 
-    sb.dii = sb.s_table.update_scene(cur_scene);
+    cur_scene->s_table.update_scene(cur_scene);
 
     force_instance_refresh_frames = MAX_FRAMES_IN_FLIGHT;
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -260,7 +259,7 @@ void scene_update_stage::update(uint32_t frame_index)
         cur_scene->track_shadow_maps(cur_scene->cameras);
     }
 
-    auto& sb = cur_scene->scene_buffers[dev->index];
+    auto& si = cur_scene->scene_infos[dev->index];
 
     uint64_t frame_counter = dev->ctx->get_frame_counter();
 
@@ -268,8 +267,8 @@ void scene_update_stage::update(uint32_t frame_index)
     size_t vertex_count = 0;
 
     const std::vector<scene::instance>& instances = cur_scene->get_instances();
-    sb.scene_data.resize(sizeof(instance_buffer) * instances.size());
-    sb.scene_data.foreach<instance_buffer>(
+    cur_scene->scene_data.resize(sizeof(instance_buffer) * instances.size());
+    cur_scene->scene_data.foreach<instance_buffer>(
         frame_index, instances.size(),
         [&](instance_buffer& inst, size_t i){
             if(instances[i].mat->emission_factor != vec3(0))
@@ -313,11 +312,11 @@ void scene_update_stage::update(uint32_t frame_index)
             inst.mat.ior = mat.ior;
             inst.mat.normal_factor = mat.normal_factor;
 
-            inst.mat.albedo_tex_id = sb.s_table.find_tex_id(mat.albedo_tex);
+            inst.mat.albedo_tex_id = cur_scene->s_table.find_tex_id(mat.albedo_tex);
             inst.mat.metallic_roughness_tex_id =
-                sb.s_table.find_tex_id(mat.metallic_roughness_tex);
-            inst.mat.normal_tex_id = sb.s_table.find_tex_id(mat.normal_tex);
-            inst.mat.emission_tex_id = sb.s_table.find_tex_id(mat.emission_tex);
+                cur_scene->s_table.find_tex_id(mat.metallic_roughness_tex);
+            inst.mat.normal_tex_id = cur_scene->s_table.find_tex_id(mat.normal_tex);
+            inst.mat.emission_tex_id = cur_scene->s_table.find_tex_id(mat.emission_tex);
         }
     );
     if(force_instance_refresh_frames > 0) force_instance_refresh_frames--;
@@ -327,7 +326,7 @@ void scene_update_stage::update(uint32_t frame_index)
     const std::vector<directional_light*>& directional_lights =
         cur_scene->get_directional_lights();
 
-    sb.point_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
+    cur_scene->point_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
         point_light_entry* point_light_data =
             reinterpret_cast<point_light_entry*>(light_data);
 
@@ -348,7 +347,7 @@ void scene_update_stage::update(uint32_t frame_index)
         }
     });
 
-    sb.directional_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
+    cur_scene->directional_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
         directional_light_entry* directional_light_data =
             reinterpret_cast<directional_light_entry*>(light_data);
 
@@ -361,8 +360,8 @@ void scene_update_stage::update(uint32_t frame_index)
     });
 
     const std::vector<sh_grid*>& sh_grids = cur_scene->get_sh_grids();
-    sb.sh_grid_data.resize(sizeof(sh_grid_buffer) * sh_grids.size());
-    sb.sh_grid_data.foreach<sh_grid_buffer>(
+    cur_scene->sh_grid_data.resize(sizeof(sh_grid_buffer) * sh_grids.size());
+    cur_scene->sh_grid_data.foreach<sh_grid_buffer>(
         frame_index, sh_grids.size(),
         [&](sh_grid_buffer& sh_data , size_t i){
             sh_data.grid_clamp = 0.5f/vec3(sh_grids[i]->get_resolution());
@@ -374,23 +373,23 @@ void scene_update_stage::update(uint32_t frame_index)
         }
     );
 
-    sb.camera_data_offsets.clear();
+    si.camera_data_offsets.clear();
     size_t start_offset = 0;
     for(camera* cam: cur_scene->cameras)
     {
         size_t buf_size = camera::get_projection_type_uniform_buffer_size(cam->get_projection_type()) * 2;
-        sb.camera_data_offsets.push_back({start_offset, buf_size});
+        si.camera_data_offsets.push_back({start_offset, buf_size});
         start_offset += buf_size;
     }
-    sb.camera_data.resize(start_offset);
+    cur_scene->camera_data.resize(start_offset);
     old_camera_data.resize(start_offset);
-    sb.camera_data.map<uint8_t>(
+    cur_scene->camera_data.map<uint8_t>(
         frame_index, [&](uint8_t* data){
             uint8_t* old_data = old_camera_data.data();
             for(size_t i = 0; i < cur_scene->cameras.size(); ++i)
             {
                 camera* cam = cur_scene->cameras[i];
-                uint8_t* cur_data = data + sb.camera_data_offsets[i].first;
+                uint8_t* cur_data = data + si.camera_data_offsets[i].first;
                 size_t buf_size = camera::get_projection_type_uniform_buffer_size(cam->get_projection_type());
                 cur_scene->cameras[i]->write_uniform_buffer(cur_data);
                 memcpy(cur_data + buf_size, old_data, buf_size);
@@ -407,20 +406,20 @@ void scene_update_stage::update(uint32_t frame_index)
         const std::vector<shadow_map_renderer::shadow_map>& shadow_maps =
             cur_scene->smr->get_shadow_map_info();
 
-        sb.shadow_map_range =
+        si.shadow_map_range =
             sizeof(shadow_map_entry) * cur_scene->smr->get_total_shadow_map_count();
 
-        sb.shadow_map_cascade_range =
+        si.shadow_map_cascade_range =
             sizeof(shadow_map_cascade_entry) * cur_scene->smr->get_total_cascade_count();
 
-        sb.shadow_map_data.resize(sb.shadow_map_range + sb.shadow_map_cascade_range);
-        sb.shadow_map_data.map<uint8_t>(
+        cur_scene->shadow_map_data.resize(si.shadow_map_range + si.shadow_map_cascade_range);
+        cur_scene->shadow_map_data.map<uint8_t>(
             frame_index, [&](uint8_t* sm_data){
             shadow_map_entry* shadow_map_data =
                 reinterpret_cast<shadow_map_entry*>(sm_data);
             shadow_map_cascade_entry* shadow_map_cascade_data =
                 reinterpret_cast<shadow_map_cascade_entry*>(
-                    sm_data + sb.shadow_map_range
+                    sm_data + si.shadow_map_range
                 );
 
             int cascade_index = 0;
@@ -503,7 +502,7 @@ void scene_update_stage::update(uint32_t frame_index)
             }
         });
     }
-    sb.scene_metadata.map<scene_metadata_buffer>(
+    cur_scene->scene_metadata.map<scene_metadata_buffer>(
         frame_index, [&](scene_metadata_buffer* data){
             data->point_light_count = point_lights.size() + spotlights.size();
             data->directional_light_count = directional_lights.size();
@@ -527,13 +526,14 @@ void scene_update_stage::update(uint32_t frame_index)
             command_buffers_outdated
         );
 
-        auto& instance_buffer = cur_scene->tlas->get_instances_buffer(dev->index);
+        auto& instance_buffer = cur_scene->tlas->get_instances_buffer();
 
         as_instance_count = 0;
         uint32_t total_max_capacity =
             cur_scene->mesh_scene::get_max_capacity() +
             cur_scene->light_scene::get_max_capacity();
-        instance_buffer.map<vk::AccelerationStructureInstanceKHR>(
+        instance_buffer.map_one<vk::AccelerationStructureInstanceKHR>(
+            dev->index,
             frame_index,
             [&](vk::AccelerationStructureInstanceKHR* as_instances){
                 cur_scene->mesh_scene::add_acceleration_structure_instances(
@@ -569,7 +569,7 @@ void scene_update_stage::record_as_build(
     uint32_t frame_index,
     vk::CommandBuffer cb
 ){
-    auto& instance_buffer = cur_scene->tlas->get_instances_buffer(dev->index);
+    auto& instance_buffer = cur_scene->tlas->get_instances_buffer();
     bool as_update = !as_rebuild;
     cur_scene->mesh_scene::record_acceleration_structure_build(
         cb, dev->index, frame_index, as_update
@@ -581,7 +581,7 @@ void scene_update_stage::record_as_build(
 
     if(as_instance_count > 0)
     {
-        instance_buffer.upload(frame_index, cb);
+        instance_buffer.upload(dev->index, frame_index, cb);
 
         vk::MemoryBarrier barrier(
             vk::AccessFlagBits::eTransferWrite,
@@ -602,7 +602,6 @@ void scene_update_stage::record_as_build(
 void scene_update_stage::record_command_buffers()
 {
     clear_commands();
-    auto& sb = cur_scene->scene_buffers[dev->index];
 
     if(opt.gather_emissive_triangles)
     {
@@ -614,13 +613,13 @@ void scene_update_stage::record_command_buffers()
     {
         vk::CommandBuffer cb = begin_graphics();
         stage_timer.begin(cb, i);
-        sb.scene_data.upload(i, cb);
-        sb.directional_light_data.upload(i, cb);
-        sb.point_light_data.upload(i, cb);
-        sb.sh_grid_data.upload(i, cb);
-        sb.shadow_map_data.upload(i, cb);
-        sb.camera_data.upload(i, cb);
-        sb.scene_metadata.upload(i, cb);
+        cur_scene->scene_data.upload(dev->index, i, cb);
+        cur_scene->directional_light_data.upload(dev->index, i, cb);
+        cur_scene->point_light_data.upload(dev->index, i, cb);
+        cur_scene->sh_grid_data.upload(dev->index, i, cb);
+        cur_scene->shadow_map_data.upload(dev->index, i, cb);
+        cur_scene->camera_data.upload(dev->index, i, cb);
+        cur_scene->scene_metadata.upload(dev->index, i, cb);
 
         bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
 
@@ -629,7 +628,7 @@ void scene_update_stage::record_command_buffers()
             record_as_build(i, cb);
             if(opt.pre_transform_vertices)
                 record_pre_transform(cb);
-            if(sb.tri_light_data.get_size() != 0)
+            if(cur_scene->tri_light_data.get_size() != 0)
                 record_tri_light_extraction(cb);
         }
 
@@ -663,7 +662,6 @@ void scene_update_stage::record_pre_transform(
     vk::CommandBuffer cb
 ){
     const std::vector<scene::instance>& instances = cur_scene->get_instances();
-    auto& sb = cur_scene->scene_buffers[dev->index];
     vk::Buffer pre_transformed_vertices = cur_scene->get_pre_transformed_vertices(dev->index);
     pre_transform.bind(cb);
     size_t offset = 0;
@@ -680,7 +678,7 @@ void scene_update_stage::record_pre_transform(
         pre_transform.push_descriptors(cb, {
             {"input_verts", {inst.m->get_vertex_buffer(dev->index), 0, bytes}},
             {"output_verts", {pre_transformed_vertices, offset, bytes}},
-            {"scene", {*sb.scene_data, 0, VK_WHOLE_SIZE}}
+            {"scene", {cur_scene->scene_data[dev->index], 0, VK_WHOLE_SIZE}}
         });
 
         pre_transform.push_constants(cb, pc);

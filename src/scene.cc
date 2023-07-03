@@ -9,20 +9,56 @@ namespace tr
 {
 
 scene::scene(
-    context& ctx,
+    device_mask dev,
     size_t max_instances,
     size_t max_lights
-):  light_scene(ctx, max_lights),
-    mesh_scene(ctx, max_instances),
-    ctx(&ctx),
+):  light_scene(dev, max_lights),
+    mesh_scene(dev, max_instances),
+    dev(dev),
     total_ticks(0),
     smr(nullptr),
-    sh_grid_textures(nullptr)
+    sh_grid_textures(nullptr),
+    s_table(dev, true),
+    scene_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    scene_metadata(dev, 0, vk::BufferUsageFlagBits::eUniformBuffer),
+    directional_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    point_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    tri_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    sh_grid_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    shadow_map_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    camera_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    envmap_sampler(
+        dev, vk::Filter::eLinear, vk::Filter::eLinear,
+        vk::SamplerAddressMode::eRepeat,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest,
+        0, true, false
+    ),
+    shadow_sampler(
+        dev,
+        vk::Filter::eLinear,
+        vk::Filter::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest,
+        0,
+        true,
+        false,
+        true
+    ),
+    sh_grid_sampler(
+        dev,
+        vk::Filter::eLinear,
+        vk::Filter::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest,
+        0,
+        true,
+        false
+    ),
+    scene_infos(dev)
 {
-    std::vector<device_data>& devices = ctx.get_devices();
-    for(size_t i = 0; i < devices.size(); ++i)
-        scene_buffers.emplace_back(devices[i]);
-
     init_acceleration_structures();
 }
 
@@ -155,13 +191,13 @@ bool scene::is_playing() const
 }
 
 vk::AccelerationStructureKHR scene::get_acceleration_structure(
-    size_t device_index
+    device_id id
 ) const {
-    if(!ctx->is_ray_tracing_supported())
+    if(!dev.get_context()->is_ray_tracing_supported())
         throw std::runtime_error(
             "Trying to use TLAS, but ray tracing is not available!"
         );
-    return *tlas->get_tlas_handle(device_index);
+    return *tlas->get_tlas_handle(id);
 }
 
 void scene::set_shadow_map_renderer(shadow_map_renderer* smr)
@@ -183,9 +219,9 @@ vec2 scene::get_shadow_map_atlas_pixel_margin() const
         return vec2(0);
 }
 
-std::vector<descriptor_state> scene::get_descriptor_info(device_data* dev, int32_t camera_index) const
+std::vector<descriptor_state> scene::get_descriptor_info(device_id id, int32_t camera_index) const
 {
-    auto& sb = scene_buffers[dev->index];
+    auto& si = scene_infos[id];
     const std::vector<sh_grid*>& sh_grids = get_sh_grids();
 
     std::vector<vk::DescriptorImageInfo> dii_3d;
@@ -195,8 +231,8 @@ std::vector<descriptor_state> scene::get_descriptor_info(device_data* dev, int32
         {
             texture& tex = sh_grid_textures->at(sg);
             dii_3d.push_back({
-                sb.sh_grid_sampler.get_sampler(dev->index),
-                tex.get_image_view(dev->index),
+                sh_grid_sampler.get_sampler(id),
+                tex.get_image_view(id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             });
         }
@@ -204,74 +240,75 @@ std::vector<descriptor_state> scene::get_descriptor_info(device_data* dev, int32
 
     environment_map* envmap = get_environment_map();
     vk::AccelerationStructureKHR tlas = {};
-    if(ctx->is_ray_tracing_supported())
-        tlas = get_acceleration_structure(dev->index);
+    if(dev.get_context()->is_ray_tracing_supported())
+        tlas = get_acceleration_structure(id);
 
-    std::vector<vk::DescriptorBufferInfo> dbi_vertex = get_vertex_buffer_bindings(dev->index);
-    std::vector<vk::DescriptorBufferInfo> dbi_index = get_index_buffer_bindings(dev->index);
+    std::vector<vk::DescriptorBufferInfo> dbi_vertex = get_vertex_buffer_bindings(id);
+    std::vector<vk::DescriptorBufferInfo> dbi_index = get_index_buffer_bindings(id);
+    std::vector<vk::DescriptorImageInfo> dii = s_table.get_image_infos(id);
 
     std::vector<descriptor_state> descriptors = {
-        {"scene", {*sb.scene_data, 0, VK_WHOLE_SIZE}},
-        {"scene_metadata", {*sb.scene_metadata, 0, VK_WHOLE_SIZE}},
+        {"scene", {scene_data[id], 0, VK_WHOLE_SIZE}},
+        {"scene_metadata", {scene_metadata[id], 0, VK_WHOLE_SIZE}},
         {"vertices", dbi_vertex},
         {"indices", dbi_index},
-        {"textures", sb.dii},
+        {"textures", dii},
         {"directional_lights", {
-            *sb.directional_light_data, 0, VK_WHOLE_SIZE
+            directional_light_data[id], 0, VK_WHOLE_SIZE
         }},
-        {"point_lights", {*sb.point_light_data, 0, VK_WHOLE_SIZE}},
-        {"tri_lights", {*sb.tri_light_data, 0, VK_WHOLE_SIZE}},
+        {"point_lights", {point_light_data[id], 0, VK_WHOLE_SIZE}},
+        {"tri_lights", {tri_light_data[id], 0, VK_WHOLE_SIZE}},
         {"environment_map_tex", {
-            sb.envmap_sampler.get_sampler(dev->index),
-            envmap ? envmap->get_image_view(dev->index) : vk::ImageView{},
+            envmap_sampler.get_sampler(id),
+            envmap ? envmap->get_image_view(id) : vk::ImageView{},
             vk::ImageLayout::eShaderReadOnlyOptimal
         }},
         {"environment_map_alias_table", {
-            envmap ? envmap->get_alias_table(dev->index) : vk::Buffer{}, 0, VK_WHOLE_SIZE
+            envmap ? envmap->get_alias_table(id) : vk::Buffer{}, 0, VK_WHOLE_SIZE
         }},
         {"textures3d", dii_3d},
-        {"sh_grids", {*sb.sh_grid_data, 0, VK_WHOLE_SIZE}}
+        {"sh_grids", {sh_grid_data[id], 0, VK_WHOLE_SIZE}}
     };
 
     if(camera_index >= 0)
     {
-        std::pair<size_t, size_t> camera_offset = sb.camera_data_offsets[camera_index];
+        std::pair<size_t, size_t> camera_offset = si.camera_data_offsets[camera_index];
         descriptors.push_back(
-            {"camera", {*sb.camera_data, camera_offset.first, VK_WHOLE_SIZE}}
+            {"camera", {camera_data[id], camera_offset.first, VK_WHOLE_SIZE}}
         );
     }
 
-    if(ctx->is_ray_tracing_supported())
+    if(dev.get_context()->is_ray_tracing_supported())
     {
-        descriptors.push_back({"tlas", {1, this->tlas->get_tlas_handle(dev->index)}});
+        descriptors.push_back({"tlas", {1, this->tlas->get_tlas_handle(id)}});
     }
 
     if(smr)
     {
-        placeholders& pl = dev->ctx->get_placeholders();
+        placeholders& pl = dev.get_context()->get_placeholders();
 
         const atlas* shadow_map_atlas = smr->get_shadow_map_atlas();
 
         descriptors.push_back(
-            {"shadow_maps", {*sb.shadow_map_data, 0, sb.shadow_map_range}}
+            {"shadow_maps", {shadow_map_data[id], 0, si.shadow_map_range}}
         );
         descriptors.push_back(
             {"shadow_map_cascades", {
-                *sb.shadow_map_data, sb.shadow_map_range,
-                sb.shadow_map_cascade_range
+                shadow_map_data[id], si.shadow_map_range,
+                si.shadow_map_cascade_range
             }}
         );
         descriptors.push_back(
             {"shadow_map_atlas", {
-                pl.default_sampler.get_sampler(dev->index),
-                shadow_map_atlas->get_image_view(dev->index),
+                pl.default_sampler.get_sampler(id),
+                shadow_map_atlas->get_image_view(id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }}
         );
         descriptors.push_back(
             {"shadow_map_atlas_test", {
-                sb.shadow_sampler.get_sampler(dev->index),
-                shadow_map_atlas->get_image_view(dev->index),
+                shadow_sampler.get_sampler(id),
+                shadow_map_atlas->get_image_view(id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }}
         );
@@ -282,14 +319,14 @@ std::vector<descriptor_state> scene::get_descriptor_info(device_data* dev, int32
 void scene::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_index)
 {
     device_data* dev = pipeline.get_device();
-    std::vector<descriptor_state> descriptors = get_descriptor_info(dev, camera_index);
+    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->index, camera_index);
     pipeline.update_descriptor_set(descriptors, frame_index);
 }
 
 void scene::push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_index)
 {
     device_data* dev = pipeline.get_device();
-    std::vector<descriptor_state> descriptors = get_descriptor_info(dev, camera_index);
+    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->index, camera_index);
     pipeline.push_descriptors(cmd, descriptors);
 }
 
@@ -321,53 +358,10 @@ void scene::bind_placeholders(
 
 void scene::init_acceleration_structures()
 {
-    if(!ctx->is_ray_tracing_supported()) return;
+    if(!dev.get_context()->is_ray_tracing_supported()) return;
 
     uint32_t total_max_capacity = mesh_scene::get_max_capacity() + light_scene::get_max_capacity();
-    tlas.emplace(*ctx, total_max_capacity);
-}
-
-scene::scene_buffer::scene_buffer(device_data& dev)
-:   s_table(dev, true),
-    scene_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    scene_metadata(dev, 0, vk::BufferUsageFlagBits::eUniformBuffer),
-    directional_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    point_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    tri_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    sh_grid_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    shadow_map_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    camera_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    envmap_sampler(
-        dev, vk::Filter::eLinear, vk::Filter::eLinear,
-        vk::SamplerAddressMode::eRepeat,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerMipmapMode::eNearest,
-        0, true, false
-    ),
-    shadow_sampler(
-        dev,
-        vk::Filter::eLinear,
-        vk::Filter::eLinear,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerMipmapMode::eNearest,
-        0,
-        true,
-        false,
-        true
-    ),
-    sh_grid_sampler(
-        dev,
-        vk::Filter::eLinear,
-        vk::Filter::eLinear,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerMipmapMode::eNearest,
-        0,
-        true,
-        false
-    )
-{
+    tlas.emplace(dev, total_max_capacity);
 }
 
 std::vector<uint32_t> get_viewport_reorder_mask(

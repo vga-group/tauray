@@ -79,7 +79,7 @@ void skinning_stage::set_scene(scene* s)
         for(model* m: skinned_models)
         {
             dbi_joint_data.push_back({
-                *m->get_joint_buffer(dev->index), 0, VK_WHOLE_SIZE
+                m->get_joint_buffer()[dev->index], 0, VK_WHOLE_SIZE
             });
         }
 
@@ -147,7 +147,7 @@ void skinning_stage::update(uint32_t frame_index)
         model* m = const_cast<model*>(obj->get_model());
         if(!m) continue;
         if(m->has_joints_buffer())
-            m->update_joints(dev->index, frame_index);
+            m->update_joints(frame_index);
     }
 }
 

@@ -113,7 +113,7 @@ void svgf_stage::init_resources()
             {"out_specular", {{}, atrous_specular_pingpong[0][i].view, vk::ImageLayout::eGeneral} },
             {"in_linear_depth", {{}, input_features.linear_depth[i].view, vk::ImageLayout::eGeneral}},
             {"previous_linear_depth", {{}, prev_features.linear_depth[i].view, vk::ImageLayout::eGeneral}},
-            {"jitter_info", {*jitter_buffer, 0, VK_WHOLE_SIZE}},
+            {"jitter_info", {jitter_buffer[dev->index], 0, VK_WHOLE_SIZE}},
             {"previous_specular", {{}, svgf_spec_hist[i].view, vk::ImageLayout::eGeneral}},
         }, i);
         estimate_variance_comp.update_descriptor_set({
@@ -137,7 +137,7 @@ void svgf_stage::record_command_buffers()
 
         svgf_timer.begin(cb, i);
 
-        jitter_buffer.upload(i, cb);
+        jitter_buffer.upload(dev->index, i, cb);
 
         uvec2 wg = (input_features.get_size()+15u) / 16u;
         push_constants control{};
@@ -201,7 +201,7 @@ void svgf_stage::record_command_buffers()
             }
             int out_index = j & 1;
             int in_index = (j + 1) & 1;
-            atrous_comp.push_descriptors(cb, 
+            atrous_comp.push_descriptors(cb,
                 {
                     {"diffuse_in", {{}, atrous_diffuse_pingpong[in_index][i].view, vk::ImageLayout::eGeneral}},
                     {"diffuse_out", {{}, atrous_diffuse_pingpong[out_index][i].view, vk::ImageLayout::eGeneral}},

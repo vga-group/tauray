@@ -6,12 +6,10 @@
 namespace tr
 {
 
-mesh_scene::mesh_scene(context& ctx, size_t max_capacity)
-:   ctx(&ctx), max_capacity(max_capacity),
+mesh_scene::mesh_scene(device_mask dev, size_t max_capacity)
+:   max_capacity(max_capacity), as_update(dev),
     group_strategy(blas_strategy::PER_MATERIAL), instance_cache_frame(0)
 {
-    if(ctx.is_ray_tracing_supported())
-        as_update.resize(ctx.get_devices().size());
 }
 
 mesh_scene::~mesh_scene()
@@ -94,7 +92,7 @@ size_t mesh_scene::get_blas_group_count() const
 
 void mesh_scene::refresh_instance_cache(bool force)
 {
-    uint64_t frame_counter = ctx->get_frame_counter();
+    uint64_t frame_counter = as_update.get_context()->get_frame_counter();
     if(!force && instance_cache_frame == frame_counter)
         return;
     instance_cache_frame = frame_counter;
@@ -195,16 +193,16 @@ void mesh_scene::refresh_instance_cache(bool force)
     if(force) ensure_blas();
 }
 
-bool mesh_scene::reserve_pre_transformed_vertices(size_t device_index, size_t max_vertex_count)
+bool mesh_scene::reserve_pre_transformed_vertices(device_id id, size_t max_vertex_count)
 {
-    if(!ctx->is_ray_tracing_supported())
+    if(!as_update.get_context()->is_ray_tracing_supported())
         return false;
 
-    auto& as = as_update[device_index];
+    auto& as = as_update[id];
     if(as.pre_transformed_vertex_count < max_vertex_count)
     {
         as.pre_transformed_vertices = create_buffer(
-            ctx->get_devices()[device_index],
+            as_update.get_device(id),
             {
                 {}, max_vertex_count * sizeof(mesh::vertex),
                 vk::BufferUsageFlagBits::eVertexBuffer|vk::BufferUsageFlagBits::eStorageBuffer,
@@ -218,12 +216,12 @@ bool mesh_scene::reserve_pre_transformed_vertices(size_t device_index, size_t ma
     return false;
 }
 
-void mesh_scene::clear_pre_transformed_vertices(size_t device_index)
+void mesh_scene::clear_pre_transformed_vertices(device_id id)
 {
-    if(!ctx->is_ray_tracing_supported())
+    if(!as_update.get_context()->is_ray_tracing_supported())
         return;
 
-    auto& as = as_update[device_index];
+    auto& as = as_update[id];
     if(as.pre_transformed_vertex_count != 0)
     {
         as.pre_transformed_vertices.drop();
@@ -232,12 +230,12 @@ void mesh_scene::clear_pre_transformed_vertices(size_t device_index)
 }
 
 std::vector<vk::DescriptorBufferInfo> mesh_scene::get_vertex_buffer_bindings(
-    size_t device_index
+    device_id id
 ) const {
     std::vector<vk::DescriptorBufferInfo> dbi_vertex;
-    if(ctx->is_ray_tracing_supported())
+    if(as_update.get_context()->is_ray_tracing_supported())
     {
-        auto& as = as_update[device_index];
+        auto& as = as_update[id];
         if(as.pre_transformed_vertex_count != 0)
         {
             size_t offset = 0;
@@ -255,27 +253,27 @@ std::vector<vk::DescriptorBufferInfo> mesh_scene::get_vertex_buffer_bindings(
     for(size_t i = 0; i < instance_cache.size(); ++i)
     {
         const mesh* m = instance_cache[i].m;
-        vk::Buffer vertex_buffer = m->get_vertex_buffer(device_index);
+        vk::Buffer vertex_buffer = m->get_vertex_buffer(id);
         dbi_vertex.push_back({vertex_buffer, 0, VK_WHOLE_SIZE});
     }
     return dbi_vertex;
 }
 
 std::vector<vk::DescriptorBufferInfo> mesh_scene::get_index_buffer_bindings(
-    size_t device_index
+    device_id id
 ) const {
     std::vector<vk::DescriptorBufferInfo> dbi_index;
     for(size_t i = 0; i < instance_cache.size(); ++i)
     {
         const mesh* m = instance_cache[i].m;
-        vk::Buffer index_buffer = m->get_index_buffer(device_index);
+        vk::Buffer index_buffer = m->get_index_buffer(id);
         dbi_index.push_back({index_buffer, 0, VK_WHOLE_SIZE});
     }
     return dbi_index;
 }
 
 void mesh_scene::refresh_dynamic_acceleration_structures(
-    size_t device_index,
+    device_id id,
     size_t frame_index,
     vk::CommandBuffer cmd
 ){
@@ -301,15 +299,15 @@ void mesh_scene::refresh_dynamic_acceleration_structures(
             });
         }
         blas_cache.at(group.id).rebuild(
-            device_index, frame_index, cmd, entries,
+            id, frame_index, cmd, entries,
             group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : true
         );
     }
 }
 
-vk::Buffer mesh_scene::get_pre_transformed_vertices(size_t device_index)
+vk::Buffer mesh_scene::get_pre_transformed_vertices(device_id id)
 {
-    auto& as = as_update[device_index];
+    auto& as = as_update[id];
     return *as.pre_transformed_vertices;
 }
 
@@ -399,17 +397,16 @@ void mesh_scene::add_acceleration_structure_instances(
 
 void mesh_scene::invalidate_tlas()
 {
-    for(auto& as: as_update)
-    {
+    as_update([&](device&, as_update_data& as){
         as.tlas_reset_needed = true;
         for(auto& f: as.per_frame)
             f.command_buffers_outdated = true;
-    }
+    });
 }
 
 void mesh_scene::ensure_blas()
 {
-    if(!ctx->is_ray_tracing_supported())
+    if(!as_update.get_context()->is_ray_tracing_supported())
         return;
     bool built_one = false;
     // Goes through all groups and ensures they have valid BLASes.
@@ -444,7 +441,7 @@ void mesh_scene::ensure_blas()
         blas_cache.emplace(
             group.id,
             bottom_level_acceleration_structure(
-                *ctx,
+                as_update.get_mask(),
                 entries,
                 !double_sided,
                 group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : !group.static_mesh,

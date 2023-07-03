@@ -793,7 +793,7 @@ scene_graph load_gltf(
         pair.second.set_animation_pool(nullptr);
 
         model* animation_model = new model(*pair.second.get_model());
-        animation_model->init_joints_buffer(*dev.get_context());
+        animation_model->init_joints_buffer(dev);
         for(auto& vg: *animation_model)
         {
             mesh* animation_mesh = new mesh(vg.m);

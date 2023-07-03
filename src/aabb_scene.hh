@@ -14,7 +14,7 @@ class aabb_scene
 {
 public:
     aabb_scene(
-        context& ctx,
+        device_mask dev,
         const char* timer_name,
         size_t sbt_offset,
         size_t max_capacity = 1024
@@ -29,8 +29,10 @@ protected:
     virtual size_t get_aabbs(vk::AabbPositionsKHR* aabb) = 0;
 
     // Must return true if the command buffers need to be re-recorded.
+    // TODO: Should probably not be device-specific as it doesn't actually do
+    // any device-specific things.
     void update_acceleration_structures(
-        size_t device_index,
+        device_id id,
         uint32_t frame_index,
         bool& need_scene_reset,
         bool& command_buffers_outdated
@@ -38,14 +40,14 @@ protected:
 
     void record_acceleration_structure_build(
         vk::CommandBuffer& cb,
-        size_t device_index,
+        device_id id,
         uint32_t frame_index,
         bool update_only
     );
 
     void add_acceleration_structure_instances(
         vk::AccelerationStructureInstanceKHR* instances,
-        size_t device_index,
+        device_id id,
         uint32_t frame_index,
         size_t& instance_index,
         size_t capacity
@@ -56,10 +58,10 @@ protected:
 private:
     void init_acceleration_structures(const char* timer_name);
 
-    context* ctx;
     size_t max_capacity;
     size_t sbt_offset;
 
+    gpu_buffer aabb_buffer;
     struct acceleration_structure_data
     {
         bool scene_reset_needed = true;
@@ -67,7 +69,6 @@ private:
         vkm<vk::AccelerationStructureKHR> blas;
         vkm<vk::Buffer> blas_buffer;
         vkm<vk::Buffer> scratch_buffer;
-        gpu_buffer aabb_buffer;
 
         struct per_frame_data
         {
@@ -77,7 +78,7 @@ private:
         per_frame_data per_frame[MAX_FRAMES_IN_FLIGHT];
         timer blas_update_timer;
     };
-    std::vector<acceleration_structure_data> acceleration_structures;
+    per_device<acceleration_structure_data> acceleration_structures;
 };
 
 }

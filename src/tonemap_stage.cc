@@ -81,7 +81,7 @@ tonemap_stage::tonemap_stage(
         render_target output = output_target;
 
         comp.update_descriptor_set({
-            {"info", {*index_data, 0, sizeof(tonemap_info_buffer)}},
+            {"info", {index_data[dev.index], 0, sizeof(tonemap_info_buffer)}},
             {"in_color", {{}, input_target[i].view, vk::ImageLayout::eGeneral}},
             {"out_color", {{}, output_target[j].view, vk::ImageLayout::eGeneral}},
             {"output_reorder", {output_reorder_buf, 0, VK_WHOLE_SIZE}}
@@ -95,7 +95,7 @@ tonemap_stage::tonemap_stage(
         input.transition_layout_temporary(cb, i, vk::ImageLayout::eGeneral, true);
         output.transition_layout_temporary(cb, j, vk::ImageLayout::eGeneral, true);
 
-        index_data.upload(i, cb);
+        index_data.upload(dev.index, i, cb);
         bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
         tonemap_timer.begin(cb, i);
 

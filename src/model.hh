@@ -53,23 +53,18 @@ public:
     std::vector<joint_data>& get_joints();
     const std::vector<joint_data>& get_joints() const;
 
-    void init_joints_buffer(context& ctx);
+    void init_joints_buffer(device_mask dev);
     bool has_joints_buffer();
-    const gpu_buffer& get_joint_buffer(size_t device_index) const;
+    const gpu_buffer& get_joint_buffer() const;
 
-    void update_joints(size_t device_index, uint32_t frame_index);
-    void upload_joints(vk::CommandBuffer buf, size_t device_index, uint32_t frame_index);
+    void update_joints(uint32_t frame_index);
+    void upload_joints(vk::CommandBuffer buf, device_id id, uint32_t frame_index);
 
 private:
-
     std::vector<vertex_group> groups;
     std::vector<joint_data> joints;
 
-    struct buffer_data
-    {
-        gpu_buffer joint_buffer;
-    };
-    std::vector<buffer_data> buffers;
+    std::optional<gpu_buffer> joint_buffer;
 }; 
 
 }

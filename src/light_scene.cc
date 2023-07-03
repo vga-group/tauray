@@ -5,8 +5,8 @@
 namespace tr
 {
 
-light_scene::light_scene(context& ctx, size_t max_capacity)
-: aabb_scene(ctx, "light BLAS update", 2, max_capacity)
+light_scene::light_scene(device_mask dev, size_t max_capacity)
+: aabb_scene(dev, "light BLAS update", 2, max_capacity)
 {
 }
 

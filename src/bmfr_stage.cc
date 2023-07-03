@@ -17,7 +17,7 @@ bmfr_stage::bmfr_stage(
     gbuffer_target& current_features,
     gbuffer_target& prev_features,
     const options& opt
-):  stage(dev),  
+):  stage(dev),
     bmfr_preprocess_comp(dev, compute_pipeline::params{ load_shader_source("shader/bmfr_preprocess.comp", opt), {} }),
     bmfr_fit_comp(dev, compute_pipeline::params{ load_shader_source("shader/bmfr_fit.comp", opt), {}}),
     bmfr_weighted_sum_comp(dev, compute_pipeline::params{ load_shader_source("shader/bmfr_weighted_sum.comp", opt), {}}),
@@ -50,7 +50,7 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
         defines.insert({ "BUFFER_COUNT", "16" });
         defines.insert({ "NUM_WEIGHTS_PER_FEATURE", "2" });
     }
-    
+
     return shader_source(path, defines);
 }
 
@@ -123,7 +123,7 @@ void bmfr_stage::init_resources()
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         uvec2 wg = (current_features.get_size()+(BLOCK_SIZE - 1))/BLOCK_SIZE + 1u; // + 1 for margins
-        
+
         // Min / max buffer used for normalizing world pos
         {
             // min and max for each channel of world_pos and world_pos² per work group
@@ -166,7 +166,7 @@ void bmfr_stage::init_resources()
         }
 
         // Used to get current frame index for block offsetting and seeding RNG
-        ubos[i] = gpu_buffer(*dev, 4, vk::BufferUsageFlagBits::eUniformBuffer);
+        ubos = gpu_buffer(*dev, 4, vk::BufferUsageFlagBits::eUniformBuffer);
 
         bmfr_preprocess_comp.update_descriptor_set({
             {"in_color", {{}, current_features.color[i].view, vk::ImageLayout::eGeneral}},
@@ -184,14 +184,14 @@ void bmfr_stage::init_resources()
             {"bmfr_diffuse_hist", {{}, diffuse_hist[i].view, vk::ImageLayout::eGeneral}},
             {"bmfr_specular_hist", {{}, specular_hist[i].view, vk::ImageLayout::eGeneral}},
             {"tmp_buffer", {tmp_data[i], 0, VK_WHOLE_SIZE}},
-            {"uniform_buffer", {*ubos[i], 0, VK_WHOLE_SIZE}},
+            {"uniform_buffer", {ubos[dev->index], 0, VK_WHOLE_SIZE}},
             {"accept_buffer", {accepts[i], 0, VK_WHOLE_SIZE}},
         }, i);
         bmfr_fit_comp.update_descriptor_set({
             {"tmp_buffer", {tmp_data[i], 0, VK_WHOLE_SIZE}},
             {"mins_maxs_buffer", {min_max_buffer[i], 0, VK_WHOLE_SIZE}},
             {"weights_buffer", {weights[i], 0, VK_WHOLE_SIZE}},
-            {"uniform_buffer", {*ubos[i], 0, VK_WHOLE_SIZE}},
+            {"uniform_buffer", {ubos[dev->index], 0, VK_WHOLE_SIZE}},
             {"in_color", {{}, current_features.color[i].view, vk::ImageLayout::eGeneral}},
         }, i);
         bmfr_weighted_sum_comp.update_descriptor_set({
@@ -201,7 +201,7 @@ void bmfr_stage::init_resources()
             {"in_pos", {{}, current_features.pos[i].view, vk::ImageLayout::eGeneral}},
             {"mins_maxs_buffer", {min_max_buffer[i], 0, VK_WHOLE_SIZE}},
             {"in_diffuse", {{}, current_features.diffuse[i].view, vk::ImageLayout::eGeneral}},
-            {"uniform_buffer", {*ubos[i], 0, VK_WHOLE_SIZE}},
+            {"uniform_buffer", {ubos[dev->index], 0, VK_WHOLE_SIZE}},
             {"weighted_out", {
                 {{}, weighted_sum[0][i].view, vk::ImageLayout::eGeneral},
                 {{}, weighted_sum[1][i].view, vk::ImageLayout::eGeneral}
@@ -244,7 +244,7 @@ void bmfr_stage::record_command_buffers()
 
         stage_timer.begin(cb, i);
 
-        ubos[i].upload(i, cb);
+        ubos.upload(dev->index, i, cb);
         uvec2 workset_size = ((current_features.get_size()+(31u))/32u) + 1u; // One workset = one 32*32 block
         uvec2 wg = (current_features.get_size()+15u)/16u;
         push_constant_buffer control;
@@ -323,7 +323,7 @@ void bmfr_stage::record_command_buffers()
 void bmfr_stage::update(uint32_t frame_index)
 {
     uint32_t frame_counter = dev->ctx->get_frame_counter();
-    ubos[frame_index].update(frame_index, &frame_counter, 0, sizeof(uint32_t));
+    ubos.update(frame_index, &frame_counter, 0, sizeof(uint32_t));
 }
 
 void bmfr_stage::copy_image(vk::CommandBuffer& cb, uint32_t frame_index, render_target& src, render_target& dst)

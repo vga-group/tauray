@@ -20,7 +20,7 @@ enum class blas_strategy
 class mesh_scene
 {
 public:
-    mesh_scene(context& ctx, size_t max_capacity = 1024);
+    mesh_scene(device_mask dev, size_t max_capacity = 1024);
     mesh_scene(const mesh_scene& s) = delete;
     mesh_scene(mesh_scene&& s) = delete;
     ~mesh_scene();
@@ -50,21 +50,22 @@ public:
     void refresh_instance_cache(bool force = false);
     const std::vector<instance>& get_instances() const;
 
-    bool reserve_pre_transformed_vertices(size_t device_index, size_t max_vertex_count);
-    void clear_pre_transformed_vertices(size_t device_index);
-    vk::Buffer get_pre_transformed_vertices(size_t device_index);
+    // TODO: These two probably shouldn't be device-specific calls
+    bool reserve_pre_transformed_vertices(device_id id, size_t max_vertex_count);
+    void clear_pre_transformed_vertices(device_id id);
+    vk::Buffer get_pre_transformed_vertices(device_id id);
 
     std::vector<vk::DescriptorBufferInfo> get_vertex_buffer_bindings(
-        size_t device_index
+        device_id id
     ) const;
     std::vector<vk::DescriptorBufferInfo> get_index_buffer_bindings(
-        size_t device_index
+        device_id id
     ) const;
 
     void set_blas_strategy(blas_strategy strat);
     size_t get_blas_group_count() const;
     void refresh_dynamic_acceleration_structures(
-        size_t device_index,
+        device_id id,
         size_t frame_index,
         vk::CommandBuffer cmd
     );
@@ -115,7 +116,6 @@ private:
         size_t& last_object_index
     );
 
-    context* ctx;
     size_t max_capacity;
     std::vector<mesh_object*> objects;
 
@@ -146,7 +146,7 @@ private:
         bool static_transformable = false;
     };
 
-    std::vector<as_update_data> as_update;
+    per_device<as_update_data> as_update;
     std::unordered_map<uint64_t, bottom_level_acceleration_structure> blas_cache;
     std::vector<instance> instance_cache;
     std::vector<instance_group> group_cache;

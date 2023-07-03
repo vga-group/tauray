@@ -88,7 +88,7 @@ void taa_stage::init_resources()
             {"current_color", {{}, current_features.color[i].view, vk::ImageLayout::eGeneral}},
             {"current_screen_motion", {{}, current_features.screen_motion[i].view, vk::ImageLayout::eGeneral}},
             {"previous_color", {history_sampler.get_sampler(dev->index), previous_color.get_array_image_view(dev->index), vk::ImageLayout::eShaderReadOnlyOptimal}},
-            {"jitter_info", {*jitter_buffer, 0, VK_WHOLE_SIZE}}
+            {"jitter_info", {jitter_buffer[dev->index], 0, VK_WHOLE_SIZE}}
         }, i);
     }
 }
@@ -104,7 +104,7 @@ void taa_stage::record_command_buffers()
         stage_timer.begin(cb, i);
 
         // Run the actual TAA code
-        jitter_buffer.upload(i, cb);
+        jitter_buffer.upload(dev->index, i, cb);
 
         comp.bind(cb, i);
 
