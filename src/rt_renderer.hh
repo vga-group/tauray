@@ -51,8 +51,7 @@ public:
     void set_device_workloads(const std::vector<double>& ratios) override;
 
 private:
-    void init_device_resources(size_t device_index);
-    void init_primary_device_resources();
+    void init_resources();
 
     context* ctx;
     options opt;
@@ -87,14 +86,15 @@ private:
         vkm<vk::Semaphore> cpu_to_gpu_sem;
     };
 
+    timer gpu_to_cpu_timer;
+    gbuffer_texture gbuffer;
+
     struct per_device_data
     {
-        gbuffer_texture gbuffer;
         gbuffer_texture gbuffer_copy;
+        timer cpu_to_gpu_timer;
 
         std::vector<per_frame_data> per_frame;
-        timer gpu_to_cpu_timer;
-        timer cpu_to_gpu_timer;
 
         std::unique_ptr<Pipeline> ray_tracer;
         std::unique_ptr<skinning_stage> skinning;

@@ -26,7 +26,8 @@ namespace tr
 template<typename Pipeline>
 rt_renderer<Pipeline>::rt_renderer(context& ctx, const options& opt)
 :   ctx(&ctx), opt(opt),
-    post_processing(ctx.get_display_device(), ctx.get_size(), get_pp_opt(opt))
+    post_processing(ctx.get_display_device(), ctx.get_size(), get_pp_opt(opt)),
+    gpu_to_cpu_timer(device_mask::all(ctx)-device_mask(ctx.get_display_device()), "distribution frame to host")
 {
     this->opt.distribution.size = ctx.get_size();
 
@@ -37,12 +38,7 @@ rt_renderer<Pipeline>::rt_renderer(context& ctx, const options& opt)
 
     std::vector<device>& devices = ctx.get_devices();
     per_device.resize(devices.size());
-    for(size_t i = 0; i < per_device.size(); ++i)
-    {
-        init_device_resources(i);
-    }
-
-    init_primary_device_resources();
+    init_resources();
 }
 
 template<typename Pipeline>
@@ -247,32 +243,8 @@ void rt_renderer<Pipeline>::set_device_workloads(const std::vector<double>& rati
 }
 
 template<typename Pipeline>
-void rt_renderer<Pipeline>::init_device_resources(size_t device_index)
+void rt_renderer<Pipeline>::init_resources()
 {
-    device& d = ctx->get_devices()[device_index];
-    bool is_display_device = d.index == ctx->get_display_device().index;
-    double even_workload_ratio = 1.0/ctx->get_devices().size();
-
-    per_device_data& r = per_device[device_index];
-    r.per_frame.resize(MAX_FRAMES_IN_FLIGHT);
-    r.skinning.reset(new skinning_stage(d, opt.max_instances));
-    r.scene_update.reset(new scene_update_stage(d, opt.scene_options));
-    r.dist = get_device_distribution_params(
-        ctx->get_size(),
-        opt.distribution.strategy,
-        even_workload_ratio * device_index,
-        even_workload_ratio,
-        device_index,
-        ctx->get_devices().size(),
-        is_display_device
-    );
-
-    typename Pipeline::options rt_opt = opt;
-    rt_opt.distribution = r.dist;
-    rt_opt.active_viewport_count = opt.active_viewport_count;
-    uvec2 max_target_size = get_distribution_target_max_size(rt_opt.distribution);
-    uvec2 target_size = get_distribution_target_size(rt_opt.distribution);
-
     unsigned color_format_size = sizeof(uint32_t)*4;
     gbuffer_spec spec, copy_spec;
     spec.color_present = true;
@@ -314,127 +286,145 @@ void rt_renderer<Pipeline>::init_device_resources(size_t device_index)
         vk::ImageUsageFlagBits::eStorage
     );
 
-    if(!is_display_device)
+    gbuffer.reset(device_mask::all(*ctx), ctx->get_size(), ctx->get_display_count());
+    gbuffer.add(spec);
+
+    double even_workload_ratio = 1.0/ctx->get_devices().size();
+    device& display_device = ctx->get_display_device();
+    for(device_id id = 0; id < per_device.size(); ++id)
     {
-        r.gpu_to_cpu_timer = timer(d, "distribution frame to host");
-        r.cpu_to_gpu_timer = timer(
-            ctx->get_display_device(), "distribution frame from host"
+        device& d = ctx->get_devices()[id];
+        bool is_display_device = id == ctx->get_display_device().index;
+        per_device_data& r = per_device[id];
+        r.per_frame.resize(MAX_FRAMES_IN_FLIGHT);
+        r.skinning.reset(new skinning_stage(d, opt.max_instances));
+        r.scene_update.reset(new scene_update_stage(d, opt.scene_options));
+        r.dist = get_device_distribution_params(
+            ctx->get_size(),
+            opt.distribution.strategy,
+            even_workload_ratio * id,
+            even_workload_ratio,
+            id,
+            ctx->get_devices().size(),
+            is_display_device
         );
-    }
 
-    r.gbuffer.reset(d, max_target_size, ctx->get_display_count());
-    r.gbuffer.add(spec);
-
-    if(!is_display_device)
-    {
-        device& display_device = ctx->get_display_device();
-        r.gbuffer_copy.reset(display_device, max_target_size, ctx->get_display_count());
-        r.gbuffer_copy.add(copy_spec);
-    }
-
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        auto& f = r.per_frame[i];
+        typename Pipeline::options rt_opt = opt;
+        rt_opt.distribution = r.dist;
+        rt_opt.active_viewport_count = opt.active_viewport_count;
+        uvec2 max_target_size = get_distribution_target_max_size(rt_opt.distribution);
+        uvec2 target_size = get_distribution_target_size(rt_opt.distribution);
 
         if(!is_display_device)
         {
-            device& display_device = ctx->get_display_device();
+            r.cpu_to_gpu_timer = timer(
+                display_device, "distribution frame from host"
+            );
+            r.gbuffer_copy.reset(display_device, max_target_size, ctx->get_display_count());
+            r.gbuffer_copy.add(copy_spec);
+        }
 
-            size_t sz = max_target_size.x*max_target_size.y*color_format_size*ctx->get_display_count();
-            for(size_t j = 0; j < r.gbuffer_copy.entry_count(); ++j)
+        // TODO: Move this elsewhere, should abstract over cross-GPU transfers &
+        // deps
+        for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            auto& f = r.per_frame[i];
+
+            if(!is_display_device)
             {
-                transfer_buffer tb;
-                tb.host_ptr = allocate_host_buffer({&display_device, &d}, sz);
-                create_host_allocated_buffer(
-                    d, tb.gpu_to_cpu, tb.gpu_to_cpu_mem, sz, tb.host_ptr
-                );
-                create_host_allocated_buffer(
-                    display_device, tb.cpu_to_gpu, tb.cpu_to_gpu_mem, sz,
-                    tb.host_ptr
-                );
-                f.transfer_buffers.push_back(tb);
-            }
+                device& display_device = ctx->get_display_device();
+
+                size_t sz = max_target_size.x*max_target_size.y*color_format_size*ctx->get_display_count();
+                for(size_t j = 0; j < r.gbuffer_copy.entry_count(); ++j)
+                {
+                    transfer_buffer tb;
+                    tb.host_ptr = allocate_host_buffer({&display_device, &d}, sz);
+                    create_host_allocated_buffer(
+                        d, tb.gpu_to_cpu, tb.gpu_to_cpu_mem, sz, tb.host_ptr
+                    );
+                    create_host_allocated_buffer(
+                        display_device, tb.cpu_to_gpu, tb.cpu_to_gpu_mem, sz,
+                        tb.host_ptr
+                    );
+                    f.transfer_buffers.push_back(tb);
+                }
 
 #ifdef WIN32
-            static PFN_vkImportSemaphoreWin32HandleKHR vkImportSemaphoreWin32HandleKHR =
-                PFN_vkImportSemaphoreWin32HandleKHR(vkGetInstanceProcAddr(ctx->get_vulkan_instance(), "vkImportSemaphoreWin32HandleKHR"));
-            static PFN_vkGetSemaphoreWin32HandleKHR vkGetSemaphoreWin32HandleKHR =
-                PFN_vkGetSemaphoreWin32HandleKHR(vkGetInstanceProcAddr(ctx->get_vulkan_instance(), "vkGetSemaphoreWin32HandleKHR"));
-            vk::SemaphoreCreateInfo sem_info;
-            vk::ExportSemaphoreCreateInfo esem_info(vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueWin32);
-            sem_info.pNext = &esem_info;
-            f.gpu_to_cpu_sem = vkm(d, d.dev.createSemaphore(sem_info));
-            VkSemaphoreGetWin32HandleInfoKHR win32info {
-                VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR,
-                nullptr,
-                *f.gpu_to_cpu_sem,
-                VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT
-            };
-            vkGetSemaphoreWin32HandleKHR(d.dev, &win32info, &f.sem_handle);
+                static PFN_vkImportSemaphoreWin32HandleKHR vkImportSemaphoreWin32HandleKHR =
+                    PFN_vkImportSemaphoreWin32HandleKHR(vkGetInstanceProcAddr(ctx->get_vulkan_instance(), "vkImportSemaphoreWin32HandleKHR"));
+                static PFN_vkGetSemaphoreWin32HandleKHR vkGetSemaphoreWin32HandleKHR =
+                    PFN_vkGetSemaphoreWin32HandleKHR(vkGetInstanceProcAddr(ctx->get_vulkan_instance(), "vkGetSemaphoreWin32HandleKHR"));
+                vk::SemaphoreCreateInfo sem_info;
+                vk::ExportSemaphoreCreateInfo esem_info(vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueWin32);
+                sem_info.pNext = &esem_info;
+                f.gpu_to_cpu_sem = vkm(d, d.dev.createSemaphore(sem_info));
+                VkSemaphoreGetWin32HandleInfoKHR win32info {
+                    VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR,
+                    nullptr,
+                    *f.gpu_to_cpu_sem,
+                    VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT
+                };
+                vkGetSemaphoreWin32HandleKHR(d.dev, &win32info, &f.sem_handle);
 
-            f.gpu_to_cpu_sem_copy = create_binary_semaphore(display_device);
+                f.gpu_to_cpu_sem_copy = create_binary_semaphore(display_device);
 
-            VkImportSemaphoreWin32HandleInfoKHR win32ImportSemaphoreInfo{
-                VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_WIN32_HANDLE_INFO_KHR,
-                nullptr,
-                *f.gpu_to_cpu_sem_copy,
-                0,
-                VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT,
-                &f.sem_handle,
-                nullptr
-            };
+                VkImportSemaphoreWin32HandleInfoKHR win32ImportSemaphoreInfo{
+                    VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_WIN32_HANDLE_INFO_KHR,
+                    nullptr,
+                    *f.gpu_to_cpu_sem_copy,
+                    0,
+                    VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT,
+                    &f.sem_handle,
+                    nullptr
+                };
 
-            vkImportSemaphoreWin32HandleKHR(d.dev, &win32ImportSemaphoreInfo);
+                vkImportSemaphoreWin32HandleKHR(d.dev, &win32ImportSemaphoreInfo);
 
 #else
-            vk::SemaphoreCreateInfo sem_info;
-            vk::ExportSemaphoreCreateInfo esem_info(
-                vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueFd
-            );
-            sem_info.pNext = &esem_info;
-            f.gpu_to_cpu_sem = vkm(d, d.dev.createSemaphore(sem_info));
-            f.sem_fd = d.dev.getSemaphoreFdKHR({f.gpu_to_cpu_sem});
+                vk::SemaphoreCreateInfo sem_info;
+                vk::ExportSemaphoreCreateInfo esem_info(
+                    vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueFd
+                );
+                sem_info.pNext = &esem_info;
+                f.gpu_to_cpu_sem = vkm(d, d.dev.createSemaphore(sem_info));
+                f.sem_fd = d.dev.getSemaphoreFdKHR({f.gpu_to_cpu_sem});
 
-            f.gpu_to_cpu_sem_copy = create_binary_semaphore(display_device);
+                f.gpu_to_cpu_sem_copy = create_binary_semaphore(display_device);
 
-            display_device.dev.importSemaphoreFdKHR({
-                f.gpu_to_cpu_sem_copy, {},
-                vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueFd,
-                f.sem_fd
-            });
+                display_device.dev.importSemaphoreFdKHR({
+                    f.gpu_to_cpu_sem_copy, {},
+                    vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueFd,
+                    f.sem_fd
+                });
 #endif
-            f.cpu_to_gpu_sem = create_timeline_semaphore(display_device);
-            reset_transfer_command_buffers(
-                i, r, f, target_size, ctx->get_display_device(), d
-            );
+                f.cpu_to_gpu_sem = create_timeline_semaphore(display_device);
+                reset_transfer_command_buffers(
+                    i, r, f, target_size, ctx->get_display_device(), d
+                );
+            }
         }
+
+        gbuffer_target transfer_target = gbuffer.get_array_target(d.index);
+        if(use_raster_gbuffer)
+        {
+            gbuffer_target limited_target;
+            limited_target.color = transfer_target.color;
+            limited_target.diffuse = transfer_target.diffuse;
+            limited_target.direct = transfer_target.direct;
+            transfer_target = limited_target;
+        }
+        transfer_target.set_layout(is_display_device ?
+            vk::ImageLayout::eGeneral : vk::ImageLayout::eTransferSrcOptimal
+        );
+
+        r.ray_tracer.reset(new Pipeline(
+            d,
+            transfer_target,
+            rt_opt
+        ));
     }
 
-    gbuffer_target transfer_target = r.gbuffer.get_array_target(d.index);
-    if(use_raster_gbuffer)
-    {
-        gbuffer_target limited_target;
-        limited_target.color = transfer_target.color;
-        limited_target.diffuse = transfer_target.diffuse;
-        limited_target.direct = transfer_target.direct;
-        transfer_target = limited_target;
-    }
-    transfer_target.set_layout(is_display_device ?
-        vk::ImageLayout::eGeneral : vk::ImageLayout::eTransferSrcOptimal
-    );
-
-    r.ray_tracer.reset(new Pipeline(
-        d,
-        transfer_target,
-        rt_opt
-    ));
-}
-
-template<typename Pipeline>
-void rt_renderer<Pipeline>::init_primary_device_resources()
-{
     size_t device_count = ctx->get_devices().size();
-    device& display_device = ctx->get_display_device();
     if(device_count > 1)
     { // If multi-device, use parallel implementation
         std::vector<gbuffer_target> dimgs;
@@ -442,13 +432,9 @@ void rt_renderer<Pipeline>::init_primary_device_resources()
         {
             gbuffer_target dimg;
             if(i == display_device.index)
-            {
-                dimg = per_device[i].gbuffer.get_array_target(display_device.index);
-            }
+                dimg = gbuffer.get_array_target(display_device.index);
             else
-            {
                 dimg = per_device[i].gbuffer_copy.get_array_target(display_device.index);
-            }
 
             if(use_raster_gbuffer)
             {
@@ -477,7 +463,6 @@ void rt_renderer<Pipeline>::init_primary_device_resources()
         ));
     }
 
-    gbuffer_texture& gbuf_tex = per_device[display_device.index].gbuffer;
     if(use_raster_gbuffer)
     {
         raster_stage::options raster_opt;
@@ -490,9 +475,9 @@ void rt_renderer<Pipeline>::init_primary_device_resources()
 
         // We take out the things that the path tracer should produce.
         std::vector<gbuffer_target> gbuffer_block_targets;
-        for(size_t i = 0; i < gbuf_tex.get_multiview_block_count(); ++i)
+        for(size_t i = 0; i < gbuffer.get_multiview_block_count(); ++i)
         {
-            gbuffer_target mv_target = gbuf_tex.get_multiview_block_target(display_device.index, i);
+            gbuffer_target mv_target = gbuffer.get_multiview_block_target(display_device.index, i);
             mv_target.color = render_target();
             mv_target.diffuse = render_target();
             mv_target.direct = render_target();
@@ -507,7 +492,7 @@ void rt_renderer<Pipeline>::init_primary_device_resources()
         }
     }
 
-    gbuffer_target pp_target = gbuf_tex.get_array_target(display_device.index);
+    gbuffer_target pp_target = gbuffer.get_array_target(display_device.index);
     pp_target.set_layout(vk::ImageLayout::eGeneral);
     post_processing.set_display(pp_target);
 }
@@ -524,14 +509,14 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
     f.gpu_to_cpu_cb = create_graphics_command_buffer(secondary);
 
     f.gpu_to_cpu_cb->begin(vk::CommandBufferBeginInfo{});
-    r.gpu_to_cpu_timer.begin(f.gpu_to_cpu_cb, secondary.index, frame_index);
+    gpu_to_cpu_timer.begin(f.gpu_to_cpu_cb, secondary.index, frame_index);
 
     f.cpu_to_gpu_cb = create_graphics_command_buffer(primary);
 
     f.cpu_to_gpu_cb->begin(vk::CommandBufferBeginInfo{});
     r.cpu_to_gpu_timer.begin(f.cpu_to_gpu_cb, primary.index, frame_index);
 
-    gbuffer_target target = r.gbuffer.get_array_target(secondary.index);
+    gbuffer_target target = gbuffer.get_array_target(secondary.index);
     gbuffer_target target_copy = r.gbuffer_copy.get_array_target(primary.index);
 
     size_t j = 0;
@@ -595,7 +580,7 @@ void rt_renderer<Pipeline>::reset_transfer_command_buffers(
         ++j;
     }
 
-    r.gpu_to_cpu_timer.end(f.gpu_to_cpu_cb, secondary.index, frame_index);
+    gpu_to_cpu_timer.end(f.gpu_to_cpu_cb, secondary.index, frame_index);
     f.gpu_to_cpu_cb->end();
     r.cpu_to_gpu_timer.end(f.cpu_to_gpu_cb, primary.index, frame_index);
     f.cpu_to_gpu_cb->end();
