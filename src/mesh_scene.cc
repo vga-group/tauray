@@ -294,6 +294,7 @@ void mesh_scene::refresh_dynamic_acceleration_structures(
             const instance& inst = instance_cache[offset];
             entries.push_back({
                 inst.m,
+                0, nullptr,
                 group.static_transformable ? inst.transform : mat4(1),
                 !inst.mat->potentially_transparent()
             });
@@ -345,6 +346,7 @@ void mesh_scene::update_acceleration_structures(
                 const instance& inst = instance_cache[offset];
                 entries.push_back({
                     inst.m,
+                    0, nullptr,
                     group.static_transformable ? inst.transform : mat4(1),
                     !inst.mat->potentially_transparent()
                 });
@@ -434,6 +436,7 @@ void mesh_scene::ensure_blas()
             if(inst.mat->double_sided) double_sided = true;
             entries.push_back({
                 inst.m,
+                0, nullptr,
                 group.static_transformable ? inst.transform : mat4(1),
                 !inst.mat->potentially_transparent()
             });

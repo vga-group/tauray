@@ -2,6 +2,7 @@
 #define TAURAY_AABB_SCENE_HH
 #include "context.hh"
 #include "timer.hh"
+#include "acceleration_structure.hh"
 #include "gpu_buffer.hh"
 
 namespace tr
@@ -56,19 +57,18 @@ protected:
     void invalidate_acceleration_structures();
 
 private:
-    void init_acceleration_structures(const char* timer_name);
+    void init_acceleration_structures();
 
     size_t max_capacity;
     size_t sbt_offset;
 
+    std::optional<bottom_level_acceleration_structure> blas;
     gpu_buffer aabb_buffer;
-    struct acceleration_structure_data
+    timer blas_update_timer;
+
+    struct as_update_data
     {
         bool scene_reset_needed = true;
-
-        vkm<vk::AccelerationStructureKHR> blas;
-        vkm<vk::Buffer> blas_buffer;
-        vkm<vk::Buffer> scratch_buffer;
 
         struct per_frame_data
         {
@@ -76,9 +76,8 @@ private:
             unsigned aabb_count = 0;
         };
         per_frame_data per_frame[MAX_FRAMES_IN_FLIGHT];
-        timer blas_update_timer;
     };
-    per_device<acceleration_structure_data> acceleration_structures;
+    per_device<as_update_data> as_update;
 };
 
 }
