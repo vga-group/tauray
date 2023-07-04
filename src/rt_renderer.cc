@@ -26,8 +26,7 @@ namespace tr
 template<typename Pipeline>
 rt_renderer<Pipeline>::rt_renderer(context& ctx, const options& opt)
 :   ctx(&ctx), opt(opt),
-    post_processing(ctx.get_display_device(), ctx.get_size(), get_pp_opt(opt)),
-    gpu_to_cpu_timer(device_mask::all(ctx)-device_mask(ctx.get_display_device()), "distribution frame to host")
+    post_processing(ctx.get_display_device(), ctx.get_size(), get_pp_opt(opt))
 {
     this->opt.distribution.size = ctx.get_size();
 
@@ -44,8 +43,6 @@ rt_renderer<Pipeline>::rt_renderer(context& ctx, const options& opt)
 template<typename Pipeline>
 rt_renderer<Pipeline>::~rt_renderer()
 {
-    std::vector<device>& devices = ctx->get_devices();
-    device& display_device = ctx->get_display_device();
     ctx->sync();
 
     // Ensure each pipeline is deleted before the assets they may use
@@ -53,23 +50,9 @@ rt_renderer<Pipeline>::~rt_renderer()
 
     for(size_t i = 0; i < per_device.size(); ++i)
     {
-        device& dev = devices[i];
         per_device_data& d = per_device[i];
         d.ray_tracer.reset();
-        for(auto& f: d.per_frame)
-        {
-            for(auto& tb: f.transfer_buffers)
-            {
-                if(!tb.host_ptr) continue;
-                release_host_buffer(tb.host_ptr);
-                destroy_host_allocated_buffer(
-                    dev, tb.gpu_to_cpu, tb.gpu_to_cpu_mem
-                );
-                destroy_host_allocated_buffer(
-                    display_device, tb.cpu_to_gpu, tb.cpu_to_gpu_mem
-                );
-            }
-        }
+        d.transfer.reset();
     }
     ctx->sync();
 }
@@ -119,7 +102,6 @@ void rt_renderer<Pipeline>::render()
     dependencies display_deps(ctx->begin_frame());
     uint32_t swapchain_index, frame_index;
     ctx->get_indices(swapchain_index, frame_index);
-    uint64_t frame_counter = ctx->get_frame_counter();
 
     device& display_device = ctx->get_display_device();
     std::vector<device>& devices = ctx->get_devices();
@@ -127,7 +109,6 @@ void rt_renderer<Pipeline>::render()
     for(size_t i = 0; i < devices.size(); ++i)
     {
         dependencies device_deps = per_device[i].skinning->run(per_device[i].last_frame_deps);
-        device& dev = devices[i];
         device_deps = per_device[i].scene_update->run(device_deps);
         if(i == ctx->get_display_device().index)
             device_deps.concat(post_processing.get_gbuffer_write_dependencies());
@@ -135,34 +116,7 @@ void rt_renderer<Pipeline>::render()
         per_device[i].last_frame_deps = device_deps;
 
         if(i != display_device.index)
-        {
-            per_frame_data& f = per_device[i].per_frame[frame_index];
-            vk::TimelineSemaphoreSubmitInfo timeline_info = device_deps.get_timeline_info();
-            vk::SubmitInfo submit_info = device_deps.get_submit_info(timeline_info);
-            submit_info.commandBufferCount = 1;
-            submit_info.pCommandBuffers = f.gpu_to_cpu_cb.get();
-            submit_info.signalSemaphoreCount = 1;
-            submit_info.pSignalSemaphores = f.gpu_to_cpu_sem.get();
-
-            vk::PipelineStageFlags wait_stage =
-                vk::PipelineStageFlagBits::eTopOfPipe;
-            dev.graphics_queue.submit(submit_info, {});
-
-            timeline_info.waitSemaphoreValueCount = 0;
-            timeline_info.pWaitSemaphoreValues = nullptr;
-            timeline_info.signalSemaphoreValueCount = 1;
-            timeline_info.pSignalSemaphoreValues = &frame_counter;
-            submit_info.pWaitDstStageMask = &wait_stage;
-            submit_info.waitSemaphoreCount = 1;
-            submit_info.pWaitSemaphores = f.gpu_to_cpu_sem_copy.get();
-            submit_info.commandBufferCount = 1;
-            submit_info.pCommandBuffers = f.cpu_to_gpu_cb.get();
-            submit_info.signalSemaphoreCount = 1;
-            submit_info.pSignalSemaphores = f.cpu_to_gpu_sem.get();
-
-            display_device.graphics_queue.submit(submit_info, {});
-            display_deps.add({f.cpu_to_gpu_sem, frame_counter});
-        }
+            display_deps.add(per_device[i].transfer->run(device_deps, frame_index));
         else
         {
             if(gbuffer_rasterizer)
@@ -220,14 +174,8 @@ void rt_renderer<Pipeline>::set_device_workloads(const std::vector<double>& rati
             // that can actually accumulate samples normally when workload ratio
             // changes.
             per_device[i].ray_tracer->reset_accumulated_samples();
-            uvec2 target_size = get_distribution_target_size(r.dist);
             for(size_t j = 0; j < MAX_FRAMES_IN_FLIGHT; ++j)
-            {
-                reset_transfer_command_buffers(
-                    j, per_device[i], per_device[i].per_frame[j],
-                    target_size, ctx->get_display_device(), ctx->get_devices()[i]
-                );
-            }
+                prepare_transfers(false);
         }
     }
 
@@ -245,7 +193,6 @@ void rt_renderer<Pipeline>::set_device_workloads(const std::vector<double>& rati
 template<typename Pipeline>
 void rt_renderer<Pipeline>::init_resources()
 {
-    unsigned color_format_size = sizeof(uint32_t)*4;
     gbuffer_spec spec, copy_spec;
     spec.color_present = true;
     spec.color_format = vk::Format::eR32G32B32A32Sfloat;
@@ -296,7 +243,6 @@ void rt_renderer<Pipeline>::init_resources()
         device& d = ctx->get_devices()[id];
         bool is_display_device = id == ctx->get_display_device().index;
         per_device_data& r = per_device[id];
-        r.per_frame.resize(MAX_FRAMES_IN_FLIGHT);
         r.skinning.reset(new skinning_stage(d, opt.max_instances));
         r.scene_update.reset(new scene_update_stage(d, opt.scene_options));
         r.dist = get_device_distribution_params(
@@ -313,95 +259,11 @@ void rt_renderer<Pipeline>::init_resources()
         rt_opt.distribution = r.dist;
         rt_opt.active_viewport_count = opt.active_viewport_count;
         uvec2 max_target_size = get_distribution_target_max_size(rt_opt.distribution);
-        uvec2 target_size = get_distribution_target_size(rt_opt.distribution);
 
         if(!is_display_device)
         {
-            r.cpu_to_gpu_timer = timer(
-                display_device, "distribution frame from host"
-            );
             r.gbuffer_copy.reset(display_device, max_target_size, ctx->get_display_count());
             r.gbuffer_copy.add(copy_spec);
-        }
-
-        // TODO: Move this elsewhere, should abstract over cross-GPU transfers &
-        // deps
-        for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-        {
-            auto& f = r.per_frame[i];
-
-            if(!is_display_device)
-            {
-                device& display_device = ctx->get_display_device();
-
-                size_t sz = max_target_size.x*max_target_size.y*color_format_size*ctx->get_display_count();
-                for(size_t j = 0; j < r.gbuffer_copy.entry_count(); ++j)
-                {
-                    transfer_buffer tb;
-                    tb.host_ptr = allocate_host_buffer({&display_device, &d}, sz);
-                    create_host_allocated_buffer(
-                        d, tb.gpu_to_cpu, tb.gpu_to_cpu_mem, sz, tb.host_ptr
-                    );
-                    create_host_allocated_buffer(
-                        display_device, tb.cpu_to_gpu, tb.cpu_to_gpu_mem, sz,
-                        tb.host_ptr
-                    );
-                    f.transfer_buffers.push_back(tb);
-                }
-
-#ifdef WIN32
-                static PFN_vkImportSemaphoreWin32HandleKHR vkImportSemaphoreWin32HandleKHR =
-                    PFN_vkImportSemaphoreWin32HandleKHR(vkGetInstanceProcAddr(ctx->get_vulkan_instance(), "vkImportSemaphoreWin32HandleKHR"));
-                static PFN_vkGetSemaphoreWin32HandleKHR vkGetSemaphoreWin32HandleKHR =
-                    PFN_vkGetSemaphoreWin32HandleKHR(vkGetInstanceProcAddr(ctx->get_vulkan_instance(), "vkGetSemaphoreWin32HandleKHR"));
-                vk::SemaphoreCreateInfo sem_info;
-                vk::ExportSemaphoreCreateInfo esem_info(vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueWin32);
-                sem_info.pNext = &esem_info;
-                f.gpu_to_cpu_sem = vkm(d, d.dev.createSemaphore(sem_info));
-                VkSemaphoreGetWin32HandleInfoKHR win32info {
-                    VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR,
-                    nullptr,
-                    *f.gpu_to_cpu_sem,
-                    VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT
-                };
-                vkGetSemaphoreWin32HandleKHR(d.dev, &win32info, &f.sem_handle);
-
-                f.gpu_to_cpu_sem_copy = create_binary_semaphore(display_device);
-
-                VkImportSemaphoreWin32HandleInfoKHR win32ImportSemaphoreInfo{
-                    VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_WIN32_HANDLE_INFO_KHR,
-                    nullptr,
-                    *f.gpu_to_cpu_sem_copy,
-                    0,
-                    VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT,
-                    &f.sem_handle,
-                    nullptr
-                };
-
-                vkImportSemaphoreWin32HandleKHR(d.dev, &win32ImportSemaphoreInfo);
-
-#else
-                vk::SemaphoreCreateInfo sem_info;
-                vk::ExportSemaphoreCreateInfo esem_info(
-                    vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueFd
-                );
-                sem_info.pNext = &esem_info;
-                f.gpu_to_cpu_sem = vkm(d, d.dev.createSemaphore(sem_info));
-                f.sem_fd = d.dev.getSemaphoreFdKHR({f.gpu_to_cpu_sem});
-
-                f.gpu_to_cpu_sem_copy = create_binary_semaphore(display_device);
-
-                display_device.dev.importSemaphoreFdKHR({
-                    f.gpu_to_cpu_sem_copy, {},
-                    vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueFd,
-                    f.sem_fd
-                });
-#endif
-                f.cpu_to_gpu_sem = create_timeline_semaphore(display_device);
-                reset_transfer_command_buffers(
-                    i, r, f, target_size, ctx->get_display_device(), d
-                );
-            }
         }
 
         gbuffer_target transfer_target = gbuffer.get_array_target(d.index);
@@ -417,11 +279,9 @@ void rt_renderer<Pipeline>::init_resources()
             vk::ImageLayout::eGeneral : vk::ImageLayout::eTransferSrcOptimal
         );
 
-        r.ray_tracer.reset(new Pipeline(
-            d,
-            transfer_target,
-            rt_opt
-        ));
+        r.ray_tracer.reset(new Pipeline(d, transfer_target, rt_opt));
+
+        prepare_transfers(true);
     }
 
     size_t device_count = ctx->get_devices().size();
@@ -498,90 +358,57 @@ void rt_renderer<Pipeline>::init_resources()
 }
 
 template<typename Pipeline>
-void rt_renderer<Pipeline>::reset_transfer_command_buffers(
-    uint32_t frame_index,
-    per_device_data& r,
-    per_frame_data& f,
-    uvec2 transfer_size,
-    device& primary,
-    device& secondary
-){
+void rt_renderer<Pipeline>::prepare_transfers(bool reserve)
+{
+    device& display_device = ctx->get_display_device();
+    std::vector<device>& devices = ctx->get_devices();
 
-    f.gpu_to_cpu_cb = create_graphics_command_buffer(secondary);
-
-    f.gpu_to_cpu_cb->begin(vk::CommandBufferBeginInfo{});
-    gpu_to_cpu_timer.begin(f.gpu_to_cpu_cb, secondary.index, frame_index);
-
-    f.cpu_to_gpu_cb = create_graphics_command_buffer(primary);
-
-    f.cpu_to_gpu_cb->begin(vk::CommandBufferBeginInfo{});
-    r.cpu_to_gpu_timer.begin(f.cpu_to_gpu_cb, primary.index, frame_index);
-
-    gbuffer_target target = gbuffer.get_array_target(secondary.index);
-    gbuffer_target target_copy = r.gbuffer_copy.get_array_target(primary.index);
-
-    size_t j = 0;
-    if(transfer_size.x * transfer_size.y != 0)
+    for(size_t i = 0; i < per_device.size(); ++i)
     {
+        if(i == display_device.index)
+            continue;
+        auto& r = per_device[i];
+
+        std::vector<device_transfer_interface::image_transfer> images;
+        gbuffer_target target = gbuffer.get_array_target(i);
+        gbuffer_target target_copy = r.gbuffer_copy.get_array_target(display_device.index);
+
         for(size_t i = 0; i < MAX_GBUFFER_ENTRIES; ++i)
         {
             if(!target_copy[i])
                 continue;
 
-            // GPU -> CPU
-            vk::BufferImageCopy region(
-                0, 0, 0,
+            uvec2 max_target_size = get_distribution_target_max_size(r.dist);
+            uvec2 target_size = get_distribution_target_size(r.dist);
+            uvec2 transfer_size = reserve ? max_target_size : target_size;
+
+            vk::ImageCopy region(
                 {vk::ImageAspectFlagBits::eColor, 0, 0, (uint32_t)opt.active_viewport_count},
-                {0,0,0}, {transfer_size.x, transfer_size.y, 1}
+                {0,0,0},
+                {vk::ImageAspectFlagBits::eColor, 0, 0, (uint32_t)opt.active_viewport_count},
+                {0,0,0},
+                {transfer_size.x, transfer_size.y, 1}
             );
-
-            f.gpu_to_cpu_cb->copyImageToBuffer(
-                target[i].image, vk::ImageLayout::eTransferSrcOptimal,
-                f.transfer_buffers[j].gpu_to_cpu, 1, &region
-            );
-
-            // CPU -> GPU
-            vk::ImageMemoryBarrier img_barrier(
-                {}, vk::AccessFlagBits::eTransferWrite,
-                vk::ImageLayout::eUndefined,
-                vk::ImageLayout::eTransferDstOptimal,
-                VK_QUEUE_FAMILY_IGNORED,
-                VK_QUEUE_FAMILY_IGNORED,
+            // TODO: This may be wasteful with some buffers if they're smaller
+            // than this.
+            unsigned color_format_size = sizeof(uint32_t)*4;
+            images.push_back(device_transfer_interface::image_transfer{
+                target[i].image,
                 target_copy[i].image,
-                {vk::ImageAspectFlagBits::eColor, 0, 1, 0, VK_REMAINING_ARRAY_LAYERS}
-            );
-
-            f.cpu_to_gpu_cb->pipelineBarrier(
-                vk::PipelineStageFlagBits::eTopOfPipe,
-                vk::PipelineStageFlagBits::eTransfer,
-                {},
-                {}, {},
-                img_barrier
-            );
-
-            f.cpu_to_gpu_cb->copyBufferToImage(
-                f.transfer_buffers[j].cpu_to_gpu, target_copy[i].image,
-                vk::ImageLayout::eTransferDstOptimal, 1, &region
-            );
-
-            img_barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-            img_barrier.dstAccessMask = {};
-            img_barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-            img_barrier.newLayout = vk::ImageLayout::eGeneral;
-            f.cpu_to_gpu_cb->pipelineBarrier(
-                vk::PipelineStageFlagBits::eTransfer,
-                vk::PipelineStageFlagBits::eBottomOfPipe,
-                {}, {}, {}, img_barrier
-            );
-
-            ++j;
+                color_format_size,
+                region
+            });
         }
+
+        if(!r.transfer)
+            r.transfer = create_device_transfer_interface(devices[i], display_device);
+
+        if(reserve) r.transfer->reserve(images, {});
+        else r.transfer->build(images, {});
     }
 
-    gpu_to_cpu_timer.end(f.gpu_to_cpu_cb, secondary.index, frame_index);
-    f.gpu_to_cpu_cb->end();
-    r.cpu_to_gpu_timer.end(f.cpu_to_gpu_cb, primary.index, frame_index);
-    f.cpu_to_gpu_cb->end();
+    // ... but also record the actual command buffers too.
+    if(reserve) prepare_transfers(false);
 }
 
 template class rt_renderer<path_tracer_stage>;
