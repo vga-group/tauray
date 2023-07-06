@@ -11,11 +11,11 @@ namespace tr
 
 class scene;
 // Just renders the environment map from the given scene as the sky, if present.
-class envmap_stage: public stage
+class envmap_stage: public single_device_stage
 {
 public:
     envmap_stage(
-        device_data& dev,
+        device& dev,
         const std::vector<render_target>& color_arrays
     );
 

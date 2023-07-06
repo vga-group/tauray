@@ -11,7 +11,7 @@ namespace tr
 {
 
 class scene;
-class tonemap_stage: public stage
+class tonemap_stage: public single_device_stage
 {
 public:
     enum operator_type
@@ -36,7 +36,7 @@ public:
     };
 
     tonemap_stage(
-        device_data& dev, 
+        device& dev, 
         render_target& input,
         std::vector<render_target>& output_frames,
         const options& opt

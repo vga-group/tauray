@@ -26,10 +26,10 @@ namespace tr
 {
 
 taa_stage::taa_stage(
-    device_data& dev,
+    device& dev,
     gbuffer_target& current_features,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     cur_scene(nullptr),
     comp(dev, compute_pipeline::params{load_source(opt), {}}),
     opt(opt),

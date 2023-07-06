@@ -11,7 +11,7 @@ namespace tr
 {
 
 class scene;
-class looking_glass_composition_stage: public stage
+class looking_glass_composition_stage: public single_device_stage
 {
 public:
     struct options
@@ -24,7 +24,7 @@ public:
     };
 
     looking_glass_composition_stage(
-        device_data& dev,
+        device& dev,
         render_target& input,
         std::vector<render_target>& output_frames,
         const options& opt

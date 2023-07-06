@@ -18,11 +18,11 @@ namespace tr
 {
 
 looking_glass_composition_stage::looking_glass_composition_stage(
-    device_data& dev,
+    device& dev,
     render_target& input,
     std::vector<render_target>& output_frames,
     const options& opt
-):  stage(dev, stage::COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE),
+):  single_device_stage(dev, stage::COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE),
     comp(dev, compute_pipeline::params{
         {"shader/looking_glass_composition.comp"},
         {},

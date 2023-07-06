@@ -62,12 +62,12 @@ namespace tr
 {
 
 stitch_stage::stitch_stage(
-    device_data& dev,
+    device& dev,
     uvec2 size,
     const std::vector<gbuffer_target>& images,
     const std::vector<distribution_params>& params,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     comp(dev, compute_pipeline::params{
     load_source(opt.strategy),
         {

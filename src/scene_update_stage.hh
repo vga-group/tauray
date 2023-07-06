@@ -9,7 +9,7 @@ namespace tr
 {
 
 class shadow_map_renderer;
-class scene_update_stage: public stage
+class scene_update_stage: public single_device_stage
 {
 public:
     struct options
@@ -19,7 +19,7 @@ public:
         bool pre_transform_vertices = false;
     };
 
-    scene_update_stage(device_data& dev, const options& opt);
+    scene_update_stage(device& dev, const options& opt);
 
     void set_scene(scene* target);
 

@@ -30,7 +30,7 @@ public:
     );
 
     rt_camera_stage(
-        device_data& dev,
+        device& dev,
         const gbuffer_target& output_target,
         const options& opt,
         const std::string& timer_name = "ray tracing",

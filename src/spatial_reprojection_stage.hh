@@ -11,7 +11,7 @@
 namespace tr
 {
 
-class spatial_reprojection_stage: public stage
+class spatial_reprojection_stage: public single_device_stage
 {
 public:
     struct options

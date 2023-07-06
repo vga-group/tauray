@@ -15,7 +15,7 @@ namespace tr
 class scene;
 class shadow_map_renderer;
 class sh_grid;
-class raster_stage: public stage
+class raster_stage: public single_device_stage
 {
 public:
     struct options
@@ -46,7 +46,7 @@ public:
     };
 
     raster_stage(
-        device_data& dev,
+        device& dev,
         const std::vector<gbuffer_target>& output_array_targets,
         const options& opt
     );

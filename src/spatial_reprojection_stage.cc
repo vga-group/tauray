@@ -33,10 +33,10 @@ namespace tr
 {
 
 spatial_reprojection_stage::spatial_reprojection_stage(
-    device_data& dev,
+    device& dev,
     gbuffer_target& target,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     current_scene(nullptr),
     target_viewport(target),
     comp(dev, compute_pipeline::params{

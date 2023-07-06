@@ -9,11 +9,11 @@
 namespace tr
 {
 
-class sh_grid_to_cpu_stage: public stage
+class sh_grid_to_cpu_stage: public single_device_stage
 {
 public:
     sh_grid_to_cpu_stage(device& dev)
-    : stage(dev), cur_scene(nullptr), stage_timer(dev, "sh_grid_to_cpu")
+    : single_device_stage(dev), cur_scene(nullptr), stage_timer(dev, "sh_grid_to_cpu")
     {
     }
 

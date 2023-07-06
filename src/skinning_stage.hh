@@ -12,7 +12,7 @@ namespace tr
 class scene;
 // Applies animations to all skinned meshes. This should run _before_ scene
 // update!
-class skinning_stage: public stage
+class skinning_stage: public single_device_stage
 {
 public:
     skinning_stage(device_data& dev, uint32_t max_instances);

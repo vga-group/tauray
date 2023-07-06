@@ -10,11 +10,11 @@ namespace tr
 {
 
 class scene;
-class z_pass_stage: public stage
+class z_pass_stage: public single_device_stage
 {
 public:
     z_pass_stage(
-        device_data& dev, 
+        device& dev, 
         const std::vector<render_target>& depth_buffer_arrays
     );
 

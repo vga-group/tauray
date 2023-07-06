@@ -17,8 +17,8 @@ struct push_constants
 namespace tr
 {
 
-skinning_stage::skinning_stage(device_data& dev, uint32_t max_instances)
-:   stage(dev),
+skinning_stage::skinning_stage(device& dev, uint32_t max_instances)
+:   single_device_stage(dev),
     comp(dev, {{"shader/skinning.comp"}, {
         {"source_data", max_instances},
         {"skin_data", max_instances},

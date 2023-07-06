@@ -13,11 +13,11 @@ struct push_constant_buffer
 static_assert(sizeof(push_constant_buffer) <= 128);
 
 bmfr_stage::bmfr_stage(
-    device_data& dev,
+    device& dev,
     gbuffer_target& current_features,
     gbuffer_target& prev_features,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     bmfr_preprocess_comp(dev, compute_pipeline::params{ load_shader_source("shader/bmfr_preprocess.comp", opt), {} }),
     bmfr_fit_comp(dev, compute_pipeline::params{ load_shader_source("shader/bmfr_fit.comp", opt), {}}),
     bmfr_weighted_sum_comp(dev, compute_pipeline::params{ load_shader_source("shader/bmfr_weighted_sum.comp", opt), {}}),

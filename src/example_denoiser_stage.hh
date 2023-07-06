@@ -12,7 +12,7 @@ namespace tr
 
 // This denoiser works as an example for GBuffer-aware denoising. It assumes
 // that there is no MSAA.
-class example_denoiser_stage: public stage
+class example_denoiser_stage: public single_device_stage
 {
 public:
     struct options
@@ -23,7 +23,7 @@ public:
     };
 
     example_denoiser_stage(
-        device_data& dev,
+        device& dev,
         gbuffer_target& input_features,
         render_target& tmp_color1,
         render_target& tmp_color2,

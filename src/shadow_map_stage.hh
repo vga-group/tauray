@@ -12,7 +12,7 @@ namespace tr
 {
 
 class scene;
-class shadow_map_stage: public stage
+class shadow_map_stage: public single_device_stage
 {
 public:
     struct options
@@ -21,7 +21,7 @@ public:
     };
 
     shadow_map_stage(
-        device_data& dev,
+        device& dev,
         uvec4 local_rect,
         render_target& depth_buffer,
         const options& opt

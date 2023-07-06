@@ -69,11 +69,11 @@ void rt_stage::get_common_defines(
 }
 
 rt_stage::rt_stage(
-    device_data& dev,
+    device& dev,
     const options& opt,
     const std::string& timer_name,
     unsigned pass_count
-):  stage(dev),
+):  single_device_stage(dev),
     opt(opt),
     pass_count(pass_count),
     rt_timer(dev, timer_name),

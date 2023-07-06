@@ -25,11 +25,11 @@ namespace tr
 {
 
 temporal_reprojection_stage::temporal_reprojection_stage(
-    device_data& dev,
+    device& dev,
     gbuffer_target& current_features,
     gbuffer_target& previous_features,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     comp(dev, compute_pipeline::params{load_source(opt), {}}),
     opt(opt),
     current_features(current_features),

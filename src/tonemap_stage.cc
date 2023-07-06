@@ -43,11 +43,11 @@ namespace tr
 {
 
 tonemap_stage::tonemap_stage(
-    device_data& dev,
+    device& dev,
     render_target& input,
     std::vector<render_target>& output_frames,
     const options& opt
-):  stage(dev, stage::COMMAND_BUFFER_PER_FRAME_AND_SWAPCHAIN_IMAGE),
+):  single_device_stage(dev, stage::COMMAND_BUFFER_PER_FRAME_AND_SWAPCHAIN_IMAGE),
     comp(dev, compute_pipeline::params{
         load_shader_source(opt), {},
         MAX_FRAMES_IN_FLIGHT * (uint32_t)output_frames.size()

@@ -9,7 +9,7 @@
 namespace tr
 {
 
-class svgf_stage: public stage
+class svgf_stage: public single_device_stage
 {
 public:
     struct options
@@ -26,7 +26,7 @@ public:
     };
 
     svgf_stage(
-        device_data& dev,
+        device& dev,
         gbuffer_target& input_features,
         gbuffer_target& prev_features,
         const options& opt

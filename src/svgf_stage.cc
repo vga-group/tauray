@@ -28,11 +28,11 @@ namespace tr
 {
 
 svgf_stage::svgf_stage(
-    device_data& dev,
+    device& dev,
     gbuffer_target& input_features,
     gbuffer_target& prev_features,
     const options& opt
-) : stage(dev),
+):  single_device_stage(dev),
     atrous_comp(dev, compute_pipeline::params{shader_source("shader/svgf_atrous.comp"), {}, 0, true}),
     temporal_comp(dev, compute_pipeline::params{shader_source("shader/svgf_temporal.comp"), {}}),
     estimate_variance_comp(dev, compute_pipeline::params{ shader_source("shader/svgf_estimate_variance.comp"), {} }),

@@ -22,13 +22,13 @@ namespace tr
 {
 
 // Does the actual updating of the grid data.
-class dshgi_client_stage: public stage
+class dshgi_client_stage: public single_device_stage
 {
 public:
     dshgi_client_stage(
-        device_data& dev,
+        device& dev,
         dshgi_client& client
-    ):  stage(dev),
+    ):  single_device_stage(dev),
         client(&client), cur_scene(nullptr),
         stage_timer(dev, "sh_grids_from_server")
     {

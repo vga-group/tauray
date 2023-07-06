@@ -10,11 +10,11 @@ namespace tr
 {
 
 class scene;
-class sh_compact_stage: public stage
+class sh_compact_stage: public single_device_stage
 {
 public:
     sh_compact_stage(
-        device_data& dev, 
+        device& dev, 
         texture& inflated_source,
         texture& compacted_output
     );

@@ -23,9 +23,9 @@ namespace tr
 {
 
 envmap_stage::envmap_stage(
-    device_data& dev,
+    device& dev,
     const std::vector<render_target>& color_arrays
-):  stage(dev),
+):  single_device_stage(dev),
     envmap_timer(dev, "envmap ("+ std::to_string(count_array_layers(color_arrays)) +" viewports)"),
     cur_scene(nullptr)
 {

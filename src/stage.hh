@@ -17,7 +17,7 @@ public:
         COMMAND_BUFFER_PER_FRAME_AND_SWAPCHAIN_IMAGE
     };
 
-    stage(device_data& dev, command_buffer_strategy strategy = COMMAND_BUFFER_PER_FRAME);
+    stage(device_mask dev, command_buffer_strategy strategy = COMMAND_BUFFER_PER_FRAME);
     stage(const stage& other) = delete;
     stage(stage&& other) = delete;
     virtual ~stage();
@@ -27,8 +27,44 @@ public:
     size_t get_command_buffer_index(uint32_t frame_index, uint32_t swapchain_index);
 
 protected:
-    device_data* dev;
     virtual void update(uint32_t frame_index);
+
+    vk::CommandBuffer begin_compute(device_id id, bool single_use = false);
+    void end_compute(vk::CommandBuffer buf, device_id id, uint32_t frame_index, uint32_t swapchain_index = 0);
+
+    vk::CommandBuffer begin_graphics(device_id id, bool single_use = false);
+    void end_graphics(vk::CommandBuffer buf, device_id id, uint32_t frame_index, uint32_t swapchain_index = 0);
+
+    vk::CommandBuffer begin_transfer(device_id id, bool single_use = false);
+    void end_transfer(vk::CommandBuffer buf, device_id id, uint32_t frame_index, uint32_t swapchain_index = 0);
+
+    void clear_commands();
+
+private:
+    vk::CommandBuffer begin_commands(vk::CommandPool pool, device_id id, bool single_use);
+    void end_commands(vk::CommandBuffer buf, vk::CommandPool pool, device_id id, uint32_t frame_index, uint32_t swapchain_index);
+
+    struct cb_data
+    {
+        std::vector<std::vector<vkm<vk::CommandBuffer>>> command_buffers;
+        uint64_t local_step_counter = 0;
+        vkm<vk::Semaphore> progress;
+    };
+    per_device<cb_data> buffers;
+    command_buffer_strategy strategy;
+};
+
+using multi_device_stage = stage;
+
+// Many stages can only take one device at a time. They should derive from this
+// class. This simplifies their implementation considerably.
+class single_device_stage: public stage
+{
+public:
+    single_device_stage(device& dev, command_buffer_strategy strategy = COMMAND_BUFFER_PER_FRAME);
+
+protected:
+    device* dev;
 
     vk::CommandBuffer begin_compute(bool single_use = false);
     void end_compute(vk::CommandBuffer buf, uint32_t frame_index, uint32_t swapchain_index = 0);
@@ -38,17 +74,7 @@ protected:
 
     vk::CommandBuffer begin_transfer(bool single_use = false);
     void end_transfer(vk::CommandBuffer buf, uint32_t frame_index, uint32_t swapchain_index = 0);
-
-    void clear_commands();
-
 private:
-    vk::CommandBuffer begin_commands(vk::CommandPool pool, bool single_use);
-    void end_commands(vk::CommandBuffer buf, vk::CommandPool pool, uint32_t frame_index, uint32_t swapchain_index);
-
-    std::vector<std::vector<vkm<vk::CommandBuffer>>> command_buffers;
-    uint64_t local_step_counter;
-    vkm<vk::Semaphore> progress;
-    command_buffer_strategy strategy;
 };
 
 }

@@ -29,12 +29,12 @@ namespace tr
 {
 
 example_denoiser_stage::example_denoiser_stage(
-    device_data& dev,
+    device& dev,
     gbuffer_target& input_features,
     render_target& tmp_color1,
     render_target& tmp_color2,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     comp(dev, compute_pipeline::params{load_source(opt), {}}),
     opt(opt),
     input_features(input_features),

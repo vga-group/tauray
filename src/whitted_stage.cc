@@ -63,13 +63,10 @@ namespace tr
 {
 
 whitted_stage::whitted_stage(
-    device_data& dev,
+    device& dev,
     const gbuffer_target& output_target,
     const options& opt
-):  rt_camera_stage(
-        dev, output_target,
-        opt
-    ),
+):  rt_camera_stage(dev, output_target, opt),
     gfx(dev, build_state(rt_stage::get_common_options(
         whitted::load_sources(opt), opt
     ), opt)),

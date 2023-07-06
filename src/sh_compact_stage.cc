@@ -22,10 +22,10 @@ namespace tr
 {
 
 sh_compact_stage::sh_compact_stage(
-    device_data& dev,
+    device& dev,
     texture& inflated_source,
     texture& compacted_output
-):  stage(dev),
+):  single_device_stage(dev),
     comp(dev, compute_pipeline::params{sh_compact::load_source(), {} }),
     compact_timer(dev, "SH compact")
 {

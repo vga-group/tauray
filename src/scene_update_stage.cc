@@ -188,8 +188,8 @@ struct pre_tranform_push_constants
 namespace tr
 {
 
-scene_update_stage::scene_update_stage(device_data& dev, const options& opt)
-:   stage(dev), as_rebuild(true), command_buffers_outdated(true),
+scene_update_stage::scene_update_stage(device& dev, const options& opt)
+:   single_device_stage(dev), as_rebuild(true), command_buffers_outdated(true),
     force_instance_refresh_frames(0), cur_scene(nullptr),
     extract_tri_lights(dev, compute_pipeline::params{
         {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?

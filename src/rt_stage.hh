@@ -15,7 +15,7 @@ namespace tr
 {
 
 class scene;
-class rt_stage: public stage
+class rt_stage: public single_device_stage
 {
 public:
     enum class sampler_type
@@ -56,7 +56,7 @@ public:
     );
 
     rt_stage(
-        device_data& dev,
+        device& dev,
         const options& opt,
         const std::string& timer_name,
         unsigned pass_count = 1

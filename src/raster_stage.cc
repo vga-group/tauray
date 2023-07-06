@@ -116,10 +116,10 @@ namespace tr
 {
 
 raster_stage::raster_stage(
-    device_data& dev,
+    device& dev,
     const std::vector<gbuffer_target>& output_array_targets,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     output_targets(output_array_targets),
     opt(opt),
     brdf_integration_sampler(

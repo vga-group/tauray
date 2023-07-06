@@ -41,11 +41,11 @@ namespace tr
 {
 
 shadow_map_stage::shadow_map_stage(
-    device_data& dev,
+    device& dev,
     uvec4 local_rect,
     render_target& depth_buffer,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     gfx(dev, {
         depth_buffer.size,
         local_rect,

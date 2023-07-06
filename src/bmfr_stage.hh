@@ -10,7 +10,7 @@
 namespace tr
 {
 
-class bmfr_stage: public stage
+class bmfr_stage: public single_device_stage
 {
 public:
     enum class bmfr_settings
@@ -24,7 +24,7 @@ public:
     };
 
     bmfr_stage(
-        device_data& dev,
+        device& dev,
         gbuffer_target& current_features,
         gbuffer_target& prev_features,
         const options& opt

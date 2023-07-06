@@ -102,7 +102,7 @@ namespace tr
 {
 
 sh_path_tracer_stage::sh_path_tracer_stage(
-    device_data& dev,
+    device& dev,
     texture& output_grid,
     vk::ImageLayout output_layout,
     const options& opt

@@ -4,9 +4,9 @@ namespace tr
 {
 
 frame_delay_stage::frame_delay_stage(
-    device_data& dev,
+    device& dev,
     gbuffer_target& input_features
-): stage(dev), delay_timer(dev, "frame_delay")
+): single_device_stage(dev), delay_timer(dev, "frame_delay")
 {
     textures.reset(new gbuffer_texture(
         dev, input_features.get_size(), input_features.get_layer_count(),

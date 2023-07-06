@@ -21,7 +21,7 @@ public:
     >;
 
     basic_pipeline(
-        device_data& dev,
+        device& dev,
         std::vector<vk::DescriptorSetLayoutBinding>&& bindings,
         std::map<std::string, uint32_t>&& binding_names,
         std::vector<vk::PushConstantRange>&& push_constant_ranges,

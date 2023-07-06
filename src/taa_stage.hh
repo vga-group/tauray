@@ -13,7 +13,7 @@
 namespace tr
 {
 
-class taa_stage: public stage
+class taa_stage: public single_device_stage
 {
 public:
     struct options
@@ -23,7 +23,7 @@ public:
     };
 
     taa_stage(
-        device_data& dev,
+        device& dev,
         gbuffer_target& current_features,
         const options& opt
     );

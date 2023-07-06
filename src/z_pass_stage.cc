@@ -21,9 +21,9 @@ namespace tr
 {
 
 z_pass_stage::z_pass_stage(
-    device_data& dev,
+    device& dev,
     const std::vector<render_target>& depth_buffer_arrays
-):  stage(dev),
+):  single_device_stage(dev),
     cur_scene(nullptr),
     z_pass_timer(dev, "Z-pass (" + std::to_string(count_array_layers(depth_buffer_arrays)) + " viewports)")
 {
