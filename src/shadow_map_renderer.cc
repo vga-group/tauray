@@ -54,7 +54,7 @@ dependencies shadow_map_renderer::render(dependencies deps)
 {
     dependencies out_deps;
 
-    for(auto& p: smp) out_deps.add(p->run(deps));
+    for(auto& p: smp) out_deps.concat(p->run(deps));
     return out_deps;
 }
 

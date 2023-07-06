@@ -95,30 +95,27 @@ dependencies post_processing_renderer::render(dependencies deps)
     bool first_frame = dev->ctx->get_frame_counter() <= 1;
 
     if(temporal_reprojection && !first_frame)
-        deps.add(temporal_reprojection->run(deps));
+        deps = temporal_reprojection->run(deps);
 
-    dependencies out_deps;
-
-    delay_deps[frame_index].clear();
     if(spatial_reprojection)
-        deps.add(spatial_reprojection->run(deps));
+        deps = spatial_reprojection->run(deps);
 
     if(example_denoiser)
-        deps.add(example_denoiser->run(deps));
+        deps = example_denoiser->run(deps);
 
     if(svgf)
-        deps.add(svgf->run(deps));
+        deps = svgf->run(deps);
 
     if (bmfr)
-        deps.add(bmfr->run(deps));
+        deps = bmfr->run(deps);
 
     if(taa)
-        deps.add(taa->run(deps));
+        deps = taa->run(deps);
 
-    out_deps.add(tonemap->run(deps));
+    dependencies out_deps = tonemap->run(deps);
 
     if(delay)
-        delay_deps[frame_index].add(delay->run(deps));
+        delay_deps[frame_index] = delay->run(deps);
 
     return out_deps;
 }

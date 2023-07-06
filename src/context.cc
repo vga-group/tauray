@@ -189,7 +189,7 @@ dependency context::begin_frame()
         timing.device_finish_frame();
     timing.begin_frame();
 
-    return {*image_available[swapchain_index], frame_counter};
+    return {d.index, *image_available[swapchain_index], frame_counter};
 }
 
 void context::end_frame(const dependencies& deps)
@@ -199,11 +199,11 @@ void context::end_frame(const dependencies& deps)
     device_data& d = get_display_device();
 
     std::vector<vk::PipelineStageFlags> wait_stages(
-        local_deps.size(), vk::PipelineStageFlagBits::eTopOfPipe
+        local_deps.size(d.index), vk::PipelineStageFlagBits::eTopOfPipe
     );
 
-    vk::TimelineSemaphoreSubmitInfo timeline_info = local_deps.get_timeline_info();
-    vk::SubmitInfo submit_info = local_deps.get_submit_info(timeline_info);
+    vk::TimelineSemaphoreSubmitInfo timeline_info = local_deps.get_timeline_info(d.index);
+    vk::SubmitInfo submit_info = local_deps.get_submit_info(d.index, timeline_info);
     submit_info.signalSemaphoreCount = image_array_layers != 0 ? 1 : 0;
     submit_info.pSignalSemaphores = frame_finished[frame_index];
 

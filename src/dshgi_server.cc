@@ -12,7 +12,7 @@ namespace tr
 class sh_grid_to_cpu_stage: public stage
 {
 public:
-    sh_grid_to_cpu_stage(device_data& dev)
+    sh_grid_to_cpu_stage(device& dev)
     : stage(dev), cur_scene(nullptr), stage_timer(dev, "sh_grid_to_cpu")
     {
     }
@@ -138,6 +138,7 @@ void dshgi_server::render()
     if(subscriber_count != 0)
     {
         dependencies deps(ctx->begin_frame());
+        device& d = ctx->get_display_device();
 
         deps = skinning->run(deps);
         deps = scene_update->run(deps);
@@ -146,7 +147,7 @@ void dshgi_server::render()
         {
             // Make sure we don't overwrite the SH probes while the server is
             // sending them!
-            deps.add({sender_semaphore, signal_value});
+            deps.add({d.index, sender_semaphore, signal_value});
         }
 
         deps = sh.render(deps);
@@ -174,7 +175,7 @@ void dshgi_server::sender_worker(dshgi_server* s)
     if(err < 0)
         throw std::runtime_error(strerror(errno));
 
-    device_data& dev = s->ctx->get_display_device();
+    device& dev = s->ctx->get_display_device();
     zpoller_t* poller = zpoller_new(socket, nullptr);
 
     auto check_recv = [&](){
@@ -267,7 +268,7 @@ void dshgi_server::sender_worker(dshgi_server* s)
             zmsg_send(&msg, socket);
         }
 
-        dev.dev.signalSemaphore({*s->sender_semaphore, deps.value(0)});
+        dev.dev.signalSemaphore({*s->sender_semaphore, deps.value(dev.index, 0)});
     }
     zpoller_destroy(&poller);
     zsock_destroy(&socket);

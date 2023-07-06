@@ -280,8 +280,8 @@ struct external_semaphore_host_buffer: public device_transfer_interface
     {
         timeline++;
         auto& f = frames[frame_index];
-        vk::TimelineSemaphoreSubmitInfo timeline_info = deps.get_timeline_info();
-        vk::SubmitInfo submit_info = deps.get_submit_info(timeline_info);
+        vk::TimelineSemaphoreSubmitInfo timeline_info = deps.get_timeline_info(from->index);
+        vk::SubmitInfo submit_info = deps.get_submit_info(from->index, timeline_info);
         submit_info.commandBufferCount = 1;
         submit_info.pCommandBuffers = f.src_to_host_cb.get();
         submit_info.signalSemaphoreCount = 1;
@@ -304,7 +304,7 @@ struct external_semaphore_host_buffer: public device_transfer_interface
         submit_info.pSignalSemaphores = host_to_dst_sem.get();
 
         to->graphics_queue.submit(submit_info, {});
-        return {host_to_dst_sem, timeline};
+        return {to->index, host_to_dst_sem, timeline};
     }
 };
 

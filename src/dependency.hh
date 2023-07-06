@@ -1,7 +1,7 @@
 #ifndef TAURAY_DEPENDENCY_HH
 #define TAURAY_DEPENDENCY_HH
 
-#include "vkm.hh"
+#include "device.hh"
 
 namespace tr
 {
@@ -11,38 +11,38 @@ namespace tr
 // You can insert dependencies between rendering steps by passing these around.
 struct dependency
 {
+    device_id id;
     vk::Semaphore timeline_semaphore;
     uint64_t wait_value;
     vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eTopOfPipe;
 };
 
-struct device;
-
 // Bundles of dependencies are stored in this structure instead of a vector,
-// because this makes it easier to pass to Vulkan mostly.
+// because this makes it easier to pass to Vulkan mostly. You can include
+// semaphores for various different devices as well, and request ones for only
+// specific devices.
 class dependencies
 {
 public:
     template<typename... Args>
-    dependencies(Args... deps)
-    : semaphores({deps.timeline_semaphore...}),
-      values({deps.wait_value...}),
-      wait_stages({deps.wait_stage...})
-    {}
+    dependencies(Args... deps) { (add(deps), ...); }
 
     void add(dependency dep);
     void concat(dependencies deps);
-    void pop();
     void clear();
-    size_t size() const;
+    void clear(device_id id);
+    size_t size(device_id id) const;
+    uint64_t value(device_id id, size_t index) const;
 
     void wait(device& dev);
-    uint64_t value(size_t index) const;
 
-    vk::TimelineSemaphoreSubmitInfo get_timeline_info() const;
-    vk::SubmitInfo get_submit_info(vk::TimelineSemaphoreSubmitInfo& s) const;
+    vk::TimelineSemaphoreSubmitInfo get_timeline_info(device_id id) const;
+    vk::SubmitInfo get_submit_info(device_id id, vk::TimelineSemaphoreSubmitInfo& s) const;
 
 private:
+    void get_range(device_id id, size_t& begin, size_t& end) const;
+
+    std::vector<device_id> ids;
     std::vector<vk::Semaphore> semaphores;
     std::vector<uint64_t> values;
     std::vector<vk::PipelineStageFlags> wait_stages;

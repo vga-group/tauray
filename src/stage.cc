@@ -27,10 +27,8 @@ stage::~stage()
     dev->ctx->get_progress_tracker().erase_timeline(*progress);
 }
 
-dependency stage::run(dependencies deps)
+dependencies stage::run(dependencies deps)
 {
-    dependency dep;
-
     uint32_t swapchain_index = 0, frame_index = 0;
     dev->ctx->get_indices(swapchain_index, frame_index);
 
@@ -44,15 +42,12 @@ dependency stage::run(dependencies deps)
     {
         const vkm<vk::CommandBuffer>& cmd = command_buffers[cb_index][i];
 
-        if(i > 0)
-            deps.add(dep);
-
-        vk::TimelineSemaphoreSubmitInfo timeline_info = deps.get_timeline_info();
+        vk::TimelineSemaphoreSubmitInfo timeline_info = deps.get_timeline_info(dev->index);
         local_step_counter++;
         timeline_info.signalSemaphoreValueCount = 1;
         timeline_info.pSignalSemaphoreValues = &local_step_counter;
 
-        vk::SubmitInfo submit_info = deps.get_submit_info(timeline_info);
+        vk::SubmitInfo submit_info = deps.get_submit_info(dev->index, timeline_info);
         submit_info.signalSemaphoreCount = 1;
         submit_info.pSignalSemaphores = progress.get();
         submit_info.commandBufferCount = 1;
@@ -65,13 +60,11 @@ dependency stage::run(dependencies deps)
         if(cmd.get_pool() == dev->transfer_pool)
             dev->transfer_queue.submit(submit_info, {});
 
-        if(i > 0)
-            deps.pop();
-
-        dep = {*progress, local_step_counter};
+        deps.clear(dev->index);
+        deps.add({dev->index, *progress, local_step_counter});
     }
 
-    return dep;
+    return deps;
 }
 
 size_t stage::get_command_buffer_index(uint32_t frame_index, uint32_t swapchain_index)

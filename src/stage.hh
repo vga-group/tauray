@@ -22,7 +22,7 @@ public:
     stage(stage&& other) = delete;
     virtual ~stage();
 
-    dependency run(dependencies deps);
+    dependencies run(dependencies deps);
 
     size_t get_command_buffer_index(uint32_t frame_index, uint32_t swapchain_index);
 
