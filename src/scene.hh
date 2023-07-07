@@ -103,15 +103,10 @@ private:
     sampler envmap_sampler;
     sampler shadow_sampler;
     sampler sh_grid_sampler;
-
-    struct scene_info
-    {
-        // Offsets and sizes to the camera uniform buffer.
-        std::vector<std::pair<size_t, size_t>> camera_data_offsets;
-        size_t shadow_map_range;
-        size_t shadow_map_cascade_range;
-    };
-    per_device<scene_info> scene_infos;
+    // Offsets and sizes to the camera uniform buffer.
+    std::vector<std::pair<size_t, size_t>> camera_data_offsets;
+    size_t shadow_map_range;
+    size_t shadow_map_cascade_range;
 
     std::optional<top_level_acceleration_structure> tlas;
 };

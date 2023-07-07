@@ -9,7 +9,7 @@ namespace tr
 {
 
 class shadow_map_renderer;
-class scene_update_stage: public single_device_stage
+class scene_update_stage: public multi_device_stage
 {
 public:
     struct options
@@ -19,7 +19,7 @@ public:
         bool pre_transform_vertices = false;
     };
 
-    scene_update_stage(device& dev, const options& opt);
+    scene_update_stage(device_mask dev, const options& opt);
 
     void set_scene(scene* target);
 
@@ -29,15 +29,18 @@ protected:
 private:
     void record_command_buffers();
     void record_as_build(
+        device_id id,
         uint32_t frame_index,
         vk::CommandBuffer cb
     );
 
     void record_tri_light_extraction(
+        device_id id,
         vk::CommandBuffer cb
     );
 
     void record_pre_transform(
+        device_id id,
         vk::CommandBuffer cb
     );
 
@@ -50,8 +53,8 @@ private:
     // algorithms.
     std::vector<uint8_t> old_camera_data;
 
-    compute_pipeline extract_tri_lights;
-    compute_pipeline pre_transform;
+    per_device<compute_pipeline> extract_tri_lights;
+    per_device<compute_pipeline> pre_transform;
 
     options opt;
     timer stage_timer;

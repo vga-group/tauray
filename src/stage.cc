@@ -91,6 +91,16 @@ size_t stage::get_command_buffer_index(uint32_t frame_index, uint32_t swapchain_
 
 void stage::update(uint32_t) { /* NO-OP by default */ }
 
+device_mask stage::get_device_mask() const
+{
+    return buffers.get_mask();
+}
+
+context* stage::get_context() const
+{
+    return buffers.get_context();
+}
+
 vk::CommandBuffer stage::begin_compute(device_id id, bool single_use)
 {
     return begin_commands(buffers.get_device(id).compute_pool, id, single_use);

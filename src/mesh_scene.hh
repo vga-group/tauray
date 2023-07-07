@@ -50,9 +50,8 @@ public:
     void refresh_instance_cache(bool force = false);
     const std::vector<instance>& get_instances() const;
 
-    // TODO: These two probably shouldn't be device-specific calls
-    bool reserve_pre_transformed_vertices(device_id id, size_t max_vertex_count);
-    void clear_pre_transformed_vertices(device_id id);
+    bool reserve_pre_transformed_vertices(size_t max_vertex_count);
+    void clear_pre_transformed_vertices();
     vk::Buffer get_pre_transformed_vertices(device_id id);
 
     std::vector<vk::DescriptorBufferInfo> get_vertex_buffer_bindings(

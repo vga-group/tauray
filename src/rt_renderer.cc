@@ -64,10 +64,10 @@ void rt_renderer<Pipeline>::set_scene(scene* s)
     if(s)
     {
         s->refresh_instance_cache(true);
+        skinning->set_scene(s);
+        scene_update->set_scene(s);
         for(size_t i = 0; i < per_device.size(); ++i)
         {
-            per_device[i].skinning->set_scene(s);
-            per_device[i].scene_update->set_scene(s);
             if(per_device[i].ray_tracer)
                 per_device[i].ray_tracer->set_scene(s);
         }
@@ -106,14 +106,17 @@ void rt_renderer<Pipeline>::render()
     device& display_device = ctx->get_display_device();
     std::vector<device>& devices = ctx->get_devices();
 
+    dependencies common_deps = skinning->run(last_frame_deps);
+    common_deps = scene_update->run(common_deps);
+    last_frame_deps.clear();
+
     for(size_t i = 0; i < devices.size(); ++i)
     {
-        dependencies device_deps = per_device[i].skinning->run(per_device[i].last_frame_deps);
-        device_deps = per_device[i].scene_update->run(device_deps);
+        dependencies device_deps = common_deps;
         if(i == ctx->get_display_device().index)
             device_deps.concat(post_processing.get_gbuffer_write_dependencies());
         device_deps = per_device[i].ray_tracer->run(device_deps);
-        per_device[i].last_frame_deps = device_deps;
+        last_frame_deps.concat(device_deps);
 
         if(i != display_device.index)
             display_deps.add(per_device[i].transfer->run(device_deps, frame_index));
@@ -238,13 +241,14 @@ void rt_renderer<Pipeline>::init_resources()
 
     double even_workload_ratio = 1.0/ctx->get_devices().size();
     device& display_device = ctx->get_display_device();
+    skinning.reset(new skinning_stage(device_mask::all(*ctx), opt.max_instances));
+    scene_update.reset(new scene_update_stage(device_mask::all(*ctx), opt.scene_options));
+
     for(device_id id = 0; id < per_device.size(); ++id)
     {
         device& d = ctx->get_devices()[id];
         bool is_display_device = id == ctx->get_display_device().index;
         per_device_data& r = per_device[id];
-        r.skinning.reset(new skinning_stage(d, opt.max_instances));
-        r.scene_update.reset(new scene_update_stage(d, opt.scene_options));
         r.dist = get_device_distribution_params(
             ctx->get_size(),
             opt.distribution.strategy,

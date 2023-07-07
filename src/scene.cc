@@ -57,7 +57,8 @@ scene::scene(
         true,
         false
     ),
-    scene_infos(dev)
+    shadow_map_range(0),
+    shadow_map_cascade_range(0)
 {
     init_acceleration_structures();
 }
@@ -221,7 +222,6 @@ vec2 scene::get_shadow_map_atlas_pixel_margin() const
 
 std::vector<descriptor_state> scene::get_descriptor_info(device_id id, int32_t camera_index) const
 {
-    auto& si = scene_infos[id];
     const std::vector<sh_grid*>& sh_grids = get_sh_grids();
 
     std::vector<vk::DescriptorImageInfo> dii_3d;
@@ -272,7 +272,7 @@ std::vector<descriptor_state> scene::get_descriptor_info(device_id id, int32_t c
 
     if(camera_index >= 0)
     {
-        std::pair<size_t, size_t> camera_offset = si.camera_data_offsets[camera_index];
+        std::pair<size_t, size_t> camera_offset = camera_data_offsets[camera_index];
         descriptors.push_back(
             {"camera", {camera_data[id], camera_offset.first, VK_WHOLE_SIZE}}
         );
@@ -290,12 +290,12 @@ std::vector<descriptor_state> scene::get_descriptor_info(device_id id, int32_t c
         const atlas* shadow_map_atlas = smr->get_shadow_map_atlas();
 
         descriptors.push_back(
-            {"shadow_maps", {shadow_map_data[id], 0, si.shadow_map_range}}
+            {"shadow_maps", {shadow_map_data[id], 0, shadow_map_range}}
         );
         descriptors.push_back(
             {"shadow_map_cascades", {
-                shadow_map_data[id], si.shadow_map_range,
-                si.shadow_map_cascade_range
+                shadow_map_data[id], shadow_map_range,
+                shadow_map_cascade_range
             }}
         );
         descriptors.push_back(

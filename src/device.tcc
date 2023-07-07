@@ -24,6 +24,21 @@ per_device<T>::per_device(device_mask mask)
 
 template<typename T>
 template<typename... Args>
+per_device<T>::per_device(device_mask mask, Args&&... args)
+{
+    active_mask = mask;
+    for(device& dev: mask)
+    {
+        devices.emplace(
+            std::piecewise_construct,
+            std::make_tuple(dev.index),
+            std::forward_as_tuple(dev, std::forward<Args>(args)...)
+        );
+    }
+}
+
+template<typename T>
+template<typename... Args>
 void per_device<T>::emplace(device_mask mask, Args&&... args)
 {
     active_mask = mask;
@@ -89,6 +104,43 @@ template<typename T>
 device& per_device<T>::get_device(device_id id) const
 {
     return active_mask.get_device(id);
+}
+
+template<typename T>
+typename per_device<T>::iterator& per_device<T>::iterator::operator++()
+{
+    ++it;
+    return *this;
+}
+
+template<typename T>
+std::tuple<device&, T&> per_device<T>::iterator::operator*() const
+{
+    return std::forward_as_tuple(active_mask.get_device(it->first), it->second);
+}
+
+template<typename T>
+bool per_device<T>::iterator::operator==(const iterator& other) const
+{
+    return it == other.it;
+}
+
+template<typename T>
+bool per_device<T>::iterator::operator!=(const iterator& other) const
+{
+    return it != other.it;
+}
+
+template<typename T>
+typename per_device<T>::iterator per_device<T>::begin()
+{
+    return {active_mask, devices.begin()};
+}
+
+template<typename T>
+typename per_device<T>::iterator per_device<T>::end()
+{
+    return {active_mask, devices.end()};
 }
 
 }

@@ -66,19 +66,16 @@ private:
     struct per_device_data
     {
         gbuffer_texture gbuffer_copy;
-
         std::unique_ptr<device_transfer_interface> transfer;
-
         std::unique_ptr<Pipeline> ray_tracer;
-        std::unique_ptr<skinning_stage> skinning;
-        std::unique_ptr<scene_update_stage> scene_update;
-
         distribution_params dist;
-        dependencies last_frame_deps;
     };
     std::vector<per_device_data> per_device;
+    std::unique_ptr<skinning_stage> skinning;
+    std::unique_ptr<scene_update_stage> scene_update;
     std::unique_ptr<stitch_stage> stitch;
     std::unique_ptr<raster_stage> gbuffer_rasterizer;
+    dependencies last_frame_deps;
 };
 
 using path_tracer_renderer = rt_renderer<path_tracer_stage>;

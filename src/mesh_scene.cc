@@ -193,39 +193,44 @@ void mesh_scene::refresh_instance_cache(bool force)
     if(force) ensure_blas();
 }
 
-bool mesh_scene::reserve_pre_transformed_vertices(device_id id, size_t max_vertex_count)
+bool mesh_scene::reserve_pre_transformed_vertices(size_t max_vertex_count)
 {
     if(!as_update.get_context()->is_ray_tracing_supported())
         return false;
 
-    auto& as = as_update[id];
-    if(as.pre_transformed_vertex_count < max_vertex_count)
+    bool ret = false;
+    for(auto[dev, as]: as_update)
     {
-        as.pre_transformed_vertices = create_buffer(
-            as_update.get_device(id),
-            {
-                {}, max_vertex_count * sizeof(mesh::vertex),
-                vk::BufferUsageFlagBits::eVertexBuffer|vk::BufferUsageFlagBits::eStorageBuffer,
-                vk::SharingMode::eExclusive
-            },
-            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
-        );
-        as.pre_transformed_vertex_count = max_vertex_count;
-        return true;
+        if(as.pre_transformed_vertex_count < max_vertex_count)
+        {
+            as.pre_transformed_vertices = create_buffer(
+                dev,
+                {
+                    {}, max_vertex_count * sizeof(mesh::vertex),
+                    vk::BufferUsageFlagBits::eVertexBuffer|vk::BufferUsageFlagBits::eStorageBuffer,
+                    vk::SharingMode::eExclusive
+                },
+                VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
+            );
+            as.pre_transformed_vertex_count = max_vertex_count;
+            ret = true;
+        }
     }
-    return false;
+    return ret;
 }
 
-void mesh_scene::clear_pre_transformed_vertices(device_id id)
+void mesh_scene::clear_pre_transformed_vertices()
 {
     if(!as_update.get_context()->is_ray_tracing_supported())
         return;
 
-    auto& as = as_update[id];
-    if(as.pre_transformed_vertex_count != 0)
+    for(auto[dev, as]: as_update)
     {
-        as.pre_transformed_vertices.drop();
-        as.pre_transformed_vertex_count = 0;
+        if(as.pre_transformed_vertex_count != 0)
+        {
+            as.pre_transformed_vertices.drop();
+            as.pre_transformed_vertex_count = 0;
+        }
     }
 }
 

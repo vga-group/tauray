@@ -12,10 +12,10 @@ namespace tr
 class scene;
 // Applies animations to all skinned meshes. This should run _before_ scene
 // update!
-class skinning_stage: public single_device_stage
+class skinning_stage: public multi_device_stage
 {
 public:
-    skinning_stage(device_data& dev, uint32_t max_instances);
+    skinning_stage(device_mask dev, uint32_t max_instances);
 
     void set_scene(scene* s);
     scene* get_scene();
@@ -23,7 +23,7 @@ public:
 private:
     void update(uint32_t frame_index) override;
 
-    compute_pipeline comp;
+    per_device<compute_pipeline> comp;
     scene* cur_scene;
     timer stage_timer;
     uint32_t max_instances;

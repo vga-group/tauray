@@ -117,6 +117,9 @@ public:
     per_device(device_mask mask);
 
     template<typename... Args>
+    per_device(device_mask mask, Args&&... args);
+
+    template<typename... Args>
     void emplace(device_mask mask, Args&&... args);
 
     template<typename F>
@@ -125,6 +128,7 @@ public:
     T& operator[](device_id id);
     const T& operator[](device_id id) const;
 
+    // TODO: Delete and replace with iterators instead.
     template<typename F>
     void operator()(F&& callback);
 
@@ -134,9 +138,24 @@ public:
     context* get_context() const;
     device& get_device(device_id id) const;
 
+    struct iterator
+    {
+        device_mask active_mask;
+        typename std::unordered_map<device_id, T>::iterator it;
+
+        iterator& operator++();
+        std::tuple<device&, T&> operator*() const;
+
+        bool operator==(const iterator& other) const;
+        bool operator!=(const iterator& other) const;
+    };
+
+    iterator begin();
+    iterator end();
+
 private:
     device_mask active_mask;
-    std::unordered_map<unsigned, T> devices;
+    std::unordered_map<device_id, T> devices;
 };
 
 }

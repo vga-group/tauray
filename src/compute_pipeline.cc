@@ -5,7 +5,7 @@
 namespace tr
 {
 
-compute_pipeline::compute_pipeline(device_data& dev, const params& p)
+compute_pipeline::compute_pipeline(device& dev, const params& p)
 :   basic_pipeline(
         dev,
         get_bindings(p.src, p.binding_array_lengths),

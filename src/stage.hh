@@ -28,6 +28,8 @@ public:
 
 protected:
     virtual void update(uint32_t frame_index);
+    device_mask get_device_mask() const;
+    context* get_context() const;
 
     vk::CommandBuffer begin_compute(device_id id, bool single_use = false);
     void end_compute(vk::CommandBuffer buf, device_id id, uint32_t frame_index, uint32_t swapchain_index = 0);
