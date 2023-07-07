@@ -29,14 +29,15 @@ skinning_stage::skinning_stage(device_mask dev, uint32_t max_instances)
     stage_timer(dev, "skinning"),
     max_instances(max_instances)
 {
-    comp([&](device&, compute_pipeline& comp){
+    for(auto[dev, comp]: comp)
+    {
         comp.update_descriptor_set({
             {"source_data", max_instances},
             {"destination_data", max_instances},
             {"skin_data", max_instances},
             {"joint_data", max_instances}
         });
-    });
+    }
 }
 
 void skinning_stage::set_scene(scene* s)
@@ -53,7 +54,8 @@ void skinning_stage::set_scene(scene* s)
 
     clear_commands();
 
-    comp([&](device& dev, compute_pipeline& comp){
+    for(auto[dev, comp]: comp)
+    {
         std::vector<vk::DescriptorBufferInfo> dbi_source_data;
         std::vector<vk::DescriptorBufferInfo> dbi_destination_data;
         std::vector<vk::DescriptorBufferInfo> dbi_skin_data;
@@ -128,7 +130,7 @@ void skinning_stage::set_scene(scene* s)
             stage_timer.end(cb, dev.index, i);
             end_compute(cb, dev.index, i);
         }
-    });
+    }
 }
 
 scene* skinning_stage::get_scene()

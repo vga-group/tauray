@@ -44,7 +44,8 @@ placeholders::placeholders(context& ctx)
     ),
     buffers(device_mask::all(ctx))
 {
-    buffers([&](device& d, buffer& buf){
+    for(auto[d, buf]: buffers)
+    {
         buf.storage_buffer = create_buffer(
             d,
             {
@@ -69,7 +70,7 @@ placeholders::placeholders(context& ctx)
         buf.storage_info = vk::DescriptorBufferInfo{
             buf.storage_buffer, 0, VK_WHOLE_SIZE
         };
-    });
+    }
 }
 
 }

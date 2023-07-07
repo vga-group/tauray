@@ -96,7 +96,8 @@ void gpu_buffer::foreach(uint32_t frame_index, size_t entries, F&& f)
         {
             // Harder update since devices may have incompatible alignment
             // requirements :/
-            buffers([&](device& dev, buffer_data& buf){
+            for(auto[dev, buf]: buffers)
+            {
                 size_t local_alignment = calc_buffer_entry_alignment(dev.index, alignment);
                 char* data = nullptr;
                 vkm<vk::Buffer>& staging_buffer = buf.staging[frame_index];
@@ -106,7 +107,7 @@ void gpu_buffer::foreach(uint32_t frame_index, size_t entries, F&& f)
                     memcpy(data + local_alignment * i, shared_data.get() + alignment * i, sizeof(T));
 
                 vmaUnmapMemory(dev.allocator, staging_buffer.get_allocation());
-            });
+            }
         }
         else update(frame_index, shared_data.get(), 0, size);
     }

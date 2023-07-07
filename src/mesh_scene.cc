@@ -404,11 +404,12 @@ void mesh_scene::add_acceleration_structure_instances(
 
 void mesh_scene::invalidate_tlas()
 {
-    as_update([&](device&, as_update_data& as){
+    for(auto[dev, as]: as_update)
+    {
         as.tlas_reset_needed = true;
         for(auto& f: as.per_frame)
             f.command_buffers_outdated = true;
-    });
+    }
 }
 
 void mesh_scene::ensure_blas()

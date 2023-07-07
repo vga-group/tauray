@@ -22,16 +22,14 @@ timer::timer(timer&& other)
 
 timer::~timer()
 {
-    timer_id([&](device& d, int timer_id){
+    for(auto[d, timer_id]: timer_id)
         d.ctx->get_timing().unregister_timer(d.index, timer_id);
-    });
 }
 
 timer& timer::operator=(timer&& other)
 {
-    timer_id([&](device& d, int timer_id){
+    for(auto[d, timer_id]: timer_id)
         d.ctx->get_timing().unregister_timer(d.index, timer_id);
-    });
     timer_id = std::move(other.timer_id);
     other.timer_id.clear();
     return *this;

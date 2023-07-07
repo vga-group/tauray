@@ -74,14 +74,6 @@ const T& per_device<T>::operator[](device_id id) const
 }
 
 template<typename T>
-template<typename F>
-void per_device<T>::operator()(F&& callback)
-{
-    for(device& dev: active_mask)
-        callback(dev, devices.at(dev.index));
-}
-
-template<typename T>
 device_mask per_device<T>::get_mask() const
 {
     return active_mask;

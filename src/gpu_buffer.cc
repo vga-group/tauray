@@ -34,11 +34,12 @@ bool gpu_buffer::resize(size_t size)
         vk::SharingMode::eExclusive
     );
 
-    buffers([&](device& dev, buffer_data& buf){
+    for(auto[dev, buf]: buffers)
+    {
         buf.buffer = create_buffer(dev, gpu_buffer_info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
             buf.staging[i] = create_staging_buffer(dev, this->capacity, nullptr);
-    });
+    }
     return true;
 }
 
@@ -72,13 +73,14 @@ void gpu_buffer::update(uint32_t frame_index, const void* data, size_t offset, s
     if(bytes == 0)
         return;
 
-    buffers([&](device& dev, buffer_data& buf){
+    for(auto[dev, buf]: buffers)
+    {
         vkm<vk::Buffer>& staging_buffer = buf.staging[frame_index];
         char* ptr = nullptr;
         vmaMapMemory(dev.allocator, staging_buffer.get_allocation(), (void**)&ptr);
         memcpy(ptr + offset, data, bytes);
         vmaUnmapMemory(dev.allocator, staging_buffer.get_allocation());
-    });
+    }
 }
 
 void gpu_buffer::update_one(device_id id, uint32_t frame_index, const void* data, size_t offset, size_t bytes)

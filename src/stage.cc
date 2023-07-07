@@ -7,7 +7,8 @@ namespace tr
 stage::stage(device_mask dev, command_buffer_strategy strategy)
 : buffers(dev), strategy(strategy)
 {
-    buffers([&](device& dev, cb_data& c){
+    for(auto[dev, c]: buffers)
+    {
         c.local_step_counter = 0;
         c.progress = create_timeline_semaphore(dev);
         switch(strategy)
@@ -22,14 +23,13 @@ stage::stage(device_mask dev, command_buffer_strategy strategy)
             c.command_buffers.resize(MAX_FRAMES_IN_FLIGHT * dev.ctx->get_swapchain_image_count());
             break;
         }
-    });
+    }
 }
 
 stage::~stage()
 {
-    buffers([&](device& dev, cb_data& c){
+    for(auto[dev, c]: buffers)
         dev.ctx->get_progress_tracker().erase_timeline(*c.progress);
-    });
 }
 
 dependencies stage::run(dependencies deps)
@@ -41,7 +41,8 @@ dependencies stage::run(dependencies deps)
 
     size_t cb_index = get_command_buffer_index(frame_index, swapchain_index);
 
-    buffers([&](device& dev, cb_data& c){
+    for(auto[dev, c]: buffers)
+    {
         dev.ctx->get_progress_tracker().set_timeline(dev.index, c.progress, c.command_buffers[cb_index].size());
 
         for(size_t i = 0; i < c.command_buffers[cb_index].size(); ++i)
@@ -69,7 +70,7 @@ dependencies stage::run(dependencies deps)
             deps.clear(dev.index);
             deps.add({dev.index, *c.progress, c.local_step_counter});
         }
-    });
+    }
 
     return deps;
 }
@@ -154,9 +155,9 @@ void stage::end_commands(vk::CommandBuffer buf, vk::CommandPool pool, device_id 
 
 void stage::clear_commands()
 {
-    buffers([&](device&, cb_data& c){
-        for(auto& vec: c.command_buffers) vec.clear();
-    });
+    for(auto[d, c]: buffers)
+        for(auto& vec: c.command_buffers)
+            vec.clear();
 }
 
 single_device_stage::single_device_stage(device& dev, command_buffer_strategy strategy)

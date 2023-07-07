@@ -542,13 +542,14 @@ void texture::create(size_t data_size, void* data)
         vk::SharingMode::eExclusive
     };
 
-    buffers([&](device& dev, buffer_data& buf){
+    for(auto[dev, buf]: buffers)
+    {
         create_tex(
             dev, array_layers, buf.img, buf.array_view,
             buf.layer_views, buf.multiview_block_views, img_info,
             layout, data_size, data
         );
-    });
+    }
 }
 
 }

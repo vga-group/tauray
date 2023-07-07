@@ -297,7 +297,8 @@ top_level_acceleration_structure::top_level_acceleration_structure(
         vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
     );
 
-    buffers([&](device& dev, buffer_data& bd){
+    for(auto[dev, bd]: buffers)
+    {
         vk::AccelerationStructureGeometryKHR geom(
             VULKAN_HPP_NAMESPACE::GeometryTypeKHR::eInstances,
             vk::AccelerationStructureGeometryInstancesDataKHR{
@@ -353,7 +354,7 @@ top_level_acceleration_structure::top_level_acceleration_structure(
         );
         tlas_info.scratchData = bd.scratch_buffer.get_address();
         bd.tlas_address = dev.dev.getAccelerationStructureAddressKHR({bd.tlas});
-    });
+    }
 }
 
 gpu_buffer& top_level_acceleration_structure::get_instances_buffer()

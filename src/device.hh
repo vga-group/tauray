@@ -124,10 +124,6 @@ public:
     T& operator[](device_id id);
     const T& operator[](device_id id) const;
 
-    // TODO: Delete and replace with iterators instead.
-    template<typename F>
-    void operator()(F&& callback);
-
     void clear();
 
     device_mask get_mask() const;

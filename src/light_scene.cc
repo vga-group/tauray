@@ -276,11 +276,12 @@ size_t light_scene::get_aabbs(vk::AabbPositionsKHR* aabb)
 
 void light_scene::invalidate_acceleration_structures()
 {
-    as_update([&](device&, as_update_data& as){
+    for(auto[dev, as]: as_update)
+    {
         as.scene_reset_needed = true;
         for(auto& f: as.per_frame)
             f.command_buffers_outdated = true;
-    });
+    }
 }
 
 size_t light_scene::get_max_capacity() const

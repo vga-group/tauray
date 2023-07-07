@@ -189,7 +189,8 @@ void mesh::init_buffers()
     size_t index_bytes = indices.size() * sizeof(indices[0]);
     size_t skin_bytes = skin.size() * sizeof(skin[0]);
 
-    buffers([&](device& dev, buffer_data& buf){
+    for(auto[dev, buf]: buffers)
+    {
         vk::BufferUsageFlags buf_flags =
             vk::BufferUsageFlagBits::eStorageBuffer;
         if(dev.ctx->is_ray_tracing_supported())
@@ -239,7 +240,7 @@ void mesh::init_buffers()
         }
 
         end_command_buffer(dev, cb);
-    });
+    }
 }
 
 std::vector<vk::VertexInputBindingDescription> mesh::get_bindings()
