@@ -64,7 +64,6 @@ void rt_renderer<Pipeline>::set_scene(scene* s)
     if(s)
     {
         s->refresh_instance_cache(true);
-        skinning->set_scene(s);
         scene_update->set_scene(s);
         for(size_t i = 0; i < per_device.size(); ++i)
         {
@@ -106,8 +105,7 @@ void rt_renderer<Pipeline>::render()
     device& display_device = ctx->get_display_device();
     std::vector<device>& devices = ctx->get_devices();
 
-    dependencies common_deps = skinning->run(last_frame_deps);
-    common_deps = scene_update->run(common_deps);
+    dependencies common_deps = scene_update->run(last_frame_deps);
     last_frame_deps.clear();
 
     for(size_t i = 0; i < devices.size(); ++i)
@@ -241,7 +239,6 @@ void rt_renderer<Pipeline>::init_resources()
 
     double even_workload_ratio = 1.0/ctx->get_devices().size();
     device& display_device = ctx->get_display_device();
-    skinning.reset(new skinning_stage(device_mask::all(*ctx), opt.max_instances));
     scene_update.reset(new scene_stage(device_mask::all(*ctx), opt.scene_options));
 
     for(device_id id = 0; id < per_device.size(); ++id)

@@ -563,7 +563,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rr_opt.pcss_samples = min(opt.pcss, 64);
                 rr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
                 rr_opt.z_pre_pass = opt.use_z_pre_pass;
-                rr_opt.max_skinned_meshes = s.get_instance_count();
                 rr_opt.scene_options = scene_options;
                 return new raster_renderer(ctx, rr_opt);
             }
@@ -611,7 +610,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.sh.indirect_clamping = opt.indirect_clamping;
                 dr_opt.sh.regularization_gamma = opt.regularization;
                 dr_opt.sh.sampling_weights = sampling_weights;
-                dr_opt.max_skinned_meshes = s.get_instance_count();
                 dr_opt.port_number = opt.port;
                 //dr_opt.scene_options = scene_options;
                 return new dshgi_server(ctx, dr_opt);

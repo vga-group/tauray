@@ -32,7 +32,6 @@ void dshgi_renderer::render()
 
     dependencies deps(ctx->begin_frame());
 
-    deps = skinning->run(deps);
     deps = scene_update->run(deps);
     if(sh) deps = sh->render(deps);
     else if(client) deps = client->render(deps);

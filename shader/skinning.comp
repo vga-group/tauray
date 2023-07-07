@@ -15,27 +15,25 @@ struct skin
 layout(binding = 0, scalar) readonly buffer source_buffer
 {
     vertex vertices[];
-} source_data[];
+} source_data;
 
 layout(binding = 1) readonly buffer skin_buffer
 {
     skin skins[];
-} skin_data[];
+} skin_data;
 
 layout(binding = 2, scalar) buffer destination_buffer
 {
     vertex vertices[];
-} destination_data[];
+} destination_data;
 
 layout(binding = 3) readonly buffer joint_buffer
 {
     mat4 transforms[];
-} joint_data[];
+} joint_data;
 
 layout(push_constant) uniform push_constant_buffer
 {
-    uint mesh_id;
-    uint model_id;
     uint vertex_count;
 } control;
 
@@ -45,22 +43,22 @@ void main()
 
     if(i < control.vertex_count)
     {
-        skin s = skin_data[control.mesh_id].skins[i];
+        skin s = skin_data.skins[i];
 
         mat4 skin_mat =
-            s.weights.x * joint_data[control.model_id].transforms[s.joints.x] +
-            s.weights.y * joint_data[control.model_id].transforms[s.joints.y] +
-            s.weights.z * joint_data[control.model_id].transforms[s.joints.z] +
-            s.weights.w * joint_data[control.model_id].transforms[s.joints.w];
+            s.weights.x * joint_data.transforms[s.joints.x] +
+            s.weights.y * joint_data.transforms[s.joints.y] +
+            s.weights.z * joint_data.transforms[s.joints.z] +
+            s.weights.w * joint_data.transforms[s.joints.w];
         mat4 it_skin_mat = transpose(inverse(skin_mat));
 
-        vertex src = source_data[control.mesh_id].vertices[i];
+        vertex src = source_data.vertices[i];
         vertex dst = src;
 
         dst.pos = vec3(skin_mat * vec4(src.pos, 1.0));
         dst.normal = normalize(vec3(it_skin_mat * vec4(src.normal, 0.0)));
         dst.tangent = vec4(normalize(vec3(it_skin_mat * vec4(src.tangent.xyz, 0.0))), src.tangent.w);
 
-        destination_data[control.mesh_id].vertices[i] = dst;
+        destination_data.vertices[i] = dst;
     }
 }

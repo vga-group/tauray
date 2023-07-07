@@ -171,6 +171,11 @@ struct scene_metadata_buffer
     uint32_t tri_light_count;
 };
 
+struct skinning_push_constants
+{
+    uint32_t vertex_count;
+};
+
 struct extract_tri_light_push_constants
 {
     uint32_t triangle_count;
@@ -191,6 +196,7 @@ namespace tr
 scene_stage::scene_stage(device_mask dev, const options& opt)
 :   multi_device_stage(dev), as_rebuild(true), command_buffers_outdated(true),
     force_instance_refresh_frames(0), cur_scene(nullptr),
+    skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, {}, 1, true}),
     extract_tri_lights(dev, compute_pipeline::params{
         {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
             std::map<std::string, std::string>{{"PRE_TRANSFORMED_VERTICES", ""}} :
@@ -258,6 +264,13 @@ void scene_stage::update(uint32_t frame_index)
         cur_scene->track_shadow_maps(cur_scene->cameras);
 
     uint64_t frame_counter = get_context()->get_frame_counter();
+    for(mesh_object* obj: cur_scene->get_mesh_objects())
+    {
+        model* m = const_cast<model*>(obj->get_model());
+        if(!m) continue;
+        if(m->has_joints_buffer())
+            m->update_joints(frame_index);
+    }
 
     size_t tri_light_count = 0;
     size_t vertex_count = 0;
@@ -592,6 +605,7 @@ void scene_stage::record_command_buffers()
 
             bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
 
+            record_skinning(dev.index, i, cb);
             if(dev.ctx->is_ray_tracing_supported())
             {
                 record_as_build(dev.index, i, cb);
@@ -604,6 +618,54 @@ void scene_stage::record_command_buffers()
             stage_timer.end(cb, dev.index, i);
             end_graphics(cb, dev.index, i);
         }
+    }
+}
+
+void scene_stage::record_skinning(device_id id, uint32_t frame_index, vk::CommandBuffer cb)
+{
+    skinning[id].bind(cb);
+
+    // Update vertex buffers
+    for(mesh_object* obj: cur_scene->get_mesh_objects())
+    {
+        model* m = const_cast<model*>(obj->get_model());
+        if(!m || !m->has_joints_buffer()) continue;
+
+        m->upload_joints(cb, id, frame_index);
+        for(auto& vg: *m)
+        {
+            mesh* dst = vg.m;
+            mesh* src = dst->get_animation_source();
+            uint32_t vertex_count = vg.m->get_vertices().size();
+
+            skinning[id].push_constants(cb, skinning_push_constants{vertex_count});
+            skinning[id].push_descriptors(cb, {
+                {"source_data", {src->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}},
+                {"destination_data", {dst->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}},
+                {"skin_data", {src->get_skin_buffer(id), 0, VK_WHOLE_SIZE}},
+                {"joint_data", {m->get_joint_buffer()[id], 0, VK_WHOLE_SIZE}}
+            });
+            cb.dispatch((vertex_count+31u)/32u, 1, 1);
+        }
+    }
+
+    // Update acceleration structures
+    if(get_context()->is_ray_tracing_supported())
+    {
+        // Barrier to ensure vertex buffers are updated by the time we try
+        // to do BLAS updates.
+        vk::MemoryBarrier barrier(
+            vk::AccessFlagBits::eShaderWrite,
+            vk::AccessFlagBits::eAccelerationStructureWriteKHR
+        );
+
+        cb.pipelineBarrier(
+            vk::PipelineStageFlagBits::eComputeShader,
+            vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+            {}, barrier, {}, {}
+        );
+
+        cur_scene->refresh_dynamic_acceleration_structures(id, frame_index, cb);
     }
 }
 

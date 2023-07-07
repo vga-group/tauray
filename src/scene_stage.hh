@@ -28,21 +28,10 @@ protected:
 
 private:
     void record_command_buffers();
-    void record_as_build(
-        device_id id,
-        uint32_t frame_index,
-        vk::CommandBuffer cb
-    );
-
-    void record_tri_light_extraction(
-        device_id id,
-        vk::CommandBuffer cb
-    );
-
-    void record_pre_transform(
-        device_id id,
-        vk::CommandBuffer cb
-    );
+    void record_skinning(device_id id, uint32_t frame_index, vk::CommandBuffer cb);
+    void record_as_build(device_id id, uint32_t frame_index, vk::CommandBuffer cb);
+    void record_tri_light_extraction(device_id id, vk::CommandBuffer cb);
+    void record_pre_transform(device_id id, vk::CommandBuffer cb);
 
     bool as_rebuild;
     size_t as_instance_count;
@@ -53,6 +42,7 @@ private:
     // algorithms.
     std::vector<uint8_t> old_camera_data;
 
+    per_device<compute_pipeline> skinning;
     per_device<compute_pipeline> extract_tri_lights;
     per_device<compute_pipeline> pre_transform;
 

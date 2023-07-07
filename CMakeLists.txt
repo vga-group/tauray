@@ -145,7 +145,6 @@ add_library(tauray-core STATIC
   src/shadow_map.cc
   src/shadow_map_stage.cc
   src/shadow_map_renderer.cc
-  src/skinning_stage.cc
   src/spatial_reprojection_stage.cc
   src/stage.cc
   src/stitch_stage.cc

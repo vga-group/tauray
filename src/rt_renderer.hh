@@ -18,7 +18,6 @@
 #include "feature_stage.hh"
 #include "stitch_stage.hh"
 #include "scene_stage.hh"
-#include "skinning_stage.hh"
 #include "renderer.hh"
 #include "device_transfer.hh"
 #include "post_processing_renderer.hh"
@@ -71,7 +70,6 @@ private:
         distribution_params dist;
     };
     std::vector<per_device_data> per_device;
-    std::unique_ptr<skinning_stage> skinning;
     std::unique_ptr<scene_stage> scene_update;
     std::unique_ptr<stitch_stage> stitch;
     std::unique_ptr<raster_stage> gbuffer_rasterizer;

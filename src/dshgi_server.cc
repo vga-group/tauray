@@ -110,7 +110,6 @@ dshgi_server::dshgi_server(context& ctx, const options& opt)
 :   ctx(&ctx), opt(opt), sh(ctx, opt.sh), exit_sender(false),
     subscriber_count(0), sender_thread(sender_worker, this)
 {
-    skinning.reset(new skinning_stage(ctx.get_display_device(), opt.max_skinned_meshes));
     scene_update.reset(new scene_stage(ctx.get_display_device(), {}));
     sh_grid_to_cpu.reset(new sh_grid_to_cpu_stage(ctx.get_display_device()));
 
@@ -128,7 +127,6 @@ void dshgi_server::set_scene(scene* s)
 {
     cur_scene = s;
     sh.set_scene(s);
-    skinning->set_scene(s);
     scene_update->set_scene(s);
     sh_grid_to_cpu->set_scene(s, &sh);
 }
@@ -140,7 +138,6 @@ void dshgi_server::render()
         dependencies deps(ctx->begin_frame());
         device& d = ctx->get_display_device();
 
-        deps = skinning->run(deps);
         deps = scene_update->run(deps);
         uint64_t signal_value = ctx->get_frame_counter()-1;
         if(signal_value != 0)

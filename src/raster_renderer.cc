@@ -15,7 +15,6 @@ raster_renderer::raster_renderer(context& ctx, const options& opt)
         opt.post_process
     )
 {
-    skinning.reset(new skinning_stage(ctx.get_display_device(), opt.max_skinned_meshes));
     scene_update.reset(new scene_stage(ctx.get_display_device(), opt.scene_options));
     init_common_resources();
 }
@@ -27,7 +26,6 @@ raster_renderer::~raster_renderer()
 void raster_renderer::set_scene(scene* s)
 {
     cur_scene = s;
-    skinning->set_scene(s);
 
     // First, update without shadow maps
     s->set_shadow_map_renderer(nullptr);
@@ -48,7 +46,6 @@ void raster_renderer::set_scene(scene* s)
 void raster_renderer::render()
 {
     dependencies deps(ctx->begin_frame());
-    deps = skinning->run(deps);
     deps = scene_update->run(deps);
 
     deps = render_core(deps);

@@ -6,7 +6,6 @@
 #include "raster_stage.hh"
 #include "envmap_stage.hh"
 #include "scene_stage.hh"
-#include "skinning_stage.hh"
 #include "shadow_map_renderer.hh"
 #include "post_processing_renderer.hh"
 #include "renderer.hh"
@@ -28,7 +27,6 @@ public:
         // from taking place during final rasterization at the cost of an extra
         // z pass.
         bool z_pre_pass = true;
-        int max_skinned_meshes = 1024;
     };
 
     raster_renderer(context& ctx, const options& opt);
@@ -47,7 +45,6 @@ protected:
     context* ctx;
     options opt;
     scene* cur_scene = nullptr;
-    std::unique_ptr<skinning_stage> skinning;
     std::unique_ptr<scene_stage> scene_update;
 
 private:
