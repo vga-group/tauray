@@ -27,7 +27,7 @@ public:
         bool use_push_descriptors = false;
     };
 
-    rt_pipeline(device_data& dev, const options& state);
+    rt_pipeline(device& dev, const options& state);
 
     void trace_rays(vk::CommandBuffer buf, uvec3 size);
 

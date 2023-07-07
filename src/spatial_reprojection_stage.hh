@@ -20,7 +20,7 @@ public:
     };
 
     spatial_reprojection_stage(
-        device_data& dev,
+        device& dev,
         gbuffer_target& target_viewport,
         const options& opt
     );

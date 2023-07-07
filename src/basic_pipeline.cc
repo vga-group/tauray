@@ -169,7 +169,7 @@ const vk::DescriptorSetLayoutBinding* basic_pipeline::find_descriptor_binding(
     return nullptr;
 }
 
-device_data* basic_pipeline::get_device() const
+device* basic_pipeline::get_device() const
 {
     return dev;
 }

@@ -118,7 +118,7 @@ void progress_tracker::update_progress_bar(
 
 void progress_tracker::poll_worker(progress_tracker* self)
 {
-    std::vector<device_data>& devices = self->ctx->get_devices();
+    std::vector<device>& devices = self->ctx->get_devices();
 
     std::chrono::steady_clock::time_point start_time;
     bool first = true;

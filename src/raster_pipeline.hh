@@ -60,7 +60,7 @@ public:
         bool use_push_descriptors = false;
     };
 
-    raster_pipeline(device_data& dev, const pipeline_state& state);
+    raster_pipeline(device& dev, const pipeline_state& state);
 
     vk::Framebuffer get_framebuffer(uint32_t frame_index) const;
     const pipeline_state& get_state() const;

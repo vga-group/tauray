@@ -50,10 +50,6 @@ struct device
     VmaAllocator allocator;
 };
 
-// TODO: Remove near end of refactor, pointless to do now since most references
-// will go away.
-using device_data = device;
-
 class device_mask
 {
 public:

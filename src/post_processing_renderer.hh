@@ -32,7 +32,7 @@ public:
     };
 
     post_processing_renderer(
-        device_data& dev, uvec2 output_size, const options& opt
+        device& dev, uvec2 output_size, const options& opt
     );
     ~post_processing_renderer();
 
@@ -51,7 +51,7 @@ private:
     void init_pipelines();
     void deinit_pipelines();
 
-    device_data* dev;
+    device* dev;
     options opt;
     uvec2 output_size;
     scene* cur_scene = nullptr;

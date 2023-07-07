@@ -4,7 +4,7 @@ namespace tr
 {
 
 post_processing_renderer::post_processing_renderer(
-    device_data& dev, uvec2 output_size, const options& opt
+    device& dev, uvec2 output_size, const options& opt
 ): dev(&dev), opt(opt), output_size(output_size)
 {
     // It's easiest to test WIP post processing pipelines by forcing their

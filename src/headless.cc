@@ -104,7 +104,7 @@ headless::~headless()
 
 uint32_t headless::prepare_next_image(uint32_t frame_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     d.graphics_queue.submit(
         vk::SubmitInfo(
             0, nullptr, nullptr, 0, nullptr,
@@ -120,7 +120,7 @@ void headless::finish_image(
     uint32_t swapchain_index,
     bool display
 ){
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eTopOfPipe;
 
     if(!display || opt.output_file_type == EMPTY)
@@ -173,7 +173,7 @@ bool headless::queue_can_present(
 
 void headless::init_images()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     opt.display_count = max(opt.display_count, 1u);
 
     image_size = opt.size;
@@ -284,7 +284,7 @@ void headless::deinit_sdl()
 
 void headless::save_image(uint32_t swapchain_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     per_image_data& id = per_image[swapchain_index];
     if(!id.copy_ongoing) return;
 
@@ -533,7 +533,7 @@ void headless::save_image(uint32_t swapchain_index)
 
 void headless::view_image(uint32_t swapchain_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     per_image_data& id = per_image[swapchain_index];
     if(!id.copy_ongoing) return;
 

@@ -229,7 +229,7 @@ size_t shadow_map_renderer::get_total_cascade_count() const
 
 void shadow_map_renderer::init_resources()
 {
-    device_data& d = ctx->get_display_device();
+    device& d = ctx->get_display_device();
 
     shadow_atlas.reset(new atlas(
         d, {}, 1, vk::Format::eD32Sfloat,

@@ -19,7 +19,7 @@ void sh_renderer::set_scene(scene* s)
     cur_scene = s;
     per_grid.clear();
 
-    device_data& dev = ctx->get_display_device();
+    device& dev = ctx->get_display_device();
 
     for(sh_grid* s: cur_scene->get_sh_grids())
     {
@@ -44,7 +44,7 @@ dependencies sh_renderer::render(dependencies deps)
     // the stages need to be built _after_ scene_update_stage::set_scene.
     if(per_grid.size() == 0)
     {
-        device_data& dev = ctx->get_display_device();
+        device& dev = ctx->get_display_device();
         int grid_index = 0;
         for(sh_grid* s:  cur_scene->get_sh_grids())
         {

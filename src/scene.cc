@@ -318,14 +318,14 @@ std::vector<descriptor_state> scene::get_descriptor_info(device_id id, int32_t c
 
 void scene::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_index)
 {
-    device_data* dev = pipeline.get_device();
+    device* dev = pipeline.get_device();
     std::vector<descriptor_state> descriptors = get_descriptor_info(dev->index, camera_index);
     pipeline.update_descriptor_set(descriptors, frame_index);
 }
 
 void scene::push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_index)
 {
-    device_data* dev = pipeline.get_device();
+    device* dev = pipeline.get_device();
     std::vector<descriptor_state> descriptors = get_descriptor_info(dev->index, camera_index);
     pipeline.push_descriptors(cmd, descriptors);
 }
@@ -335,7 +335,7 @@ void scene::bind_placeholders(
     size_t max_samplers,
     size_t max_3d_samplers
 ){
-    device_data* dev = pipeline.get_device();
+    device* dev = pipeline.get_device();
     placeholders& pl = dev->ctx->get_placeholders();
 
     pipeline.update_descriptor_set({

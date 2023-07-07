@@ -52,7 +52,7 @@ looking_glass::~looking_glass()
 
 void looking_glass::recreate_swapchains()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     dev_data.dev.waitIdle();
 
     deinit_swapchain();
@@ -88,7 +88,7 @@ void looking_glass::setup_cameras(
 
 uint32_t looking_glass::prepare_next_image(uint32_t frame_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     uint32_t swapchain_index = d.dev.acquireNextImageKHR(
         swapchain, UINT64_MAX, frame_available[frame_index], {}
     ).value;
@@ -105,7 +105,7 @@ void looking_glass::finish_image(
     uint32_t swapchain_index,
     bool /*display*/
 ){
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     (void)d.present_queue.presentKHR({
         1, frame_finished[frame_index],
         1, &swapchain,
@@ -356,7 +356,7 @@ void looking_glass::deinit_sdl()
 
 void looking_glass::init_swapchain()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     std::vector<vk::SurfaceFormatKHR> formats =
         dev_data.pdev.getSurfaceFormatsKHR(surface);
 

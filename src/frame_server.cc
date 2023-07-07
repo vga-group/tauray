@@ -59,7 +59,7 @@ bool frame_server::init_frame()
 
 uint32_t frame_server::prepare_next_image(uint32_t frame_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     d.graphics_queue.submit(
         vk::SubmitInfo(
             0, nullptr, nullptr, 0, nullptr,
@@ -75,7 +75,7 @@ void frame_server::finish_image(
     uint32_t swapchain_index,
     bool display
 ){
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eTopOfPipe;
 
     if(!display)
@@ -127,7 +127,7 @@ bool frame_server::queue_can_present(
 
 void frame_server::init_images()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
 
     image_size = opt.size;
     image_array_layers = 1;
@@ -237,7 +237,7 @@ void frame_server::read_image_worker(frame_server* s)
             image_index = s->image_read_queue.front();
             s->image_read_queue.erase(s->image_read_queue.begin());
         }
-        device_data& d = s->get_display_device();
+        device& d = s->get_display_device();
         auto& id = s->per_image[image_index];
 
         std::vector<uint8_t> latest_frame(s->opt.size.x * s->opt.size.y * 3);

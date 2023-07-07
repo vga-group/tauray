@@ -10,7 +10,7 @@ namespace
 using namespace tr;
 
 void create_tex(
-    device_data& dev,
+    device& dev,
     unsigned array_layers,
     vkm<vk::Image>& img,
     vkm<vk::ImageView>& array_view,

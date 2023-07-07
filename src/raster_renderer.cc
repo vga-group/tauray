@@ -69,7 +69,7 @@ dependencies raster_renderer::render_core(dependencies deps)
 
 void raster_renderer::init_common_resources()
 {
-    device_data& d = ctx->get_display_device();
+    device& d = ctx->get_display_device();
 
     int max_msaa = (int)get_max_available_sample_count(*ctx);
     int fixed_msaa = min((int)next_power_of_two(opt.msaa_samples), max_msaa);

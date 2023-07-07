@@ -7,7 +7,7 @@ namespace tr
 {
 
 rt_pipeline::rt_pipeline(
-    device_data& dev, const options& opt
+    device& dev, const options& opt
 ):  basic_pipeline(
         dev,
         get_bindings(opt.src, opt.binding_array_lengths),

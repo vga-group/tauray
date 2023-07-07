@@ -7,7 +7,7 @@ namespace tr
 {
 
 raster_pipeline::raster_pipeline(
-    device_data& dev, const pipeline_state& state
+    device& dev, const pipeline_state& state
 ):  basic_pipeline(
         dev,
         get_bindings(state.src, state.binding_array_lengths),

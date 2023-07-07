@@ -74,12 +74,12 @@ context::~context() {}
 
 bool context::init_frame() { return false; }
 
-device_data& context::get_display_device()
+device& context::get_display_device()
 {
     return devices[display_device_index];
 }
 
-std::vector<device_data>& context::get_devices()
+std::vector<device>& context::get_devices()
 {
     return devices;
 }
@@ -153,7 +153,7 @@ dependency context::begin_frame()
     frame_counter++;
 
     timing.host_wait();
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     (void)d.dev.waitForFences(*frame_fences[frame_index], true, UINT64_MAX);
 
     // Get new images
@@ -196,7 +196,7 @@ void context::end_frame(const dependencies& deps)
 {
     dependencies local_deps = fill_end_frame_dependencies(deps);
 
-    device_data& d = get_display_device();
+    device& d = get_display_device();
 
     std::vector<vk::PipelineStageFlags> wait_stages(
         local_deps.size(d.index), vk::PipelineStageFlagBits::eTopOfPipe
@@ -231,7 +231,7 @@ uint32_t context::get_displayed_frame_counter() const
 
 void context::sync()
 {
-    for(device_data& dev: devices)
+    for(device& dev: devices)
         dev.dev.waitIdle();
 
     // No frames can be in flight anymore, so we can safely call all frame end
@@ -458,7 +458,7 @@ void context::init_devices()
         if(opt.disable_ray_tracing)
             vulkan_12_feats.pNext = nullptr;
 
-        device_data dev_data;
+        device dev_data;
         for(uint32_t i = 0; i < queue_family_props.size(); ++i)
         {
             auto flags = queue_family_props[i].queueFlags;
@@ -658,7 +658,7 @@ void context::init_devices()
 void context::deinit_devices()
 {
     sync();
-    for(device_data& dev_data: devices)
+    for(device& dev_data: devices)
     {
         dev_data.dev.destroyPipelineCache(dev_data.pp_cache);
         dev_data.dev.destroyCommandPool(dev_data.graphics_pool);
@@ -675,7 +675,7 @@ void context::deinit_devices()
 
 void context::init_resources()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
 
     // Create fences & semaphores
     frame_available.resize(MAX_FRAMES_IN_FLIGHT);
@@ -708,7 +708,7 @@ void context::init_resources()
 
 void context::reset_image_views()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
 
     // Create image views
     array_image_views.clear();

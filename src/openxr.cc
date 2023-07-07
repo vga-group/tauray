@@ -142,7 +142,7 @@ bool openxr::init_frame()
 
 void openxr::recreate_swapchains()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     dev_data.dev.waitIdle();
 
     deinit_window_swapchain();
@@ -163,7 +163,7 @@ void openxr::setup_xr_surroundings(
 
 uint32_t openxr::prepare_next_image(uint32_t frame_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
 
     uint32_t swapchain_index = 0;
     XrSwapchainImageAcquireInfo acquire_info = {
@@ -200,7 +200,7 @@ void openxr::finish_image(uint32_t frame_index, uint32_t swapchain_index, bool)
 {
     blit_images(frame_index, swapchain_index);
 
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     (void)d.present_queue.presentKHR({
         1, window_frame_finished[frame_index],
         1, &window_swapchain,
@@ -531,7 +531,7 @@ void openxr::deinit_xr()
 
 void openxr::init_session()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     XrGraphicsBindingVulkan2KHR binding = {
         XR_TYPE_GRAPHICS_BINDING_VULKAN2_KHR,
         nullptr,
@@ -586,7 +586,7 @@ void openxr::deinit_session()
 
 void openxr::init_xr_swapchain()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
 
     uint32_t format_count = 0;
     xrEnumerateSwapchainFormats(xr_session, 0, &format_count, nullptr);
@@ -731,7 +731,7 @@ void openxr::deinit_xr_swapchain()
 
 void openxr::init_window_swapchain()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     std::vector<vk::SurfaceFormatKHR> formats =
         dev_data.pdev.getSurfaceFormatsKHR(surface);
 
@@ -866,7 +866,7 @@ void openxr::deinit_window_swapchain()
 
 void openxr::init_local_resources()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     window_frame_available.resize(MAX_FRAMES_IN_FLIGHT);
     window_frame_finished.resize(MAX_FRAMES_IN_FLIGHT);
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -887,7 +887,7 @@ void openxr::deinit_local_resources()
 
 void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     vkm<vk::CommandBuffer> cmd = create_graphics_command_buffer(d);
     cmd->begin(vk::CommandBufferBeginInfo{
         vk::CommandBufferUsageFlagBits::eOneTimeSubmit
