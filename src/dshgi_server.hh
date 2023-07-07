@@ -2,7 +2,7 @@
 #define TAURAY_DSHGI_SERVER_HH
 #include "context.hh"
 #include "texture.hh"
-#include "scene_update_stage.hh"
+#include "scene_stage.hh"
 #include "sh_renderer.hh"
 #include "skinning_stage.hh"
 #include "renderer.hh"
@@ -41,7 +41,7 @@ private:
     options opt;
     scene* cur_scene = nullptr;
     std::unique_ptr<skinning_stage> skinning;
-    std::unique_ptr<scene_update_stage> scene_update;
+    std::unique_ptr<scene_stage> scene_update;
     std::unique_ptr<sh_grid_to_cpu_stage> sh_grid_to_cpu;
     sh_renderer sh;
 

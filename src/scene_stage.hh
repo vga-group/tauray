@@ -1,5 +1,5 @@
-#ifndef TAURAY_SCENE_UPDATE_STAGE_HH
-#define TAURAY_SCENE_UPDATE_STAGE_HH
+#ifndef TAURAY_SCENE_STAGE_HH
+#define TAURAY_SCENE_STAGE_HH
 #include "scene.hh"
 #include "stage.hh"
 #include "compute_pipeline.hh"
@@ -9,7 +9,7 @@ namespace tr
 {
 
 class shadow_map_renderer;
-class scene_update_stage: public multi_device_stage
+class scene_stage: public multi_device_stage
 {
 public:
     struct options
@@ -19,7 +19,7 @@ public:
         bool pre_transform_vertices = false;
     };
 
-    scene_update_stage(device_mask dev, const options& opt);
+    scene_stage(device_mask dev, const options& opt);
 
     void set_scene(scene* target);
 

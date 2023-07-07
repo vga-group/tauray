@@ -16,7 +16,7 @@ raster_renderer::raster_renderer(context& ctx, const options& opt)
     )
 {
     skinning.reset(new skinning_stage(ctx.get_display_device(), opt.max_skinned_meshes));
-    scene_update.reset(new scene_update_stage(ctx.get_display_device(), opt.scene_options));
+    scene_update.reset(new scene_stage(ctx.get_display_device(), opt.scene_options));
     init_common_resources();
 }
 

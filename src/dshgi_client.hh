@@ -3,7 +3,7 @@
 #include "context.hh"
 #include "stage.hh"
 #include "texture.hh"
-#include "scene_update_stage.hh"
+#include "scene_stage.hh"
 #include "compute_pipeline.hh"
 #include "sh_grid.hh"
 #include <condition_variable>

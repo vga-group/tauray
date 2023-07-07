@@ -40,8 +40,8 @@ texture& sh_renderer::get_sh_grid_texture(sh_grid* grid)
 dependencies sh_renderer::render(dependencies deps)
 {
     // This has to be done here, unfortunately. The sh_renderer::set_scene
-    // must be called _before_ scene_update_stage::set_scene, but the rest of
-    // the stages need to be built _after_ scene_update_stage::set_scene.
+    // must be called _before_ scene_stage::set_scene, but the rest of
+    // the stages need to be built _after_ scene_stage::set_scene.
     if(per_grid.size() == 0)
     {
         device& dev = ctx->get_display_device();

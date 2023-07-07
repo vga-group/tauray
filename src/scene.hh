@@ -78,7 +78,7 @@ public:
     );
 
 private:
-    friend class scene_update_stage;
+    friend class scene_stage;
 
     std::vector<descriptor_state> get_descriptor_info(device_id id, int32_t camera_index) const;
     void init_acceleration_structures();

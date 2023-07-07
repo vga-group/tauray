@@ -242,7 +242,7 @@ void rt_renderer<Pipeline>::init_resources()
     double even_workload_ratio = 1.0/ctx->get_devices().size();
     device& display_device = ctx->get_display_device();
     skinning.reset(new skinning_stage(device_mask::all(*ctx), opt.max_instances));
-    scene_update.reset(new scene_update_stage(device_mask::all(*ctx), opt.scene_options));
+    scene_update.reset(new scene_stage(device_mask::all(*ctx), opt.scene_options));
 
     for(device_id id = 0; id < per_device.size(); ++id)
     {

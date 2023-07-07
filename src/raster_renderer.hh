@@ -5,7 +5,7 @@
 #include "z_pass_stage.hh"
 #include "raster_stage.hh"
 #include "envmap_stage.hh"
-#include "scene_update_stage.hh"
+#include "scene_stage.hh"
 #include "skinning_stage.hh"
 #include "shadow_map_renderer.hh"
 #include "post_processing_renderer.hh"
@@ -21,7 +21,7 @@ public:
     struct options: raster_stage::options
     {
         int msaa_samples = 1;
-        scene_update_stage::options scene_options = {};
+        scene_stage::options scene_options = {};
         post_processing_renderer::options post_process = {};
         // Enabling the Z pre-pass can help with performance if the scene is
         // overdraw + bandwidth-heavy. It essentially just prevents all overdraw
@@ -48,7 +48,7 @@ protected:
     options opt;
     scene* cur_scene = nullptr;
     std::unique_ptr<skinning_stage> skinning;
-    std::unique_ptr<scene_update_stage> scene_update;
+    std::unique_ptr<scene_stage> scene_update;
 
 private:
     shadow_map_renderer smr;

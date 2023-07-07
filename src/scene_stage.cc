@@ -1,4 +1,4 @@
-#include "scene_update_stage.hh"
+#include "scene_stage.hh"
 #include "shadow_map_renderer.hh"
 #include "sh_grid.hh"
 #include "misc.hh"
@@ -188,7 +188,7 @@ struct pre_tranform_push_constants
 namespace tr
 {
 
-scene_update_stage::scene_update_stage(device_mask dev, const options& opt)
+scene_stage::scene_stage(device_mask dev, const options& opt)
 :   multi_device_stage(dev), as_rebuild(true), command_buffers_outdated(true),
     force_instance_refresh_frames(0), cur_scene(nullptr),
     extract_tri_lights(dev, compute_pipeline::params{
@@ -209,7 +209,7 @@ scene_update_stage::scene_update_stage(device_mask dev, const options& opt)
 {
 }
 
-void scene_update_stage::set_scene(scene* target)
+void scene_stage::set_scene(scene* target)
 {
     cur_scene = target;
 
@@ -249,7 +249,7 @@ void scene_update_stage::set_scene(scene* target)
     command_buffers_outdated = true;
 }
 
-void scene_update_stage::update(uint32_t frame_index)
+void scene_stage::update(uint32_t frame_index)
 {
     if(!cur_scene) return;
 
@@ -566,7 +566,7 @@ void scene_update_stage::update(uint32_t frame_index)
     }
 }
 
-void scene_update_stage::record_command_buffers()
+void scene_stage::record_command_buffers()
 {
     clear_commands();
 
@@ -607,7 +607,7 @@ void scene_update_stage::record_command_buffers()
     }
 }
 
-void scene_update_stage::record_as_build(
+void scene_stage::record_as_build(
     device_id id,
     uint32_t frame_index,
     vk::CommandBuffer cb
@@ -642,7 +642,7 @@ void scene_update_stage::record_as_build(
     cur_scene->tlas->rebuild(id, cb, as_instance_count, as_update);
 }
 
-void scene_update_stage::record_tri_light_extraction(
+void scene_stage::record_tri_light_extraction(
     device_id id,
     vk::CommandBuffer cb
 ){
@@ -663,7 +663,7 @@ void scene_update_stage::record_tri_light_extraction(
     }
 }
 
-void scene_update_stage::record_pre_transform(
+void scene_stage::record_pre_transform(
     device_id id,
     vk::CommandBuffer cb
 ){

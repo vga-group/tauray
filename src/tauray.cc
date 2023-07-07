@@ -367,7 +367,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         }
     }
 
-    scene_update_stage::options scene_options;
+    scene_stage::options scene_options;
     scene_options.max_instances = s.get_instance_count();
     scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles > 0;
     scene_options.pre_transform_vertices = opt.pre_transform_vertices;
