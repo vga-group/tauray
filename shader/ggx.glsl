@@ -369,6 +369,7 @@ void ggx_bsdf_sample(
             {
                 out_dir = vec3(0);
                 diffuse_weight = vec3(0);
+                specular_weight = vec3(0);
                 pdf = 0;
                 return;
             }
