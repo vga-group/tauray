@@ -32,6 +32,7 @@ public:
 
     feature_stage(
         device& dev,
+        scene_stage& ss,
         const gbuffer_target& output_target,
         const options& opt
     );

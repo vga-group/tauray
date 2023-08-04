@@ -1,7 +1,7 @@
 #include "z_pass_stage.hh"
 #include "mesh.hh"
 #include "shader_source.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "camera.hh"
 #include "misc.hh"
 
@@ -22,10 +22,12 @@ namespace tr
 
 z_pass_stage::z_pass_stage(
     device& dev,
+    scene_stage& ss,
     const std::vector<render_target>& depth_buffer_arrays
 ):  single_device_stage(dev),
-    cur_scene(nullptr),
-    z_pass_timer(dev, "Z-pass (" + std::to_string(count_array_layers(depth_buffer_arrays)) + " viewports)")
+    ss(&ss),
+    z_pass_timer(dev, "Z-pass (" + std::to_string(count_array_layers(depth_buffer_arrays)) + " viewports)"),
+    scene_state_counter(0)
 {
     for(const render_target& depth_buffer: depth_buffer_arrays)
     {
@@ -59,9 +61,10 @@ z_pass_stage::z_pass_stage(
     }
 }
 
-void z_pass_stage::set_scene(scene* s)
+void z_pass_stage::update(uint32_t)
 {
-    cur_scene = s;
+    if(!ss->check_update(scene_stage::GEOMETRY, scene_state_counter))
+        return;
 
     clear_commands();
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -74,13 +77,13 @@ void z_pass_stage::set_scene(scene* s)
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             // Bind descriptors
-            cur_scene->bind(*gfx, i, j);
+            ss->bind(*gfx, i, j);
             j += gfx->get_multiview_layer_count();
 
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
 
-            const std::vector<scene::instance>& instances = cur_scene->get_instances();
+            const std::vector<scene::instance>& instances = ss->get_instances();
 
             push_constant_buffer control;
             for(size_t i = 0; i < instances.size(); ++i)
@@ -108,11 +111,6 @@ void z_pass_stage::set_scene(scene* s)
         z_pass_timer.end(cb, dev->index, i);
         end_graphics(cb, i);
     }
-}
-
-scene* z_pass_stage::get_scene()
-{
-    return cur_scene;
 }
 
 }

@@ -48,13 +48,13 @@ protected:
     std::unique_ptr<scene_stage> scene_update;
 
 private:
-    shadow_map_renderer smr;
-    post_processing_renderer post_processing;
+    std::optional<post_processing_renderer> post_processing;
     std::vector<vkm<vk::Semaphore>> shared_resource_semaphores;
     gbuffer_texture gbuffer;
-    std::unique_ptr<envmap_stage> envmap;
-    std::unique_ptr<z_pass_stage> z_pass;
-    std::unique_ptr<raster_stage> raster;
+    std::optional<shadow_map_renderer> smr;
+    std::optional<envmap_stage> envmap;
+    std::optional<z_pass_stage> z_pass;
+    std::optional<raster_stage> raster;
 };
 
 }

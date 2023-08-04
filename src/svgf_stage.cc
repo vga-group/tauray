@@ -29,6 +29,7 @@ namespace tr
 
 svgf_stage::svgf_stage(
     device& dev,
+    scene_stage& ss,
     gbuffer_target& input_features,
     gbuffer_target& prev_features,
     const options& opt
@@ -40,19 +41,20 @@ svgf_stage::svgf_stage(
     input_features(input_features),
     prev_features(prev_features),
     svgf_timer(dev, "svgf (" + std::to_string(input_features.get_layer_count()) + " viewports)"),
-    jitter_buffer(dev, sizeof(pvec4)* 1, vk::BufferUsageFlagBits::eStorageBuffer)
+    jitter_buffer(dev, sizeof(pvec4)* 1, vk::BufferUsageFlagBits::eStorageBuffer),
+    ss(&ss),
+    scene_state_counter(0)
 {
-}
-
-void svgf_stage::set_scene(scene* cur_scene)
-{
-    this->cur_scene = cur_scene;
-    init_resources();
-    record_command_buffers();
 }
 
 void svgf_stage::update(uint32_t frame_index)
 {
+    if(ss->check_update(scene_stage::ENVMAP, scene_state_counter))
+    {
+        init_resources();
+        record_command_buffers();
+    }
+
     bool existing = jitter_history.size() != 0;
     size_t viewport_count = opt.active_viewport_count;
     jitter_history.resize(viewport_count);
@@ -60,7 +62,7 @@ void svgf_stage::update(uint32_t frame_index)
     for (size_t i = 0; i < viewport_count; ++i)
     {
         vec4& v = jitter_history[i];
-        vec2 cur_jitter = cur_scene->get_camera(i)->get_jitter();
+        vec2 cur_jitter = ss->get_scene()->get_camera(i)->get_jitter();
         vec2 prev_jitter = v;
         if (!existing) prev_jitter = cur_jitter;
         v = vec4(cur_jitter, prev_jitter);
@@ -98,7 +100,7 @@ void svgf_stage::init_resources()
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        cur_scene->bind(temporal_comp, i);
+        ss->bind(temporal_comp, i);
         temporal_comp.update_descriptor_set({
             {"in_color", {{}, input_features.color.view, vk::ImageLayout::eGeneral}},
             {"in_diffuse", {{}, input_features.diffuse.view, vk::ImageLayout::eGeneral}},

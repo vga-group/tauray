@@ -12,7 +12,7 @@
 namespace tr
 {
 
-class scene;
+class scene_stage;
 class shadow_map_renderer;
 class sh_grid;
 class raster_stage: public single_device_stage
@@ -47,22 +47,22 @@ public:
 
     raster_stage(
         device& dev,
+        scene_stage& ss,
         const std::vector<gbuffer_target>& output_array_targets,
         const options& opt
     );
 
-    void set_scene(scene* s);
-    scene* get_scene();
+protected:
+    void update(uint32_t frame_index) override;
 
 private:
-    void record_command_buffers();
-
     std::vector<std::unique_ptr<raster_pipeline>> array_pipelines;
     std::vector<gbuffer_target> output_targets;
     options opt;
 
+    uint32_t scene_state_counter;
     sampler brdf_integration_sampler;
-    scene* cur_scene;
+    scene_stage* ss;
     texture brdf_integration;
     texture noise_vector_2d;
     texture noise_vector_3d;

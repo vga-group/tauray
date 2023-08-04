@@ -11,7 +11,7 @@
 namespace tr
 {
 
-class scene;
+class scene_stage;
 class shadow_map_stage: public single_device_stage
 {
 public:
@@ -22,12 +22,12 @@ public:
 
     shadow_map_stage(
         device& dev,
+        scene_stage& ss,
         uvec4 local_rect,
         render_target& depth_buffer,
         const options& opt
     );
 
-    void set_scene(scene* s);
     void set_camera(const camera& cur_cam);
 
 private:
@@ -40,7 +40,8 @@ private:
     timer shadow_timer;
 
     camera cur_cam;
-    scene* cur_scene;
+    scene_stage* ss;
+    uint32_t scene_state_counter;
 };
 
 }

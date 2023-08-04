@@ -796,8 +796,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         {
             try
             {
-                s.set_shadow_map_renderer(nullptr);
-                s.set_sh_grid_textures(nullptr);
                 s.set_blas_strategy(opt.as_strategy);
                 s.set_camera_jitter(get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
                 rr.reset(create_renderer(ctx, opt, s));

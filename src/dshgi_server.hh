@@ -40,7 +40,7 @@ private:
     scene* cur_scene = nullptr;
     std::unique_ptr<scene_stage> scene_update;
     std::unique_ptr<sh_grid_to_cpu_stage> sh_grid_to_cpu;
-    sh_renderer sh;
+    std::optional<sh_renderer> sh;
 
     std::mutex frame_queue_mutex;
     std::condition_variable frame_queue_cv;

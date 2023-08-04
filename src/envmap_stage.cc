@@ -1,4 +1,5 @@
 #include "envmap_stage.hh"
+#include "scene_stage.hh"
 #include "environment_map.hh"
 #include "scene.hh"
 #include "placeholders.hh"
@@ -24,12 +25,13 @@ namespace tr
 
 envmap_stage::envmap_stage(
     device& dev,
+    scene_stage& ss,
     const std::vector<render_target>& color_arrays
 ):  single_device_stage(dev),
     envmap_timer(dev, "envmap ("+ std::to_string(count_array_layers(color_arrays)) +" viewports)"),
-    cur_scene(nullptr)
+    scene_state_counter(0),
+    ss(&ss)
 {
-    set_scene(nullptr);
     for(const render_target& target: color_arrays)
     {
         array_pipelines.emplace_back(new raster_pipeline(dev, {
@@ -58,13 +60,13 @@ envmap_stage::envmap_stage(
     }
 }
 
-void envmap_stage::set_scene(scene* s)
+void envmap_stage::update(uint32_t)
 {
-    cur_scene = s;
-    clear_commands();
-    if(!s) return;
+    if(!ss->check_update(scene_stage::ENVMAP, scene_state_counter))
+        return;
 
-    environment_map* envmap = cur_scene ? cur_scene->get_environment_map() : nullptr;
+    clear_commands();
+    environment_map* envmap = ss->get_environment_map();
 
     push_constant_buffer control;
     if(envmap)
@@ -88,7 +90,7 @@ void envmap_stage::set_scene(scene* s)
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             // Bind descriptors
-            cur_scene->bind(*gfx, i, j);
+            ss->bind(*gfx, i, j);
             j += gfx->get_multiview_layer_count();
 
             gfx->begin_render_pass(cb, i);

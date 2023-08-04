@@ -27,9 +27,10 @@ class dshgi_client_stage: public single_device_stage
 public:
     dshgi_client_stage(
         device& dev,
+        scene_stage& ss,
         dshgi_client& client
     ):  single_device_stage(dev),
-        client(&client), cur_scene(nullptr),
+        client(&client), ss(&ss),
         stage_timer(dev, "sh_grids_from_server")
     {
     }
@@ -39,141 +40,140 @@ public:
         unmap_all();
     }
 
-    void set_scene(scene* s)
-    {
-        cur_scene = s;
-        clear_commands();
-        unmap_all();
-
-        const std::vector<sh_grid*>& grids = s->get_sh_grids();
-        for(sh_grid* grid: grids)
-        {
-            grid_data& d = data[grid];
-            d.last_update = std::chrono::steady_clock::now();
-            d.size = grid->get_required_bytes();
-            d.staging_buffer = create_staging_buffer(*dev, d.size);
-            d.progress = 1.0f;
-            d.frames_since_update = 0;
-            d.mem = nullptr;
-            vmaMapMemory(dev->allocator, d.staging_buffer.get_allocation(), &d.mem);
-        }
-
-        if(grids.size() > 0)
-        {
-            comp.reset(new compute_pipeline(
-                *dev,
-                compute_pipeline::params{
-                    {"shader/sh_grid_blend.comp"}, {},
-                    (uint32_t)(grids.size()*MAX_FRAMES_IN_FLIGHT)
-                }
-            ));
-
-            blend_infos = gpu_buffer(
-                *dev, sizeof(blend_info) * grids.size(),
-                vk::BufferUsageFlagBits::eUniformBuffer
-            );
-        }
-
-        size_t set_index = 0;
-        for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-        {
-            // Record command buffer
-            vk::CommandBuffer cb = begin_compute();
-            stage_timer.begin(cb, dev->index, i);
-            blend_infos.upload(dev->index, i, cb);
-
-            size_t j = 0;
-            for(sh_grid* grid: grids)
-            {
-                grid_data& d = data.at(grid);
-
-                texture& new_tex = client->sh_grid_upload_textures.at(grid);
-                texture& tmp_tex = client->sh_grid_tmp_textures.at(grid);
-                texture& out_tex = client->sh_grid_blended_textures.at(grid);
-
-                uvec3 dim = new_tex.get_dimensions();
-
-                // Upload new texture
-                transition_image_layout(
-                    cb,
-                    new_tex.get_image(dev->index),
-                    new_tex.get_format(),
-                    vk::ImageLayout::eUndefined,
-                    vk::ImageLayout::eTransferDstOptimal,
-                    0, 1
-                );
-
-                cb.copyBufferToImage(
-                    d.staging_buffer,
-                    new_tex.get_image(dev->index),
-                    vk::ImageLayout::eTransferDstOptimal,
-                    vk::BufferImageCopy{
-                        0, 0, 0,
-                        {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-                        {0,0,0},
-                        {dim.x, dim.y, dim.z}
-                    }
-                );
-
-                transition_image_layout(
-                    cb,
-                    new_tex.get_image(dev->index),
-                    new_tex.get_format(),
-                    vk::ImageLayout::eTransferDstOptimal,
-                    vk::ImageLayout::eGeneral,
-                    0, 1
-                );
-
-                transition_image_layout(
-                    cb,
-                    out_tex.get_image(dev->index),
-                    out_tex.get_format(),
-                    vk::ImageLayout::eUndefined,
-                    vk::ImageLayout::eGeneral,
-                    0, 1
-                );
-
-                // Blend with temporary texture
-                comp->update_descriptor_set({
-                    {"input_sh", {{}, new_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
-                    {"inout_sh", {{}, tmp_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
-                    {"output_sh", {{}, out_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
-                    {"info", {blend_infos[dev->index], j*sizeof(blend_info), sizeof(blend_info)}}
-                }, set_index);
-
-                comp->bind(cb, set_index);
-
-                push_constant_buffer control;
-                control.size = dim;
-                control.index = j;
-
-                comp->push_constants(cb, control);
-
-                uvec3 wg = (dim+3u)/4u;
-                cb.dispatch(wg.x, wg.y, wg.z);
-
-                transition_image_layout(
-                    cb,
-                    out_tex.get_image(dev->index),
-                    out_tex.get_format(),
-                    vk::ImageLayout::eGeneral,
-                    vk::ImageLayout::eShaderReadOnlyOptimal,
-                    0, 1, 0, 1, false, true
-                );
-
-                j++;
-                set_index++;
-            }
-
-            stage_timer.end(cb, dev->index, i);
-            end_compute(cb, i);
-        }
-    }
-
 protected:
     void update(uint32_t frame_index) override
     {
-        if(!cur_scene) return;
+        light_scene* cur_scene = ss->get_scene();
+
+        if(ss->check_update(scene_stage::LIGHT, scene_state_counter))
+        {
+            clear_commands();
+            unmap_all();
+
+            const std::vector<sh_grid*>& grids = cur_scene->get_sh_grids();
+            for(sh_grid* grid: grids)
+            {
+                grid_data& d = data[grid];
+                d.last_update = std::chrono::steady_clock::now();
+                d.size = grid->get_required_bytes();
+                d.staging_buffer = create_staging_buffer(*dev, d.size);
+                d.progress = 1.0f;
+                d.frames_since_update = 0;
+                d.mem = nullptr;
+                vmaMapMemory(dev->allocator, d.staging_buffer.get_allocation(), &d.mem);
+            }
+
+            if(grids.size() > 0)
+            {
+                comp.reset(new compute_pipeline(
+                    *dev,
+                    compute_pipeline::params{
+                        {"shader/sh_grid_blend.comp"}, {},
+                        (uint32_t)(grids.size()*MAX_FRAMES_IN_FLIGHT)
+                    }
+                ));
+
+                blend_infos = gpu_buffer(
+                    *dev, sizeof(blend_info) * grids.size(),
+                    vk::BufferUsageFlagBits::eUniformBuffer
+                );
+            }
+
+            size_t set_index = 0;
+            for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+            {
+                // Record command buffer
+                vk::CommandBuffer cb = begin_compute();
+                stage_timer.begin(cb, dev->index, i);
+                blend_infos.upload(dev->index, i, cb);
+
+                size_t j = 0;
+                for(sh_grid* grid: grids)
+                {
+                    grid_data& d = data.at(grid);
+
+                    texture& new_tex = client->sh_grid_upload_textures.at(grid);
+                    texture& tmp_tex = client->sh_grid_tmp_textures.at(grid);
+                    texture& out_tex = client->sh_grid_blended_textures.at(grid);
+
+                    uvec3 dim = new_tex.get_dimensions();
+
+                    // Upload new texture
+                    transition_image_layout(
+                        cb,
+                        new_tex.get_image(dev->index),
+                        new_tex.get_format(),
+                        vk::ImageLayout::eUndefined,
+                        vk::ImageLayout::eTransferDstOptimal,
+                        0, 1
+                    );
+
+                    cb.copyBufferToImage(
+                        d.staging_buffer,
+                        new_tex.get_image(dev->index),
+                        vk::ImageLayout::eTransferDstOptimal,
+                        vk::BufferImageCopy{
+                            0, 0, 0,
+                            {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                            {0,0,0},
+                            {dim.x, dim.y, dim.z}
+                        }
+                    );
+
+                    transition_image_layout(
+                        cb,
+                        new_tex.get_image(dev->index),
+                        new_tex.get_format(),
+                        vk::ImageLayout::eTransferDstOptimal,
+                        vk::ImageLayout::eGeneral,
+                        0, 1
+                    );
+
+                    transition_image_layout(
+                        cb,
+                        out_tex.get_image(dev->index),
+                        out_tex.get_format(),
+                        vk::ImageLayout::eUndefined,
+                        vk::ImageLayout::eGeneral,
+                        0, 1
+                    );
+
+                    // Blend with temporary texture
+                    comp->update_descriptor_set({
+                        {"input_sh", {{}, new_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
+                        {"inout_sh", {{}, tmp_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
+                        {"output_sh", {{}, out_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
+                        {"info", {blend_infos[dev->index], j*sizeof(blend_info), sizeof(blend_info)}}
+                    }, set_index);
+
+                    comp->bind(cb, set_index);
+
+                    push_constant_buffer control;
+                    control.size = dim;
+                    control.index = j;
+
+                    comp->push_constants(cb, control);
+
+                    uvec3 wg = (dim+3u)/4u;
+                    cb.dispatch(wg.x, wg.y, wg.z);
+
+                    transition_image_layout(
+                        cb,
+                        out_tex.get_image(dev->index),
+                        out_tex.get_format(),
+                        vk::ImageLayout::eGeneral,
+                        vk::ImageLayout::eShaderReadOnlyOptimal,
+                        0, 1, 0, 1, false, true
+                    );
+
+                    j++;
+                    set_index++;
+                }
+
+                stage_timer.end(cb, dev->index, i);
+                end_compute(cb, i);
+            }
+        }
 
         auto now = std::chrono::steady_clock::now();
         for(auto& gd: client->local_grids)
@@ -235,7 +235,8 @@ private:
     }
     std::unique_ptr<compute_pipeline> comp;
     dshgi_client* client;
-    scene* cur_scene;
+    scene_stage* ss;
+    uint32_t scene_state_counter = 0;
     timer stage_timer;
 
     struct grid_data
@@ -252,28 +253,18 @@ private:
     std::unordered_map<sh_grid*, grid_data> data;
 };
 
-dshgi_client::dshgi_client(context& ctx, const options& opt)
-:   ctx(&ctx), opt(opt), cur_scene(nullptr),
+dshgi_client::dshgi_client(context& ctx, scene_stage& ss, const options& opt)
+:   ctx(&ctx), opt(opt), ss(&ss),
     remote_timestamp(0), new_remote_timestamp(false), exit_receiver(false),
     receiver_thread(receiver_worker, this)
 {
-    sh_refresher.reset(new dshgi_client_stage(ctx.get_display_device(), *this));
+    sh_refresher.reset(new dshgi_client_stage(ctx.get_display_device(), ss, *this));
 }
 
 dshgi_client::~dshgi_client()
 {
     exit_receiver = true;
     receiver_thread.join();
-}
-
-void dshgi_client::set_scene(scene* s)
-{
-    cur_scene = s;
-    cur_scene->clear_sh_grids();
-    for(sh_grid_data& lg: local_grids)
-        cur_scene->add(lg.grid);
-    cur_scene->set_sh_grid_textures(&sh_grid_blended_textures);
-    sh_refresher->set_scene(s);
 }
 
 bool dshgi_client::refresh()
@@ -295,6 +286,12 @@ bool dshgi_client::refresh()
         sh_grid_tmp_textures.clear();
         sh_grid_blended_textures.clear();
     }
+
+    scene* cur_scene = ss->get_scene();
+    cur_scene->clear_sh_grids();
+    for(sh_grid_data& lg: local_grids)
+        cur_scene->add(lg.grid);
+    ss->set_sh_grid_textures(&sh_grid_blended_textures);
 
     for(size_t i = 0; i < local_grids.size(); ++i)
     {

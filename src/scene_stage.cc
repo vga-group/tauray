@@ -1,6 +1,8 @@
 #include "scene_stage.hh"
 #include "shadow_map_renderer.hh"
 #include "sh_grid.hh"
+#include "environment_map.hh"
+#include "placeholders.hh"
 #include "misc.hh"
 
 namespace
@@ -194,8 +196,16 @@ namespace tr
 {
 
 scene_stage::scene_stage(device_mask dev, const options& opt)
-:   multi_device_stage(dev), as_rebuild(true), command_buffers_outdated(true),
-    force_instance_refresh_frames(0), cur_scene(nullptr),
+:   multi_device_stage(dev),
+    as_rebuild(true),
+    envmap_change_counter(1),
+    geometry_change_counter(1),
+    light_change_counter(1),
+    command_buffers_outdated(true),
+    force_instance_refresh_frames(0),
+    cur_scene(nullptr),
+    envmap(nullptr),
+    ambient(0),
     skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, {}, 1, true}),
     extract_tri_lights(dev, compute_pipeline::params{
         {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
@@ -253,11 +263,230 @@ void scene_stage::set_scene(scene* target)
 
     as_rebuild = get_context()->is_ray_tracing_supported();
     command_buffers_outdated = true;
+
+    // TODO: Do this per-category in update().
+    geometry_change_counter++;
+}
+
+scene* scene_stage::get_scene() const
+{
+    return cur_scene;
+}
+
+bool scene_stage::check_update(uint32_t categories, uint32_t& prev_counter) const
+{
+    uint32_t new_counter = 0;
+    if(categories&ENVMAP) new_counter += envmap_change_counter;
+    if(categories&GEOMETRY) new_counter += geometry_change_counter;
+    if(categories&LIGHT) new_counter += light_change_counter;
+    if(prev_counter != new_counter)
+    {
+        prev_counter = new_counter;
+        return true;
+    }
+    return false;
+}
+
+environment_map* scene_stage::get_environment_map() const
+{
+    return envmap;
+}
+
+vec3 scene_stage::get_ambient() const
+{
+    return ambient;
+}
+
+const std::vector<scene_stage::instance>& scene_stage::get_instances() const
+{
+    return cur_scene->get_instances();
+}
+
+vk::AccelerationStructureKHR scene_stage::get_acceleration_structure(
+    device_id id
+) const {
+    device_mask dev = get_device_mask();
+    if(!dev.get_context()->is_ray_tracing_supported())
+        throw std::runtime_error(
+            "Trying to use TLAS, but ray tracing is not available!"
+        );
+    return *cur_scene->tlas->get_tlas_handle(id);
+}
+
+void scene_stage::set_shadow_map_renderer(shadow_map_renderer* smr)
+{
+    cur_scene->smr = smr;
+}
+
+void scene_stage::set_sh_grid_textures(
+    std::unordered_map<sh_grid*, texture>* sh_grid_textures
+){
+    cur_scene->sh_grid_textures = sh_grid_textures;
+}
+
+vec2 scene_stage::get_shadow_map_atlas_pixel_margin() const
+{
+    if(cur_scene->smr)
+        return vec2(0.5)/vec2(cur_scene->smr->get_shadow_map_atlas()->get_size());
+    else
+        return vec2(0);
+}
+
+std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int32_t camera_index) const
+{
+    const std::vector<sh_grid*>& sh_grids = cur_scene->get_sh_grids();
+
+    std::vector<vk::DescriptorImageInfo> dii_3d;
+    if(cur_scene->sh_grid_textures)
+    {
+        for(sh_grid* sg: sh_grids)
+        {
+            texture& tex = cur_scene->sh_grid_textures->at(sg);
+            dii_3d.push_back({
+                cur_scene->sh_grid_sampler.get_sampler(id),
+                tex.get_image_view(id),
+                vk::ImageLayout::eShaderReadOnlyOptimal
+            });
+        }
+    }
+
+    vk::AccelerationStructureKHR tlas = {};
+    device_mask dev = get_device_mask();
+    if(dev.get_context()->is_ray_tracing_supported())
+        tlas = get_acceleration_structure(id);
+
+    std::vector<vk::DescriptorBufferInfo> dbi_vertex = cur_scene->get_vertex_buffer_bindings(id);
+    std::vector<vk::DescriptorBufferInfo> dbi_index = cur_scene->get_index_buffer_bindings(id);
+    std::vector<vk::DescriptorImageInfo> dii = cur_scene->s_table.get_image_infos(id);
+
+    std::vector<descriptor_state> descriptors = {
+        {"scene", {cur_scene->scene_data[id], 0, VK_WHOLE_SIZE}},
+        {"scene_metadata", {cur_scene->scene_metadata[id], 0, VK_WHOLE_SIZE}},
+        {"vertices", dbi_vertex},
+        {"indices", dbi_index},
+        {"textures", dii},
+        {"directional_lights", {
+            cur_scene->directional_light_data[id], 0, VK_WHOLE_SIZE
+        }},
+        {"point_lights", {cur_scene->point_light_data[id], 0, VK_WHOLE_SIZE}},
+        {"tri_lights", {cur_scene->tri_light_data[id], 0, VK_WHOLE_SIZE}},
+        {"environment_map_tex", {
+            cur_scene->envmap_sampler.get_sampler(id),
+            envmap ? envmap->get_image_view(id) : vk::ImageView{},
+            vk::ImageLayout::eShaderReadOnlyOptimal
+        }},
+        {"environment_map_alias_table", {
+            envmap ? envmap->get_alias_table(id) : vk::Buffer{}, 0, VK_WHOLE_SIZE
+        }},
+        {"textures3d", dii_3d},
+        {"sh_grids", {cur_scene->sh_grid_data[id], 0, VK_WHOLE_SIZE}}
+    };
+
+    if(camera_index >= 0)
+    {
+        std::pair<size_t, size_t> camera_offset = cur_scene->camera_data_offsets[camera_index];
+        descriptors.push_back(
+            {"camera", {cur_scene->camera_data[id], camera_offset.first, VK_WHOLE_SIZE}}
+        );
+    }
+
+    if(dev.get_context()->is_ray_tracing_supported())
+    {
+        descriptors.push_back({"tlas", {1, cur_scene->tlas->get_tlas_handle(id)}});
+    }
+
+    if(cur_scene->smr)
+    {
+        placeholders& pl = dev.get_context()->get_placeholders();
+
+        const atlas* shadow_map_atlas = cur_scene->smr->get_shadow_map_atlas();
+
+        descriptors.push_back(
+            {"shadow_maps", {cur_scene->shadow_map_data[id], 0, cur_scene->shadow_map_range}}
+        );
+        descriptors.push_back(
+            {"shadow_map_cascades", {
+                cur_scene->shadow_map_data[id], cur_scene->shadow_map_range,
+                cur_scene->shadow_map_cascade_range
+            }}
+        );
+        descriptors.push_back(
+            {"shadow_map_atlas", {
+                pl.default_sampler.get_sampler(id),
+                shadow_map_atlas->get_image_view(id),
+                vk::ImageLayout::eShaderReadOnlyOptimal
+            }}
+        );
+        descriptors.push_back(
+            {"shadow_map_atlas_test", {
+                cur_scene->shadow_sampler.get_sampler(id),
+                shadow_map_atlas->get_image_view(id),
+                vk::ImageLayout::eShaderReadOnlyOptimal
+            }}
+        );
+    }
+    return descriptors;
+}
+
+void scene_stage::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_index)
+{
+    device* dev = pipeline.get_device();
+    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->index, camera_index);
+    pipeline.update_descriptor_set(descriptors, frame_index);
+}
+
+void scene_stage::push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_index)
+{
+    device* dev = pipeline.get_device();
+    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->index, camera_index);
+    pipeline.push_descriptors(cmd, descriptors);
+}
+
+void scene_stage::bind_placeholders(
+    basic_pipeline& pipeline,
+    size_t max_samplers,
+    size_t max_3d_samplers
+){
+    device* dev = pipeline.get_device();
+    placeholders& pl = dev->ctx->get_placeholders();
+
+    pipeline.update_descriptor_set({
+        {"textures", max_samplers},
+        {"shadow_maps"},
+        {"shadow_map_cascades"},
+        {"shadow_map_atlas"},
+        {"shadow_map_atlas_test", {
+            pl.default_sampler.get_sampler(dev->index),
+            pl.depth_test_sample.get_image_view(dev->index),
+            vk::ImageLayout::eShaderReadOnlyOptimal
+        }},
+        {"textures3d", {
+            pl.default_sampler.get_sampler(dev->index),
+            pl.sample3d.get_image_view(dev->index),
+            vk::ImageLayout::eShaderReadOnlyOptimal
+        }, max_3d_samplers}
+    });
 }
 
 void scene_stage::update(uint32_t frame_index)
 {
     if(!cur_scene) return;
+
+    bool lights_outdated = false;
+    bool geometry_outdated = false;
+
+    environment_map* new_envmap = cur_scene->get_environment_map();
+    if(new_envmap != envmap)
+    {
+        envmap = new_envmap;
+        envmap_change_counter++;
+    }
+
+    if(ambient != cur_scene->get_ambient())
+    {
+        ambient = cur_scene->get_ambient();
+        lights_outdated = true;
+    }
 
     cur_scene->refresh_instance_cache();
     if(cur_scene->cameras.size() != 0)
@@ -417,6 +646,9 @@ void scene_stage::update(uint32_t frame_index)
         const std::vector<shadow_map_renderer::shadow_map>& shadow_maps =
             cur_scene->smr->get_shadow_map_info();
 
+        // TODO: Shadow maps should be stored here, in scene_stage, so that
+        // this weird interplay with shadow_map_renderer owning some scene
+        // assets can be removed.
         cur_scene->shadow_map_range =
             sizeof(shadow_map_entry) * cur_scene->smr->get_total_shadow_map_count();
 
@@ -521,6 +753,9 @@ void scene_stage::update(uint32_t frame_index)
         }
     );
 
+    if(lights_outdated) light_change_counter++;
+    if(geometry_outdated) geometry_change_counter++;
+
     if(get_context()->is_ray_tracing_supported())
     {
         bool need_scene_reset = false;
@@ -588,7 +823,7 @@ void scene_stage::record_command_buffers()
         if(opt.gather_emissive_triangles)
         {
             extract_tri_lights[dev.index].reset_descriptor_sets();
-            cur_scene->bind(extract_tri_lights[dev.index], 0, 0);
+            bind(extract_tri_lights[dev.index], 0, 0);
         }
 
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)

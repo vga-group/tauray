@@ -4,7 +4,7 @@
 #include "gbuffer.hh"
 #include "compute_pipeline.hh"
 #include "timer.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 
 namespace tr
 {
@@ -27,6 +27,7 @@ public:
 
     svgf_stage(
         device& dev,
+        scene_stage& ss,
         gbuffer_target& input_features,
         gbuffer_target& prev_features,
         const options& opt
@@ -34,7 +35,6 @@ public:
     svgf_stage(const svgf_stage& other) = delete;
     svgf_stage(svgf_stage&& other) = delete;
 
-    void set_scene(scene* cur_scene);
     void update(uint32_t frame_index);
 
     void init_resources();
@@ -57,7 +57,8 @@ private:
 
     std::vector<vec4> jitter_history;
     gpu_buffer jitter_buffer;
-    scene* cur_scene;
+    scene_stage* ss;
+    uint32_t scene_state_counter;
 };
 }
 

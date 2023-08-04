@@ -7,7 +7,7 @@
 #include "timer.hh"
 #include "gbuffer.hh"
 #include "gpu_buffer.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "sampler.hh"
 
 namespace tr
@@ -24,13 +24,12 @@ public:
 
     taa_stage(
         device& dev,
+        scene_stage& ss,
         gbuffer_target& current_features,
         const options& opt
     );
     taa_stage(const taa_stage& other) = delete;
     taa_stage(taa_stage&& other) = delete;
-
-    void set_scene(scene* cur_scene);
 
 protected:
     void update(uint32_t frame_index) override;
@@ -40,7 +39,7 @@ private:
     void record_command_buffers();
 
     std::vector<vec4> jitter_history;
-    scene* cur_scene;
+    scene_stage* ss;
     compute_pipeline comp;
     options opt;
     gbuffer_target current_features;

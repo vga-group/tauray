@@ -17,10 +17,9 @@ namespace tr
 class shadow_map_renderer
 {
 public:
-    shadow_map_renderer(context& ctx);
+    shadow_map_renderer(context& ctx, scene_stage& ss);
     ~shadow_map_renderer();
 
-    void set_scene(scene* s);
     dependencies render(dependencies deps);
     const atlas* get_shadow_map_atlas() const;
 
@@ -60,7 +59,8 @@ private:
     );
 
     context* ctx;
-    scene* cur_scene = nullptr;
+    scene_stage* ss = nullptr;
+    uint32_t scene_state_counter = 0;
 
     size_t total_shadow_map_count;
     size_t total_cascade_count;

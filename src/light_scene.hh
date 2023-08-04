@@ -126,6 +126,8 @@ private:
     std::unordered_map<const point_light*, point_shadow_map> point_shadow_maps;
     std::vector<sh_grid*> sh_grids;
 
+
+    // TODO: Move everything from this point on to scene_stage
     size_t max_capacity;
 
     std::optional<bottom_level_acceleration_structure> blas;

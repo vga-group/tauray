@@ -59,28 +59,9 @@ public:
     void set_animation_time(time_ticks dt);
     time_ticks get_total_ticks() const;
 
-    vk::AccelerationStructureKHR get_acceleration_structure(
-        device_id id
-    ) const;
-
-    void set_shadow_map_renderer(shadow_map_renderer* smr);
-    void set_sh_grid_textures(
-        std::unordered_map<sh_grid*, texture>* sh_grid_textures
-    );
-    vec2 get_shadow_map_atlas_pixel_margin() const;
-
-    void bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_offset = 0);
-    void push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_offset = 0);
-    static void bind_placeholders(
-        basic_pipeline& pipeline,
-        size_t max_samplers,
-        size_t max_3d_samplers
-    );
-
 private:
     friend class scene_stage;
 
-    std::vector<descriptor_state> get_descriptor_info(device_id id, int32_t camera_index) const;
     void init_acceleration_structures();
 
     device_mask dev;

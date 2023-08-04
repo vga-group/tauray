@@ -6,7 +6,7 @@
 #include "compute_pipeline.hh"
 #include "timer.hh"
 #include "gbuffer.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 
 namespace tr
 {
@@ -21,16 +21,15 @@ public:
 
     spatial_reprojection_stage(
         device& dev,
+        scene_stage& ss,
         gbuffer_target& target_viewport,
         const options& opt
     );
-
-    void set_scene(scene* s);
     
 private:
     void update(uint32_t frame_index) override;
 
-    scene* current_scene;
+    scene_stage* ss;
     
     gbuffer_target target_viewport;
 

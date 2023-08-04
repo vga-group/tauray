@@ -26,12 +26,11 @@ public:
         std::string server_address;
     };
 
-    dshgi_client(context& ctx, const options& opt);
+    dshgi_client(context& ctx, scene_stage& ss, const options& opt);
     dshgi_client(const dshgi_client& other) = delete;
     dshgi_client(dshgi_client&& other) = delete;
     ~dshgi_client();
 
-    void set_scene(scene* s);
     // If this returns true, you will need to rebuild the scene buffers.
     bool refresh();
     dependencies render(dependencies deps);
@@ -41,7 +40,7 @@ private:
 
     context* ctx;
     options opt;
-    scene* cur_scene;
+    scene_stage* ss;
 
     std::mutex remote_grids_mutex;
     struct sh_grid_data

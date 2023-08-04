@@ -2,7 +2,7 @@
 #include "mesh.hh"
 #include "shader_source.hh"
 #include "placeholders.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "camera.hh"
 #include "environment_map.hh"
 #include "misc.hh"
@@ -39,12 +39,13 @@ void rt_camera_stage::get_common_defines(
 
 rt_camera_stage::rt_camera_stage(
     device& dev,
+    scene_stage& ss,
     const gbuffer_target& output_target,
     const options& opt,
     const std::string& timer_name,
     unsigned pass_count
 ):  rt_stage(
-        dev, opt,
+        dev, ss, opt,
         timer_name + " ("+ std::to_string(opt.active_viewport_count) +" viewports)",
         pass_count
     ),
@@ -93,7 +94,7 @@ void rt_camera_stage::update(uint32_t frame_index)
 
     for(size_t i = 0; i < opt.active_viewport_count; ++i)
     {
-        camera* cam = get_scene()->get_camera(i);
+        camera* cam = ss->get_scene()->get_camera(i);
         if(cam->get_projection_type() != opt.projection)
             throw std::runtime_error(
                 "Camera projection type does not match what this pipeline is "
@@ -110,7 +111,7 @@ void rt_camera_stage::init_descriptors(basic_pipeline& pp)
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        get_scene()->bind(pp, i);
+        ss->bind(pp, i);
         pp.update_descriptor_set({
 #define TR_GBUFFER_ENTRY(name, ...)\
             {#name "_target", {\

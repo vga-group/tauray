@@ -78,9 +78,10 @@ namespace tr
 
 feature_stage::feature_stage(
     device& dev,
+    scene_stage& ss,
     const gbuffer_target& output_target,
     const options& opt
-):  rt_camera_stage(dev, output_target, opt),
+):  rt_camera_stage(dev, ss, output_target, opt),
     gfx(dev, rt_stage::get_common_options(::feature::load_sources(opt), opt)),
     opt(opt)
 {

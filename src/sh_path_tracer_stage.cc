@@ -1,5 +1,5 @@
 #include "sh_path_tracer_stage.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "sh_grid.hh"
 #include "environment_map.hh"
 
@@ -103,10 +103,11 @@ namespace tr
 
 sh_path_tracer_stage::sh_path_tracer_stage(
     device& dev,
+    scene_stage& ss,
     texture& output_grid,
     vk::ImageLayout output_layout,
     const options& opt
-):  rt_stage(dev, opt, "SH path tracing", 1),
+):  rt_stage(dev, ss, opt, "SH path tracing", 1),
     gfx(dev, rt_stage::get_common_options(sh_path_tracer::load_sources(opt), opt)),
     opt(opt),
     output_grid(&output_grid),
@@ -123,7 +124,7 @@ sh_path_tracer_stage::sh_path_tracer_stage(
 void sh_path_tracer_stage::update(uint32_t frame_index)
 {
     rt_stage::update(frame_index);
-    sh_grid* grid = get_scene()->get_sh_grids()[opt.sh_grid_index];
+    sh_grid* grid = ss->get_scene()->get_sh_grids()[opt.sh_grid_index];
     mat4 transform = grid->get_global_transform();
 
     uint32_t sampling_start_counter =
@@ -148,7 +149,7 @@ void sh_path_tracer_stage::init_scene_resources()
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        get_scene()->bind(gfx, i, -1);
+        ss->bind(gfx, i, -1);
         gfx.update_descriptor_set({
             {"inout_data", {{}, output_grid->get_image_view(dev->index), vk::ImageLayout::eGeneral}},
             {"grid", {grid_data[dev->index], 0, VK_WHOLE_SIZE}}
@@ -162,7 +163,7 @@ void sh_path_tracer_stage::record_command_buffer(
 ){
     grid_data.upload(dev->index, frame_index, cb);
 
-    sh_grid* grid = get_scene()->get_sh_grids()[opt.sh_grid_index];
+    sh_grid* grid = ss->get_scene()->get_sh_grids()[opt.sh_grid_index];
     uvec3 dim = grid->get_resolution();
 
     vk::ImageMemoryBarrier img_barrier(
@@ -204,10 +205,9 @@ void sh_path_tracer_stage::record_command_buffer_push_constants(
     uint32_t /*frame_index*/,
     uint32_t /*pass_index*/
 ){
-    scene* cur_scene = get_scene();
     sh_path_tracer::push_constant_buffer control;
 
-    environment_map* envmap = cur_scene->get_environment_map();
+    environment_map* envmap = ss->get_environment_map();
     if(envmap)
     {
         control.environment_factor = vec4(envmap->get_factor(), 1);

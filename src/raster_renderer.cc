@@ -8,14 +8,16 @@ namespace tr
 {
 
 raster_renderer::raster_renderer(context& ctx, const options& opt)
-:   ctx(&ctx), opt(opt), smr(ctx),
-    post_processing(
-        ctx.get_display_device(),
-        ctx.get_size(),
-        opt.post_process
-    )
+:   ctx(&ctx), opt(opt)
 {
     scene_update.reset(new scene_stage(ctx.get_display_device(), opt.scene_options));
+    post_processing.emplace(
+        ctx.get_display_device(),
+        *scene_update,
+        ctx.get_size(),
+        opt.post_process
+    );
+    smr.emplace(ctx, *scene_update);
     init_common_resources();
 }
 
@@ -25,22 +27,8 @@ raster_renderer::~raster_renderer()
 
 void raster_renderer::set_scene(scene* s)
 {
-    cur_scene = s;
-
-    // First, update without shadow maps
-    s->set_shadow_map_renderer(nullptr);
     scene_update->set_scene(s);
-
-    smr.set_scene(s);
-
-    // Then, update scene for the shadow maps as well.
-    s->set_shadow_map_renderer(&smr);
-    scene_update->set_scene(s);
-
-    if(envmap) envmap->set_scene(s);
-    if(z_pass) z_pass->set_scene(s);
-    if(raster) raster->set_scene(s);
-    post_processing.set_scene(s);
+    scene_update->set_shadow_map_renderer(&*smr);
 }
 
 void raster_renderer::render()
@@ -55,13 +43,13 @@ void raster_renderer::render()
 
 dependencies raster_renderer::render_core(dependencies deps)
 {
-    deps = smr.render(deps);
-    deps.concat(post_processing.get_gbuffer_write_dependencies());
+    deps = smr->render(deps);
+    deps.concat(post_processing->get_gbuffer_write_dependencies());
 
     deps = envmap->run(deps);
     if(z_pass) deps = z_pass->run(deps);
     deps = raster->run(deps);
-    return post_processing.render(deps);
+    return post_processing->render(deps);
 }
 
 void raster_renderer::init_common_resources()
@@ -90,7 +78,7 @@ void raster_renderer::init_common_resources()
         vk::ImageUsageFlagBits::eColorAttachment;
 
     spec.set_all_usage(img_usage);
-    post_processing.set_gbuffer_spec(spec);
+    post_processing->set_gbuffer_spec(spec);
     spec.depth_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
 
     gbuffer = gbuffer_texture(
@@ -112,22 +100,22 @@ void raster_renderer::init_common_resources()
         depth_block_targets.push_back(mv_target.depth);
         gbuffer_block_targets.push_back(mv_target);
     }
-    envmap.reset(new envmap_stage(d, color_block_targets));
+    envmap.emplace(d, *scene_update, color_block_targets);
     if(opt.z_pre_pass)
     {
-        z_pass.reset(new z_pass_stage(d, depth_block_targets));
+        z_pass.emplace(d, *scene_update, depth_block_targets);
     }
 
     raster_stage::options raster_opt = opt;
     raster_opt.clear_color = false;
     raster_opt.clear_depth = !opt.z_pre_pass;
     raster_opt.output_layout = vk::ImageLayout::eGeneral;
-    raster.reset(new raster_stage(d, gbuffer_block_targets, raster_opt));
+    raster.emplace(d, *scene_update, gbuffer_block_targets, raster_opt);
 
     gbuffer_target array_target = gbuffer.get_array_target(d.index);
     array_target.set_layout(vk::ImageLayout::eGeneral);
 
-    post_processing.set_display(array_target);
+    post_processing->set_display(array_target);
 }
 
 }

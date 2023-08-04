@@ -1,6 +1,6 @@
 #include "shadow_map_renderer.hh"
 #include "context.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 
 namespace
 {
@@ -34,8 +34,8 @@ vec2 align_cascade(vec2 offset, vec2 area, float scale, uvec2 resolution)
 namespace tr
 {
 
-shadow_map_renderer::shadow_map_renderer(context& ctx)
-: ctx(&ctx)
+shadow_map_renderer::shadow_map_renderer(context& ctx, scene_stage& ss)
+: ctx(&ctx), ss(&ss), total_shadow_map_count(0), total_cascade_count(0)
 {
     init_resources();
 }
@@ -44,14 +44,11 @@ shadow_map_renderer::~shadow_map_renderer()
 {
 }
 
-void shadow_map_renderer::set_scene(scene* s)
-{
-    cur_scene = s;
-    init_scene_resources();
-}
-
 dependencies shadow_map_renderer::render(dependencies deps)
 {
+    if(ss->check_update(scene_stage::LIGHT, scene_state_counter))
+        init_scene_resources();
+
     dependencies out_deps;
 
     for(auto& p: smp) out_deps.concat(p->run(deps));
@@ -73,7 +70,8 @@ int shadow_map_renderer::get_shadow_map_index(const light* l) const
 
 void shadow_map_renderer::update_shadow_map_params()
 {
-    if(!cur_scene) return;
+    light_scene* cur_scene = ss->get_scene();
+    if(!cur_scene || shadow_maps.size() == 0) return;
 
     size_t map_index = 0;
 
@@ -251,6 +249,7 @@ void shadow_map_renderer::init_scene_resources()
 
     shadow_maps.clear();
     shadow_map_indices.clear();
+    light_scene* cur_scene = ss->get_scene();
     if(!cur_scene) return;
 
     for(const directional_light* dl: cur_scene->get_directional_lights())
@@ -368,10 +367,9 @@ void shadow_map_renderer::add_stage(
         0, ctx->get_display_device().index
     );
     smp.emplace_back(new shadow_map_stage(
-        ctx->get_display_device(), rect, target,
-        {cur_scene->get_sampler_count()}
+        ctx->get_display_device(), *ss, rect, target,
+        {ss->get_scene()->get_sampler_count()}
     ));
-    smp.back()->set_scene(cur_scene);
 }
 
 }

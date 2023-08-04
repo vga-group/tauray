@@ -9,20 +9,13 @@ dshgi_renderer::dshgi_renderer(context& ctx, const options& opt)
 : raster_renderer(ctx, opt), opt(opt)
 {
     if(auto rtype = std::get_if<sh_renderer::options>(&opt.sh_source))
-        sh.reset(new sh_renderer(ctx, *rtype));
+        sh.reset(new sh_renderer(ctx, *scene_update, *rtype));
     else if(auto rtype = std::get_if<dshgi_client::options>(&opt.sh_source))
-        client.reset(new dshgi_client(ctx, *rtype));
+        client.reset(new dshgi_client(ctx, *scene_update, *rtype));
 }
 
 dshgi_renderer::~dshgi_renderer()
 {
-}
-
-void dshgi_renderer::set_scene(scene* s)
-{
-    if(sh) sh->set_scene(s);
-    if(client) client->set_scene(s);
-    raster_renderer::set_scene(s);
 }
 
 void dshgi_renderer::render()

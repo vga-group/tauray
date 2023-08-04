@@ -1,5 +1,5 @@
 #include "rt_renderer.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "misc.hh"
 #ifdef WIN32
 #include <vulkan/vulkan_win32.h>
@@ -25,8 +25,7 @@ namespace tr
 
 template<typename Pipeline>
 rt_renderer<Pipeline>::rt_renderer(context& ctx, const options& opt)
-:   ctx(&ctx), opt(opt),
-    post_processing(ctx.get_display_device(), ctx.get_size(), get_pp_opt(opt))
+: ctx(&ctx), opt(opt)
 {
     this->opt.distribution.size = ctx.get_size();
 
@@ -61,21 +60,7 @@ template<typename Pipeline>
 void rt_renderer<Pipeline>::set_scene(scene* s)
 {
     opt.projection = s->get_camera(0)->get_projection_type();
-    if(s)
-    {
-        s->refresh_instance_cache(true);
-        scene_update->set_scene(s);
-        for(size_t i = 0; i < per_device.size(); ++i)
-        {
-            if(per_device[i].ray_tracer)
-                per_device[i].ray_tracer->set_scene(s);
-        }
-
-        if(gbuffer_rasterizer)
-            gbuffer_rasterizer->set_scene(s);
-
-        post_processing.set_scene(s);
-    }
+    scene_update->set_scene(s);
 }
 
 template<typename Pipeline>
@@ -112,7 +97,7 @@ void rt_renderer<Pipeline>::render()
     {
         dependencies device_deps = common_deps;
         if(i == ctx->get_display_device().index)
-            device_deps.concat(post_processing.get_gbuffer_write_dependencies());
+            device_deps.concat(post_processing->get_gbuffer_write_dependencies());
         device_deps = per_device[i].ray_tracer->run(device_deps);
         last_frame_deps.concat(device_deps);
 
@@ -126,7 +111,7 @@ void rt_renderer<Pipeline>::render()
         }
     }
 
-    display_deps.concat(post_processing.get_gbuffer_write_dependencies());
+    display_deps.concat(post_processing->get_gbuffer_write_dependencies());
 
     if(stitch)
     {
@@ -136,7 +121,7 @@ void rt_renderer<Pipeline>::render()
         stitch->set_blend_ratio(1.0f);
     }
 
-    display_deps = post_processing.render(display_deps);
+    display_deps = post_processing->render(display_deps);
     ctx->end_frame(display_deps);
     accumulated_frames++;
 }
@@ -197,7 +182,10 @@ void rt_renderer<Pipeline>::init_resources()
     gbuffer_spec spec, copy_spec;
     spec.color_present = true;
     spec.color_format = vk::Format::eR32G32B32A32Sfloat;
-    post_processing.set_gbuffer_spec(spec);
+
+    scene_update.emplace(device_mask::all(*ctx), opt.scene_options);
+    post_processing.emplace(ctx->get_display_device(), *scene_update, ctx->get_size(), get_pp_opt(opt));
+    post_processing->set_gbuffer_spec(spec);
 
     // Disable raster G-Buffer when nothing rasterizable is needed.
     if(
@@ -239,7 +227,6 @@ void rt_renderer<Pipeline>::init_resources()
 
     double even_workload_ratio = 1.0/ctx->get_devices().size();
     device& display_device = ctx->get_display_device();
-    scene_update.reset(new scene_stage(device_mask::all(*ctx), opt.scene_options));
 
     for(device_id id = 0; id < per_device.size(); ++id)
     {
@@ -280,7 +267,7 @@ void rt_renderer<Pipeline>::init_resources()
             vk::ImageLayout::eGeneral : vk::ImageLayout::eTransferSrcOptimal
         );
 
-        r.ray_tracer.reset(new Pipeline(d, transfer_target, rt_opt));
+        r.ray_tracer.reset(new Pipeline(d, *scene_update, transfer_target, rt_opt));
 
         prepare_transfers(true);
     }
@@ -312,16 +299,16 @@ void rt_renderer<Pipeline>::init_resources()
         for(per_device_data& r: per_device)
             dist.push_back(r.dist);
 
-        stitch.reset(new stitch_stage(
+        stitch.emplace(
             ctx->get_display_device(),
             ctx->get_size(),
             dimgs,
             dist,
-            {
+            stitch_stage::options{
                 opt.distribution.strategy,
                 this->opt.active_viewport_count
             }
-        ));
+        );
     }
 
     if(use_raster_gbuffer)
@@ -347,15 +334,16 @@ void rt_renderer<Pipeline>::init_resources()
 
         if(gbuffer_block_targets[0].entry_count() != 0)
         {
-            gbuffer_rasterizer.reset(new raster_stage(
-                display_device, gbuffer_block_targets, raster_opt
-            ));
+            gbuffer_rasterizer.emplace(
+                display_device, *scene_update, gbuffer_block_targets, raster_opt
+            );
         }
     }
 
     gbuffer_target pp_target = gbuffer.get_array_target(display_device.index);
     pp_target.set_layout(vk::ImageLayout::eGeneral);
-    post_processing.set_display(pp_target);
+
+    post_processing->set_display(pp_target);
 }
 
 template<typename Pipeline>

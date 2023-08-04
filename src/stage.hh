@@ -56,6 +56,7 @@ private:
     command_buffer_strategy strategy;
 };
 
+// TODO: Remove the 'using' and straight up rename stage => multi_device_stage
 using multi_device_stage = stage;
 
 // Many stages can only take one device at a time. They should derive from this

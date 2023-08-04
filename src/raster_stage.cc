@@ -3,7 +3,7 @@
 #include "shader_source.hh"
 #include "shadow_map_renderer.hh"
 #include "placeholders.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "camera.hh"
 #include "misc.hh"
 #include "sh_grid.hh"
@@ -117,11 +117,13 @@ namespace tr
 
 raster_stage::raster_stage(
     device& dev,
+    scene_stage& ss,
     const std::vector<gbuffer_target>& output_array_targets,
     const options& opt
 ):  single_device_stage(dev),
     output_targets(output_array_targets),
     opt(opt),
+    scene_state_counter(0),
     brdf_integration_sampler(
         dev,
         vk::Filter::eLinear,
@@ -133,7 +135,7 @@ raster_stage::raster_stage(
         true,
         false
     ),
-    cur_scene(nullptr),
+    ss(&ss),
     brdf_integration(dev, get_resource_path("data/brdf_integration.exr")),
     noise_vector_2d(dev, get_resource_path("data/noise_vector_2d.exr")),
     noise_vector_3d(dev, get_resource_path("data/noise_vector_3d.exr")),
@@ -163,7 +165,7 @@ raster_stage::raster_stage(
             opt.sample_shading, (bool)target.color || opt.force_alpha_to_coverage, true
         }));
 
-        scene::bind_placeholders(
+        scene_stage::bind_placeholders(
             *array_pipelines.back(),
             opt.max_samplers,
             opt.max_3d_samplers
@@ -189,41 +191,27 @@ raster_stage::raster_stage(
     }
 }
 
-void raster_stage::set_scene(scene* s)
+void raster_stage::update(uint32_t)
 {
-    cur_scene = s;
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        size_t j = 0;
-        for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
-        {
-            // Bind descriptors
-            cur_scene->bind(*gfx, i, j);
-            j += gfx->get_multiview_layer_count();
-        }
-    }
-    record_command_buffers();
-}
+    if(!ss->check_update(scene_stage::GEOMETRY|scene_stage::LIGHT, scene_state_counter))
+        return;
 
-scene* raster_stage::get_scene()
-{
-    return cur_scene;
-}
-
-void raster_stage::record_command_buffers()
-{
     clear_commands();
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vk::CommandBuffer cb = begin_graphics();
 
         raster_timer.begin(cb, dev->index, i);
+        size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
+            ss->bind(*gfx, i, j);
+            j += gfx->get_multiview_layer_count();
+
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
 
-            const std::vector<scene::instance>& instances = cur_scene->get_instances();
+            const std::vector<scene::instance>& instances = ss->get_instances();
             push_constant_buffer control;
             control.pcf_samples = opt.pcf_samples;
             control.omni_pcf_samples = opt.omni_pcf_samples;
@@ -231,8 +219,8 @@ void raster_stage::record_command_buffers()
             control.pcss_minimum_radius = opt.pcss_minimum_radius;
             control.noise_scale =
                 opt.sample_shading ? ceil(sqrt((int)output_targets[0].get_msaa())) : 1.0f;
-            control.ambient_color = cur_scene->get_ambient();
-            control.shadow_map_atlas_pixel_margin = cur_scene->get_shadow_map_atlas_pixel_margin();
+            control.ambient_color = ss->get_ambient();
+            control.shadow_map_atlas_pixel_margin = ss->get_shadow_map_atlas_pixel_margin();
 
             for(size_t i = 0; i < instances.size(); ++i)
             {

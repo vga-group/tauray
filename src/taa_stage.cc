@@ -27,10 +27,11 @@ namespace tr
 
 taa_stage::taa_stage(
     device& dev,
+    scene_stage& ss,
     gbuffer_target& current_features,
     const options& opt
 ):  single_device_stage(dev),
-    cur_scene(nullptr),
+    ss(&ss),
     comp(dev, compute_pipeline::params{load_source(opt), {}}),
     opt(opt),
     current_features(current_features),
@@ -58,11 +59,6 @@ taa_stage::taa_stage(
     record_command_buffers();
 }
 
-void taa_stage::set_scene(scene* cur_scene)
-{
-    this->cur_scene = cur_scene;
-}
-
 void taa_stage::update(uint32_t frame_index)
 {
     bool existing = jitter_history.size() != 0;
@@ -71,7 +67,7 @@ void taa_stage::update(uint32_t frame_index)
     for(size_t i = 0; i < opt.active_viewport_count; ++i)
     {
         vec4& v = jitter_history[i];
-        vec2 cur_jitter = cur_scene->get_camera(i)->get_jitter();
+        vec2 cur_jitter = ss->get_scene()->get_camera(i)->get_jitter();
         vec2 prev_jitter = v;
         if(!existing) prev_jitter = cur_jitter;
         v = vec4(cur_jitter, prev_jitter);

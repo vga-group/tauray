@@ -4,8 +4,8 @@ namespace tr
 {
 
 post_processing_renderer::post_processing_renderer(
-    device& dev, uvec2 output_size, const options& opt
-): dev(&dev), opt(opt), output_size(output_size)
+    device& dev, scene_stage& ss, uvec2 output_size, const options& opt
+): dev(&dev), opt(opt), output_size(output_size), ss(&ss)
 {
     // It's easiest to test WIP post processing pipelines by forcing their
     // options from here
@@ -72,6 +72,7 @@ void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
 void post_processing_renderer::set_display(gbuffer_target input_gbuffer)
 {
     this->input_gbuffer = input_gbuffer;
+    init_pipelines();
 }
 
 dependencies post_processing_renderer::get_gbuffer_write_dependencies() const
@@ -79,13 +80,6 @@ dependencies post_processing_renderer::get_gbuffer_write_dependencies() const
     uint32_t swapchain_index, frame_index;
     dev->ctx->get_indices(swapchain_index, frame_index);
     return delay_deps[(frame_index + 1) % MAX_FRAMES_IN_FLIGHT];
-}
-
-void post_processing_renderer::set_scene(scene* s)
-{
-    cur_scene = s;
-    deinit_pipelines();
-    init_pipelines();
 }
 
 dependencies post_processing_renderer::render(dependencies deps)
@@ -131,10 +125,10 @@ void post_processing_renderer::init_pipelines()
 
         spatial_reprojection.reset(new spatial_reprojection_stage(
             *dev,
+            *ss,
             input_target,
             opt.spatial_reprojection.value()
         ));
-        spatial_reprojection->set_scene(cur_scene);
     }
 
     render_target in_color = input_target.color;
@@ -225,11 +219,11 @@ void post_processing_renderer::init_pipelines()
         opt.svgf_denoiser.value().active_viewport_count = opt.active_viewport_count;
         svgf.reset(new svgf_stage(
             *dev,
+            *ss,
             input_target,
             prev_gbuffer,
             opt.svgf_denoiser.value()
         ));
-        svgf->set_scene(cur_scene);
     }
     if(opt.bmfr.has_value())
     {
@@ -248,10 +242,10 @@ void post_processing_renderer::init_pipelines()
         tmp.color = in_color;
         taa.reset(new taa_stage(
             *dev,
+            *ss,
             tmp,
             opt.taa.value()
         ));
-        taa->set_scene(cur_scene);
     }
 
     opt.tonemap.input_msaa = (int)msaa;
