@@ -335,14 +335,12 @@ const std::vector<mesh_scene::instance>& mesh_scene::get_instances() const
 void mesh_scene::update_acceleration_structures(
     size_t device_index,
     uint32_t frame_index,
-    bool& need_scene_reset,
-    bool& command_buffers_outdated
+    bool& need_scene_reset
 ){
     auto& as = as_update[device_index];
     auto& f = as.per_frame[frame_index];
 
-    need_scene_reset |= as.tlas_reset_needed;
-    command_buffers_outdated |= f.command_buffers_outdated;
+    need_scene_reset |= as.tlas_reset_needed || f.command_buffers_outdated;
 
     if(as.tlas_reset_needed)
         ensure_blas();

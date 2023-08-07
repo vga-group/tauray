@@ -13,7 +13,6 @@ scene::scene(
     size_t max_lights
 ):  light_scene(dev, max_lights),
     mesh_scene(dev, max_instances),
-    dev(dev),
     total_ticks(0)
 {
 }

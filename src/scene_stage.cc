@@ -212,7 +212,6 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     envmap_change_counter(1),
     geometry_change_counter(1),
     light_change_counter(1),
-    command_buffers_outdated(true),
     force_instance_refresh_frames(0),
     cur_scene(nullptr),
     envmap(nullptr),
@@ -223,7 +222,7 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     shadow_map_cascade_range(0),
     s_table(dev, true),
     scene_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    scene_metadata(dev, 0, vk::BufferUsageFlagBits::eUniformBuffer),
+    scene_metadata(dev, sizeof(scene_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
     directional_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     point_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     tri_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
@@ -299,38 +298,10 @@ void scene_stage::set_scene(scene* target)
 
     cur_scene->refresh_instance_cache(true);
 
-    size_t point_light_count =
-        cur_scene->get_point_lights().size() +
-        cur_scene->get_spotlights().size();
-
-    size_t point_light_mem = sizeof(point_light_entry) * point_light_count;
-    size_t directional_light_mem =
-        sizeof(directional_light_entry) * cur_scene->get_directional_lights().size();
-    size_t tri_light_count = 0;
-
-    for(const mesh_scene::instance& i: cur_scene->get_instances())
-    {
-        if(i.mat->emission_factor != vec3(0))
-            tri_light_count += i.m->get_indices().size() / 3;
-    }
-
-    point_light_data.resize(point_light_mem);
-    directional_light_data.resize(directional_light_mem);
-    if(opt.gather_emissive_triangles)
-        tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
-    else
-        tri_light_data.resize(0);
-
-    scene_metadata.resize(sizeof(scene_metadata_buffer));
-
     s_table.update_scene(cur_scene);
 
-    force_instance_refresh_frames = MAX_FRAMES_IN_FLIGHT;
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-        update(i);
-
     as_rebuild = get_context()->is_ray_tracing_supported();
-    command_buffers_outdated = true;
+    force_instance_refresh_frames = MAX_FRAMES_IN_FLIGHT;
 
     envmap_change_counter++;
     geometry_change_counter++;
@@ -758,6 +729,14 @@ void scene_stage::update(uint32_t frame_index)
     size_t tri_light_count = 0;
     size_t vertex_count = 0;
 
+    if(geometry_outdated)
+    {
+        // TODO: This won't catch changing materials! The correct solution would
+        // probably be to update the sampler table on every frame, but make it
+        // faster than it currently is and report if there was a change.
+        s_table.update_scene(cur_scene);
+    }
+
     const std::vector<scene::instance>& instances = cur_scene->get_instances();
     scene_data.resize(sizeof(instance_buffer) * instances.size());
     scene_data.foreach<instance_buffer>(
@@ -816,6 +795,8 @@ void scene_stage::update(uint32_t frame_index)
     const std::vector<directional_light*>& directional_lights =
         cur_scene->get_directional_lights();
 
+    size_t point_light_count = point_lights.size() + spotlights.size();
+    lights_outdated |= point_light_data.resize(sizeof(point_light_entry) * point_light_count);
     point_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
         point_light_entry* point_light_data =
             reinterpret_cast<point_light_entry*>(light_data);
@@ -837,6 +818,7 @@ void scene_stage::update(uint32_t frame_index)
         }
     });
 
+    lights_outdated |= directional_light_data.resize(sizeof(directional_light_entry) * cur_scene->get_directional_lights().size());
     directional_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
         directional_light_entry* directional_light_data =
             reinterpret_cast<directional_light_entry*>(light_data);
@@ -848,6 +830,11 @@ void scene_stage::update(uint32_t frame_index)
             directional_light_data[i] = directional_light_entry(dl, get_shadow_map_index(&dl));
         }
     });
+
+    if(opt.gather_emissive_triangles)
+        lights_outdated |= tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
+    else
+        tri_light_data.resize(0);
 
     const std::vector<sh_grid*>& sh_grids = cur_scene->get_sh_grids();
     sh_grid_data.resize(sizeof(sh_grid_buffer) * sh_grids.size());
@@ -1006,20 +993,17 @@ void scene_stage::update(uint32_t frame_index)
 
     if(get_context()->is_ray_tracing_supported())
     {
-        bool need_scene_reset = false;
         for(device& dev: get_device_mask())
         {
             cur_scene->light_scene::update_acceleration_structures(
                 dev.index,
                 frame_index,
-                need_scene_reset,
-                command_buffers_outdated
+                lights_outdated
             );
             cur_scene->mesh_scene::update_acceleration_structures(
                 dev.index,
                 frame_index,
-                need_scene_reset,
-                command_buffers_outdated
+                geometry_outdated
             );
 
             auto& instance_buffer = tlas->get_instances_buffer();
@@ -1042,23 +1026,18 @@ void scene_stage::update(uint32_t frame_index)
             );
         }
 
-        if(as_rebuild == false)
-            as_rebuild = need_scene_reset;
+        as_rebuild |= geometry_outdated || lights_outdated;
 
         if(opt.pre_transform_vertices)
-            need_scene_reset |= cur_scene->reserve_pre_transformed_vertices(vertex_count);
+            geometry_outdated |= cur_scene->reserve_pre_transformed_vertices(vertex_count);
         else
             cur_scene->clear_pre_transformed_vertices();
-
-        command_buffers_outdated |= need_scene_reset;
     }
 
-    if(command_buffers_outdated)
+    if(lights_outdated || geometry_outdated)
     {
         record_command_buffers();
-        if(as_rebuild == false)
-            command_buffers_outdated = false;
-        else as_rebuild = false;
+        as_rebuild = false;
     }
 }
 

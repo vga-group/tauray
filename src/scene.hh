@@ -60,7 +60,6 @@ public:
 private:
     friend class scene_stage;
 
-    device_mask dev;
     std::vector<camera*> cameras;
     std::vector<animated_node*> control_nodes;
     time_ticks total_ticks;

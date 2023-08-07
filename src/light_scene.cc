@@ -292,8 +292,7 @@ size_t light_scene::get_max_capacity() const
 void light_scene::update_acceleration_structures(
     device_id id,
     uint32_t frame_index,
-    bool& need_scene_reset,
-    bool& command_buffers_outdated
+    bool& need_scene_reset
 ){
     auto& as = as_update[id];
     auto& f = as.per_frame[frame_index];
@@ -306,8 +305,7 @@ void light_scene::update_acceleration_structures(
         }
     );
 
-    need_scene_reset |= as.scene_reset_needed;
-    command_buffers_outdated |= f.command_buffers_outdated;
+    need_scene_reset |= as.scene_reset_needed || f.command_buffers_outdated;
 
     as.scene_reset_needed = false;
     f.command_buffers_outdated = false;

@@ -102,7 +102,6 @@ private:
     uint32_t geometry_change_counter;
     uint32_t light_change_counter;
 
-    bool command_buffers_outdated;
     unsigned force_instance_refresh_frames;
     scene* cur_scene;
 

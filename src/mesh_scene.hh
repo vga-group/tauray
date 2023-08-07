@@ -86,8 +86,7 @@ protected:
     void update_acceleration_structures(
         size_t device_index,
         uint32_t frame_index,
-        bool& need_scene_reset,
-        bool& command_buffers_outdated
+        bool& need_scene_reset
     );
 
     void record_acceleration_structure_build(
