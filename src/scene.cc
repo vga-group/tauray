@@ -1,7 +1,6 @@
 #include "scene.hh"
 #include "camera.hh"
 #include "misc.hh"
-#include "shadow_map_renderer.hh"
 #include "placeholders.hh"
 #include "environment_map.hh"
 
@@ -16,7 +15,6 @@ scene::scene(
     mesh_scene(dev, max_instances),
     dev(dev),
     total_ticks(0),
-    smr(nullptr),
     sh_grid_textures(nullptr),
     s_table(dev, true),
     scene_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),

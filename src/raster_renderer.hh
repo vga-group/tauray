@@ -6,7 +6,7 @@
 #include "raster_stage.hh"
 #include "envmap_stage.hh"
 #include "scene_stage.hh"
-#include "shadow_map_renderer.hh"
+#include "shadow_map_stage.hh"
 #include "post_processing_renderer.hh"
 #include "renderer.hh"
 
@@ -51,7 +51,7 @@ private:
     std::optional<post_processing_renderer> post_processing;
     std::vector<vkm<vk::Semaphore>> shared_resource_semaphores;
     gbuffer_texture gbuffer;
-    std::optional<shadow_map_renderer> smr;
+    std::optional<shadow_map_stage> sms;
     std::optional<envmap_stage> envmap;
     std::optional<z_pass_stage> z_pass;
     std::optional<raster_stage> raster;

@@ -1,7 +1,6 @@
 #include "raster_stage.hh"
 #include "mesh.hh"
 #include "shader_source.hh"
-#include "shadow_map_renderer.hh"
 #include "placeholders.hh"
 #include "scene_stage.hh"
 #include "camera.hh"

@@ -1,5 +1,4 @@
 #include "scene_stage.hh"
-#include "shadow_map_renderer.hh"
 #include "sh_grid.hh"
 #include "environment_map.hh"
 #include "placeholders.hh"
@@ -43,11 +42,10 @@ struct directional_light_entry
     directional_light_entry() = default;
     directional_light_entry(
         const directional_light& dl,
-        const shadow_map_renderer* smr
-    ):  color(dl.get_color()), shadow_map_index(-1),
+        int shadow_map_index
+    ):  color(dl.get_color()), shadow_map_index(shadow_map_index),
         dir(dl.get_global_direction()), dir_cutoff(cos(radians(dl.get_angle())))
     {
-        if(smr) shadow_map_index = smr->get_shadow_map_index(&dl);
     }
 
     pvec3 color;
@@ -59,16 +57,15 @@ struct directional_light_entry
 struct point_light_entry
 {
     point_light_entry() = default;
-    point_light_entry(const point_light& pl, const shadow_map_renderer* smr)
+    point_light_entry(const point_light& pl, int shadow_map_index)
     :   color(pl.get_color()), dir(vec3(0)), pos(pl.get_global_position()),
         radius(pl.get_radius()), dir_cutoff(0.0f), dir_falloff(0.0f),
         cutoff_radius(pl.get_cutoff_radius()), spot_radius(-1.0f),
-        shadow_map_index(-1)
+        shadow_map_index(shadow_map_index)
     {
-        if(smr) shadow_map_index = smr->get_shadow_map_index(&pl);
     }
 
-    point_light_entry(const spotlight& sl, const shadow_map_renderer* smr)
+    point_light_entry(const spotlight& sl, int shadow_map_index)
     :   color(sl.get_color()), dir(sl.get_global_direction()),
         pos(sl.get_global_position()), radius(sl.get_radius()),
         dir_cutoff(cos(radians(sl.get_cutoff_angle()))),
@@ -77,9 +74,8 @@ struct point_light_entry
         spot_radius(
             sl.get_cutoff_radius() * tan(radians(sl.get_cutoff_angle()))
         ),
-        shadow_map_index(-1)
+        shadow_map_index(shadow_map_index)
     {
-        if(smr) shadow_map_index = smr->get_shadow_map_index(&sl);
     }
 
     pvec3 color;
@@ -190,6 +186,21 @@ struct pre_tranform_push_constants
     uint32_t instance_id;
 };
 
+const quat face_orientations[6] = {
+    glm::quatLookAt(vec3(-1,0,0), vec3(0,1,0)),
+    glm::quatLookAt(vec3(1,0,0), vec3(0,1,0)),
+    glm::quatLookAt(vec3(0,-1,0), vec3(0,0,1)),
+    glm::quatLookAt(vec3(0,1,0), vec3(0,0,1)),
+    glm::quatLookAt(vec3(0,0,-1), vec3(0,1,0)),
+    glm::quatLookAt(vec3(0,0,1), vec3(0,1,0))
+};
+
+vec2 align_cascade(vec2 offset, vec2 area, float scale, uvec2 resolution)
+{
+    vec2 cascade_step_size = (area*scale)/vec2(resolution);
+    return round(offset / cascade_step_size) * cascade_step_size;
+}
+
 }
 
 namespace tr
@@ -206,6 +217,8 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     cur_scene(nullptr),
     envmap(nullptr),
     ambient(0),
+    total_shadow_map_count(0),
+    total_cascade_count(0),
     skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, {}, 1, true}),
     extract_tri_lights(dev, compute_pipeline::params{
         {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
@@ -223,6 +236,16 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     }),
     opt(opt), stage_timer(dev, "scene update")
 {
+    if(opt.shadow_mapping)
+    {
+        shadow_atlas.reset(new atlas(
+            dev, {}, 1, vk::Format::eD32Sfloat,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eSampled |
+            vk::ImageUsageFlagBits::eDepthStencilAttachment,
+            vk::ImageLayout::eShaderReadOnlyOptimal
+        ));
+    }
 }
 
 void scene_stage::set_scene(scene* target)
@@ -264,8 +287,9 @@ void scene_stage::set_scene(scene* target)
     as_rebuild = get_context()->is_ray_tracing_supported();
     command_buffers_outdated = true;
 
-    // TODO: Do this per-category in update().
+    envmap_change_counter++;
     geometry_change_counter++;
+    light_change_counter++;
 }
 
 scene* scene_stage::get_scene() const
@@ -313,11 +337,6 @@ vk::AccelerationStructureKHR scene_stage::get_acceleration_structure(
     return *cur_scene->tlas->get_tlas_handle(id);
 }
 
-void scene_stage::set_shadow_map_renderer(shadow_map_renderer* smr)
-{
-    cur_scene->smr = smr;
-}
-
 void scene_stage::set_sh_grid_textures(
     std::unordered_map<sh_grid*, texture>* sh_grid_textures
 ){
@@ -326,10 +345,201 @@ void scene_stage::set_sh_grid_textures(
 
 vec2 scene_stage::get_shadow_map_atlas_pixel_margin() const
 {
-    if(cur_scene->smr)
-        return vec2(0.5)/vec2(cur_scene->smr->get_shadow_map_atlas()->get_size());
+    if(shadow_atlas)
+        return vec2(0.5)/vec2(shadow_atlas->get_size());
     else
         return vec2(0);
+}
+
+const std::vector<scene_stage::shadow_map_instance>&
+scene_stage::get_shadow_maps() const
+{
+    return shadow_maps;
+}
+
+atlas* scene_stage::get_shadow_map_atlas() const
+{
+    return shadow_atlas.get();
+}
+
+bool scene_stage::update_shadow_map_params()
+{
+    std::vector<uvec2> shadow_map_sizes;
+
+    // Cascades don't count towards this, but do count towards the above.
+    total_shadow_map_count = 0;
+    total_cascade_count = 0;
+    size_t total_viewport_count = 0;
+
+    shadow_maps.clear();
+    shadow_map_indices.clear();
+
+    for(const directional_light* dl: cur_scene->get_directional_lights())
+    {
+        const auto* spec = cur_scene->get_shadow_map(dl);
+        if(!spec) continue;
+
+        shadow_map_sizes.push_back(spec->resolution);
+
+        total_shadow_map_count++;
+        total_viewport_count++;
+
+        shadow_map_indices[dl] = shadow_maps.size();
+        shadow_map_instance* sm = &shadow_maps.emplace_back();
+        mat4 transform = dl->get_global_transform();
+
+        sm->atlas_index = shadow_map_sizes.size();
+        sm->map_index = shadow_maps.size()-1;
+        sm->face_size = spec->resolution;
+
+        // Bias is adjusted here so that it's independent of depth range. The
+        // constant is simply so that the values are in similar ranges to other
+        // shadow types.
+        float bias_scale = 20.0f/abs(spec->depth_range.x - spec->depth_range.y);
+        vec2 area_size = abs(vec2(
+            spec->x_range.y-spec->x_range.x, spec->y_range.y-spec->y_range.x
+        ));
+        sm->min_bias = spec->min_bias*bias_scale;
+        sm->max_bias = spec->max_bias*bias_scale;
+        sm->radius = tan(radians(dl->get_angle()))/area_size;
+        vec2 top_offset = spec->cascades.empty() ? vec2(0) : align_cascade(
+            spec->cascades[0], area_size, 1.0f, spec->resolution
+        );
+        camera face_cam;
+        face_cam.ortho(
+            spec->x_range.x+top_offset.x, spec->x_range.y+top_offset.x,
+            spec->y_range.x+top_offset.y, spec->y_range.y+top_offset.y,
+            spec->depth_range.x, spec->depth_range.y
+        );
+        face_cam.set_transform(transform);
+        sm->faces = {face_cam};
+
+        float cascade_scale = 2.0f;
+        for(size_t i = 1; i < spec->cascades.size(); ++i)
+        {
+            shadow_map_instance::cascade c;
+            c.atlas_index = (unsigned)shadow_map_sizes.size();
+            shadow_map_sizes.push_back(spec->resolution);
+            total_cascade_count++;
+            total_viewport_count++;
+
+            vec2 offset = align_cascade(
+                spec->cascades[i], area_size, cascade_scale, spec->resolution
+            );
+            vec4 area = vec4(
+                spec->x_range * cascade_scale + offset.x,
+                spec->y_range * cascade_scale + offset.y
+            );
+
+            c.offset = (top_offset-offset)/
+                abs(0.5f*vec2(area.x-area.y, area.z-area.w));
+            c.scale = cascade_scale;
+            c.bias_scale = sqrt(cascade_scale);
+            c.cam = face_cam;
+            c.cam.ortho(
+                area.x, area.y, area.z, area.w,
+                spec->depth_range.x, spec->depth_range.y
+            );
+
+            cascade_scale *= 2.0f;
+            sm->cascades.push_back(c);
+        }
+    }
+
+    for(const point_light* pl: cur_scene->get_point_lights())
+    {
+        const auto* spec = cur_scene->get_shadow_map(pl);
+        if(!spec) continue;
+        shadow_map_sizes.push_back(spec->resolution*uvec2(3,2));
+
+        total_shadow_map_count++;
+
+        shadow_map_indices[pl] = shadow_maps.size();
+        shadow_map_instance* sm = &shadow_maps.emplace_back();
+
+        sm->atlas_index = shadow_map_sizes.size();
+        sm->map_index = shadow_maps.size()-1;
+        sm->face_size = spec->resolution;
+
+        mat4 transform = pl->get_global_transform();
+
+        sm->min_bias = spec->min_bias;
+        sm->max_bias = spec->max_bias;
+        sm->radius = vec2(pl->get_radius()); // TODO: Radius scaling for PCF?
+
+        // Omnidirectional
+        sm->faces.clear();
+        for(int i = 0; i < 6; ++i)
+        {
+            camera face_cam;
+            face_cam.set_position(get_matrix_translation(transform));
+            face_cam.set_orientation(face_orientations[i]);
+            face_cam.perspective(
+                90.0f, 1.0f, spec->near, pl->get_cutoff_radius()
+            );
+            sm->faces.push_back(face_cam);
+            total_viewport_count++;
+        }
+    }
+
+    for(const spotlight* sl: cur_scene->get_spotlights())
+    {
+        const auto* spec = cur_scene->get_shadow_map(sl);
+        if(!spec) continue;
+
+        mat4 transform = sl->get_global_transform();
+        shadow_map_indices[sl] = shadow_maps.size();
+        shadow_map_instance* sm = &shadow_maps.emplace_back();
+
+        // Perspective shadow map, if cutoff angle is small enough.
+        if(sl->get_cutoff_angle() < 60)
+        {
+            shadow_map_sizes.push_back(spec->resolution);
+            camera face_cam;
+            face_cam.set_transform(transform);
+            face_cam.perspective(
+                sl->get_cutoff_angle()*2, 1.0f,
+                spec->near, sl->get_cutoff_radius()
+            );
+            sm->faces = {face_cam};
+        }
+        // Otherwise, just use omnidirectional shadow map like other point
+        // lights
+        else
+        {
+            shadow_map_sizes.push_back(spec->resolution * uvec2(3,2));
+            sm->faces.clear();
+            for(int i = 0; i < 6; ++i)
+            {
+                camera face_cam;
+                face_cam.set_position(get_matrix_translation(transform));
+                face_cam.set_orientation(face_orientations[i]);
+                face_cam.perspective(
+                    90.0f, 1.0f, spec->near, sl->get_cutoff_radius()
+                );
+                sm->faces.push_back(face_cam);
+            }
+        }
+        total_viewport_count += sm->faces.size();
+        total_shadow_map_count++;
+
+        sm->atlas_index = shadow_map_sizes.size()-1;
+        sm->map_index = shadow_maps.size()-1;
+        sm->face_size = spec->resolution;
+        sm->min_bias = spec->min_bias;
+        sm->max_bias = spec->max_bias;
+        sm->radius = vec2(sl->get_radius());
+    }
+
+    return shadow_atlas->set_sub_textures(shadow_map_sizes, 0);
+}
+
+int scene_stage::get_shadow_map_index(const light* l)
+{
+    auto it = shadow_map_indices.find(l);
+    if(it == shadow_map_indices.end())
+        return -1;
+    return shadow_maps[it->second].map_index;
 }
 
 std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int32_t camera_index) const
@@ -395,11 +605,9 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
         descriptors.push_back({"tlas", {1, cur_scene->tlas->get_tlas_handle(id)}});
     }
 
-    if(cur_scene->smr)
+    if(opt.shadow_mapping)
     {
         placeholders& pl = dev.get_context()->get_placeholders();
-
-        const atlas* shadow_map_atlas = cur_scene->smr->get_shadow_map_atlas();
 
         descriptors.push_back(
             {"shadow_maps", {cur_scene->shadow_map_data[id], 0, cur_scene->shadow_map_range}}
@@ -413,14 +621,14 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
         descriptors.push_back(
             {"shadow_map_atlas", {
                 pl.default_sampler.get_sampler(id),
-                shadow_map_atlas->get_image_view(id),
+                shadow_atlas->get_image_view(id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }}
         );
         descriptors.push_back(
             {"shadow_map_atlas_test", {
                 cur_scene->shadow_sampler.get_sampler(id),
-                shadow_map_atlas->get_image_view(id),
+                shadow_atlas->get_image_view(id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }}
         );
@@ -488,7 +696,7 @@ void scene_stage::update(uint32_t frame_index)
         lights_outdated = true;
     }
 
-    cur_scene->refresh_instance_cache();
+    geometry_outdated |= cur_scene->refresh_instance_cache();
     if(cur_scene->cameras.size() != 0)
         cur_scene->track_shadow_maps(cur_scene->cameras);
 
@@ -572,14 +780,14 @@ void scene_stage::update(uint32_t frame_index)
         for(size_t j = 0; j < point_lights.size(); ++j)
         {
             const point_light& pl = *point_lights[j];
-            point_light_entry pe = point_light_entry(pl, cur_scene->smr);
+            point_light_entry pe = point_light_entry(pl, get_shadow_map_index(&pl));
             point_light_data[i] = pe;
             ++i;
         }
         for(size_t j = 0; j < spotlights.size(); ++j)
         {
             const spotlight& sl = *spotlights[j];
-            point_light_entry pe = point_light_entry(sl, cur_scene->smr);
+            point_light_entry pe = point_light_entry(sl, get_shadow_map_index(&sl));
             point_light_data[i] = pe;
             ++i;
         }
@@ -593,7 +801,7 @@ void scene_stage::update(uint32_t frame_index)
         for(size_t i = 0; i < directional_lights.size(); ++i)
         {
             const directional_light& dl = *directional_lights[i];
-            directional_light_data[i] = directional_light_entry(dl, cur_scene->smr);
+            directional_light_data[i] = directional_light_entry(dl, get_shadow_map_index(&dl));
         }
     });
 
@@ -639,21 +847,17 @@ void scene_stage::update(uint32_t frame_index)
         }
     );
 
-    if(cur_scene->smr)
+    if(opt.shadow_mapping)
     {
-        cur_scene->smr->update_shadow_map_params();
-        const atlas* shadow_map_atlas = cur_scene->smr->get_shadow_map_atlas();
-        const std::vector<shadow_map_renderer::shadow_map>& shadow_maps =
-            cur_scene->smr->get_shadow_map_info();
+        lights_outdated |= update_shadow_map_params();
 
         // TODO: Shadow maps should be stored here, in scene_stage, so that
         // this weird interplay with shadow_map_renderer owning some scene
         // assets can be removed.
-        cur_scene->shadow_map_range =
-            sizeof(shadow_map_entry) * cur_scene->smr->get_total_shadow_map_count();
+        cur_scene->shadow_map_range = sizeof(shadow_map_entry) * total_shadow_map_count;
 
         cur_scene->shadow_map_cascade_range =
-            sizeof(shadow_map_cascade_entry) * cur_scene->smr->get_total_cascade_count();
+            sizeof(shadow_map_cascade_entry) * total_cascade_count;
 
         cur_scene->shadow_map_data.resize(cur_scene->shadow_map_range + cur_scene->shadow_map_cascade_range);
         cur_scene->shadow_map_data.map<uint8_t>(
@@ -716,11 +920,11 @@ void scene_stage::update(uint32_t frame_index)
                 map.min_bias = sm.min_bias;
                 map.max_bias = sm.max_bias;
                 map.rect = vec4(
-                    ivec2(shadow_map_atlas->get_rect_px(sm.atlas_index)),
+                    ivec2(shadow_atlas->get_rect_px(sm.atlas_index)),
                     sm.face_size
                 )/vec4(
-                    shadow_map_atlas->get_size(),
-                    shadow_map_atlas->get_size()
+                    shadow_atlas->get_size(),
+                    shadow_atlas->get_size()
                 );
 
                 for(auto& c: sm.cascades)
@@ -733,11 +937,11 @@ void scene_stage::update(uint32_t frame_index)
                         c.bias_scale
                     );
                     cascade.rect = vec4(
-                        ivec2(shadow_map_atlas->get_rect_px(c.atlas_index)),
+                        ivec2(shadow_atlas->get_rect_px(c.atlas_index)),
                         sm.face_size
                     )/vec4(
-                        shadow_map_atlas->get_size(),
-                        shadow_map_atlas->get_size()
+                        shadow_atlas->get_size(),
+                        shadow_atlas->get_size()
                     );
 
                     cascade_index++;

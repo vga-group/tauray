@@ -14,8 +14,6 @@ class camera;
 class environment_map;
 class sh_grid;
 class basic_pipeline;
-class shadow_map_renderer;
-
 class scene: public light_scene, public mesh_scene
 {
 public:
@@ -69,7 +67,6 @@ private:
     std::vector<animated_node*> control_nodes;
     time_ticks total_ticks;
 
-    shadow_map_renderer* smr;
     std::unordered_map<sh_grid*, texture>* sh_grid_textures;
 
     sampler_table s_table;

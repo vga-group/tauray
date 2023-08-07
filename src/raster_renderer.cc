@@ -10,14 +10,15 @@ namespace tr
 raster_renderer::raster_renderer(context& ctx, const options& opt)
 :   ctx(&ctx), opt(opt)
 {
-    scene_update.reset(new scene_stage(ctx.get_display_device(), opt.scene_options));
+    this->opt.scene_options.shadow_mapping = true;
+    scene_update.reset(new scene_stage(ctx.get_display_device(), this->opt.scene_options));
     post_processing.emplace(
         ctx.get_display_device(),
         *scene_update,
         ctx.get_size(),
         opt.post_process
     );
-    smr.emplace(ctx, *scene_update);
+    sms.emplace(ctx.get_display_device(), *scene_update, shadow_map_stage::options{opt.max_samplers});
     init_common_resources();
 }
 
@@ -28,7 +29,6 @@ raster_renderer::~raster_renderer()
 void raster_renderer::set_scene(scene* s)
 {
     scene_update->set_scene(s);
-    scene_update->set_shadow_map_renderer(&*smr);
 }
 
 void raster_renderer::render()
@@ -43,7 +43,7 @@ void raster_renderer::render()
 
 dependencies raster_renderer::render_core(dependencies deps)
 {
-    deps = smr->render(deps);
+    deps = sms->run(deps);
     deps.concat(post_processing->get_gbuffer_write_dependencies());
 
     deps = envmap->run(deps);

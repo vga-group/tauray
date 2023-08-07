@@ -46,8 +46,9 @@ public:
 
     // Refresh will only occur once per frame, this will skip refreshing if it's
     // already been done on this frame! Unless force is true, in which case it
-    // will update anyway.
-    void refresh_instance_cache(bool force = false);
+    // will update anyway. Returns true if there was a change in scene
+    // composition since previous call.
+    bool refresh_instance_cache(bool force = false);
     const std::vector<instance>& get_instances() const;
 
     bool reserve_pre_transformed_vertices(size_t max_vertex_count);

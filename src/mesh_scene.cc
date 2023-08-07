@@ -90,15 +90,16 @@ size_t mesh_scene::get_blas_group_count() const
     return group_cache.size();
 }
 
-void mesh_scene::refresh_instance_cache(bool force)
+bool mesh_scene::refresh_instance_cache(bool force)
 {
     uint64_t frame_counter = as_update.get_context()->get_frame_counter();
     if(!force && instance_cache_frame == frame_counter)
-        return;
+        return false;
     instance_cache_frame = frame_counter;
     size_t i = 0;
     size_t last_object_index = SIZE_MAX;
     group_cache.clear();
+    bool scene_changed = false;
     auto add_instances = [&](bool static_mesh, bool static_transformable){
         for(size_t object_index = 0; object_index < objects.size(); ++object_index)
         {
@@ -132,6 +133,7 @@ void mesh_scene::refresh_instance_cache(bool force)
                         nullptr,
                         frame_counter
                     });
+                    scene_changed = true;
                 }
                 instance& inst = instance_cache[i];
 
@@ -148,18 +150,21 @@ void mesh_scene::refresh_instance_cache(bool force)
                     inst.mat = &vg.mat;
                     inst.prev_transform = mat4(0);
                     inst.last_refresh_frame = frame_counter;
+                    scene_changed = true;
                 }
-                if(inst.m != vg.m)
+                if(inst.m != vg.m || (vg.m && inst.m && vg.m->get_id() != inst.m->get_id()))
                 {
                     inst.m = vg.m;
                     inst.prev_transform = mat4(0);
                     inst.last_refresh_frame = frame_counter;
+                    scene_changed = true;
                 }
                 if(inst.o != o)
                 {
                     inst.o = o;
                     inst.prev_transform = mat4(0);
                     inst.last_refresh_frame = frame_counter;
+                    scene_changed = true;
                 }
                 if(inst.last_refresh_frame == frame_counter || !o->is_static())
                 {
@@ -189,8 +194,13 @@ void mesh_scene::refresh_instance_cache(bool force)
     add_instances(true, true);
     add_instances(true, false);
     add_instances(false, false);
-    instance_cache.resize(i);
+    if(instance_cache.size() > i)
+    {
+        instance_cache.resize(i);
+        scene_changed = true;
+    }
     if(force) ensure_blas();
+    return scene_changed;
 }
 
 bool mesh_scene::reserve_pre_transformed_vertices(size_t max_vertex_count)

@@ -4,11 +4,12 @@
 #include "stage.hh"
 #include "compute_pipeline.hh"
 #include "radix_sort.hh"
+#include "atlas.hh"
+#include "camera.hh"
 
 namespace tr
 {
 
-class shadow_map_renderer;
 class scene_stage: public multi_device_stage
 {
 public:
@@ -17,6 +18,7 @@ public:
         uint32_t max_instances = 1024;
         bool gather_emissive_triangles = false;
         bool pre_transform_vertices = false;
+        bool shadow_mapping = false;
     };
 
     scene_stage(device_mask dev, const options& opt);
@@ -43,12 +45,9 @@ public:
         device_id id
     ) const;
 
-    void set_shadow_map_renderer(shadow_map_renderer* smr);
     void set_sh_grid_textures(
         std::unordered_map<sh_grid*, texture>* sh_grid_textures
     );
-
-    vec2 get_shadow_map_atlas_pixel_margin() const;
 
     void bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_offset = 0);
     void push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_offset = 0);
@@ -57,6 +56,29 @@ public:
         size_t max_samplers,
         size_t max_3d_samplers
     );
+
+    struct shadow_map_instance
+    {
+        unsigned atlas_index;
+        unsigned map_index;
+        uvec2 face_size;
+        float min_bias;
+        float max_bias;
+        vec2 radius;
+        std::vector<camera> faces;
+        struct cascade
+        {
+            unsigned atlas_index;
+            vec2 offset;
+            float scale;
+            float bias_scale;
+            camera cam;
+        };
+        std::vector<cascade> cascades;
+    };
+    vec2 get_shadow_map_atlas_pixel_margin() const;
+    const std::vector<shadow_map_instance>& get_shadow_maps() const;
+    atlas* get_shadow_map_atlas() const;
 
 protected:
     void update(uint32_t frame_index) override;
@@ -67,6 +89,9 @@ private:
     void record_as_build(device_id id, uint32_t frame_index, vk::CommandBuffer cb);
     void record_tri_light_extraction(device_id id, vk::CommandBuffer cb);
     void record_pre_transform(device_id id, vk::CommandBuffer cb);
+
+    bool update_shadow_map_params();
+    int get_shadow_map_index(const light* l);
 
     std::vector<descriptor_state> get_descriptor_info(device_id id, int32_t camera_index) const;
 
@@ -84,6 +109,15 @@ private:
     // Light stuff
     environment_map* envmap;
     vec3 ambient;
+
+    // Shadow map stuff. The scene_stage acts as the owner of these as they're
+    // scene-wide GPU assets, but they're updated by shadow_map_stage. If the
+    // scene specifies no shadow maps, these won't exist either.
+    size_t total_shadow_map_count;
+    size_t total_cascade_count;
+    std::unordered_map<const light*, size_t /*index*/> shadow_map_indices;
+    std::vector<shadow_map_instance> shadow_maps;
+    std::unique_ptr<atlas> shadow_atlas;
 
     // Previous values for camera uniform data are tracked here for temporal
     // algorithms.

@@ -204,8 +204,11 @@ void raster_pipeline::init_pipeline()
         0.0f
     );
 
+    std::vector<vk::DynamicState> dynamic_states;
+    if(state.dynamic_viewport)
+        dynamic_states.push_back(vk::DynamicState::eViewport);
     vk::PipelineDynamicStateCreateInfo dynamic_state = {
-        {}, 0, nullptr
+        {}, (uint32_t)dynamic_states.size(), dynamic_states.data()
     };
 
     std::vector<vk::PipelineColorBlendAttachmentState> color_blend_attachments;
