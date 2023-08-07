@@ -14,57 +14,11 @@ scene::scene(
 ):  light_scene(dev, max_lights),
     mesh_scene(dev, max_instances),
     dev(dev),
-    total_ticks(0),
-    sh_grid_textures(nullptr),
-    s_table(dev, true),
-    scene_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    scene_metadata(dev, 0, vk::BufferUsageFlagBits::eUniformBuffer),
-    directional_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    point_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    tri_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    sh_grid_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    shadow_map_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    camera_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    envmap_sampler(
-        dev, vk::Filter::eLinear, vk::Filter::eLinear,
-        vk::SamplerAddressMode::eRepeat,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerMipmapMode::eNearest,
-        0, true, false
-    ),
-    shadow_sampler(
-        dev,
-        vk::Filter::eLinear,
-        vk::Filter::eLinear,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerMipmapMode::eNearest,
-        0,
-        true,
-        false,
-        true
-    ),
-    sh_grid_sampler(
-        dev,
-        vk::Filter::eLinear,
-        vk::Filter::eLinear,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerMipmapMode::eNearest,
-        0,
-        true,
-        false
-    ),
-    shadow_map_range(0),
-    shadow_map_cascade_range(0)
+    total_ticks(0)
 {
-    init_acceleration_structures();
 }
 
-void scene::set_camera(camera* cam)
-{
-    cameras = {cam};
-}
+void scene::set_camera(camera* cam) { cameras = {cam}; }
 
 camera* scene::get_camera(unsigned index) const
 {
@@ -74,15 +28,8 @@ camera* scene::get_camera(unsigned index) const
 
 void scene::add(camera& c) { unsorted_insert(cameras, &c); }
 void scene::remove(camera& c) { unsorted_erase(cameras, &c); }
-void scene::clear_cameras()
-{
-    cameras.clear();
-}
-
-const std::vector<camera*>& scene::get_cameras() const
-{
-    return cameras;
-}
+void scene::clear_cameras() { cameras.clear(); }
+const std::vector<camera*>& scene::get_cameras() const { return cameras; }
 
 void scene::reorder_cameras_by_active(const std::set<int>& active_indices)
 {
@@ -187,14 +134,6 @@ bool scene::is_playing() const
     mesh_scene::visit_animated(check_playing);
 
     return playing;
-}
-
-void scene::init_acceleration_structures()
-{
-    if(!dev.get_context()->is_ray_tracing_supported()) return;
-
-    uint32_t total_max_capacity = mesh_scene::get_max_capacity() + light_scene::get_max_capacity();
-    tlas.emplace(dev, total_max_capacity);
 }
 
 std::vector<uint32_t> get_viewport_reorder_mask(

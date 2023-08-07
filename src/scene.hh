@@ -60,33 +60,10 @@ public:
 private:
     friend class scene_stage;
 
-    void init_acceleration_structures();
-
     device_mask dev;
     std::vector<camera*> cameras;
     std::vector<animated_node*> control_nodes;
     time_ticks total_ticks;
-
-    std::unordered_map<sh_grid*, texture>* sh_grid_textures;
-
-    sampler_table s_table;
-    gpu_buffer scene_data;
-    gpu_buffer scene_metadata;
-    gpu_buffer directional_light_data;
-    gpu_buffer point_light_data;
-    gpu_buffer tri_light_data;
-    gpu_buffer sh_grid_data;
-    gpu_buffer shadow_map_data;
-    gpu_buffer camera_data;
-    sampler envmap_sampler;
-    sampler shadow_sampler;
-    sampler sh_grid_sampler;
-    // Offsets and sizes to the camera uniform buffer.
-    std::vector<std::pair<size_t, size_t>> camera_data_offsets;
-    size_t shadow_map_range;
-    size_t shadow_map_cascade_range;
-
-    std::optional<top_level_acceleration_structure> tlas;
 };
 
 std::vector<uint32_t> get_viewport_reorder_mask(

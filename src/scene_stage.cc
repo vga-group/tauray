@@ -219,6 +219,48 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     ambient(0),
     total_shadow_map_count(0),
     total_cascade_count(0),
+    shadow_map_range(0),
+    shadow_map_cascade_range(0),
+    s_table(dev, true),
+    scene_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    scene_metadata(dev, 0, vk::BufferUsageFlagBits::eUniformBuffer),
+    directional_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    point_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    tri_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    sh_grid_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    shadow_map_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    camera_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    envmap_sampler(
+        dev, vk::Filter::eLinear, vk::Filter::eLinear,
+        vk::SamplerAddressMode::eRepeat,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest,
+        0, true, false
+    ),
+    shadow_sampler(
+        dev,
+        vk::Filter::eLinear,
+        vk::Filter::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest,
+        0,
+        true,
+        false,
+        true
+    ),
+    sh_grid_sampler(
+        dev,
+        vk::Filter::eLinear,
+        vk::Filter::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest,
+        0,
+        true,
+        false
+    ),
+    sh_grid_textures(nullptr),
     skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, {}, 1, true}),
     extract_tri_lights(dev, compute_pipeline::params{
         {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
@@ -246,6 +288,9 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
             vk::ImageLayout::eShaderReadOnlyOptimal
         ));
     }
+
+    if(dev.get_context()->is_ray_tracing_supported())
+        tlas.emplace(dev, opt.max_instances);
 }
 
 void scene_stage::set_scene(scene* target)
@@ -269,16 +314,16 @@ void scene_stage::set_scene(scene* target)
             tri_light_count += i.m->get_indices().size() / 3;
     }
 
-    cur_scene->point_light_data.resize(point_light_mem);
-    cur_scene->directional_light_data.resize(directional_light_mem);
+    point_light_data.resize(point_light_mem);
+    directional_light_data.resize(directional_light_mem);
     if(opt.gather_emissive_triangles)
-        cur_scene->tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
+        tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
     else
-        cur_scene->tri_light_data.resize(0);
+        tri_light_data.resize(0);
 
-    cur_scene->scene_metadata.resize(sizeof(scene_metadata_buffer));
+    scene_metadata.resize(sizeof(scene_metadata_buffer));
 
-    cur_scene->s_table.update_scene(cur_scene);
+    s_table.update_scene(cur_scene);
 
     force_instance_refresh_frames = MAX_FRAMES_IN_FLIGHT;
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -334,13 +379,13 @@ vk::AccelerationStructureKHR scene_stage::get_acceleration_structure(
         throw std::runtime_error(
             "Trying to use TLAS, but ray tracing is not available!"
         );
-    return *cur_scene->tlas->get_tlas_handle(id);
+    return *tlas->get_tlas_handle(id);
 }
 
 void scene_stage::set_sh_grid_textures(
     std::unordered_map<sh_grid*, texture>* sh_grid_textures
 ){
-    cur_scene->sh_grid_textures = sh_grid_textures;
+    this->sh_grid_textures = sh_grid_textures;
 }
 
 vec2 scene_stage::get_shadow_map_atlas_pixel_margin() const
@@ -379,8 +424,6 @@ bool scene_stage::update_shadow_map_params()
         const auto* spec = cur_scene->get_shadow_map(dl);
         if(!spec) continue;
 
-        shadow_map_sizes.push_back(spec->resolution);
-
         total_shadow_map_count++;
         total_viewport_count++;
 
@@ -391,6 +434,8 @@ bool scene_stage::update_shadow_map_params()
         sm->atlas_index = shadow_map_sizes.size();
         sm->map_index = shadow_maps.size()-1;
         sm->face_size = spec->resolution;
+
+        shadow_map_sizes.push_back(spec->resolution);
 
         // Bias is adjusted here so that it's independent of depth range. The
         // constant is simply so that the values are in similar ranges to other
@@ -450,7 +495,6 @@ bool scene_stage::update_shadow_map_params()
     {
         const auto* spec = cur_scene->get_shadow_map(pl);
         if(!spec) continue;
-        shadow_map_sizes.push_back(spec->resolution*uvec2(3,2));
 
         total_shadow_map_count++;
 
@@ -460,6 +504,8 @@ bool scene_stage::update_shadow_map_params()
         sm->atlas_index = shadow_map_sizes.size();
         sm->map_index = shadow_maps.size()-1;
         sm->face_size = spec->resolution;
+
+        shadow_map_sizes.push_back(spec->resolution*uvec2(3,2));
 
         mat4 transform = pl->get_global_transform();
 
@@ -547,13 +593,13 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
     const std::vector<sh_grid*>& sh_grids = cur_scene->get_sh_grids();
 
     std::vector<vk::DescriptorImageInfo> dii_3d;
-    if(cur_scene->sh_grid_textures)
+    if(sh_grid_textures)
     {
         for(sh_grid* sg: sh_grids)
         {
-            texture& tex = cur_scene->sh_grid_textures->at(sg);
+            texture& tex = sh_grid_textures->at(sg);
             dii_3d.push_back({
-                cur_scene->sh_grid_sampler.get_sampler(id),
+                sh_grid_sampler.get_sampler(id),
                 tex.get_image_view(id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             });
@@ -567,21 +613,21 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
 
     std::vector<vk::DescriptorBufferInfo> dbi_vertex = cur_scene->get_vertex_buffer_bindings(id);
     std::vector<vk::DescriptorBufferInfo> dbi_index = cur_scene->get_index_buffer_bindings(id);
-    std::vector<vk::DescriptorImageInfo> dii = cur_scene->s_table.get_image_infos(id);
+    std::vector<vk::DescriptorImageInfo> dii = s_table.get_image_infos(id);
 
     std::vector<descriptor_state> descriptors = {
-        {"scene", {cur_scene->scene_data[id], 0, VK_WHOLE_SIZE}},
-        {"scene_metadata", {cur_scene->scene_metadata[id], 0, VK_WHOLE_SIZE}},
+        {"scene", {scene_data[id], 0, VK_WHOLE_SIZE}},
+        {"scene_metadata", {scene_metadata[id], 0, VK_WHOLE_SIZE}},
         {"vertices", dbi_vertex},
         {"indices", dbi_index},
         {"textures", dii},
         {"directional_lights", {
-            cur_scene->directional_light_data[id], 0, VK_WHOLE_SIZE
+            directional_light_data[id], 0, VK_WHOLE_SIZE
         }},
-        {"point_lights", {cur_scene->point_light_data[id], 0, VK_WHOLE_SIZE}},
-        {"tri_lights", {cur_scene->tri_light_data[id], 0, VK_WHOLE_SIZE}},
+        {"point_lights", {point_light_data[id], 0, VK_WHOLE_SIZE}},
+        {"tri_lights", {tri_light_data[id], 0, VK_WHOLE_SIZE}},
         {"environment_map_tex", {
-            cur_scene->envmap_sampler.get_sampler(id),
+            envmap_sampler.get_sampler(id),
             envmap ? envmap->get_image_view(id) : vk::ImageView{},
             vk::ImageLayout::eShaderReadOnlyOptimal
         }},
@@ -589,20 +635,20 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
             envmap ? envmap->get_alias_table(id) : vk::Buffer{}, 0, VK_WHOLE_SIZE
         }},
         {"textures3d", dii_3d},
-        {"sh_grids", {cur_scene->sh_grid_data[id], 0, VK_WHOLE_SIZE}}
+        {"sh_grids", {sh_grid_data[id], 0, VK_WHOLE_SIZE}}
     };
 
     if(camera_index >= 0)
     {
-        std::pair<size_t, size_t> camera_offset = cur_scene->camera_data_offsets[camera_index];
+        std::pair<size_t, size_t> camera_offset = camera_data_offsets[camera_index];
         descriptors.push_back(
-            {"camera", {cur_scene->camera_data[id], camera_offset.first, VK_WHOLE_SIZE}}
+            {"camera", {camera_data[id], camera_offset.first, VK_WHOLE_SIZE}}
         );
     }
 
     if(dev.get_context()->is_ray_tracing_supported())
     {
-        descriptors.push_back({"tlas", {1, cur_scene->tlas->get_tlas_handle(id)}});
+        descriptors.push_back({"tlas", {1, this->tlas->get_tlas_handle(id)}});
     }
 
     if(opt.shadow_mapping)
@@ -610,12 +656,12 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
         placeholders& pl = dev.get_context()->get_placeholders();
 
         descriptors.push_back(
-            {"shadow_maps", {cur_scene->shadow_map_data[id], 0, cur_scene->shadow_map_range}}
+            {"shadow_maps", {shadow_map_data[id], 0, shadow_map_range}}
         );
         descriptors.push_back(
             {"shadow_map_cascades", {
-                cur_scene->shadow_map_data[id], cur_scene->shadow_map_range,
-                cur_scene->shadow_map_cascade_range
+                shadow_map_data[id], shadow_map_range,
+                shadow_map_cascade_range
             }}
         );
         descriptors.push_back(
@@ -627,7 +673,7 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
         );
         descriptors.push_back(
             {"shadow_map_atlas_test", {
-                cur_scene->shadow_sampler.get_sampler(id),
+                shadow_sampler.get_sampler(id),
                 shadow_atlas->get_image_view(id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }}
@@ -713,8 +759,8 @@ void scene_stage::update(uint32_t frame_index)
     size_t vertex_count = 0;
 
     const std::vector<scene::instance>& instances = cur_scene->get_instances();
-    cur_scene->scene_data.resize(sizeof(instance_buffer) * instances.size());
-    cur_scene->scene_data.foreach<instance_buffer>(
+    scene_data.resize(sizeof(instance_buffer) * instances.size());
+    scene_data.foreach<instance_buffer>(
         frame_index, instances.size(),
         [&](instance_buffer& inst, size_t i){
             if(instances[i].mat->emission_factor != vec3(0))
@@ -737,10 +783,8 @@ void scene_stage::update(uint32_t frame_index)
             inst.model_normal = instances[i].normal_transform;
             inst.model_prev = instances[i].prev_transform;
             int index = -1;
-            if(
-                cur_scene->sh_grid_textures &&
-                !cur_scene->get_sh_grid(model[3], &index)
-            ) cur_scene->get_largest_sh_grid(&index);
+            if(sh_grid_textures && !cur_scene->get_sh_grid(model[3], &index))
+                cur_scene->get_largest_sh_grid(&index);
             inst.sh_grid_index = index;
             inst.pad = 0;
             inst.shadow_terminator_mul = 1.0f/(
@@ -758,11 +802,11 @@ void scene_stage::update(uint32_t frame_index)
             inst.mat.ior = mat.ior;
             inst.mat.normal_factor = mat.normal_factor;
 
-            inst.mat.albedo_tex_id = cur_scene->s_table.find_tex_id(mat.albedo_tex);
+            inst.mat.albedo_tex_id = s_table.find_tex_id(mat.albedo_tex);
             inst.mat.metallic_roughness_tex_id =
-                cur_scene->s_table.find_tex_id(mat.metallic_roughness_tex);
-            inst.mat.normal_tex_id = cur_scene->s_table.find_tex_id(mat.normal_tex);
-            inst.mat.emission_tex_id = cur_scene->s_table.find_tex_id(mat.emission_tex);
+                s_table.find_tex_id(mat.metallic_roughness_tex);
+            inst.mat.normal_tex_id = s_table.find_tex_id(mat.normal_tex);
+            inst.mat.emission_tex_id = s_table.find_tex_id(mat.emission_tex);
         }
     );
     if(force_instance_refresh_frames > 0) force_instance_refresh_frames--;
@@ -772,7 +816,7 @@ void scene_stage::update(uint32_t frame_index)
     const std::vector<directional_light*>& directional_lights =
         cur_scene->get_directional_lights();
 
-    cur_scene->point_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
+    point_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
         point_light_entry* point_light_data =
             reinterpret_cast<point_light_entry*>(light_data);
 
@@ -793,7 +837,7 @@ void scene_stage::update(uint32_t frame_index)
         }
     });
 
-    cur_scene->directional_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
+    directional_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
         directional_light_entry* directional_light_data =
             reinterpret_cast<directional_light_entry*>(light_data);
 
@@ -806,8 +850,8 @@ void scene_stage::update(uint32_t frame_index)
     });
 
     const std::vector<sh_grid*>& sh_grids = cur_scene->get_sh_grids();
-    cur_scene->sh_grid_data.resize(sizeof(sh_grid_buffer) * sh_grids.size());
-    cur_scene->sh_grid_data.foreach<sh_grid_buffer>(
+    sh_grid_data.resize(sizeof(sh_grid_buffer) * sh_grids.size());
+    sh_grid_data.foreach<sh_grid_buffer>(
         frame_index, sh_grids.size(),
         [&](sh_grid_buffer& sh_data , size_t i){
             sh_data.grid_clamp = 0.5f/vec3(sh_grids[i]->get_resolution());
@@ -821,23 +865,23 @@ void scene_stage::update(uint32_t frame_index)
 
     //auto& si = cur_scene->scene_infos[dev->index];
 
-    cur_scene->camera_data_offsets.clear();
+    camera_data_offsets.clear();
     size_t start_offset = 0;
     for(camera* cam: cur_scene->cameras)
     {
         size_t buf_size = camera::get_projection_type_uniform_buffer_size(cam->get_projection_type()) * 2;
-        cur_scene->camera_data_offsets.push_back({start_offset, buf_size});
+        camera_data_offsets.push_back({start_offset, buf_size});
         start_offset += buf_size;
     }
-    cur_scene->camera_data.resize(start_offset);
+    camera_data.resize(start_offset);
     old_camera_data.resize(start_offset);
-    cur_scene->camera_data.map<uint8_t>(
+    camera_data.map<uint8_t>(
         frame_index, [&](uint8_t* data){
             uint8_t* old_data = old_camera_data.data();
             for(size_t i = 0; i < cur_scene->cameras.size(); ++i)
             {
                 camera* cam = cur_scene->cameras[i];
-                uint8_t* cur_data = data + cur_scene->camera_data_offsets[i].first;
+                uint8_t* cur_data = data + camera_data_offsets[i].first;
                 size_t buf_size = camera::get_projection_type_uniform_buffer_size(cam->get_projection_type());
                 cur_scene->cameras[i]->write_uniform_buffer(cur_data);
                 memcpy(cur_data + buf_size, old_data, buf_size);
@@ -854,19 +898,19 @@ void scene_stage::update(uint32_t frame_index)
         // TODO: Shadow maps should be stored here, in scene_stage, so that
         // this weird interplay with shadow_map_renderer owning some scene
         // assets can be removed.
-        cur_scene->shadow_map_range = sizeof(shadow_map_entry) * total_shadow_map_count;
+        shadow_map_range = sizeof(shadow_map_entry) * total_shadow_map_count;
 
-        cur_scene->shadow_map_cascade_range =
+        shadow_map_cascade_range =
             sizeof(shadow_map_cascade_entry) * total_cascade_count;
 
-        cur_scene->shadow_map_data.resize(cur_scene->shadow_map_range + cur_scene->shadow_map_cascade_range);
-        cur_scene->shadow_map_data.map<uint8_t>(
+        shadow_map_data.resize(shadow_map_range + shadow_map_cascade_range);
+        shadow_map_data.map<uint8_t>(
             frame_index, [&](uint8_t* sm_data){
             shadow_map_entry* shadow_map_data =
                 reinterpret_cast<shadow_map_entry*>(sm_data);
             shadow_map_cascade_entry* shadow_map_cascade_data =
                 reinterpret_cast<shadow_map_cascade_entry*>(
-                    sm_data + cur_scene->shadow_map_range
+                    sm_data + shadow_map_range
                 );
 
             int cascade_index = 0;
@@ -949,7 +993,7 @@ void scene_stage::update(uint32_t frame_index)
             }
         });
     }
-    cur_scene->scene_metadata.map<scene_metadata_buffer>(
+    scene_metadata.map<scene_metadata_buffer>(
         frame_index, [&](scene_metadata_buffer* data){
             data->point_light_count = point_lights.size() + spotlights.size();
             data->directional_light_count = directional_lights.size();
@@ -978,7 +1022,7 @@ void scene_stage::update(uint32_t frame_index)
                 command_buffers_outdated
             );
 
-            auto& instance_buffer = cur_scene->tlas->get_instances_buffer();
+            auto& instance_buffer = tlas->get_instances_buffer();
 
             as_instance_count = 0;
             uint32_t total_max_capacity =
@@ -1034,13 +1078,13 @@ void scene_stage::record_command_buffers()
         {
             vk::CommandBuffer cb = begin_graphics(dev.index);
             stage_timer.begin(cb, dev.index, i);
-            cur_scene->scene_data.upload(dev.index, i, cb);
-            cur_scene->directional_light_data.upload(dev.index, i, cb);
-            cur_scene->point_light_data.upload(dev.index, i, cb);
-            cur_scene->sh_grid_data.upload(dev.index, i, cb);
-            cur_scene->shadow_map_data.upload(dev.index, i, cb);
-            cur_scene->camera_data.upload(dev.index, i, cb);
-            cur_scene->scene_metadata.upload(dev.index, i, cb);
+            scene_data.upload(dev.index, i, cb);
+            directional_light_data.upload(dev.index, i, cb);
+            point_light_data.upload(dev.index, i, cb);
+            sh_grid_data.upload(dev.index, i, cb);
+            shadow_map_data.upload(dev.index, i, cb);
+            camera_data.upload(dev.index, i, cb);
+            scene_metadata.upload(dev.index, i, cb);
 
             bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
 
@@ -1050,7 +1094,7 @@ void scene_stage::record_command_buffers()
                 record_as_build(dev.index, i, cb);
                 if(opt.pre_transform_vertices)
                     record_pre_transform(dev.index, cb);
-                if(cur_scene->tri_light_data.get_size() != 0)
+                if(tri_light_data.get_size() != 0)
                     record_tri_light_extraction(dev.index, cb);
             }
 
@@ -1113,7 +1157,7 @@ void scene_stage::record_as_build(
     uint32_t frame_index,
     vk::CommandBuffer cb
 ){
-    auto& instance_buffer = cur_scene->tlas->get_instances_buffer();
+    auto& instance_buffer = tlas->get_instances_buffer();
     bool as_update = !as_rebuild;
     cur_scene->mesh_scene::record_acceleration_structure_build(
         cb, id, frame_index, as_update
@@ -1140,7 +1184,7 @@ void scene_stage::record_as_build(
         );
     }
 
-    cur_scene->tlas->rebuild(id, cb, as_instance_count, as_update);
+    tlas->rebuild(id, cb, as_instance_count, as_update);
 }
 
 void scene_stage::record_tri_light_extraction(
@@ -1185,7 +1229,7 @@ void scene_stage::record_pre_transform(
         pre_transform[id].push_descriptors(cb, {
             {"input_verts", {inst.m->get_vertex_buffer(id), 0, bytes}},
             {"output_verts", {pre_transformed_vertices, offset, bytes}},
-            {"scene", {cur_scene->scene_data[id], 0, VK_WHOLE_SIZE}}
+            {"scene", {scene_data[id], 0, VK_WHOLE_SIZE}}
         });
 
         pre_transform[id].push_constants(cb, pc);
