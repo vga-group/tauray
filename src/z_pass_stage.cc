@@ -83,12 +83,12 @@ void z_pass_stage::update(uint32_t)
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
 
-            const std::vector<scene::instance>& instances = ss->get_instances();
+            const std::vector<scene_stage::instance>& instances = ss->get_instances();
 
             push_constant_buffer control;
             for(size_t i = 0; i < instances.size(); ++i)
             {
-                const scene::instance& inst = instances[i];
+                const scene_stage::instance& inst = instances[i];
                 // Only render opaque things.
                 if(inst.mat->potentially_transparent())
                     continue;

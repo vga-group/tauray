@@ -1,6 +1,6 @@
 #include "sampler_table.hh"
 #include "placeholders.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 
 namespace tr
 {
@@ -16,9 +16,9 @@ sampler_table::sampler_table(device_mask dev, bool use_mipmaps)
 {
 }
 
-void sampler_table::update_scene(scene* s)
+void sampler_table::update_scene(scene_stage* s)
 {
-    const std::vector<scene::instance>& instances = s->get_instances();
+    const std::vector<scene_stage::instance>& instances = s->get_instances();
     table.clear();
     index_counter = 0;
     for(size_t i = 0; i < instances.size(); ++i)

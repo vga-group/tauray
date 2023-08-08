@@ -210,7 +210,7 @@ void raster_stage::update(uint32_t)
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
 
-            const std::vector<scene::instance>& instances = ss->get_instances();
+            const std::vector<scene_stage::instance>& instances = ss->get_instances();
             push_constant_buffer control;
             control.pcf_samples = opt.pcf_samples;
             control.omni_pcf_samples = opt.omni_pcf_samples;
@@ -223,7 +223,7 @@ void raster_stage::update(uint32_t)
 
             for(size_t i = 0; i < instances.size(); ++i)
             {
-                const scene::instance& inst = instances[i];
+                const scene_stage::instance& inst = instances[i];
                 const mesh* m = inst.m;
                 vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->index)};
                 vk::DeviceSize offsets[] = {0};

@@ -158,7 +158,7 @@ void shadow_map_stage::update(uint32_t frame_index)
     if(ss->check_update(scene_stage::GEOMETRY, scene_state_counter))
     {
         clear_commands();
-        const std::vector<scene::instance>& instances = ss->get_instances();
+        const std::vector<scene_stage::instance>& instances = ss->get_instances();
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             // Bind descriptors
@@ -199,7 +199,7 @@ void shadow_map_stage::update(uint32_t frame_index)
 
                 for(size_t i = 0; i < instances.size(); ++i)
                 {
-                    const scene::instance& inst = instances[i];
+                    const scene_stage::instance& inst = instances[i];
                     const mesh* m = inst.m;
                     vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->index)};
                     vk::DeviceSize offsets[] = {0};

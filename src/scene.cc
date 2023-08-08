@@ -9,10 +9,9 @@ namespace tr
 
 scene::scene(
     device_mask dev,
-    size_t max_instances,
     size_t max_lights
 ):  light_scene(dev, max_lights),
-    mesh_scene(dev, max_instances),
+    mesh_scene(),
     total_ticks(0)
 {
 }

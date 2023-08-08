@@ -19,7 +19,6 @@ class scene: public light_scene, public mesh_scene
 public:
     scene(
         device_mask dev,
-        size_t max_instances = 1024,
         size_t max_lights = 128
     );
     scene(const scene& s) = delete;

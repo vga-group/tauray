@@ -8,7 +8,7 @@
 namespace tr
 {
 
-class scene;
+class scene_stage;
 
 // This class exists to create a list of sampler-texture pairs out of all
 // materials in a given scene, with no duplicate pairs. If only a texture is
@@ -20,7 +20,7 @@ class sampler_table
 public:
     sampler_table(device_mask dev, bool mipmap_default);
 
-    void update_scene(scene* s);
+    void update_scene(scene_stage* s);
     std::vector<vk::DescriptorImageInfo> get_image_infos(device_id id) const;
     int find_tex_id(combined_tex_sampler cs);
 

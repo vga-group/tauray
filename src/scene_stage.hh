@@ -10,6 +10,14 @@
 namespace tr
 {
 
+enum class blas_strategy
+{
+    PER_MATERIAL,
+    PER_MODEL,
+    STATIC_MERGED_DYNAMIC_PER_MODEL,
+    ALL_MERGED_STATIC
+};
+
 class scene_stage: public multi_device_stage
 {
 public:
@@ -19,6 +27,7 @@ public:
         bool gather_emissive_triangles = false;
         bool pre_transform_vertices = false;
         bool shadow_mapping = false;
+        blas_strategy group_strategy = blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL;
     };
 
     scene_stage(device_mask dev, const options& opt);
@@ -38,7 +47,16 @@ public:
     environment_map* get_environment_map() const;
     vec3 get_ambient() const;
 
-    using instance = mesh_scene::instance;
+    struct instance
+    {
+        mat4 transform;
+        mat4 prev_transform;
+        mat4 normal_transform;
+        const material* mat;
+        const mesh* m;
+        const mesh_object* o;
+        uint64_t last_refresh_frame;
+    };
     const std::vector<instance>& get_instances() const;
 
     vk::AccelerationStructureKHR get_acceleration_structure(
@@ -90,9 +108,6 @@ private:
     void record_tri_light_extraction(device_id id, vk::CommandBuffer cb);
     void record_pre_transform(device_id id, vk::CommandBuffer cb);
 
-    bool update_shadow_map_params();
-    int get_shadow_map_index(const light* l);
-
     std::vector<descriptor_state> get_descriptor_info(device_id id, int32_t camera_index) const;
 
     bool as_rebuild;
@@ -105,11 +120,55 @@ private:
     unsigned force_instance_refresh_frames;
     scene* cur_scene;
 
+    //==========================================================================
     // Light stuff
+    //==========================================================================
     environment_map* envmap;
     vec3 ambient;
 
-    // Shadow map stuff. The scene_stage acts as the owner of these as they're
+    //==========================================================================
+    // Mesh stuff
+    //==========================================================================
+
+    // For acceleration structures, instances are grouped by which ones go into
+    // the same BLAS. If two groups share the same ID, they will have the same
+    // acceleration structure as well, but are inserted as separate TLAS
+    // instances still.
+    struct instance_group
+    {
+        uint64_t id = 0;
+        size_t size = 0;
+        bool static_mesh = false;
+        bool static_transformable = false;
+    };
+
+    struct pre_transformed_data
+    {
+        uint32_t count = 0;
+        vkm<vk::Buffer> buf;
+    };
+    per_device<pre_transformed_data> pre_transformed_vertices;
+    std::unordered_map<uint64_t, bottom_level_acceleration_structure> blas_cache;
+    std::vector<instance> instances;
+    std::vector<instance_group> group_cache;
+    blas_strategy group_strategy;
+
+    bool refresh_instance_cache();
+    void ensure_blas();
+    void assign_group_cache(
+        uint64_t id,
+        bool static_mesh,
+        bool static_transformable,
+        size_t object_index,
+        size_t& last_object_index
+    );
+    bool reserve_pre_transformed_vertices(size_t max_vertex_count);
+    void clear_pre_transformed_vertices();
+
+    //==========================================================================
+    // Shadow map stuff.
+    //==========================================================================
+    // The scene_stage acts as the owner of these as they're
     // scene-wide GPU assets, but they're updated by shadow_map_stage. If the
     // scene specifies no shadow maps, these won't exist either.
     size_t total_shadow_map_count;
@@ -120,11 +179,16 @@ private:
     std::vector<shadow_map_instance> shadow_maps;
     std::unique_ptr<atlas> shadow_atlas;
 
+    bool update_shadow_map_params();
+    int get_shadow_map_index(const light* l);
+
+    //==========================================================================
+    // Scene resources
+    //==========================================================================
     // Previous values for camera uniform data are tracked here for temporal
     // algorithms.
     std::vector<uint8_t> old_camera_data;
 
-    // Scene resources
     sampler_table s_table;
     gpu_buffer scene_data;
     gpu_buffer scene_metadata;
@@ -143,7 +207,9 @@ private:
 
     std::optional<top_level_acceleration_structure> tlas;
 
+    //==========================================================================
     // Pipelines
+    //==========================================================================
     per_device<compute_pipeline> skinning;
     per_device<compute_pipeline> extract_tri_lights;
     per_device<compute_pipeline> pre_transform;

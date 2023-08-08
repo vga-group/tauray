@@ -3,6 +3,7 @@
 #include "environment_map.hh"
 #include "placeholders.hh"
 #include "misc.hh"
+#include "log.hh"
 
 namespace
 {
@@ -216,6 +217,8 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     cur_scene(nullptr),
     envmap(nullptr),
     ambient(0),
+    pre_transformed_vertices(dev),
+    group_strategy(opt.group_strategy),
     total_shadow_map_count(0),
     total_cascade_count(0),
     shadow_map_range(0),
@@ -296,9 +299,9 @@ void scene_stage::set_scene(scene* target)
 {
     cur_scene = target;
 
-    cur_scene->refresh_instance_cache(true);
+    refresh_instance_cache();
 
-    s_table.update_scene(cur_scene);
+    s_table.update_scene(this);
 
     as_rebuild = get_context()->is_ray_tracing_supported();
     force_instance_refresh_frames = MAX_FRAMES_IN_FLIGHT;
@@ -339,7 +342,7 @@ vec3 scene_stage::get_ambient() const
 
 const std::vector<scene_stage::instance>& scene_stage::get_instances() const
 {
-    return cur_scene->get_instances();
+    return instances;
 }
 
 vk::AccelerationStructureKHR scene_stage::get_acceleration_structure(
@@ -559,6 +562,276 @@ int scene_stage::get_shadow_map_index(const light* l)
     return shadow_maps[it->second].map_index;
 }
 
+bool scene_stage::refresh_instance_cache()
+{
+    uint64_t frame_counter = get_context()->get_frame_counter();
+    size_t i = 0;
+    size_t last_object_index = SIZE_MAX;
+    group_cache.clear();
+    bool scene_changed = false;
+
+    const std::vector<mesh_object*>& objects = cur_scene->get_mesh_objects();
+    auto add_instances = [&](bool static_mesh, bool static_transformable){
+        for(size_t object_index = 0; object_index < objects.size(); ++object_index)
+        {
+            const mesh_object* o = objects[object_index];
+            if(!o) continue;
+
+            // If requesting dynamic meshes, we don't care about the
+            // transformable staticness any more.
+            if(static_mesh && static_transformable != o->is_static())
+                continue;
+
+            const model* m = o->get_model();
+            if(!m) continue;
+            bool fetched_transforms = false;
+            mat4 transform;
+            mat4 normal_transform;
+            for(const auto& vg: *m)
+            {
+                bool is_static = !vg.m->is_skinned() && !vg.m->get_animation_source();
+                if(static_mesh != is_static)
+                    continue;
+
+                if(i == instances.size())
+                {
+                    instances.push_back({
+                        mat4(0),
+                        mat4(0),
+                        mat4(0),
+                        nullptr,
+                        nullptr,
+                        nullptr,
+                        frame_counter
+                    });
+                    scene_changed = true;
+                }
+                instance& inst = instances[i];
+
+                assign_group_cache(
+                    vg.m->get_id(),
+                    static_mesh,
+                    static_transformable,
+                    object_index,
+                    last_object_index
+                );
+
+                if(inst.mat != &vg.mat)
+                {
+                    inst.mat = &vg.mat;
+                    inst.prev_transform = mat4(0);
+                    inst.last_refresh_frame = frame_counter;
+                    scene_changed = true;
+                }
+                if(inst.m != vg.m || (vg.m && inst.m && vg.m->get_id() != inst.m->get_id()))
+                {
+                    inst.m = vg.m;
+                    inst.prev_transform = mat4(0);
+                    inst.last_refresh_frame = frame_counter;
+                    scene_changed = true;
+                }
+                if(inst.o != o)
+                {
+                    inst.o = o;
+                    inst.prev_transform = mat4(0);
+                    inst.last_refresh_frame = frame_counter;
+                    scene_changed = true;
+                }
+                if(inst.last_refresh_frame == frame_counter || !o->is_static())
+                {
+                    if(!fetched_transforms)
+                    {
+                        transform = o->get_global_transform();
+                        normal_transform = o->get_global_inverse_transpose_transform();
+                        fetched_transforms = true;
+                    }
+
+                    if(inst.prev_transform != inst.transform)
+                    {
+                        inst.prev_transform = inst.transform;
+                        inst.last_refresh_frame = frame_counter;
+                    }
+                    if(inst.transform != transform)
+                    {
+                        inst.transform = transform;
+                        inst.normal_transform = normal_transform;
+                        inst.last_refresh_frame = frame_counter;
+                    }
+                }
+                ++i;
+            }
+        }
+    };
+    add_instances(true, true);
+    add_instances(true, false);
+    add_instances(false, false);
+    if(instances.size() > i)
+    {
+        instances.resize(i);
+        scene_changed = true;
+    }
+    if(scene_changed)
+        ensure_blas();
+    return scene_changed;
+}
+
+void scene_stage::ensure_blas()
+{
+    if(!get_context()->is_ray_tracing_supported())
+        return;
+    bool built_one = false;
+    // Goes through all groups and ensures they have valid BLASes.
+    size_t offset = 0;
+    std::vector<bottom_level_acceleration_structure::entry> entries;
+    for(const instance_group& group: group_cache)
+    {
+        auto it = blas_cache.find(group.id);
+        if(it != blas_cache.end())
+        {
+            offset += group.size;
+            continue;
+        }
+
+        if(!built_one)
+            TR_LOG("Building acceleration structures");
+
+        built_one = true;
+
+        entries.clear();
+        bool double_sided = false;
+        for(size_t i = 0; i < group.size; ++i, ++offset)
+        {
+            const instance& inst = instances[offset];
+            if(inst.mat->double_sided) double_sided = true;
+            entries.push_back({
+                inst.m,
+                0, nullptr,
+                group.static_transformable ? inst.transform : mat4(1),
+                !inst.mat->potentially_transparent()
+            });
+        }
+        blas_cache.emplace(
+            group.id,
+            bottom_level_acceleration_structure(
+                get_device_mask(),
+                entries,
+                !double_sided,
+                group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : !group.static_mesh,
+                group.static_mesh
+            )
+        );
+    }
+    if(built_one)
+        TR_LOG("Finished building acceleration structures");
+}
+
+void scene_stage::assign_group_cache(
+    uint64_t id,
+    bool static_mesh,
+    bool static_transformable,
+    size_t object_index,
+    size_t& last_object_index
+){
+    switch(group_strategy)
+    {
+    case blas_strategy::PER_MATERIAL:
+        group_cache.push_back({id, 1, static_mesh, false});
+        break;
+    case blas_strategy::PER_MODEL:
+        if(last_object_index == object_index)
+        {
+            instance_group& group = group_cache.back();
+            group.id = hash_combine(group.id, id);
+            if(!static_mesh) group.static_mesh = false;
+            group.size++;
+        }
+        else group_cache.push_back({id, 1, static_mesh, false});
+        break;
+    case blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL:
+        if(group_cache.size() == 0)
+        {
+            bool is_static = static_mesh && static_transformable;
+            group_cache.push_back({
+                id, 1, static_mesh, is_static
+            });
+        }
+        else
+        {
+            instance_group& group = group_cache.back();
+            bool prev_is_static = group.static_mesh && group.static_transformable;
+            bool is_static = static_mesh && static_transformable;
+            if(prev_is_static && is_static)
+            {
+                group.id = hash_combine(group.id, id);
+                group.size++;
+            }
+            else
+            {
+                if(last_object_index == object_index)
+                {
+                    group.id = hash_combine(group.id, id);
+                    if(!static_mesh) group.static_mesh = false;
+                    group.size++;
+                }
+                else group_cache.push_back({id, 1, static_mesh, false});
+            }
+        }
+        break;
+    case blas_strategy::ALL_MERGED_STATIC:
+        {
+            if(group_cache.size() == 0)
+                group_cache.push_back({0, 0, true, true});
+            instance_group& group = group_cache.back();
+            group.id = hash_combine(group.id, id);
+            if(!static_mesh) group.static_mesh = false;
+            group.size++;
+        }
+        break;
+    }
+    last_object_index = object_index;
+}
+
+bool scene_stage::reserve_pre_transformed_vertices(size_t max_vertex_count)
+{
+    if(!get_context()->is_ray_tracing_supported())
+        return false;
+
+    bool ret = false;
+    for(auto[dev, ptv]: pre_transformed_vertices)
+    {
+        if(ptv.count < max_vertex_count)
+        {
+            ptv.buf = create_buffer(
+                dev,
+                {
+                    {}, max_vertex_count * sizeof(mesh::vertex),
+                    vk::BufferUsageFlagBits::eVertexBuffer|vk::BufferUsageFlagBits::eStorageBuffer,
+                    vk::SharingMode::eExclusive
+                },
+                VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
+            );
+            ptv.count = max_vertex_count;
+            ret = true;
+        }
+    }
+    return ret;
+}
+
+void scene_stage::clear_pre_transformed_vertices()
+{
+    if(!get_context()->is_ray_tracing_supported())
+        return;
+
+    for(auto[dev, ptv]: pre_transformed_vertices)
+    {
+        if(ptv.count != 0)
+        {
+            ptv.buf.drop();
+            ptv.count = 0;
+        }
+    }
+}
+
 std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int32_t camera_index) const
 {
     const std::vector<sh_grid*>& sh_grids = cur_scene->get_sh_grids();
@@ -582,8 +855,37 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
     if(dev.get_context()->is_ray_tracing_supported())
         tlas = get_acceleration_structure(id);
 
-    std::vector<vk::DescriptorBufferInfo> dbi_vertex = cur_scene->get_vertex_buffer_bindings(id);
-    std::vector<vk::DescriptorBufferInfo> dbi_index = cur_scene->get_index_buffer_bindings(id);
+    std::vector<vk::DescriptorBufferInfo> dbi_vertex;
+    std::vector<vk::DescriptorBufferInfo> dbi_index;
+    bool got_pre_transformed_vertices = false;
+    if(get_context()->is_ray_tracing_supported())
+    {
+        auto& ptv = pre_transformed_vertices[id];
+        if(ptv.count != 0)
+        {
+            size_t offset = 0;
+            for(size_t i = 0; i < instances.size(); ++i)
+            {
+                const mesh* m = instances[i].m;
+                size_t bytes = m->get_vertices().size() * sizeof(mesh::vertex);
+                dbi_vertex.push_back({ptv.buf, offset, bytes});
+                offset += bytes;
+            }
+            got_pre_transformed_vertices = true;
+        }
+    }
+    for(size_t i = 0; i < instances.size(); ++i)
+    {
+        const mesh* m = instances[i].m;
+        if(!got_pre_transformed_vertices)
+        {
+            vk::Buffer vertex_buffer = m->get_vertex_buffer(id);
+            dbi_vertex.push_back({vertex_buffer, 0, VK_WHOLE_SIZE});
+        }
+        vk::Buffer index_buffer = m->get_index_buffer(id);
+        dbi_index.push_back({index_buffer, 0, VK_WHOLE_SIZE});
+    }
+
     std::vector<vk::DescriptorImageInfo> dii = s_table.get_image_infos(id);
 
     std::vector<descriptor_state> descriptors = {
@@ -713,7 +1015,7 @@ void scene_stage::update(uint32_t frame_index)
         lights_outdated = true;
     }
 
-    geometry_outdated |= cur_scene->refresh_instance_cache();
+    geometry_outdated |= refresh_instance_cache();
     if(cur_scene->cameras.size() != 0)
         cur_scene->track_shadow_maps(cur_scene->cameras);
 
@@ -734,10 +1036,9 @@ void scene_stage::update(uint32_t frame_index)
         // TODO: This won't catch changing materials! The correct solution would
         // probably be to update the sampler table on every frame, but make it
         // faster than it currently is and report if there was a change.
-        s_table.update_scene(cur_scene);
+        s_table.update_scene(this);
     }
 
-    const std::vector<scene::instance>& instances = cur_scene->get_instances();
     scene_data.resize(sizeof(instance_buffer) * instances.size());
     scene_data.foreach<instance_buffer>(
         frame_index, instances.size(),
@@ -1000,25 +1301,66 @@ void scene_stage::update(uint32_t frame_index)
                 frame_index,
                 lights_outdated
             );
-            cur_scene->mesh_scene::update_acceleration_structures(
-                dev.index,
-                frame_index,
-                geometry_outdated
-            );
+            if(geometry_outdated)
+                ensure_blas();
+
+            // Run BLAS matrix updates. Only necessary when merged BLASes have dynamic
+            // transformables.
+            if(group_strategy == blas_strategy::ALL_MERGED_STATIC)
+            {
+                size_t offset = 0;
+                std::vector<bottom_level_acceleration_structure::entry> entries;
+                for(const instance_group& group: group_cache)
+                {
+                    entries.clear();
+                    for(size_t i = 0; i < group.size; ++i, ++offset)
+                    {
+                        const instance& inst = instances[offset];
+                        entries.push_back({
+                            inst.m,
+                            0, nullptr,
+                            group.static_transformable ? inst.transform : mat4(1),
+                            !inst.mat->potentially_transparent()
+                        });
+                    }
+                    blas_cache.at(group.id).update_transforms(frame_index, entries);
+                }
+            }
 
             auto& instance_buffer = tlas->get_instances_buffer();
 
             as_instance_count = 0;
             uint32_t total_max_capacity =
-                cur_scene->mesh_scene::get_max_capacity() +
+                opt.max_instances +
                 cur_scene->light_scene::get_max_capacity();
             instance_buffer.map_one<vk::AccelerationStructureInstanceKHR>(
                 dev.index,
                 frame_index,
                 [&](vk::AccelerationStructureInstanceKHR* as_instances){
-                    cur_scene->mesh_scene::add_acceleration_structure_instances(
-                        as_instances, dev.index, frame_index, as_instance_count, total_max_capacity
-                    );
+                    // Update instance staging buffer
+                    size_t offset = 0;
+                    for(size_t j = 0; j < group_cache.size() && as_instance_count < opt.max_instances; ++j)
+                    {
+                        const instance_group& group = group_cache[j];
+                        const bottom_level_acceleration_structure& blas = blas_cache.at(group.id);
+                        vk::AccelerationStructureInstanceKHR inst = vk::AccelerationStructureInstanceKHR(
+                            {}, offset, 1<<0, 0, // Hit group 0 for triangle meshes.
+                            {}, blas.get_blas_address(dev.index)
+                        );
+                        if(!blas.is_backface_culled())
+                            inst.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
+
+                        mat4 global_transform = group.static_transformable ?
+                            mat4(1) : transpose(instances[offset].transform);
+                        memcpy(
+                            (void*)&inst.transform,
+                            (void*)&global_transform,
+                            sizeof(inst.transform)
+                        );
+                        as_instances[as_instance_count++] = inst;
+                        offset += group.size;
+                    }
+
                     cur_scene->light_scene::add_acceleration_structure_instances(
                         as_instances, dev.index, frame_index, as_instance_count, total_max_capacity
                     );
@@ -1029,9 +1371,9 @@ void scene_stage::update(uint32_t frame_index)
         as_rebuild |= geometry_outdated || lights_outdated;
 
         if(opt.pre_transform_vertices)
-            geometry_outdated |= cur_scene->reserve_pre_transformed_vertices(vertex_count);
+            geometry_outdated |= reserve_pre_transformed_vertices(vertex_count);
         else
-            cur_scene->clear_pre_transformed_vertices();
+            clear_pre_transformed_vertices();
     }
 
     if(lights_outdated || geometry_outdated)
@@ -1127,7 +1469,33 @@ void scene_stage::record_skinning(device_id id, uint32_t frame_index, vk::Comman
             {}, barrier, {}, {}
         );
 
-        cur_scene->refresh_dynamic_acceleration_structures(id, frame_index, cb);
+        // Run BLAS updates
+        size_t offset = 0;
+        std::vector<bottom_level_acceleration_structure::entry> entries;
+        for(const instance_group& group: group_cache)
+        {
+            if(group.static_mesh)
+            {
+                offset += group.size;
+                continue;
+            }
+
+            entries.clear();
+            for(size_t i = 0; i < group.size; ++i, ++offset)
+            {
+                const instance& inst = instances[offset];
+                entries.push_back({
+                    inst.m,
+                    0, nullptr,
+                    group.static_transformable ? inst.transform : mat4(1),
+                    !inst.mat->potentially_transparent()
+                });
+            }
+            blas_cache.at(group.id).rebuild(
+                id, frame_index, cb, entries,
+                group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : true
+            );
+        }
     }
 }
 
@@ -1138,9 +1506,6 @@ void scene_stage::record_as_build(
 ){
     auto& instance_buffer = tlas->get_instances_buffer();
     bool as_update = !as_rebuild;
-    cur_scene->mesh_scene::record_acceleration_structure_build(
-        cb, id, frame_index, as_update
-    );
 
     cur_scene->light_scene::record_acceleration_structure_build(
         cb, id, frame_index, as_update
@@ -1170,11 +1535,10 @@ void scene_stage::record_tri_light_extraction(
     device_id id,
     vk::CommandBuffer cb
 ){
-    const std::vector<scene::instance>& instances = cur_scene->get_instances();
     extract_tri_lights[id].bind(cb, 0);
     for(size_t i = 0; i < instances.size(); ++i)
     {
-        const mesh_scene::instance& inst = instances[i];
+        const instance& inst = instances[i];
         if(inst.mat->emission_factor == vec3(0))
             continue;
 
@@ -1191,13 +1555,12 @@ void scene_stage::record_pre_transform(
     device_id id,
     vk::CommandBuffer cb
 ){
-    const std::vector<scene::instance>& instances = cur_scene->get_instances();
-    vk::Buffer pre_transformed_vertices = cur_scene->get_pre_transformed_vertices(id);
+    vk::Buffer ptv_buf = this->pre_transformed_vertices[id].buf;
     pre_transform[id].bind(cb);
     size_t offset = 0;
     for(size_t i = 0; i < instances.size(); ++i)
     {
-        const mesh_scene::instance& inst = instances[i];
+        const instance& inst = instances[i];
 
         pre_tranform_push_constants pc;
         pc.vertex_count = inst.m->get_vertices().size();
@@ -1207,7 +1570,7 @@ void scene_stage::record_pre_transform(
 
         pre_transform[id].push_descriptors(cb, {
             {"input_verts", {inst.m->get_vertex_buffer(id), 0, bytes}},
-            {"output_verts", {pre_transformed_vertices, offset, bytes}},
+            {"output_verts", {ptv_buf, offset, bytes}},
             {"scene", {scene_data[id], 0, VK_WHOLE_SIZE}}
         });
 
@@ -1223,7 +1586,7 @@ void scene_stage::record_pre_transform(
             {
                 vk::AccessFlagBits::eShaderWrite,
                 vk::AccessFlagBits::eShaderRead,
-                {}, {}, pre_transformed_vertices, 0, VK_WHOLE_SIZE
+                {}, {}, ptv_buf, 0, VK_WHOLE_SIZE
             },
         }, {}
     );
