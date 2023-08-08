@@ -7,12 +7,7 @@
 namespace tr
 {
 
-scene::scene(
-    device_mask dev,
-    size_t max_lights
-):  light_scene(dev, max_lights),
-    mesh_scene(),
-    total_ticks(0)
+scene::scene(): total_ticks(0)
 {
 }
 

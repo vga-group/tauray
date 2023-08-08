@@ -16,7 +16,7 @@ class camera;
 class light_scene
 {
 public:
-    light_scene(device_mask dev, size_t max_capacity = 1024);
+    light_scene();
     light_scene(const light_scene& s) = delete;
     light_scene(light_scene&& s) = delete;
     ~light_scene();
@@ -83,35 +83,6 @@ protected:
         for(directional_light* l: directional_lights) f(l);
     }
 
-    size_t get_aabbs(vk::AabbPositionsKHR* aabb);
-
-    size_t get_max_capacity() const;
-
-    // TODO: Should probably not be device-specific as it doesn't actually do
-    // any device-specific things.
-    void update_acceleration_structures(
-        device_id id,
-        uint32_t frame_index,
-        bool& need_scene_reset
-    );
-
-    void record_acceleration_structure_build(
-        vk::CommandBuffer& cb,
-        device_id id,
-        uint32_t frame_index,
-        bool update_only
-    );
-
-    void add_acceleration_structure_instances(
-        vk::AccelerationStructureInstanceKHR* instances,
-        device_id id,
-        uint32_t frame_index,
-        size_t& instance_index,
-        size_t capacity
-    ) const;
-
-    void invalidate_acceleration_structures();
-
 private:
     environment_map* envmap = nullptr;
     vec3 ambient = vec3(0);
@@ -124,27 +95,6 @@ private:
     > directional_shadow_maps;
     std::unordered_map<const point_light*, point_shadow_map> point_shadow_maps;
     std::vector<sh_grid*> sh_grids;
-
-
-    // TODO: Move everything from this point on to scene_stage
-    size_t max_capacity;
-
-    std::optional<bottom_level_acceleration_structure> blas;
-    gpu_buffer aabb_buffer;
-    timer blas_update_timer;
-
-    struct as_update_data
-    {
-        bool scene_reset_needed = true;
-
-        struct per_frame_data
-        {
-            bool command_buffers_outdated = true;
-            unsigned aabb_count = 0;
-        };
-        per_frame_data per_frame[MAX_FRAMES_IN_FLIGHT];
-    };
-    per_device<as_update_data> as_update;
 };
 
 }

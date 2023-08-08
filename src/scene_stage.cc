@@ -209,10 +209,12 @@ namespace tr
 
 scene_stage::scene_stage(device_mask dev, const options& opt)
 :   multi_device_stage(dev),
-    as_rebuild(true),
+    prev_was_rebuild(false),
     envmap_change_counter(1),
     geometry_change_counter(1),
     light_change_counter(1),
+    geometry_outdated(true),
+    lights_outdated(true),
     force_instance_refresh_frames(0),
     cur_scene(nullptr),
     envmap(nullptr),
@@ -292,23 +294,41 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     }
 
     if(dev.get_context()->is_ray_tracing_supported())
+    {
         tlas.emplace(dev, opt.max_instances);
+        light_aabb_buffer = gpu_buffer(
+            dev, opt.max_lights * sizeof(vk::AabbPositionsKHR),
+            vk::BufferUsageFlagBits::eStorageBuffer |
+            vk::BufferUsageFlagBits::eTransferDst |
+            vk::BufferUsageFlagBits::eShaderDeviceAddress|
+            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
+        );
+
+        light_blas.emplace(
+            dev,
+            std::vector<bottom_level_acceleration_structure::entry>{
+                {nullptr, opt.max_lights, &light_aabb_buffer, mat4(1.0f), true}
+            },
+            false, true, false
+        );
+    }
 }
 
 void scene_stage::set_scene(scene* target)
 {
     cur_scene = target;
 
-    refresh_instance_cache();
+    // TODO: Latch outdates to various component addition / removal
+    // events once we have the ECS.
 
-    s_table.update_scene(this);
-
-    as_rebuild = get_context()->is_ray_tracing_supported();
+    prev_was_rebuild = false;
     force_instance_refresh_frames = MAX_FRAMES_IN_FLIGHT;
 
     envmap_change_counter++;
     geometry_change_counter++;
     light_change_counter++;
+    geometry_outdated = true;
+    lights_outdated = true;
 }
 
 scene* scene_stage::get_scene() const
@@ -999,9 +1019,6 @@ void scene_stage::update(uint32_t frame_index)
 {
     if(!cur_scene) return;
 
-    bool lights_outdated = false;
-    bool geometry_outdated = false;
-
     environment_map* new_envmap = cur_scene->get_environment_map();
     if(new_envmap != envmap)
     {
@@ -1289,18 +1306,41 @@ void scene_stage::update(uint32_t frame_index)
         }
     );
 
-    if(lights_outdated) light_change_counter++;
-    if(geometry_outdated) geometry_change_counter++;
-
+    size_t light_aabb_count = 0;
     if(get_context()->is_ray_tracing_supported())
     {
+        light_aabb_buffer.map<vk::AabbPositionsKHR>(
+            frame_index,
+            [&](vk::AabbPositionsKHR* aabb){
+                size_t i = 0;
+                for(size_t j = 0; j < point_lights.size() && i < opt.max_lights; ++j)
+                {
+                    point_light* pl = point_lights[j];
+                    float radius = pl->get_radius();
+                    vec3 pos = radius == 0.0f ? vec3(0) : pl->get_global_position();
+                    vec3 min = pos - vec3(radius);
+                    vec3 max = pos + vec3(radius);
+                    aabb[i] = vk::AabbPositionsKHR(
+                        min.x, min.y, min.z, max.x, max.y, max.z);
+                    i++;
+                }
+                for(size_t j = 0; j < spotlights.size() && i < opt.max_lights; ++j)
+                {
+                    spotlight* sl = spotlights[j];
+                    float radius = sl->get_radius();
+                    vec3 pos = radius == 0.0f ? vec3(0) : sl->get_global_position();
+                    vec3 min = pos - vec3(radius);
+                    vec3 max = pos + vec3(radius);
+                    aabb[i] = vk::AabbPositionsKHR(
+                        min.x, min.y, min.z, max.x, max.y, max.z);
+                    i++;
+                }
+                light_aabb_count = i;
+            }
+        );
+
         for(device& dev: get_device_mask())
         {
-            cur_scene->light_scene::update_acceleration_structures(
-                dev.index,
-                frame_index,
-                lights_outdated
-            );
             if(geometry_outdated)
                 ensure_blas();
 
@@ -1330,16 +1370,14 @@ void scene_stage::update(uint32_t frame_index)
             auto& instance_buffer = tlas->get_instances_buffer();
 
             as_instance_count = 0;
-            uint32_t total_max_capacity =
-                opt.max_instances +
-                cur_scene->light_scene::get_max_capacity();
+            uint32_t total_max_capacity = opt.max_instances + opt.max_lights;
             instance_buffer.map_one<vk::AccelerationStructureInstanceKHR>(
                 dev.index,
                 frame_index,
                 [&](vk::AccelerationStructureInstanceKHR* as_instances){
                     // Update instance staging buffer
                     size_t offset = 0;
-                    for(size_t j = 0; j < group_cache.size() && as_instance_count < opt.max_instances; ++j)
+                    for(size_t j = 0; j < group_cache.size() && as_instance_count < total_max_capacity; ++j)
                     {
                         const instance_group& group = group_cache[j];
                         const bottom_level_acceleration_structure& blas = blas_cache.at(group.id);
@@ -1361,14 +1399,20 @@ void scene_stage::update(uint32_t frame_index)
                         offset += group.size;
                     }
 
-                    cur_scene->light_scene::add_acceleration_structure_instances(
-                        as_instances, dev.index, frame_index, as_instance_count, total_max_capacity
-                    );
+                    if(light_aabb_count != 0 && as_instance_count < total_max_capacity)
+                    {
+                        vk::AccelerationStructureInstanceKHR& inst = as_instances[as_instance_count++];
+                        inst = vk::AccelerationStructureInstanceKHR(
+                            {}, as_instance_count, 1<<1, 2,
+                            vk::GeometryInstanceFlagBitsKHR::eTriangleCullDisable,
+                            light_blas->get_blas_address(dev.index)
+                        );
+                        mat4 id_mat = mat4(1.0f);
+                        memcpy((void*)&inst.transform, (void*)&id_mat, sizeof(inst.transform));
+                    }
                 }
             );
         }
-
-        as_rebuild |= geometry_outdated || lights_outdated;
 
         if(opt.pre_transform_vertices)
             geometry_outdated |= reserve_pre_transformed_vertices(vertex_count);
@@ -1376,14 +1420,24 @@ void scene_stage::update(uint32_t frame_index)
             clear_pre_transformed_vertices();
     }
 
+    if(lights_outdated) light_change_counter++;
+    if(geometry_outdated) geometry_change_counter++;
+
     if(lights_outdated || geometry_outdated)
     {
-        record_command_buffers();
-        as_rebuild = false;
+        record_command_buffers(light_aabb_count, true);
+        prev_was_rebuild = true;
+        lights_outdated = false;
+        geometry_outdated = false;
+    }
+    else if(prev_was_rebuild)
+    {
+        record_command_buffers(light_aabb_count, false);
+        prev_was_rebuild = false;
     }
 }
 
-void scene_stage::record_command_buffers()
+void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_as)
 {
     clear_commands();
 
@@ -1406,13 +1460,14 @@ void scene_stage::record_command_buffers()
             shadow_map_data.upload(dev.index, i, cb);
             camera_data.upload(dev.index, i, cb);
             scene_metadata.upload(dev.index, i, cb);
+            light_aabb_buffer.upload(dev.index, i, cb);
 
             bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
 
             record_skinning(dev.index, i, cb);
             if(dev.ctx->is_ray_tracing_supported())
             {
-                record_as_build(dev.index, i, cb);
+                record_as_build(dev.index, i, cb, light_aabb_count, rebuild_as);
                 if(opt.pre_transform_vertices)
                     record_pre_transform(dev.index, cb);
                 if(tri_light_data.get_size() != 0)
@@ -1502,13 +1557,19 @@ void scene_stage::record_skinning(device_id id, uint32_t frame_index, vk::Comman
 void scene_stage::record_as_build(
     device_id id,
     uint32_t frame_index,
-    vk::CommandBuffer cb
+    vk::CommandBuffer cb,
+    size_t light_aabb_count,
+    bool rebuild
 ){
     auto& instance_buffer = tlas->get_instances_buffer();
-    bool as_update = !as_rebuild;
+    bool as_update = !rebuild;
 
-    cur_scene->light_scene::record_acceleration_structure_build(
-        cb, id, frame_index, as_update
+    light_blas->rebuild(
+        id,
+        frame_index,
+        cb,
+        {bottom_level_acceleration_structure::entry{nullptr, light_aabb_count, &light_aabb_buffer, mat4(1.0f), true}},
+        as_update
     );
 
     if(as_instance_count > 0)

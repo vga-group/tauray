@@ -24,6 +24,7 @@ public:
     struct options
     {
         uint32_t max_instances = 1024;
+        uint32_t max_lights = 128;
         bool gather_emissive_triangles = false;
         bool pre_transform_vertices = false;
         bool shadow_mapping = false;
@@ -102,20 +103,22 @@ protected:
     void update(uint32_t frame_index) override;
 
 private:
-    void record_command_buffers();
+    void record_command_buffers(size_t light_aabb_count, bool rebuild_as);
     void record_skinning(device_id id, uint32_t frame_index, vk::CommandBuffer cb);
-    void record_as_build(device_id id, uint32_t frame_index, vk::CommandBuffer cb);
+    void record_as_build(device_id id, uint32_t frame_index, vk::CommandBuffer cb, size_t light_aabb_count, bool rebuild);
     void record_tri_light_extraction(device_id id, vk::CommandBuffer cb);
     void record_pre_transform(device_id id, vk::CommandBuffer cb);
 
     std::vector<descriptor_state> get_descriptor_info(device_id id, int32_t camera_index) const;
 
-    bool as_rebuild;
+    bool prev_was_rebuild;
     size_t as_instance_count;
 
     uint32_t envmap_change_counter;
     uint32_t geometry_change_counter;
     uint32_t light_change_counter;
+    bool geometry_outdated;
+    bool lights_outdated;
 
     unsigned force_instance_refresh_frames;
     scene* cur_scene;
@@ -125,6 +128,8 @@ private:
     //==========================================================================
     environment_map* envmap;
     vec3 ambient;
+    std::optional<bottom_level_acceleration_structure> light_blas;
+    gpu_buffer light_aabb_buffer;
 
     //==========================================================================
     // Mesh stuff

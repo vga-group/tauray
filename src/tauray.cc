@@ -120,8 +120,6 @@ scene_data load_scenes(context& ctx, const options& opt)
         sky.reset(new environment_map(dev, opt.envmap));
 
     std::vector<scene_graph> scenes;
-    size_t instance_capacity = 0;
-    size_t light_capacity = 0;
     for(const std::string& path: opt.scene_paths)
     {
         scene_graph sg_temp;
@@ -139,14 +137,6 @@ scene_data load_scenes(context& ctx, const options& opt)
         }
         scenes.emplace_back(std::move(sg_temp));
         scene_graph& sg = scenes.back();
-        light_capacity += sg.point_lights.size() + sg.spotlights.size();
-
-        for(const auto& pair: sg.mesh_objects)
-        {
-            const model* m = pair.second.get_model();
-            if(!m) continue;
-            instance_capacity += m->group_count();
-        }
 
         for(auto& pair: sg.sh_grids)
             pair.second.set_order(opt.sh_order);
@@ -197,7 +187,7 @@ scene_data load_scenes(context& ctx, const options& opt)
     scene_data s{
         std::move(sky),
         std::move(scenes),
-        std::make_unique<scene>(device_mask::all(ctx), max(light_capacity, 1lu))
+        std::make_unique<scene>()
     };
     s.s->set_environment_map(s.sky.get());
     s.s->set_ambient(opt.ambient);
@@ -368,6 +358,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     scene_stage::options scene_options;
     scene_options.max_instances = s.get_instance_count();
+    scene_options.max_lights = s.get_point_lights().size() + s.get_spotlights().size();
     scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles > 0;
     scene_options.pre_transform_vertices = opt.pre_transform_vertices;
     scene_options.group_strategy = opt.as_strategy;

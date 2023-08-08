@@ -17,10 +17,7 @@ class basic_pipeline;
 class scene: public light_scene, public mesh_scene
 {
 public:
-    scene(
-        device_mask dev,
-        size_t max_lights = 128
-    );
+    scene();
     scene(const scene& s) = delete;
     scene(scene&& s) = delete;
 

@@ -5,29 +5,8 @@
 namespace tr
 {
 
-light_scene::light_scene(device_mask dev, size_t max_capacity)
-:   max_capacity(max_capacity),
-    blas_update_timer(dev, "light BLAS update"),
-    as_update(dev)
+light_scene::light_scene()
 {
-    if(as_update.get_context()->is_ray_tracing_supported())
-    {
-        aabb_buffer = gpu_buffer(
-            as_update.get_mask(), max_capacity * sizeof(vk::AabbPositionsKHR),
-            vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eTransferDst |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress|
-            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
-        );
-
-        blas.emplace(
-            as_update.get_mask(),
-            std::vector<bottom_level_acceleration_structure::entry>{
-                {nullptr, max_capacity, &aabb_buffer, mat4(1.0f), true}
-            },
-            false, true, false
-        );
-    }
 }
 
 light_scene::~light_scene()
@@ -57,21 +36,18 @@ vec3 light_scene::get_ambient() const
 void light_scene::add(point_light& pl)
 {
     sorted_insert(point_lights, &pl);
-    invalidate_acceleration_structures();
 }
 
 void light_scene::remove(point_light& pl)
 {
     sorted_erase(point_lights, &pl);
     point_shadow_maps.erase(&pl);
-    invalidate_acceleration_structures();
 }
 
 void light_scene::clear_point_lights()
 {
     for(point_light* pl: point_lights) point_shadow_maps.erase(pl);
     point_lights.clear();
-    invalidate_acceleration_structures();
 }
 
 const std::vector<point_light*>& light_scene::get_point_lights() const
@@ -80,21 +56,18 @@ const std::vector<point_light*>& light_scene::get_point_lights() const
 void light_scene::add(spotlight& sl)
 {
     sorted_insert(spotlights, &sl);
-    invalidate_acceleration_structures();
 }
 
 void light_scene::remove(spotlight& sl)
 {
     sorted_erase(spotlights, &sl);
     point_shadow_maps.erase(&sl);
-    invalidate_acceleration_structures();
 }
 
 void light_scene::clear_spotlights()
 {
     for(spotlight* sl: spotlights) point_shadow_maps.erase(sl);
     spotlights.clear();
-    invalidate_acceleration_structures();
 }
 
 const std::vector<spotlight*>& light_scene::get_spotlights() const
@@ -237,124 +210,6 @@ sh_grid* light_scene::get_largest_sh_grid(int* index) const
     }
     if(index) *index = best_index;
     return best_index > 0 ? sh_grids[best_index] : nullptr;
-}
-
-size_t light_scene::get_aabbs(vk::AabbPositionsKHR* aabb)
-{
-    size_t i = 0;
-    for(size_t j = 0; j < point_lights.size() && i < max_capacity; ++j)
-    {
-        point_light* pl = point_lights[j];
-
-        float radius = pl->get_radius();
-
-        vec3 pos = radius == 0.0f ? vec3(0) : pl->get_global_position();
-
-        vec3 min = pos - vec3(radius);
-        vec3 max = pos + vec3(radius);
-
-        aabb[i] = vk::AabbPositionsKHR(
-            min.x, min.y, min.z, max.x, max.y, max.z);
-        i++;
-    }
-    for(size_t j = 0; j < spotlights.size() && i < max_capacity; ++j)
-    {
-        spotlight* sl = spotlights[j];
-
-        float radius = sl->get_radius();
-        vec3 pos = radius == 0.0f ? vec3(0) : sl->get_global_position();
-
-        vec3 min = pos - vec3(radius);
-        vec3 max = pos + vec3(radius);
-
-        aabb[i] = vk::AabbPositionsKHR(
-            min.x, min.y, min.z, max.x, max.y, max.z);
-        i++;
-    }
-    return i;
-}
-
-void light_scene::invalidate_acceleration_structures()
-{
-    for(auto[dev, as]: as_update)
-    {
-        as.scene_reset_needed = true;
-        for(auto& f: as.per_frame)
-            f.command_buffers_outdated = true;
-    }
-}
-
-size_t light_scene::get_max_capacity() const
-{
-    return max_capacity;
-}
-
-void light_scene::update_acceleration_structures(
-    device_id id,
-    uint32_t frame_index,
-    bool& need_scene_reset
-){
-    auto& as = as_update[id];
-    auto& f = as.per_frame[frame_index];
-
-    // Update area point light buffer
-    aabb_buffer.map<vk::AabbPositionsKHR>(
-        frame_index,
-        [&](vk::AabbPositionsKHR* aabb){
-            f.aabb_count = get_aabbs(aabb);
-        }
-    );
-
-    need_scene_reset |= as.scene_reset_needed || f.command_buffers_outdated;
-
-    as.scene_reset_needed = false;
-    f.command_buffers_outdated = false;
-}
-
-void light_scene::record_acceleration_structure_build(
-    vk::CommandBuffer& cb,
-    device_id id,
-    uint32_t frame_index,
-    bool update_only
-){
-    auto& as = as_update[id];
-    auto& f = as.per_frame[frame_index];
-
-    blas_update_timer.begin(cb, id, frame_index);
-    aabb_buffer.upload(id, frame_index, cb);
-
-    blas->rebuild(
-        id,
-        frame_index,
-        cb,
-        {bottom_level_acceleration_structure::entry{nullptr, f.aabb_count, &aabb_buffer, mat4(1.0f), true}},
-        update_only
-    );
-    blas_update_timer.end(cb, id, frame_index);
-}
-
-void light_scene::add_acceleration_structure_instances(
-    vk::AccelerationStructureInstanceKHR* instances,
-    device_id id,
-    uint32_t frame_index,
-    size_t& instance_index,
-    size_t capacity
-) const
-{
-    auto& as = as_update[id];
-    auto& f = as.per_frame[frame_index];
-
-    if(f.aabb_count != 0 && instance_index < capacity)
-    {
-        vk::AccelerationStructureInstanceKHR& inst = instances[instance_index++];
-        inst = vk::AccelerationStructureInstanceKHR(
-            {}, instance_index, 1<<1, 2,
-            vk::GeometryInstanceFlagBitsKHR::eTriangleCullDisable,
-            blas->get_blas_address(id)
-        );
-        mat4 id_mat = mat4(1.0f);
-        memcpy((void*)&inst.transform, (void*)&id_mat, sizeof(inst.transform));
-    }
 }
 
 }
