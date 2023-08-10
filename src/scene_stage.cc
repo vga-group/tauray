@@ -265,7 +265,6 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
         true,
         false
     ),
-    sh_grid_textures(nullptr),
     skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, {}, 1, true}),
     extract_tri_lights(dev, compute_pipeline::params{
         {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
@@ -370,6 +369,11 @@ const std::vector<scene_stage::instance>& scene_stage::get_instances() const
     return instances;
 }
 
+const std::unordered_map<sh_grid*, texture>& scene_stage::get_sh_grid_textures() const
+{
+    return sh_grid_textures;
+}
+
 vk::AccelerationStructureKHR scene_stage::get_acceleration_structure(
     device_id id
 ) const {
@@ -379,12 +383,6 @@ vk::AccelerationStructureKHR scene_stage::get_acceleration_structure(
             "Trying to use TLAS, but ray tracing is not available!"
         );
     return *tlas->get_tlas_handle(id);
-}
-
-void scene_stage::set_sh_grid_textures(
-    std::unordered_map<sh_grid*, texture>* sh_grid_textures
-){
-    this->sh_grid_textures = sh_grid_textures;
 }
 
 vec2 scene_stage::get_shadow_map_atlas_pixel_margin() const
@@ -862,11 +860,11 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
     const std::vector<sh_grid*>& sh_grids = cur_scene->get_sh_grids();
 
     std::vector<vk::DescriptorImageInfo> dii_3d;
-    if(sh_grid_textures)
+    if(opt.alloc_sh_grids)
     {
         for(sh_grid* sg: sh_grids)
         {
-            texture& tex = sh_grid_textures->at(sg);
+            const texture& tex = sh_grid_textures.at(sg);
             dii_3d.push_back({
                 sh_grid_sampler.get_sampler(id),
                 tex.get_image_view(id),
@@ -1085,7 +1083,7 @@ void scene_stage::update(uint32_t frame_index)
             inst.model_normal = instances[i].normal_transform;
             inst.model_prev = instances[i].prev_transform;
             int index = -1;
-            if(sh_grid_textures && !cur_scene->get_sh_grid(model[3], &index))
+            if(opt.alloc_sh_grids && !cur_scene->get_sh_grid(model[3], &index))
                 cur_scene->get_largest_sh_grid(&index);
             inst.sh_grid_index = index;
             inst.pad = 0;
@@ -1163,13 +1161,20 @@ void scene_stage::update(uint32_t frame_index)
     sh_grid_data.resize(sizeof(sh_grid_buffer) * sh_grids.size());
     sh_grid_data.foreach<sh_grid_buffer>(
         frame_index, sh_grids.size(),
-        [&](sh_grid_buffer& sh_data , size_t i){
-            sh_data.grid_clamp = 0.5f/vec3(sh_grids[i]->get_resolution());
-            sh_data.grid_resolution = sh_grids[i]->get_resolution();
-            mat4 transform = sh_grids[i]->get_global_transform();
+        [&](sh_grid_buffer& sh_data, size_t i){
+            sh_grid* s = sh_grids[i];
+            sh_data.grid_clamp = 0.5f/vec3(s->get_resolution());
+            sh_data.grid_resolution = s->get_resolution();
+            mat4 transform = s->get_global_transform();
             quat orientation = get_matrix_orientation(transform);
             sh_data.pos_from_world = glm::affineInverse(transform);
             sh_data.normal_from_world = mat4(inverse(orientation));
+
+            if(sh_grid_textures.count(s) == 0)
+            {
+                sh_grid_textures.emplace(s, s->create_texture(get_device_mask()));
+                lights_outdated = true;
+            }
         }
     );
 

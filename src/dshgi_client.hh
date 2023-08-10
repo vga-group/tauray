@@ -57,7 +57,7 @@ private:
     // The latest states of the grid data should be uploaded here.
     std::unordered_map<sh_grid*, texture> sh_grid_upload_textures;
     std::unordered_map<sh_grid*, texture> sh_grid_tmp_textures;
-    std::unordered_map<sh_grid*, texture> sh_grid_blended_textures;
+    // The blended result textures are stored in scene_stage's sh grid textures!
 
     time_ticks remote_timestamp;
     bool new_remote_timestamp;

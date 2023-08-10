@@ -31,6 +31,7 @@ public:
         bool gather_emissive_triangles = false;
         bool pre_transform_vertices = false;
         bool shadow_mapping = false;
+        bool alloc_sh_grids = false;
         blas_strategy group_strategy = blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL;
     };
 
@@ -63,13 +64,11 @@ public:
     };
     const std::vector<instance>& get_instances() const;
 
+    const std::unordered_map<sh_grid*, texture>& get_sh_grid_textures() const;
+
     vk::AccelerationStructureKHR get_acceleration_structure(
         device_id id
     ) const;
-
-    void set_sh_grid_textures(
-        std::unordered_map<sh_grid*, texture>* sh_grid_textures
-    );
 
     void bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_offset = 0);
     void push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_offset = 0);
@@ -211,7 +210,7 @@ private:
     sampler sh_grid_sampler;
     // Offsets and sizes to the camera uniform buffer.
     std::vector<std::pair<size_t, size_t>> camera_data_offsets;
-    std::unordered_map<sh_grid*, texture>* sh_grid_textures;
+    std::unordered_map<sh_grid*, texture> sh_grid_textures;
 
     std::optional<top_level_acceleration_structure> tlas;
 

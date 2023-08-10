@@ -94,7 +94,7 @@ protected:
 
                     texture& new_tex = client->sh_grid_upload_textures.at(grid);
                     texture& tmp_tex = client->sh_grid_tmp_textures.at(grid);
-                    texture& out_tex = client->sh_grid_blended_textures.at(grid);
+                    const texture& out_tex = client->ss->get_sh_grid_textures().at(grid);
 
                     uvec3 dim = new_tex.get_dimensions();
 
@@ -284,14 +284,12 @@ bool dshgi_client::refresh()
         reset = true;
         sh_grid_upload_textures.clear();
         sh_grid_tmp_textures.clear();
-        sh_grid_blended_textures.clear();
     }
 
     scene* cur_scene = ss->get_scene();
     cur_scene->clear_sh_grids();
     for(sh_grid_data& lg: local_grids)
         cur_scene->add(lg.grid);
-    ss->set_sh_grid_textures(&sh_grid_blended_textures);
 
     for(size_t i = 0; i < local_grids.size(); ++i)
     {
@@ -318,9 +316,6 @@ bool dshgi_client::refresh()
                 &lg.grid, lg.grid.create_texture(ctx->get_display_device())
             );
             sh_grid_tmp_textures.emplace(
-                &lg.grid, lg.grid.create_texture(ctx->get_display_device())
-            );
-            sh_grid_blended_textures.emplace(
                 &lg.grid, lg.grid.create_texture(ctx->get_display_device())
             );
         }

@@ -11,58 +11,53 @@ sh_renderer::sh_renderer(
     const options& opt
 ): ctx(&ctx), opt(opt), ss(&ss)
 {
-
-    device& dev = ctx.get_display_device();
-
-    // TODO: Move the actual textures over to scene_stage? That way, you could
-    // change the grids while the program is running, and it would avoid the
-    // set_sh_grid_textures weirdness.
-    per_grid.clear();
-    int grid_index = 0;
-    for(sh_grid* s: ss.get_scene()->get_sh_grids())
-    {
-        sh_grid_targets.emplace(
-            s, s->create_target_texture(dev, opt.samples_per_probe)
-        );
-        sh_grid_textures.emplace(s, s->create_texture(dev));
-
-        texture* output_grids = &sh_grid_targets.at(s);
-        texture* compact_grids = &sh_grid_textures.at(s);
-
-        sh_path_tracer_stage::options sh_opt = opt;
-        sh_opt.sh_grid_index = grid_index++;
-        sh_opt.sh_order = s->get_order();
-
-        s->get_target_sampling_info(
-            ctx.get_display_device(),
-            sh_opt.samples_per_probe,
-            sh_opt.samples_per_invocation
-        );
-
-        per_grid_data& p = per_grid.emplace_back();
-        p.pt.reset(new sh_path_tracer_stage(
-            dev, ss, *output_grids, vk::ImageLayout::eGeneral, sh_opt
-        ));
-
-        p.compact.reset(new sh_compact_stage(
-            dev, *output_grids, *compact_grids
-        ));
-    }
-
-    ss.set_sh_grid_textures(&sh_grid_textures);
 }
 
 sh_renderer::~sh_renderer()
 {
 }
 
-texture& sh_renderer::get_sh_grid_texture(sh_grid* grid)
+void sh_renderer::update_grids()
 {
-    return sh_grid_textures.at(grid);
+    device& dev = ctx->get_display_device();
+
+    per_grid.clear();
+    int grid_index = 0;
+    for(sh_grid* s: ss->get_scene()->get_sh_grids())
+    {
+        sh_grid_targets.emplace(
+            s, s->create_target_texture(dev, opt.samples_per_probe)
+        );
+
+        texture* output_grids = &sh_grid_targets.at(s);
+        const texture* compact_grids = &ss->get_sh_grid_textures().at(s);
+
+        sh_path_tracer_stage::options sh_opt = opt;
+        sh_opt.sh_grid_index = grid_index++;
+        sh_opt.sh_order = s->get_order();
+
+        s->get_target_sampling_info(
+            ctx->get_display_device(),
+            sh_opt.samples_per_probe,
+            sh_opt.samples_per_invocation
+        );
+
+        per_grid_data& p = per_grid.emplace_back();
+        p.pt.reset(new sh_path_tracer_stage(
+            dev, *ss, *output_grids, vk::ImageLayout::eGeneral, sh_opt
+        ));
+
+        p.compact.reset(new sh_compact_stage(
+            dev, *output_grids, *const_cast<texture*>(compact_grids)
+        ));
+    }
 }
 
 dependencies sh_renderer::render(dependencies deps)
 {
+    if(ss->check_update(scene_stage::LIGHT, scene_state_counter))
+        update_grids();
+
     for(auto& p: per_grid)
     {
         deps = p.pt->run(deps);

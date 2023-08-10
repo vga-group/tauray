@@ -27,15 +27,16 @@ public:
     ~sh_renderer();
 
     dependencies render(dependencies deps);
-    texture& get_sh_grid_texture(sh_grid* grid);
 
 private:
+    void update_grids();
+
     context* ctx;
     options opt;
     scene_stage* ss = nullptr;
+    uint32_t scene_state_counter = 0;
 
     std::unordered_map<sh_grid*, texture> sh_grid_targets;
-    std::unordered_map<sh_grid*, texture> sh_grid_textures;
 
     struct per_grid_data
     {

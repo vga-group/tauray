@@ -586,6 +586,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
                 dr_opt.z_pre_pass = opt.use_z_pre_pass;
                 dr_opt.scene_options = scene_options;
+                dr_opt.scene_options.alloc_sh_grids = true;
                 return new dshgi_renderer(ctx, dr_opt);
             }
         case options::DSHGI_SERVER:
@@ -602,7 +603,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.sh.regularization_gamma = opt.regularization;
                 dr_opt.sh.sampling_weights = sampling_weights;
                 dr_opt.port_number = opt.port;
-                //dr_opt.scene_options = scene_options;
                 return new dshgi_server(ctx, dr_opt);
             }
         case options::DSHGI_CLIENT:
@@ -625,6 +625,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
                 dr_opt.z_pre_pass = opt.use_z_pre_pass;
                 dr_opt.scene_options = scene_options;
+                dr_opt.scene_options.alloc_sh_grids = true;
                 return new dshgi_renderer(ctx, dr_opt);
             }
         };

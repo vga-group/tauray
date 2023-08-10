@@ -70,7 +70,7 @@ private:
             {
                 grid_data& d = data.at(grid);
 
-                texture& tex = ren->get_sh_grid_texture(grid);
+                const texture& tex = ss->get_sh_grid_textures().at(grid);
 
                 uvec3 dim = tex.get_dimensions();
                 transition_image_layout(
@@ -118,7 +118,9 @@ dshgi_server::dshgi_server(context& ctx, const options& opt)
 :   ctx(&ctx), opt(opt), exit_sender(false), subscriber_count(0),
     sender_thread(sender_worker, this)
 {
-    scene_update.reset(new scene_stage(ctx.get_display_device(), {}));
+    scene_stage::options scene_opts;
+    scene_opts.alloc_sh_grids = true;
+    scene_update.reset(new scene_stage(ctx.get_display_device(), scene_opts));
     sh_grid_to_cpu.reset(new sh_grid_to_cpu_stage(ctx.get_display_device(), *scene_update));
 
     sh.emplace(ctx, *scene_update, opt.sh);
@@ -264,7 +266,7 @@ void dshgi_server::sender_worker(dshgi_server* s)
             puvec3 res = grid->get_resolution();
             zmsg_addmem(msg, &res, sizeof(res));
 
-            VkFormat fmt = (VkFormat)s->sh->get_sh_grid_texture(grid).get_format();
+            VkFormat fmt = (VkFormat)s->scene_update->get_sh_grid_textures().at(grid).get_format();
             zmsg_addmem(msg, &fmt, sizeof(fmt));
 
             zmsg_addmem(msg, mem, size);
