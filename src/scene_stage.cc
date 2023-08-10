@@ -297,21 +297,25 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     if(dev.get_context()->is_ray_tracing_supported())
     {
         tlas.emplace(dev, opt.max_instances);
-        light_aabb_buffer = gpu_buffer(
-            dev, opt.max_lights * sizeof(vk::AabbPositionsKHR),
-            vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eTransferDst |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress|
-            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
-        );
 
-        light_blas.emplace(
-            dev,
-            std::vector<bottom_level_acceleration_structure::entry>{
-                {nullptr, opt.max_lights, &light_aabb_buffer, mat4(1.0f), true}
-            },
-            false, true, false
-        );
+        if(opt.max_lights > 0)
+        {
+            light_aabb_buffer = gpu_buffer(
+                dev, opt.max_lights * sizeof(vk::AabbPositionsKHR),
+                vk::BufferUsageFlagBits::eStorageBuffer |
+                vk::BufferUsageFlagBits::eTransferDst |
+                vk::BufferUsageFlagBits::eShaderDeviceAddress|
+                vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
+            );
+
+            light_blas.emplace(
+                dev,
+                std::vector<bottom_level_acceleration_structure::entry>{
+                    {nullptr, opt.max_lights, &light_aabb_buffer, mat4(1.0f), true}
+                },
+                false, true, false
+            );
+        }
     }
 }
 
@@ -1400,7 +1404,7 @@ void scene_stage::update(uint32_t frame_index)
                         offset += group.size;
                     }
 
-                    if(light_aabb_count != 0 && as_instance_count < total_max_capacity)
+                    if(light_aabb_count != 0 && as_instance_count < total_max_capacity && light_blas.has_value())
                     {
                         vk::AccelerationStructureInstanceKHR& inst = as_instances[as_instance_count++];
                         inst = vk::AccelerationStructureInstanceKHR(
@@ -1565,13 +1569,16 @@ void scene_stage::record_as_build(
     auto& instance_buffer = tlas->get_instances_buffer();
     bool as_update = !rebuild;
 
-    light_blas->rebuild(
-        id,
-        frame_index,
-        cb,
-        {bottom_level_acceleration_structure::entry{nullptr, light_aabb_count, &light_aabb_buffer, mat4(1.0f), true}},
-        as_update
-    );
+    if(light_blas.has_value())
+    {
+        light_blas->rebuild(
+            id,
+            frame_index,
+            cb,
+            {bottom_level_acceleration_structure::entry{nullptr, light_aabb_count, &light_aabb_buffer, mat4(1.0f), true}},
+            as_update
+        );
+    }
 
     if(as_instance_count > 0)
     {
