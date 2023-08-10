@@ -49,7 +49,7 @@ private:
         clear_commands();
         data.clear();
 
-        light_scene* s = ss->get_scene();
+        scene* s = ss->get_scene();
         const std::vector<sh_grid*>& grids = s->get_sh_grids();
 
         for(sh_grid* grid: grids)

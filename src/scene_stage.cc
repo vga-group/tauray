@@ -2,6 +2,7 @@
 #include "sh_grid.hh"
 #include "environment_map.hh"
 #include "placeholders.hh"
+#include "light.hh"
 #include "misc.hh"
 #include "log.hh"
 

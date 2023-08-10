@@ -1,5 +1,5 @@
 #include "whitted_stage.hh"
-#include "light_scene.hh"
+#include "scene.hh"
 #include "scene_stage.hh"
 #include "environment_map.hh"
 
@@ -90,7 +90,7 @@ void whitted_stage::record_command_buffer_pass(
 ){
     gfx.bind(cb, frame_index);
 
-    light_scene* cur_scene = ss->get_scene();
+    scene* cur_scene = ss->get_scene();
     whitted::push_constant_buffer control;
     control.directional_light_count = cur_scene->get_directional_lights().size();
     control.point_light_count =

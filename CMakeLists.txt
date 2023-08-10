@@ -101,7 +101,6 @@ add_library(tauray-core STATIC
   src/gpu_buffer.cc
   src/headless.cc
   src/light.cc
-  src/light_scene.cc
   src/load_balancer.cc
   src/log.cc
   src/looking_glass.cc
@@ -110,7 +109,6 @@ add_library(tauray-core STATIC
   src/math.cc
   src/mesh.cc
   src/mesh_object.cc
-  src/mesh_scene.cc
   src/misc.cc
   src/model.cc
   src/assimp.cc

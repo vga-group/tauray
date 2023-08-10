@@ -43,7 +43,7 @@ public:
 protected:
     void update(uint32_t frame_index) override
     {
-        light_scene* cur_scene = ss->get_scene();
+        scene* cur_scene = ss->get_scene();
 
         if(ss->check_update(scene_stage::LIGHT, scene_state_counter))
         {

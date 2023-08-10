@@ -4,6 +4,9 @@
 #include "stage.hh"
 #include "compute_pipeline.hh"
 #include "radix_sort.hh"
+#include "sampler_table.hh"
+#include "sampler.hh"
+#include "timer.hh"
 #include "atlas.hh"
 #include "camera.hh"
 
