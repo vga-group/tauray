@@ -50,15 +50,12 @@ private:
         data.clear();
 
         scene* s = ss->get_scene();
-        const std::vector<sh_grid*>& grids = s->get_sh_grids();
-
-        for(sh_grid* grid: grids)
-        {
-            grid_data& d = data[grid];
-            d.size = grid->get_required_bytes();
+        s->foreach([&](sh_grid& grid){
+            grid_data& d = data[&grid];
+            d.size = grid.get_required_bytes();
             d.staging_buffer = create_download_buffer(*dev, d.size);
             vmaMapMemory(dev->allocator, d.staging_buffer.get_allocation(), &d.mem);
-        }
+        });
 
         for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
@@ -66,11 +63,10 @@ private:
             vk::CommandBuffer cb = begin_compute();
             stage_timer.begin(cb, dev->id, i);
 
-            for(sh_grid* grid: grids)
-            {
-                grid_data& d = data.at(grid);
+            s->foreach([&](sh_grid& grid){
+                grid_data& d = data.at(&grid);
 
-                const texture& tex = ss->get_sh_grid_textures().at(grid);
+                const texture& tex = ss->get_sh_grid_textures().at(&grid);
 
                 uvec3 dim = tex.get_dimensions();
                 transition_image_layout(
@@ -93,7 +89,7 @@ private:
                         {dim.x, dim.y, dim.z}
                     }
                 );
-            }
+            });
 
             stage_timer.end(cb, dev->id, i);
             end_compute(cb, i);
@@ -115,7 +111,7 @@ private:
 };
 
 dshgi_server::dshgi_server(context& ctx, const options& opt)
-:   ctx(&ctx), opt(opt), exit_sender(false), subscriber_count(0),
+:   ctx(&ctx), opt(opt), timestamp(0), exit_sender(false), subscriber_count(0),
     sender_thread(sender_worker, this)
 {
     scene_stage::options scene_opts;
@@ -138,6 +134,9 @@ dshgi_server::~dshgi_server()
 void dshgi_server::set_scene(scene* s)
 {
     scene_update->set_scene(s);
+    update_event.emplace(s->subscribe([&](scene&, const animation_update_event& ev){
+        timestamp = ev.reset ? ev.delta : timestamp + ev.delta;
+    }));
 }
 
 void dshgi_server::render()
@@ -220,13 +219,12 @@ void dshgi_server::sender_worker(dshgi_server* s)
         }
         deps.wait(dev);
 
-        const std::vector<sh_grid*>& grids = s->cur_scene->get_sh_grids();
+        //const std::vector<sh_grid*>& grids = s->cur_scene->get_sh_grids();
 
         { // Send animation timestamp
             zmsg_t* msg = zmsg_new();
             zmsg_addstr(msg, "timestamp ");
-            time_ticks timestamp = s->cur_scene->get_total_ticks();
-            zmsg_addmem(msg, &timestamp, sizeof(timestamp));
+            zmsg_addmem(msg, &s->timestamp, sizeof(timestamp));
             zmsg_send(&msg, socket);
         }
 
@@ -236,17 +234,16 @@ void dshgi_server::sender_worker(dshgi_server* s)
         {
             zmsg_t* msg = zmsg_new();
             zmsg_addstr(msg, "sh_grid_count ");
-            uint32_t count = grids.size();
+            uint32_t count = s->cur_scene->count<sh_grid>();
             zmsg_addmem(msg, &count, sizeof(count));
             zmsg_send(&msg, socket);
         }
 
-        for(size_t i = 0; i < grids.size(); ++i)
-        {
-            sh_grid* grid = grids[i];
+        int i = 0;
+        s->cur_scene->foreach([&](sh_grid& grid){
             size_t size = 0;
             void* mem = nullptr;
-            s->sh_grid_to_cpu->get_memory(grids[i], size, mem);
+            s->sh_grid_to_cpu->get_memory(&grid, size, mem);
 
             zmsg_t* msg = zmsg_new();
             zmsg_addstr(msg, "sh_grid ");
@@ -254,25 +251,26 @@ void dshgi_server::sender_worker(dshgi_server* s)
             uint32_t index = i;
             zmsg_addmem(msg, &index, sizeof(index));
 
-            int32_t order = grid->get_order();
+            int32_t order = grid.get_order();
             zmsg_addmem(msg, &order, sizeof(order));
 
-            float radius = grid->get_radius();
+            float radius = grid.get_radius();
             zmsg_addmem(msg, &radius, sizeof(radius));
 
-            mat4 transform = grid->get_global_transform();
+            mat4 transform = grid.get_global_transform();
             zmsg_addmem(msg, &transform, sizeof(transform));
 
-            puvec3 res = grid->get_resolution();
+            puvec3 res = grid.get_resolution();
             zmsg_addmem(msg, &res, sizeof(res));
 
-            VkFormat fmt = (VkFormat)s->scene_update->get_sh_grid_textures().at(grid).get_format();
+            VkFormat fmt = (VkFormat)s->scene_update->get_sh_grid_textures().at(&grid).get_format();
             zmsg_addmem(msg, &fmt, sizeof(fmt));
 
             zmsg_addmem(msg, mem, size);
 
             zmsg_send(&msg, socket);
-        }
+            ++i;
+        });
 
         dev.logical.signalSemaphore({*s->sender_semaphore, deps.value(dev.id, 0)});
     }

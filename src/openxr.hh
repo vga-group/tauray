@@ -2,6 +2,7 @@
 #define TAURAY_OPENXR_HH
 
 #include "context.hh"
+#include "camera.hh"
 #include "scene.hh"
 
 #if _WIN32
@@ -136,7 +137,6 @@ private:
     SDL_Window* win;
     VkSurfaceKHR surface;
     vk::SwapchainKHR window_swapchain;
-    std::vector<camera> cameras;
     vk::Format window_image_format;
     uint32_t window_swapchain_index;
 
@@ -144,6 +144,7 @@ private:
     std::vector<vkm<vk::ImageView>> window_image_views;
     std::vector<vkm<vk::Semaphore>> window_frame_available;
     std::vector<vkm<vk::Semaphore>> window_frame_finished;
+    std::vector<camera*> cameras;
 };
 
 }

@@ -63,14 +63,13 @@ void looking_glass::setup_cameras(
     scene& s,
     transformable_node* reference_frame
 ){
-    s.clear_cameras();
-    cameras.resize(opt.viewport_count);
+    s.foreach([&](entity id, camera&){s.remove<camera>(id);});
 
     float aspect = metadata.size.x/(float)metadata.size.y;
     float vfov = 2*atan(1/(2*opt.relative_view_distance))*180.0f/M_PI;
-    for(size_t i = 0; i < cameras.size(); ++i)
+    for(size_t i = 0; i < opt.viewport_count; ++i)
     {
-        camera& cam = cameras[i];
+        camera cam;
         cam.perspective(vfov, aspect, 0.01f, 300.0f);
 
         float offset = ((i + 0.5f)/opt.viewport_count)*2.0f-1.0f;
@@ -82,7 +81,7 @@ void looking_glass::setup_cameras(
         dir /= dir.z;
         cam.set_position(opt.mid_plane_dist * vec3(dir));
         cam.set_parent(reference_frame);
-        s.add(cam);
+        s.add(std::move(cam), camera_metadata{true, int(i), true});
     }
 }
 

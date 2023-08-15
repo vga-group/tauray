@@ -132,7 +132,6 @@ add_library(tauray-core STATIC
   src/sampler.cc
   src/sampler_table.cc
   src/scene.cc
-  src/scene_graph.cc
   src/scene_stage.cc
   src/server_context.cc
   src/sh_grid.cc

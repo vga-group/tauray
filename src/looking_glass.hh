@@ -3,6 +3,7 @@
 
 #include "context.hh"
 #include "scene.hh"
+#include "camera.hh"
 #include "looking_glass_composition_stage.hh"
 
 #if _WIN32
@@ -134,7 +135,6 @@ private:
     std::unique_ptr<looking_glass_composition_stage> composition;
     std::vector<vkm<vk::Image>> window_images;
     std::vector<vkm<vk::ImageView>> window_image_views;
-    std::vector<camera> cameras;
 };
 
 }

@@ -15,7 +15,6 @@
 namespace tr
 {
 
-class scene;
 class dshgi_client_stage;
 class dshgi_client
 {
@@ -47,7 +46,8 @@ private:
     {
         bool topo_changed = true;
         bool data_updated = true;
-        sh_grid grid;
+        entity id = INVALID_ENTITY;
+        sh_grid* grid = nullptr;
         std::vector<uint8_t> data;
     };
     std::vector<sh_grid_data> remote_grids;
@@ -61,6 +61,9 @@ private:
 
     time_ticks remote_timestamp;
     bool new_remote_timestamp;
+
+    std::optional<event_subscription> update_event;
+    time_ticks local_timestamp;
 
     bool exit_receiver;
     std::thread receiver_thread;

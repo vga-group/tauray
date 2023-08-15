@@ -152,12 +152,16 @@ void openxr::recreate_swapchains()
 void openxr::setup_xr_surroundings(
     scene& s, transformable_node* reference_frame
 ){
-    s.clear_cameras();
+    s.foreach([&](entity id, camera&){s.remove<camera>(id);});
+    cameras.clear();
     for(size_t i = 0; i < view_states.size(); ++i)
     {
-        camera& cam = cameras[i];
+        camera cam;
+        float aspect = image_size.x/(float)image_size.y;
+        cam.perspective(90, aspect, 0.1f, 300.0f);
         cam.set_parent(reference_frame);
-        s.add(cam);
+        entity id = s.add(std::move(cam), camera_metadata{true, int(i), true});
+        cameras.push_back(s.get<camera>(id));
     }
 }
 
@@ -499,14 +503,6 @@ void openxr::init_xr()
     }
 
     image_array_layers = views.size();
-
-    cameras.resize(views.size());
-    for(size_t i = 0; i < views.size(); ++i)
-    {
-        camera& cam = cameras[i];
-        float aspect = image_size.x/(float)image_size.y;
-        cam.perspective(90, aspect, 0.1f, 300.0f);
-    }
 
     view_states.resize(views.size(), {XR_TYPE_VIEW, nullptr, {}, {}});
 
@@ -1042,7 +1038,10 @@ void openxr::update_xr_views()
 
     for(size_t i = 0; i < view_states.size(); ++i)
     {
-        camera& cam = cameras[i];
+        if(i >= cameras.size())
+            continue;
+
+        camera& cam = *cameras[i];
         const XrView& v = view_states[i];
 
         cam.set_fov(

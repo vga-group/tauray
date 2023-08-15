@@ -6,7 +6,6 @@
 namespace tr
 {
 
-class scene;
 class path_tracer_stage: public rt_camera_stage
 {
 public:

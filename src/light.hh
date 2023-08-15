@@ -7,6 +7,11 @@ namespace tr
 {
 class camera_node;
 
+struct ambient_light
+{
+    vec3 color;
+};
+
 class light: public animated_node
 {
 public:

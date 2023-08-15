@@ -88,6 +88,7 @@ protected:
     unsigned get_pass_count() const;
 
     scene_stage* ss;
+
 private:
     options opt;
     unsigned pass_count = 1;

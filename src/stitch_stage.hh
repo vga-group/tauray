@@ -11,7 +11,6 @@
 namespace tr
 {
 
-class scene;
 class stitch_stage: public single_device_stage
 {
 public:

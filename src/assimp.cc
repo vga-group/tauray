@@ -1,5 +1,7 @@
 #include "assimp.hh"
 #include "log.hh"
+#include "model.hh"
+#include "mesh_object.hh"
 #include "stb_image.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -13,30 +15,12 @@ namespace
 {
 using namespace tr;
 
-// FIXME: I've been copied from gltf.cc! Make this a utility function
 template<typename T>
-auto add_unique_named(std::string& name, T& map) -> decltype(map[name])&
+T& add_unique_named(scene& s, std::string& name, T&& entry, entity* index = nullptr)
 {
-    std::string candidate_name = name;
-    int count = 0;
-    while(map.count(candidate_name) != 0)
-    {
-        candidate_name = name + std::to_string(count++);
-    }
-    name = candidate_name;
-    return map[name];
-}
-
-template<typename T>
-std::string gen_free_name(std::string& name, T& map)
-{
-    std::string candidate_name = name;
-    int count = 0;
-    while(map.count(candidate_name) != 0)
-    {
-        candidate_name = name + std::to_string(count++);
-    }
-    return candidate_name;
+    entity id = s.add(std::move(entry), name_component{name});
+    if(index) *index = id;
+    return *s.get<T>(id);
 }
 
 vec2 to_vec2(aiVector3D& v)
@@ -198,7 +182,7 @@ std::unique_ptr<texture> read_texture(
 
 material create_material(
     device_mask dev,
-    scene_graph& md,
+    scene_assets& md,
     fs::path& base_path,
     const aiScene* ai_scene,
     const aiMaterial* ai_mat
@@ -350,12 +334,12 @@ material create_material(
 namespace tr
 {
 
-scene_graph load_assimp(device_mask dev, const std::string& path)
+scene_assets load_assimp(device_mask dev, scene& s, const std::string& path)
 {
     TR_LOG("Started loading scene from ", path);
     fs::path base_path = fs::path(path).parent_path();
 
-    scene_graph md;
+    scene_assets md;
 
     Assimp::Importer importer;
     const aiScene* ai_scene = importer.ReadFile(
@@ -401,14 +385,12 @@ scene_graph load_assimp(device_mask dev, const std::string& path)
         );
         m.add_vertex_group(mat, out_mesh);
 
-        std::string tmp_name = ai_mesh->mName.C_Str();
-        std::string name = gen_free_name(tmp_name, md.models);
-        md.models[name] = std::move(m);
+        std::string name = ai_mesh->mName.C_Str();
+        model& mod = add_unique_named(s, name, std::move(m));
 
         // Mesh is loaded, still need to an object for it
-        std::string obj_name = name + "-obj";
-        mesh_object& obj = add_unique_named(obj_name, md.mesh_objects);
-        obj.set_model(&md.models[name]);
+        mesh_object& obj = add_unique_named(s, name, mesh_object{});
+        obj.set_model(&mod);
     }
 
     for(auto& m: md.meshes)

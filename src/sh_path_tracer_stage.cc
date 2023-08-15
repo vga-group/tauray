@@ -124,7 +124,7 @@ sh_path_tracer_stage::sh_path_tracer_stage(
 void sh_path_tracer_stage::update(uint32_t frame_index)
 {
     rt_stage::update(frame_index);
-    sh_grid* grid = ss->get_scene()->get_sh_grids()[opt.sh_grid_index];
+    sh_grid* grid = ss->get_scene()->get<sh_grid>(opt.sh_grid_id);
     mat4 transform = grid->get_global_transform();
 
     uint32_t sampling_start_counter =
@@ -163,7 +163,7 @@ void sh_path_tracer_stage::record_command_buffer(
 ){
     grid_data.upload(dev->id, frame_index, cb);
 
-    sh_grid* grid = ss->get_scene()->get_sh_grids()[opt.sh_grid_index];
+    sh_grid* grid = ss->get_scene()->get<sh_grid>(opt.sh_grid_id);
     uvec3 dim = grid->get_resolution();
 
     vk::ImageMemoryBarrier img_barrier(

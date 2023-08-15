@@ -1,7 +1,10 @@
 #ifndef TAURAY_SCENE_STAGE_HH
 #define TAURAY_SCENE_STAGE_HH
 #include "scene.hh"
+#include "mesh.hh"
+#include "mesh_object.hh"
 #include "stage.hh"
+#include "light.hh"
 #include "compute_pipeline.hh"
 #include "radix_sort.hh"
 #include "sampler_table.hh"
@@ -166,8 +169,8 @@ private:
         uint64_t id,
         bool static_mesh,
         bool static_transformable,
-        size_t object_index,
-        size_t& last_object_index
+        entity object_index,
+        entity& last_object_index
     );
     bool reserve_pre_transformed_vertices(size_t max_vertex_count);
     void clear_pre_transformed_vertices();

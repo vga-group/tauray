@@ -5,7 +5,6 @@
 namespace tr
 {
 
-class scene;
 class whitted_stage: public rt_camera_stage
 {
 public:

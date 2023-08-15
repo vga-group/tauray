@@ -64,10 +64,12 @@ void taa_stage::update(uint32_t frame_index)
     bool existing = jitter_history.size() != 0;
     jitter_history.resize(opt.active_viewport_count);
 
+    scene* cur_scene = ss->get_scene();
+    std::vector<entity> cameras = get_sorted_cameras(*cur_scene);
     for(size_t i = 0; i < opt.active_viewport_count; ++i)
     {
         vec4& v = jitter_history[i];
-        vec2 cur_jitter = ss->get_scene()->get_camera(i)->get_jitter();
+        vec2 cur_jitter = cur_scene->get<camera>(cameras[i])->get_jitter();
         vec2 prev_jitter = v;
         if(!existing) prev_jitter = cur_jitter;
         v = vec4(cur_jitter, prev_jitter);

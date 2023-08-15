@@ -1,11 +1,11 @@
 #ifndef TAURAY_RENDERER_HH
 #define TAURAY_RENDERER_HH
 #include "dependency.hh"
+#include "scene.hh"
 
 namespace tr
 {
 
-class scene;
 class renderer
 {
 public:

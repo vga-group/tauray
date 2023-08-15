@@ -1,6 +1,11 @@
 #include "gltf.hh"
 #include "scene.hh"
 #include "log.hh"
+#include "model.hh"
+#include "camera.hh"
+#include "light.hh"
+#include "sh_grid.hh"
+#include "mesh_object.hh"
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #include "tiny_gltf.h"
 #include "stb_image.h"
@@ -16,17 +21,14 @@ namespace
 {
 using namespace tr;
 
+struct added_by_this_file {};
+
 template<typename T>
-auto add_unique_named(std::string& name, T& map) -> decltype(map[name])&
+T& add_unique_named(scene& s, std::string& name, T&& entry, entity* index = nullptr)
 {
-    std::string candidate_name = name;
-    int count = 0;
-    while(map.count(candidate_name) != 0)
-    {
-        candidate_name = name + std::to_string(count++);
-    }
-    name = candidate_name;
-    return map[name];
+    entity id = s.add(std::move(entry), name_component{name}, added_by_this_file{});
+    if(index) *index = id;
+    return *s.get<T>(id);
 }
 
 void flip_lines(unsigned pitch, unsigned char* line_a, unsigned char* line_b)
@@ -189,7 +191,7 @@ std::vector<animation::sample<T>> read_animation_accessors(
     return res;
 }
 
-texture* get_texture(tinygltf::Model& model, scene_graph& md, int index)
+texture* get_texture(tinygltf::Model& model, scene_assets& md, int index)
 {
     if(index == -1) return nullptr;
     return md.textures[model.textures[index].source].get();
@@ -198,7 +200,7 @@ texture* get_texture(tinygltf::Model& model, scene_graph& md, int index)
 material create_material(
     tinygltf::Material& mat,
     tinygltf::Model& model,
-    scene_graph& md
+    scene_assets& md
 ){
     material m;
     m.albedo_factor = vector_to_vec4(mat.pbrMetallicRoughness.baseColorFactor);
@@ -306,6 +308,7 @@ struct node_meta_info
     std::unordered_map<int /*node*/, animation_pool*> animations;
     std::vector<skin> skins;
     std::unordered_map<int, std::vector<int>> node_to_skin;
+    std::vector<model> models;
 
     // These are passed in meta info due to the unfortunate way Blender's glTF
     // export works (Blender's light nodes aren't the actual light nodes but
@@ -318,7 +321,8 @@ void load_gltf_node(
     tinygltf::Model& model,
     tinygltf::Scene& scene,
     int node_index,
-    scene_graph& data,
+    scene_assets& data,
+    tr::scene& s,
     transformable_node* parent,
     node_meta_info& meta,
     bool static_lock
@@ -344,8 +348,10 @@ void load_gltf_node(
     // Add object if mesh is present
     if(node.mesh != -1)
     {
-        mesh_object& obj = add_unique_named(node.name, data.mesh_objects);
-        obj.set_model(&data.models[model.meshes[node.mesh].name]);
+        entity id;
+        mesh_object& obj = add_unique_named(s, node.name, mesh_object(), &id);
+        s.attach(id, tr::model(meta.models[node.mesh]));
+        obj.set_model(s.get<tr::model>(id));
         if(tr_data && tr_data->Has("mesh"))
         {
             tinygltf::Value mesh = tr_data->Get("mesh");
@@ -387,8 +393,7 @@ void load_gltf_node(
             );
 
         // Add object to graph
-        add_unique_named(node.name, data.cameras) = std::move(cam);
-        anode = &data.cameras[node.name];
+        anode = &add_unique_named(s, node.name, std::move(cam));
         tnode = anode;
     }
     // Add light, if present.
@@ -405,21 +410,21 @@ void load_gltf_node(
         vec3 color(vector_to_vec4(l.color) * (float)l.intensity);
         if(l.type == "directional")
         {
-            directional_light* dl = &add_unique_named(node.name, data.directional_lights);
+            directional_light* dl = &add_unique_named(s, node.name, directional_light());
             anode = dl;
             dl->set_color(color);
             dl->set_angle(degrees(meta.light_angle));
         }
         else if(l.type == "point")
         {
-            point_light* pl = &add_unique_named(node.name, data.point_lights);
+            point_light* pl = &add_unique_named(s, node.name, point_light());
             anode = pl;
             pl->set_color(color/float(4*M_PI));
             pl->set_radius(meta.light_radius);
         }
         else if(l.type == "spot")
         {
-            spotlight* sl = &add_unique_named(node.name, data.spotlights);
+            spotlight* sl = &add_unique_named(s, node.name, spotlight());
             anode = sl;
             sl->set_color(color/float(4*M_PI));
             sl->set_cutoff_angle(glm::degrees(l.spot.outerConeAngle));
@@ -448,16 +453,14 @@ void load_gltf_node(
             // Irradiance volume scale must not be negative, it will break
             // things.
             for(double& v: node.scale) v = fabs(v);
-
-            data.sh_grids.emplace(node.name, std::move(g));
-            tnode = &data.sh_grids.at(node.name);
+            tnode = &add_unique_named(s, node.name, std::move(g));
         }
     }
     // If there is nothing, just add an empty node so that transformations work
     // correctly.
     else
     {
-        anode = &add_unique_named(node.name, data.control_nodes);
+        anode = &add_unique_named(s, node.name, animated_node());
         tnode = anode;
     }
 
@@ -493,22 +496,22 @@ void load_gltf_node(
     // Save joints & root node
     for(int skin_index: meta.node_to_skin[node_index])
     {
-        skin& s = meta.skins[skin_index];
-        auto it = s.node_index_to_skin_index.find(node_index);
-        if(it != s.node_index_to_skin_index.end())
+        skin& sk = meta.skins[skin_index];
+        auto it = sk.node_index_to_skin_index.find(node_index);
+        if(it != sk.node_index_to_skin_index.end())
         {
-            s.joint_nodes[it->second] = anode;
+            sk.joint_nodes[it->second] = anode;
         }
-        if(s.root == node_index)
+        if(sk.root == node_index)
         {
-            s.root_node = anode;
+            sk.root_node = anode;
         }
     }
 
     // Load child nodes
     for(int child_index: node.children)
     {
-        load_gltf_node(model, scene, child_index, data, tnode, meta, static_lock);
+        load_gltf_node(model, scene, child_index, data, s, tnode, meta, static_lock);
     }
 }
 
@@ -517,14 +520,15 @@ void load_gltf_node(
 namespace tr
 {
 
-scene_graph load_gltf(
+scene_assets load_gltf(
     device_mask dev,
+    scene& s,
     const std::string& path,
     bool force_single_sided,
     bool force_double_sided
 ){
     TR_LOG("Started loading glTF scene from ", path);
-    scene_graph md;
+    scene_assets md;
 
     std::string err, warn;
     tinygltf::Model gltf_model;
@@ -755,14 +759,14 @@ scene_graph load_gltf(
             m.add_vertex_group(primitive_material, prim_mesh);
         }
 
-        add_unique_named(tg_mesh.name, md.models) = std::move(m);
+        meta.models.emplace_back(std::move(m));
     }
 
     // Add objects & cameras
     for(tinygltf::Scene& scene: gltf_model.scenes)
     {
         for(int node_index: scene.nodes)
-            load_gltf_node(gltf_model, scene, node_index, md, nullptr, meta, true);
+            load_gltf_node(gltf_model, scene, node_index, md, s, nullptr, meta, true);
     }
 
     // Apply skins to meshes
@@ -779,30 +783,27 @@ scene_graph load_gltf(
     for(auto& m: md.meshes)
         m->refresh_buffers();
 
-    // Detach animated mesh clones
-    for(auto& pair: md.mesh_objects)
-    {
-        if(pair.second.get_model()->get_joints().size() == 0)
-            continue;
+    // Post-processing
+    s.foreach([&](entity id, added_by_this_file&, mesh_object& mo, model& animation_model){
+        if(animation_model.get_joints().size() != 0)
+        { // Detach animated mesh clones
+            // glTF explicitly specifies that skinned meshes must be placed at the
+            // origin of the scene. This doesn't always seem to be the case in all
+            // models, so fix it here.
+            mo.set_transform(mat4(1));
+            mo.set_parent(nullptr);
+            mo.set_animation_pool(nullptr);
 
-        // glTF explicitly specifies that skinned meshes must be placed at the
-        // origin of the scene. This doesn't always seem to be the case in all
-        // models, so fix it here.
-        pair.second.set_transform(mat4(1));
-        pair.second.set_parent(nullptr);
-        pair.second.set_animation_pool(nullptr);
-
-        model* animation_model = new model(*pair.second.get_model());
-        animation_model->init_joints_buffer(dev);
-        for(auto& vg: *animation_model)
-        {
-            mesh* animation_mesh = new mesh(vg.m);
-            vg.m = animation_mesh;
-            md.meshes.emplace_back(animation_mesh);
+            animation_model.init_joints_buffer(dev);
+            for(auto& vg: animation_model)
+            {
+                mesh* animation_mesh = new mesh(vg.m);
+                vg.m = animation_mesh;
+                md.meshes.emplace_back(animation_mesh);
+            }
         }
-        pair.second.set_model(animation_model);
-        md.animation_models.emplace_back(animation_model);
-    }
+        s.remove<added_by_this_file>(id);
+    });
 
     TR_LOG("Finished loading glTF scene", path);
     return md;
