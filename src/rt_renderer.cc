@@ -107,7 +107,7 @@ void rt_renderer<Pipeline>::render()
         {
             if(gbuffer_rasterizer)
                 device_deps = gbuffer_rasterizer->run(device_deps);
-            display_deps.concat(device_deps);
+            display_deps.concat(device_deps, i);
         }
     }
 

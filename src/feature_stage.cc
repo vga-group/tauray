@@ -39,7 +39,7 @@ namespace feature
             feature = "vec4((cam.view * vec4(v.pos, 1) - prev_cam.view * vec4(v.prev_pos, 1)).xyz, 1)";
             break;
         case feature_stage::SCREEN_MOTION:
-            feature = "vec4(get_camera_projection(prev_cam, v.prev_pos), 0, 1)";
+            feature = "vec4(get_camera_projection(prev_cam, v.prev_pos), 1)";
             break;
         case feature_stage::INSTANCE_ID:
             feature = "vec4(gl_InstanceID, gl_PrimitiveID, 0, 1)";

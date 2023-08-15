@@ -238,6 +238,7 @@ void bmfr_stage::init_resources()
 
 void bmfr_stage::record_command_buffers()
 {
+    clear_commands();
     for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vk::CommandBuffer cb = begin_compute();

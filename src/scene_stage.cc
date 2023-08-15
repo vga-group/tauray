@@ -646,7 +646,7 @@ bool scene_stage::refresh_instance_cache()
                     inst.last_refresh_frame = frame_counter;
                     scene_changed = true;
                 }
-                if(inst.m != vg.m || (vg.m && inst.m && vg.m->get_id() != inst.m->get_id()))
+                if(inst.m != vg.m)
                 {
                     inst.m = vg.m;
                     inst.prev_transform = mat4(0);
@@ -660,7 +660,7 @@ bool scene_stage::refresh_instance_cache()
                     inst.last_refresh_frame = frame_counter;
                     scene_changed = true;
                 }
-                if(inst.last_refresh_frame == frame_counter || !o->is_static())
+                if(inst.last_refresh_frame+1 >= frame_counter || !o->is_static())
                 {
                     if(!fetched_transforms)
                     {

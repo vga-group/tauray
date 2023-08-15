@@ -21,6 +21,14 @@ void dependencies::concat(dependencies deps)
         add(dependency{deps.ids[i], deps.semaphores[i], deps.values[i], deps.wait_stages[i]});
 }
 
+void dependencies::concat(dependencies deps, device_id only_id)
+{
+    size_t begin, end;
+    get_range(only_id, begin, end);
+    for(size_t i = begin; i < end; ++i)
+        add(dependency{deps.ids[i], deps.semaphores[i], deps.values[i], deps.wait_stages[i]});
+}
+
 void dependencies::clear()
 {
     ids.clear();
@@ -49,6 +57,26 @@ size_t dependencies::size(device_id id) const
     size_t begin, end;
     get_range(id, begin, end);
     return end-begin;
+}
+
+size_t dependencies::total_size() const
+{
+    return values.size();
+}
+
+size_t dependencies::count_unique_devices() const
+{
+    size_t count = 0;
+    device_id prev = 0xFFFFFFFFu;
+    for(device_id id: ids)
+    {
+        if(id != prev)
+        {
+            count++;
+            prev = id;
+        }
+    }
+    return count;
 }
 
 uint64_t dependencies::value(device_id id, size_t index) const

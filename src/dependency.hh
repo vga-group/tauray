@@ -29,9 +29,12 @@ public:
 
     void add(dependency dep);
     void concat(dependencies deps);
+    void concat(dependencies deps, device_id only_id);
     void clear();
     void clear(device_id id);
     size_t size(device_id id) const;
+    size_t total_size() const;
+    size_t count_unique_devices() const;
     uint64_t value(device_id id, size_t index) const;
 
     void wait(device& dev);
