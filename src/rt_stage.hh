@@ -83,6 +83,7 @@ protected:
     virtual void init_scene_resources() = 0;
     void init_descriptors(basic_pipeline& pp);
     void record_command_buffers();
+    void force_command_buffer_refresh();
 
     unsigned get_pass_count() const;
 

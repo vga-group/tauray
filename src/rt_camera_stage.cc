@@ -73,7 +73,7 @@ int rt_camera_stage::get_accumulated_samples() const
 void rt_camera_stage::reset_distribution_params(distribution_params distribution)
 {
     opt.distribution = distribution;
-    record_command_buffers();
+    force_command_buffer_refresh();
 }
 
 void rt_camera_stage::update(uint32_t frame_index)

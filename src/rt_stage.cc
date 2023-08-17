@@ -174,4 +174,9 @@ void rt_stage::record_command_buffers()
     }
 }
 
+void rt_stage::force_command_buffer_refresh()
+{
+    scene_state_counter = 0;
+}
+
 }
