@@ -36,7 +36,6 @@ public:
     {
         scene_stage::options scene_options = {};
         post_processing_renderer::options post_process = {};
-        size_t active_viewport_count = 1;
         bool accumulate = false;
     };
 
