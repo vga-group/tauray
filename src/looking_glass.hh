@@ -72,7 +72,7 @@ public:
 
     void setup_cameras(
         scene& s,
-        transformable_node* reference_frame = nullptr
+        transformable* reference_frame = nullptr
     );
 
 protected:

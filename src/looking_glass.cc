@@ -61,7 +61,7 @@ void looking_glass::recreate_swapchains()
 
 void looking_glass::setup_cameras(
     scene& s,
-    transformable_node* reference_frame
+    transformable* reference_frame
 ){
     s.foreach([&](entity id, camera&){s.remove<camera>(id);});
 

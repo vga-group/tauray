@@ -323,12 +323,12 @@ void load_gltf_node(
     int node_index,
     scene_assets& data,
     tr::scene& s,
-    transformable_node* parent,
+    transformable* parent,
     node_meta_info& meta,
     bool static_lock
 ){
     tinygltf::Node& node = model.nodes[node_index];
-    transformable_node* tnode = nullptr;
+    transformable* tnode = nullptr;
     animated_node* anode = nullptr;
 
     tinygltf::Value* tr_data = nullptr;

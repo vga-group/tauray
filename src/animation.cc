@@ -36,7 +36,7 @@ void animation::set_orientation(
     determine_loop_time();
 }
 
-void animation::apply(transformable_node& node, time_ticks time) const
+void animation::apply(transformable& node, time_ticks time) const
 {
     if(position.size())
         node.set_position(interpolate(time, position, position_interpolation));
@@ -68,9 +68,9 @@ void animation::determine_loop_time()
 }
 
 animated_node::animated_node(
-    transformable_node* parent,
+    transformable* parent,
     const animation_pool* pool
-): transformable_node(parent), pool(pool), cur_anim(nullptr)
+): transformable(parent), pool(pool), cur_anim(nullptr)
 {
 }
 

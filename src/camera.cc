@@ -21,7 +21,7 @@ nlohmann::json matrix_to_json(const mat4& m)
 namespace tr
 {
 
-camera::camera(transformable_node* parent)
+camera::camera(transformable* parent)
 : animated_node(parent), jitter_index(0)
 {
     perspective(90.0f, 1.0f, 0.1f, 100.0f);

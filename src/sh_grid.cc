@@ -6,8 +6,8 @@ namespace tr
 sh_grid::sh_grid(
     uvec3 resolution,
     int order,
-    transformable_node* parent
-):  transformable_node(parent), radius(0.0f), order(order),
+    transformable* parent
+):  transformable(parent), radius(0.0f), order(order),
     resolution(resolution)
 {
 }

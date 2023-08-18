@@ -16,7 +16,7 @@ public:
         EQUIRECTANGULAR = 2
     };
 
-    explicit camera(transformable_node* parent = nullptr);
+    explicit camera(transformable* parent = nullptr);
 
     void copy_projection(const camera& other);
 

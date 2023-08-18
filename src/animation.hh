@@ -45,7 +45,7 @@ public:
         std::vector<sample<quat>>&& orientation
     );
 
-    void apply(transformable_node& node, time_ticks time) const;
+    void apply(transformable& node, time_ticks time) const;
     time_ticks get_loop_time() const;
 
 private:
@@ -118,12 +118,12 @@ private:
 };
 
 class animated_node
-: public animation_controller<animated_node>, public transformable_node
+: public animation_controller<animated_node>, public transformable
 {
 friend class animation_controller<animated_node>;
 public:
     animated_node(
-        transformable_node* parent = nullptr,
+        transformable* parent = nullptr,
         const animation_pool* pool = nullptr
     );
 

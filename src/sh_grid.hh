@@ -10,13 +10,13 @@ namespace tr
 // A 3D grid of spherical harmonics probes. Coefficients are stacked vertically
 // in the 3D texture, so lookup must clamp manually. Similar to the shadow_map
 // classes, this is only a specification that becomes fulfilled by a renderer.
-class sh_grid: public transformable_node
+class sh_grid: public transformable
 {
 public:
     sh_grid(
         uvec3 resolution = uvec3(1),
         int order = 3,
-        transformable_node* parent = nullptr
+        transformable* parent = nullptr
     );
 
     texture create_target_texture(

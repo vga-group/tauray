@@ -55,7 +55,7 @@ public:
     // Places cameras and controllers under the given reference frame.
     void setup_xr_surroundings(
         scene& s,
-        transformable_node* reference_frame = nullptr
+        transformable* reference_frame = nullptr
     );
 
     void recreate_swapchains();

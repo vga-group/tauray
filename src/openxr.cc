@@ -150,7 +150,7 @@ void openxr::recreate_swapchains()
 }
 
 void openxr::setup_xr_surroundings(
-    scene& s, transformable_node* reference_frame
+    scene& s, transformable* reference_frame
 ){
     s.foreach([&](entity id, camera&){s.remove<camera>(id);});
     cameras.clear();

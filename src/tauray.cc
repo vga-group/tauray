@@ -112,7 +112,7 @@ void set_camera_params(const options& opt, scene& s)
 
 void apply_transform(scene& s, const mat4& transform)
 {
-    auto apply_transform = [&](transformable_node& node, const mat4& transform)
+    auto apply_transform = [&](transformable& node, const mat4& transform)
     {
         if(node.get_parent() == nullptr)
             node.set_transform(node.get_transform() * transform);
@@ -663,7 +663,7 @@ std::vector<entity> generate_cameras(entity cam_id, scene& s, options& opt, bool
     float width = (opt.camera_grid.w-1)*opt.camera_grid.x;
     float height = (opt.camera_grid.h-1)*opt.camera_grid.y;
 
-    transformable_node& tracked = *s.get<camera>(cam_id);
+    transformable& tracked = *s.get<camera>(cam_id);
     camera& parent_cam = *s.get<camera>(cam_id);
 
     vec2 fov = vec2(parent_cam.get_hfov(), parent_cam.get_vfov());
@@ -757,7 +757,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
     });
 
     camera* cam = s.get<camera>(cam_id);
-    transformable_node* cam_transform = cam;
+    transformable* cam_transform = cam;
 
     std::vector<entity> cameras = generate_cameras(cam_id, s, opt, false);
     if(cameras.size() != 0)

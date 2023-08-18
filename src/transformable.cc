@@ -9,13 +9,17 @@
 namespace tr
 {
 
-transformable::transformable()
-:   orientation(1,0,0,0), position(0), scaling(1), static_locked(false)
+transformable::transformable(transformable* parent):
 #ifdef TR_TRANSFORM_CACHING
-    , revision(1)
+    cached_revision(0),
+    revision(1),
+    cached_transform(1),
+    cached_inverse_transpose_transform(1),
+    cached_parent_revision(0),
 #endif
-{
-}
+    parent(parent),
+    orientation(1,0,0,0), position(0), scaling(1), static_locked(false)
+{}
 
 void transformable::rotate(float angle, vec3 axis, vec3 local_origin)
 {
@@ -198,29 +202,6 @@ mat4 transformable::get_transform() const
     );
 }
 
-void transformable::lookat(
-    vec3 pos,
-    vec3 up,
-    vec3 forward,
-    float angle_limit
-){
-    vec3 dir = pos - position;
-    quat target = quat_lookat(dir, up, forward);
-
-    if(angle_limit < 0) orientation = target;
-    else orientation = rotate_towards(orientation, target, angle_limit);
-    REVISION;
-}
-
-void transformable::lookat(
-    const transformable* other,
-    vec3 up,
-    vec3 forward,
-    float angle_limit
-){
-    lookat(other->position, up, forward, angle_limit);
-}
-
 void transformable::set_direction(vec3 direction, vec3 forward)
 {
     orientation = glm::rotation(forward, direction);
@@ -232,79 +213,69 @@ vec3 transformable::get_direction(vec3 forward) const
     return orientation * forward;
 }
 
-transformable_node::transformable_node(transformable_node* parent)
-#ifdef TR_TRANSFORM_CACHING
-:   cached_revision(0),
-    cached_parent_revision(0),
-    parent(parent),
-    cached_transform(1)
-#else
-:   parent(parent)
-#endif
-{}
 
 #ifdef TR_TRANSFORM_CACHING
-const mat4& transformable_node::get_global_transform() const
+const mat4& transformable::get_global_transform() const
 {
     update_cached_transform();
     return cached_transform;
 }
 
-const mat4& transformable_node::get_global_inverse_transpose_transform() const
+const mat4& transformable::get_global_inverse_transpose_transform() const
 {
     update_cached_transform();
     return cached_inverse_transpose_transform;
 }
 #else
-mat4 transformable_node::get_global_transform() const
+mat4 transformable::get_global_transform() const
 {
     return parent ?
         parent->get_global_transform() * get_transform() : get_transform();
 }
 
-mat4 transformable_node::get_global_inverse_transpose_transform() const
+mat4 transformable::get_global_inverse_transpose_transform() const
 {
     return transpose(affineInverse(get_global_transform()));
 }
 #endif
 
-vec3 transformable_node::get_global_position() const
+vec3 transformable::get_global_position() const
 {
     return get_matrix_translation(get_global_transform());
 }
 
-quat transformable_node::get_global_orientation() const
+quat transformable::get_global_orientation() const
 {
     return get_matrix_orientation(get_global_transform());
 }
 
-vec3 transformable_node::get_global_orientation_euler() const
+vec3 transformable::get_global_orientation_euler() const
 {
     return degrees(eulerAngles(get_global_orientation()));
 }
 
-vec3 transformable_node::get_global_scaling() const
+vec3 transformable::get_global_scaling() const
 {
     return get_matrix_scaling(get_global_transform());
 }
 
-void transformable_node::set_global_orientation(float angle, vec3 axis)
+void transformable::set_global_orientation(float angle, vec3 axis)
 {
     set_global_orientation(angleAxis(radians(angle), normalize(axis)));
 }
 
-void transformable_node::set_global_orientation(
+void transformable::set_global_orientation(
     float pitch, float yaw, float roll
 ){
     set_global_orientation(vec3(pitch, yaw, roll));
 }
 
-void transformable_node::set_global_orientation(vec3 euler_angles)
+void transformable::set_global_orientation(vec3 euler_angles)
 {
     set_global_orientation(quat(radians(euler_angles)));
 }
 
-void transformable_node::set_global_orientation(quat orientation)
+void transformable::set_global_orientation(quat orientation)
 {
     if(parent)
         orientation = inverse(parent->get_global_orientation()) * orientation;
@@ -312,7 +283,7 @@ void transformable_node::set_global_orientation(quat orientation)
     REVISION;
 }
 
-void transformable_node::set_global_position(vec3 pos)
+void transformable::set_global_position(vec3 pos)
 {
     position = pos;
     if(parent)
@@ -323,15 +294,15 @@ void transformable_node::set_global_position(vec3 pos)
     REVISION;
 }
 
-void transformable_node::set_global_scaling(vec3 size)
+void transformable::set_global_scaling(vec3 size)
 {
     scaling = size;
     if(parent) scaling /= parent->get_global_scaling();
     REVISION;
 }
 
-void transformable_node::set_parent(
-    transformable_node* parent,
+void transformable::set_parent(
+    transformable* parent,
     bool keep_transform
 ){
     if(keep_transform)
@@ -348,12 +319,12 @@ void transformable_node::set_parent(
     // should already force cache invalidation.
 }
 
-transformable_node* transformable_node::get_parent() const
+transformable* transformable::get_parent() const
 {
     return parent;
 }
 
-void transformable_node::set_static(bool s)
+void transformable::set_static(bool s)
 {
 #ifdef TR_TRANSFORM_CACHING
     if(!this->static_locked)
@@ -362,13 +333,12 @@ void transformable_node::set_static(bool s)
     this->static_locked = s;
 }
 
-bool transformable_node::is_static() const
+bool transformable::is_static() const
 {
     return static_locked;
 }
 
-
-void transformable_node::lookat(
+void transformable::lookat(
     vec3 pos,
     vec3 up,
     vec3 forward,
@@ -395,18 +365,8 @@ void transformable_node::lookat(
     REVISION;
 }
 
-void transformable_node::lookat(
+void transformable::lookat(
     const transformable* other,
-    vec3 up,
-    vec3 forward,
-    float angle_limit,
-    vec3 lock_axis
-){
-    lookat(other->get_position(), up, forward, angle_limit, lock_axis);
-}
-
-void transformable_node::lookat(
-    const transformable_node* other,
     vec3 up,
     vec3 forward,
     float angle_limit,
@@ -415,7 +375,7 @@ void transformable_node::lookat(
     lookat(other->get_global_position(), up, forward, angle_limit, lock_axis);
 }
 
-void transformable_node::set_global_direction(
+void transformable::set_global_direction(
     vec3 direction, vec3 forward
 ){
     quat target = glm::rotation(forward, direction);
@@ -427,14 +387,14 @@ void transformable_node::set_global_direction(
     REVISION;
 }
 
-vec3 transformable_node::get_global_direction(vec3 forward) const
+vec3 transformable::get_global_direction(vec3 forward) const
 {
     // At least for light sources, this normalize() is vital. Otherwise, small
     // directional lights break in path tracing!
     return normalize(get_global_orientation() * forward);
 }
 
-void transformable_node::align_to_view(
+void transformable::align_to_view(
     vec3 global_view_dir,
     vec3 global_view_up_dir,
     vec3 up,
@@ -464,7 +424,7 @@ void transformable_node::align_to_view(
 }
 
 #ifdef TR_TRANSFORM_CACHING
-uint16_t transformable_node::update_cached_transform() const
+uint16_t transformable::update_cached_transform() const
 {
     if(static_locked) return revision;
 
