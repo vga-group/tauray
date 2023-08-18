@@ -36,8 +36,7 @@ public:
     texture(texture&& other);
 
     vk::ImageView get_array_image_view(device_id id) const;
-    // TODO flip
-    vk::ImageView get_layer_image_view(uint32_t layer_index, device_id id) const;
+    vk::ImageView get_layer_image_view(device_id id, uint32_t layer_index) const;
     vk::ImageView get_image_view(device_id id) const;
     vk::Image get_image(device_id id) const;
 
@@ -52,10 +51,8 @@ public:
     uvec3 get_dimensions() const;
 
     render_target get_array_render_target(device_id id) const;
-    // TODO flip
-    render_target get_layer_render_target(uint32_t layer_index, device_id id) const;
-    // TODO flip
-    render_target get_multiview_block_render_target(uint32_t block_index, device_id id) const;
+    render_target get_layer_render_target(device_id id, uint32_t layer_index) const;
+    render_target get_multiview_block_render_target(device_id id, uint32_t block_index) const;
     size_t get_multiview_block_count() const;
 
     device_mask get_mask() const;

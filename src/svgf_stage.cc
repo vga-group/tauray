@@ -89,14 +89,14 @@ void svgf_stage::init_resources()
     }
 
     int rt_index = 0;
-    atrous_specular_pingpong[0] = render_target_texture[rt_index++]->get_array_render_target(dev->index);
-    atrous_specular_pingpong[1] = render_target_texture[rt_index++]->get_array_render_target(dev->index);
-    moments_history[0]          = render_target_texture[rt_index++]->get_array_render_target(dev->index);
-    moments_history[1]          = render_target_texture[rt_index++]->get_array_render_target(dev->index);
-    svgf_color_hist             = render_target_texture[rt_index++]->get_array_render_target(dev->index);
-    svgf_spec_hist              = render_target_texture[rt_index++]->get_array_render_target(dev->index);
-    atrous_diffuse_pingpong[0]  = render_target_texture[rt_index++]->get_array_render_target(dev->index);
-    atrous_diffuse_pingpong[1]  = render_target_texture[rt_index++]->get_array_render_target(dev->index);
+    atrous_specular_pingpong[0] = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    atrous_specular_pingpong[1] = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    moments_history[0]          = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    moments_history[1]          = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    svgf_color_hist             = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    svgf_spec_hist              = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    atrous_diffuse_pingpong[0]  = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    atrous_diffuse_pingpong[1]  = render_target_texture[rt_index++]->get_array_render_target(dev->id);
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
@@ -115,7 +115,7 @@ void svgf_stage::init_resources()
             {"out_specular", {{}, atrous_specular_pingpong[0].view, vk::ImageLayout::eGeneral} },
             {"in_linear_depth", {{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral}},
             {"previous_linear_depth", {{}, prev_features.linear_depth.view, vk::ImageLayout::eGeneral}},
-            {"jitter_info", {jitter_buffer[dev->index], 0, VK_WHOLE_SIZE}},
+            {"jitter_info", {jitter_buffer[dev->id], 0, VK_WHOLE_SIZE}},
             {"previous_specular", {{}, svgf_spec_hist.view, vk::ImageLayout::eGeneral}},
         }, i);
         estimate_variance_comp.update_descriptor_set({
@@ -138,9 +138,9 @@ void svgf_stage::record_command_buffers()
     {
         vk::CommandBuffer cb = begin_compute();
 
-        svgf_timer.begin(cb, dev->index, i);
+        svgf_timer.begin(cb, dev->id, i);
 
-        jitter_buffer.upload(dev->index, i, cb);
+        jitter_buffer.upload(dev->id, i, cb);
 
         uvec2 wg = (input_features.get_size()+15u) / 16u;
         push_constants control{};
@@ -224,7 +224,7 @@ void svgf_stage::record_command_buffers()
             {}, barrier, {}, {}
         );
 
-        svgf_timer.end(cb, dev->index, i);
+        svgf_timer.end(cb, dev->id, i);
         end_compute(cb, i);
     }
 }

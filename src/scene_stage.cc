@@ -981,14 +981,14 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
 void scene_stage::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_index)
 {
     device* dev = pipeline.get_device();
-    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->index, camera_index);
+    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->id, camera_index);
     pipeline.update_descriptor_set(descriptors, frame_index);
 }
 
 void scene_stage::push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_index)
 {
     device* dev = pipeline.get_device();
-    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->index, camera_index);
+    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->id, camera_index);
     pipeline.push_descriptors(cmd, descriptors);
 }
 
@@ -1006,13 +1006,13 @@ void scene_stage::bind_placeholders(
         {"shadow_map_cascades"},
         {"shadow_map_atlas"},
         {"shadow_map_atlas_test", {
-            pl.default_sampler.get_sampler(dev->index),
-            pl.depth_test_sample.get_image_view(dev->index),
+            pl.default_sampler.get_sampler(dev->id),
+            pl.depth_test_sample.get_image_view(dev->id),
             vk::ImageLayout::eShaderReadOnlyOptimal
         }},
         {"textures3d", {
-            pl.default_sampler.get_sampler(dev->index),
-            pl.sample3d.get_image_view(dev->index),
+            pl.default_sampler.get_sampler(dev->id),
+            pl.sample3d.get_image_view(dev->id),
             vk::ImageLayout::eShaderReadOnlyOptimal
         }, max_3d_samplers}
     });
@@ -1164,9 +1164,6 @@ void scene_stage::update(uint32_t frame_index)
     {
         lights_outdated |= update_shadow_map_params();
 
-        // TODO: Shadow maps should be stored here, in scene_stage, so that
-        // this weird interplay with shadow_map_renderer owning some scene
-        // assets can be removed.
         shadow_map_range = sizeof(shadow_map_entry) * total_shadow_map_count;
 
         shadow_map_cascade_range =
@@ -1383,7 +1380,7 @@ void scene_stage::update(uint32_t frame_index)
             as_instance_count = 0;
             uint32_t total_max_capacity = opt.max_instances + opt.max_lights;
             instance_buffer.map_one<vk::AccelerationStructureInstanceKHR>(
-                dev.index,
+                dev.id,
                 frame_index,
                 [&](vk::AccelerationStructureInstanceKHR* as_instances){
                     // Update instance staging buffer
@@ -1394,7 +1391,7 @@ void scene_stage::update(uint32_t frame_index)
                         const bottom_level_acceleration_structure& blas = blas_cache.at(group.id);
                         vk::AccelerationStructureInstanceKHR inst = vk::AccelerationStructureInstanceKHR(
                             {}, offset, 1<<0, 0, // Hit group 0 for triangle meshes.
-                            {}, blas.get_blas_address(dev.index)
+                            {}, blas.get_blas_address(dev.id)
                         );
                         if(!blas.is_backface_culled())
                             inst.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
@@ -1416,7 +1413,7 @@ void scene_stage::update(uint32_t frame_index)
                         inst = vk::AccelerationStructureInstanceKHR(
                             {}, as_instance_count, 1<<1, 2,
                             vk::GeometryInstanceFlagBitsKHR::eTriangleCullDisable,
-                            light_blas->get_blas_address(dev.index)
+                            light_blas->get_blas_address(dev.id)
                         );
                         mat4 id_mat = mat4(1.0f);
                         memcpy((void*)&inst.transform, (void*)&id_mat, sizeof(inst.transform));
@@ -1456,37 +1453,37 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
     {
         if(opt.gather_emissive_triangles)
         {
-            extract_tri_lights[dev.index].reset_descriptor_sets();
-            bind(extract_tri_lights[dev.index], 0, 0);
+            extract_tri_lights[dev.id].reset_descriptor_sets();
+            bind(extract_tri_lights[dev.id], 0, 0);
         }
 
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
-            vk::CommandBuffer cb = begin_graphics(dev.index);
-            stage_timer.begin(cb, dev.index, i);
-            scene_data.upload(dev.index, i, cb);
-            directional_light_data.upload(dev.index, i, cb);
-            point_light_data.upload(dev.index, i, cb);
-            sh_grid_data.upload(dev.index, i, cb);
-            shadow_map_data.upload(dev.index, i, cb);
-            camera_data.upload(dev.index, i, cb);
-            scene_metadata.upload(dev.index, i, cb);
-            light_aabb_buffer.upload(dev.index, i, cb);
+            vk::CommandBuffer cb = begin_graphics(dev.id);
+            stage_timer.begin(cb, dev.id, i);
+            scene_data.upload(dev.id, i, cb);
+            directional_light_data.upload(dev.id, i, cb);
+            point_light_data.upload(dev.id, i, cb);
+            sh_grid_data.upload(dev.id, i, cb);
+            shadow_map_data.upload(dev.id, i, cb);
+            camera_data.upload(dev.id, i, cb);
+            scene_metadata.upload(dev.id, i, cb);
+            light_aabb_buffer.upload(dev.id, i, cb);
 
             bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
 
-            record_skinning(dev.index, i, cb);
+            record_skinning(dev.id, i, cb);
             if(dev.ctx->is_ray_tracing_supported())
             {
-                record_as_build(dev.index, i, cb, light_aabb_count, rebuild_as);
+                record_as_build(dev.id, i, cb, light_aabb_count, rebuild_as);
                 if(opt.pre_transform_vertices)
-                    record_pre_transform(dev.index, cb);
+                    record_pre_transform(dev.id, cb);
                 if(tri_light_data.get_size() != 0)
-                    record_tri_light_extraction(dev.index, cb);
+                    record_tri_light_extraction(dev.id, cb);
             }
 
-            stage_timer.end(cb, dev.index, i);
-            end_graphics(cb, dev.index, i);
+            stage_timer.end(cb, dev.id, i);
+            end_graphics(cb, dev.id, i);
         }
     }
 }

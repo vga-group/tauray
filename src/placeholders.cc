@@ -58,13 +58,13 @@ placeholders::placeholders(context& ctx)
         );
 
         buf.img_2d_info = {
-            default_sampler.get_sampler(d.index),
-            sample2d.get_image_view(d.index),
+            default_sampler.get_sampler(d.id),
+            sample2d.get_image_view(d.id),
             vk::ImageLayout::eShaderReadOnlyOptimal
         };
         buf.img_3d_info = {
-            default_sampler.get_sampler(d.index),
-            sample3d.get_image_view(d.index),
+            default_sampler.get_sampler(d.id),
+            sample3d.get_image_view(d.id),
             vk::ImageLayout::eShaderReadOnlyOptimal
         };
         buf.storage_info = vk::DescriptorBufferInfo{

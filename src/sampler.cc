@@ -21,7 +21,7 @@ sampler::sampler(
         !normalized
     };
     samplers.init(dev, [&](device& d){
-        return vkm(d, d.dev.createSampler(info));
+        return vkm(d, d.logical.createSampler(info));
     });
 }
 

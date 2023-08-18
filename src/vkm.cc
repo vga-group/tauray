@@ -107,7 +107,7 @@ void vkm_generic<T>::leak()
 template<typename T>
 vk::Device vkm_generic<T>::get_device()
 {
-    return dev->dev;
+    return dev->logical;
 }
 
 template<typename T>
@@ -238,7 +238,7 @@ bool vkm<vk::CommandBuffer>::destroy_func(std::function<void()>& func)
 {
     if(resource && pool)
     {
-        func = [cmd=resource, dev=dev->dev, pool=pool](){
+        func = [cmd=resource, dev=dev->logical, pool=pool](){
             dev.freeCommandBuffers(pool, cmd);
         };
         return true;
@@ -259,7 +259,7 @@ VmaAllocation vkm<vk::Buffer>::get_allocation() const
 
 vk::DeviceAddress vkm<vk::Buffer>::get_address() const
 {
-    return dev->dev.getBufferAddress({resource});
+    return dev->logical.getBufferAddress({resource});
 }
 
 bool vkm<vk::Buffer>::destroy_func(std::function<void()>& func)

@@ -136,7 +136,7 @@ void shadow_map_stage::update(uint32_t frame_index)
             {mesh::get_attributes()[0], mesh::get_attributes()[2]},
             {},
             raster_pipeline::pipeline_state::depth_attachment_state{
-                shadow_map_atlas->get_layer_render_target(0, dev->index),
+                shadow_map_atlas->get_layer_render_target(dev->id, 0),
                 {
                     {},
                     shadow_map_atlas->get_format(),
@@ -164,14 +164,14 @@ void shadow_map_stage::update(uint32_t frame_index)
             // Bind descriptors
             ss->bind(*gfx, i, -1);
             gfx->update_descriptor_set({
-                {"camera", {camera_data[dev->index], 0, VK_WHOLE_SIZE}}
+                {"camera", {camera_data[dev->id], 0, VK_WHOLE_SIZE}}
             }, i);
 
             // Record command buffer
             vk::CommandBuffer cb = begin_graphics();
 
-            shadow_timer.begin(cb, dev->index, i);
-            camera_data.upload(dev->index, i, cb);
+            shadow_timer.begin(cb, dev->id, i);
+            camera_data.upload(dev->id, i, cb);
 
             unsigned cam_index = 0;
             auto render_cam = [&](
@@ -201,11 +201,11 @@ void shadow_map_stage::update(uint32_t frame_index)
                 {
                     const scene_stage::instance& inst = instances[i];
                     const mesh* m = inst.m;
-                    vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->index)};
+                    vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->id)};
                     vk::DeviceSize offsets[] = {0};
                     cb.bindVertexBuffers(0, 1, vertex_buffers, offsets);
                     cb.bindIndexBuffer(
-                        m->get_index_buffer(dev->index),
+                        m->get_index_buffer(dev->id),
                         0, vk::IndexType::eUint32
                     );
                     push_constant_buffer control;
@@ -233,7 +233,7 @@ void shadow_map_stage::update(uint32_t frame_index)
                     render_cam(atlas_index++, 0, 1);
             }
 
-            shadow_timer.end(cb, dev->index, i);
+            shadow_timer.end(cb, dev->id, i);
             end_graphics(cb, i);
         }
     }

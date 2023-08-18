@@ -187,7 +187,7 @@ gbuffer_target gbuffer_texture::get_layer_target(device_id id, uint32_t layer_in
 {
     gbuffer_target gbuf;
 #define TR_GBUFFER_ENTRY(name, ...) \
-    if(name) gbuf.name = name->get_layer_render_target(layer_index, id);
+    if(name) gbuf.name = name->get_layer_render_target(id, layer_index);
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
     return gbuf;
@@ -197,7 +197,7 @@ gbuffer_target gbuffer_texture::get_multiview_block_target(device_id id, uint32_
 {
     gbuffer_target gbuf;
 #define TR_GBUFFER_ENTRY(name, ...) \
-    if(name) gbuf.name = name->get_multiview_block_render_target(block_index, id);
+    if(name) gbuf.name = name->get_multiview_block_render_target(id, block_index);
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
     return gbuf;

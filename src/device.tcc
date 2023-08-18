@@ -17,7 +17,7 @@ per_device<T>::per_device(device_mask mask)
     for(device& dev: mask)
         devices.emplace(
             std::piecewise_construct,
-            std::make_tuple(dev.index),
+            std::make_tuple(dev.id),
             std::forward_as_tuple()
         );
 }
@@ -31,7 +31,7 @@ per_device<T>::per_device(device_mask mask, Args&&... args)
     {
         devices.emplace(
             std::piecewise_construct,
-            std::make_tuple(dev.index),
+            std::make_tuple(dev.id),
             std::forward_as_tuple(dev, std::forward<Args>(args)...)
         );
     }
@@ -46,7 +46,7 @@ void per_device<T>::emplace(device_mask mask, Args&&... args)
     {
         devices.emplace(
             std::piecewise_construct,
-            std::make_tuple(dev.index),
+            std::make_tuple(dev.id),
             std::forward_as_tuple(dev, std::forward<Args>(args)...)
         );
     }
@@ -58,7 +58,7 @@ void per_device<T>::init(device_mask mask, F&& create_callback)
 {
     active_mask = mask;
     for(device& dev: mask)
-        devices.emplace(dev.index, create_callback(dev));
+        devices.emplace(dev.id, create_callback(dev));
 }
 
 template<typename T>

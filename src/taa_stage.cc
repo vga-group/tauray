@@ -83,24 +83,24 @@ void taa_stage::init_resources()
         comp.update_descriptor_set({
             {"current_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
             {"current_screen_motion", {{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}},
-            {"previous_color", {history_sampler.get_sampler(dev->index), previous_color.get_array_image_view(dev->index), vk::ImageLayout::eShaderReadOnlyOptimal}},
-            {"jitter_info", {jitter_buffer[dev->index], 0, VK_WHOLE_SIZE}}
+            {"previous_color", {history_sampler.get_sampler(dev->id), previous_color.get_array_image_view(dev->id), vk::ImageLayout::eShaderReadOnlyOptimal}},
+            {"jitter_info", {jitter_buffer[dev->id], 0, VK_WHOLE_SIZE}}
         }, i);
     }
 }
 
 void taa_stage::record_command_buffers()
 {
-    render_target previous_color_rt = previous_color.get_array_render_target(dev->index);
+    render_target previous_color_rt = previous_color.get_array_render_target(dev->id);
 
     for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vk::CommandBuffer cb = begin_compute();
 
-        stage_timer.begin(cb, dev->index, i);
+        stage_timer.begin(cb, dev->id, i);
 
         // Run the actual TAA code
-        jitter_buffer.upload(dev->index, i, cb);
+        jitter_buffer.upload(dev->id, i, cb);
 
         comp.bind(cb, i);
 
@@ -146,7 +146,7 @@ void taa_stage::record_command_buffers()
         );
         previous_color_rt.layout = old_layout;
 
-        stage_timer.end(cb, dev->index, i);
+        stage_timer.end(cb, dev->id, i);
         end_compute(cb, i);
     }
 }

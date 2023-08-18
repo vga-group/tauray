@@ -21,12 +21,12 @@ frame_delay_stage::frame_delay_stage(
     spec.depth_usage = vk::ImageUsageFlagBits::eSampled|
         vk::ImageUsageFlagBits::eTransferDst;
     textures->add(spec);
-    output_features = textures->get_array_target(dev.index);
+    output_features = textures->get_array_target(dev.id);
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vk::CommandBuffer cb = begin_compute();
-        delay_timer.begin(cb, dev.index, i);
+        delay_timer.begin(cb, dev.id, i);
 
         input_features.visit([&](render_target& target){
             target.transition_layout_temporary(cb, vk::ImageLayout::eTransferSrcOptimal);
@@ -61,7 +61,7 @@ frame_delay_stage::frame_delay_stage(
             target.layout = old_layout;
         });
 
-        delay_timer.end(cb, dev.index, i);
+        delay_timer.end(cb, dev.id, i);
         end_compute(cb, i);
     }
     input_features.visit([&](render_target& target){

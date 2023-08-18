@@ -77,10 +77,10 @@ void bmfr_stage::init_resources()
             )
         );
     }
-    tmp_noisy[0] = rt_textures[0]->get_array_render_target(dev->index);
-    tmp_noisy[1] = rt_textures[1]->get_array_render_target(dev->index);
-    tmp_filtered[0] = rt_textures[2]->get_array_render_target(dev->index);
-    tmp_filtered[1] = rt_textures[3]->get_array_render_target(dev->index);
+    tmp_noisy[0] = rt_textures[0]->get_array_render_target(dev->id);
+    tmp_noisy[1] = rt_textures[1]->get_array_render_target(dev->id);
+    tmp_filtered[0] = rt_textures[2]->get_array_render_target(dev->id);
+    tmp_filtered[1] = rt_textures[3]->get_array_render_target(dev->id);
 
     for (int i = 4; i < 8; ++i)
     {
@@ -97,10 +97,10 @@ void bmfr_stage::init_resources()
         )
         );
     }
-    diffuse_hist = rt_textures[4]->get_array_render_target(dev->index);
-    specular_hist = rt_textures[5]->get_array_render_target(dev->index);
-    filtered_hist[0] = rt_textures[6]->get_array_render_target(dev->index);
-    filtered_hist[1] = rt_textures[7]->get_array_render_target(dev->index);
+    diffuse_hist = rt_textures[4]->get_array_render_target(dev->id);
+    specular_hist = rt_textures[5]->get_array_render_target(dev->id);
+    filtered_hist[0] = rt_textures[6]->get_array_render_target(dev->id);
+    filtered_hist[1] = rt_textures[7]->get_array_render_target(dev->id);
 
     for (int i = 8; i < 10; ++i)
     {
@@ -116,8 +116,8 @@ void bmfr_stage::init_resources()
             vk::SampleCountFlagBits::e1
         ));
     }
-    weighted_sum[0] = rt_textures[8]->get_array_render_target(dev->index);
-    weighted_sum[1] = rt_textures[9]->get_array_render_target(dev->index);
+    weighted_sum[0] = rt_textures[8]->get_array_render_target(dev->id);
+    weighted_sum[1] = rt_textures[9]->get_array_render_target(dev->id);
 
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -184,14 +184,14 @@ void bmfr_stage::init_resources()
             {"bmfr_diffuse_hist", {{}, diffuse_hist.view, vk::ImageLayout::eGeneral}},
             {"bmfr_specular_hist", {{}, specular_hist.view, vk::ImageLayout::eGeneral}},
             {"tmp_buffer", {tmp_data[i], 0, VK_WHOLE_SIZE}},
-            {"uniform_buffer", {ubos[dev->index], 0, VK_WHOLE_SIZE}},
+            {"uniform_buffer", {ubos[dev->id], 0, VK_WHOLE_SIZE}},
             {"accept_buffer", {accepts[i], 0, VK_WHOLE_SIZE}},
         }, i);
         bmfr_fit_comp.update_descriptor_set({
             {"tmp_buffer", {tmp_data[i], 0, VK_WHOLE_SIZE}},
             {"mins_maxs_buffer", {min_max_buffer[i], 0, VK_WHOLE_SIZE}},
             {"weights_buffer", {weights[i], 0, VK_WHOLE_SIZE}},
-            {"uniform_buffer", {ubos[dev->index], 0, VK_WHOLE_SIZE}},
+            {"uniform_buffer", {ubos[dev->id], 0, VK_WHOLE_SIZE}},
             {"in_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
         }, i);
         bmfr_weighted_sum_comp.update_descriptor_set({
@@ -201,7 +201,7 @@ void bmfr_stage::init_resources()
             {"in_pos", {{}, current_features.pos.view, vk::ImageLayout::eGeneral}},
             {"mins_maxs_buffer", {min_max_buffer[i], 0, VK_WHOLE_SIZE}},
             {"in_diffuse", {{}, current_features.diffuse.view, vk::ImageLayout::eGeneral}},
-            {"uniform_buffer", {ubos[dev->index], 0, VK_WHOLE_SIZE}},
+            {"uniform_buffer", {ubos[dev->id], 0, VK_WHOLE_SIZE}},
             {"weighted_out", {
                 {{}, weighted_sum[0].view, vk::ImageLayout::eGeneral},
                 {{}, weighted_sum[1].view, vk::ImageLayout::eGeneral}
@@ -243,9 +243,9 @@ void bmfr_stage::record_command_buffers()
     {
         vk::CommandBuffer cb = begin_compute();
 
-        stage_timer.begin(cb, dev->index, i);
+        stage_timer.begin(cb, dev->id, i);
 
-        ubos.upload(dev->index, i, cb);
+        ubos.upload(dev->id, i, cb);
         uvec2 workset_size = ((current_features.get_size()+(31u))/32u) + 1u; // One workset = one 32*32 block
         uvec2 wg = (current_features.get_size()+15u)/16u;
         push_constant_buffer control;
@@ -255,9 +255,9 @@ void bmfr_stage::record_command_buffers()
 
         bmfr_preprocess_comp.bind(cb, i);
         bmfr_preprocess_comp.push_constants(cb, control);
-        bmfr_preprocess_timer.begin(cb, dev->index, i);
+        bmfr_preprocess_timer.begin(cb, dev->id, i);
         cb.dispatch(workset_size.x * 2, workset_size.y * 2, current_features.get_layer_count());
-        bmfr_preprocess_timer.end(cb, dev->index, i);
+        bmfr_preprocess_timer.end(cb, dev->id, i);
 
         vk::MemoryBarrier barrier{
             vk::AccessFlagBits::eShaderWrite,
@@ -272,9 +272,9 @@ void bmfr_stage::record_command_buffers()
 
         bmfr_fit_comp.bind(cb, i);
         bmfr_fit_comp.push_constants(cb, control);
-        bmfr_fit_timer.begin(cb, dev->index, i);
+        bmfr_fit_timer.begin(cb, dev->id, i);
         cb.dispatch(workset_size.x, workset_size.y, current_features.get_layer_count());
-        bmfr_fit_timer.end(cb, dev->index, i);
+        bmfr_fit_timer.end(cb, dev->id, i);
 
         cb.pipelineBarrier(
             vk::PipelineStageFlagBits::eComputeShader,
@@ -286,9 +286,9 @@ void bmfr_stage::record_command_buffers()
         // wg = (current_features.get_size()+15u)/16u;
         bmfr_weighted_sum_comp.bind(cb, i);
         bmfr_weighted_sum_comp.push_constants(cb, control);
-        bmfr_weighted_sum_timer.begin(cb, dev->index, i);
+        bmfr_weighted_sum_timer.begin(cb, dev->id, i);
         cb.dispatch(wg.x, wg.y, current_features.get_layer_count());
-        bmfr_weighted_sum_timer.end(cb, dev->index, i);
+        bmfr_weighted_sum_timer.end(cb, dev->id, i);
 
         cb.pipelineBarrier(
             vk::PipelineStageFlagBits::eComputeShader,
@@ -299,9 +299,9 @@ void bmfr_stage::record_command_buffers()
         wg = (current_features.get_size()+15u)/16u;
         bmfr_accumulate_output_comp.bind(cb, i);
         bmfr_accumulate_output_comp.push_constants(cb, control);
-        bmfr_accumulate_output_timer.begin(cb, dev->index, i);
+        bmfr_accumulate_output_timer.begin(cb, dev->id, i);
         cb.dispatch(wg.x, wg.y, current_features.get_layer_count());
-        bmfr_accumulate_output_timer.end(cb, dev->index, i);
+        bmfr_accumulate_output_timer.end(cb, dev->id, i);
 
         cb.pipelineBarrier(
             vk::PipelineStageFlagBits::eComputeShader,
@@ -309,14 +309,14 @@ void bmfr_stage::record_command_buffers()
             {}, barrier, {}, {}
         );
 
-        image_copy_timer.begin(cb, dev->index, i);
+        image_copy_timer.begin(cb, dev->id, i);
         copy_image(cb, tmp_filtered[0], filtered_hist[0]);
         copy_image(cb, tmp_filtered[1], filtered_hist[1]);
         copy_image(cb, tmp_noisy[0], diffuse_hist);
         copy_image(cb, tmp_noisy[1], specular_hist);
-        image_copy_timer.end(cb, dev->index, i);
+        image_copy_timer.end(cb, dev->id, i);
 
-        stage_timer.end(cb, dev->index, i);
+        stage_timer.end(cb, dev->id, i);
         end_compute(cb, i);
     }
 }

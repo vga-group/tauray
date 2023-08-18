@@ -151,8 +151,8 @@ void sh_path_tracer_stage::init_scene_resources()
     {
         ss->bind(gfx, i, -1);
         gfx.update_descriptor_set({
-            {"inout_data", {{}, output_grid->get_image_view(dev->index), vk::ImageLayout::eGeneral}},
-            {"grid", {grid_data[dev->index], 0, VK_WHOLE_SIZE}}
+            {"inout_data", {{}, output_grid->get_image_view(dev->id), vk::ImageLayout::eGeneral}},
+            {"grid", {grid_data[dev->id], 0, VK_WHOLE_SIZE}}
         }, i);
     }
 }
@@ -161,7 +161,7 @@ void sh_path_tracer_stage::record_command_buffer(
     vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index,
     bool /*first_in_command_buffer*/
 ){
-    grid_data.upload(dev->index, frame_index, cb);
+    grid_data.upload(dev->id, frame_index, cb);
 
     sh_grid* grid = ss->get_scene()->get_sh_grids()[opt.sh_grid_index];
     uvec3 dim = grid->get_resolution();
@@ -170,7 +170,7 @@ void sh_path_tracer_stage::record_command_buffer(
         {}, vk::AccessFlagBits::eShaderWrite,
         vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
         VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-        output_grid->get_image(dev->index),
+        output_grid->get_image(dev->id),
         {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
     );
 

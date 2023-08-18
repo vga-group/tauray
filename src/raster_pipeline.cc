@@ -156,7 +156,7 @@ void raster_pipeline::init_render_pass()
             );
         }
     }
-    render_pass = vkm(*dev, dev->dev.createRenderPass(render_pass_info));
+    render_pass = vkm(*dev, dev->logical.createRenderPass(render_pass_info));
 }
 
 void raster_pipeline::init_pipeline()
@@ -268,7 +268,7 @@ void raster_pipeline::init_pipeline()
         -1
     );
 
-    pipeline = vkm(*dev, dev->dev.createGraphicsPipeline(dev->pp_cache, pipeline_info).value);
+    pipeline = vkm(*dev, dev->logical.createGraphicsPipeline(dev->pp_cache, pipeline_info).value);
 
     init_framebuffers();
 }
@@ -302,7 +302,7 @@ void raster_pipeline::init_framebuffers()
             state.output_size.y,
             1
         );
-        framebuffers[i] = vkm(*dev, dev->dev.createFramebuffer(framebuffer_info));
+        framebuffers[i] = vkm(*dev, dev->logical.createFramebuffer(framebuffer_info));
     }
 }
 

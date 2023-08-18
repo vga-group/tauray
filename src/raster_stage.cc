@@ -172,18 +172,18 @@ raster_stage::raster_stage(
 
         array_pipelines.back()->update_descriptor_set({
             {"pcf_noise_vector_2d", {
-                pl.default_sampler.get_sampler(dev.index),
-                noise_vector_2d.get_image_view(dev.index),
+                pl.default_sampler.get_sampler(dev.id),
+                noise_vector_2d.get_image_view(dev.id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }},
             {"pcf_noise_vector_3d", {
-                pl.default_sampler.get_sampler(dev.index),
-                noise_vector_3d.get_image_view(dev.index),
+                pl.default_sampler.get_sampler(dev.id),
+                noise_vector_3d.get_image_view(dev.id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }},
             {"brdf_integration", {
-                brdf_integration_sampler.get_sampler(dev.index),
-                brdf_integration.get_image_view(dev.index),
+                brdf_integration_sampler.get_sampler(dev.id),
+                brdf_integration.get_image_view(dev.id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }}
         });
@@ -200,7 +200,7 @@ void raster_stage::update(uint32_t)
     {
         vk::CommandBuffer cb = begin_graphics();
 
-        raster_timer.begin(cb, dev->index, i);
+        raster_timer.begin(cb, dev->id, i);
         size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
@@ -225,11 +225,11 @@ void raster_stage::update(uint32_t)
             {
                 const scene_stage::instance& inst = instances[i];
                 const mesh* m = inst.m;
-                vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->index)};
+                vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->id)};
                 vk::DeviceSize offsets[] = {0};
                 cb.bindVertexBuffers(0, 1, vertex_buffers, offsets);
                 cb.bindIndexBuffer(
-                    m->get_index_buffer(dev->index),
+                    m->get_index_buffer(dev->id),
                     0, vk::IndexType::eUint32
                 );
                 control.instance_id = i;
@@ -240,7 +240,7 @@ void raster_stage::update(uint32_t)
             }
             gfx->end_render_pass(cb);
         }
-        raster_timer.end(cb, dev->index, i);
+        raster_timer.end(cb, dev->id, i);
         end_graphics(cb, i);
     }
 }

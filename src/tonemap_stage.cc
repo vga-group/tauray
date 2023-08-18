@@ -47,7 +47,7 @@ tonemap_stage::tonemap_stage(
     render_target& input,
     std::vector<render_target>& output_frames,
     const options& opt
-):  single_device_stage(dev, stage::COMMAND_BUFFER_PER_FRAME_AND_SWAPCHAIN_IMAGE),
+):  single_device_stage(dev, single_device_stage::COMMAND_BUFFER_PER_FRAME_AND_SWAPCHAIN_IMAGE),
     comp(dev, compute_pipeline::params{
         load_shader_source(opt), {},
         MAX_FRAMES_IN_FLIGHT * (uint32_t)output_frames.size()
@@ -79,7 +79,7 @@ tonemap_stage::tonemap_stage(
         render_target output = output_frames[j];
 
         comp.update_descriptor_set({
-            {"info", {index_data[dev.index], 0, sizeof(tonemap_info_buffer)}},
+            {"info", {index_data[dev.id], 0, sizeof(tonemap_info_buffer)}},
             {"in_color", {{}, input_target.view, vk::ImageLayout::eGeneral}},
             {"out_color", {{}, output.view, vk::ImageLayout::eGeneral}},
             {"output_reorder", {output_reorder_buf, 0, VK_WHOLE_SIZE}}
@@ -93,16 +93,16 @@ tonemap_stage::tonemap_stage(
         input.transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true);
         output.transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true);
 
-        index_data.upload(dev.index, i, cb);
+        index_data.upload(dev.id, i, cb);
         bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
-        tonemap_timer.begin(cb, dev.index, i);
+        tonemap_timer.begin(cb, dev.id, i);
 
         comp.bind(cb, cb_index);
 
         uvec2 wg = (output.size+15u)/16u;
         cb.dispatch(wg.x, wg.y, input.layer_count);
 
-        tonemap_timer.end(cb, dev.index, i);
+        tonemap_timer.end(cb, dev.id, i);
         if(opt.transition_output_layout)
         {
             vk::ImageLayout old_layout = output.layout;

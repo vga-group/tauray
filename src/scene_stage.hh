@@ -38,7 +38,7 @@ public:
     scene_stage(device_mask dev, const options& opt);
 
     void set_scene(scene* target);
-    scene* get_scene() const; // TODO: Remove?
+    scene* get_scene() const;
 
     // Update categories, these are used for checking if individual aspects of
     // the scene have changed. This is needed so that stages can update their

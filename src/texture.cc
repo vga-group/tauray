@@ -49,14 +49,14 @@ void create_tex(
             0, info.mipLevels, 0, VK_REMAINING_ARRAY_LAYERS
         }
     };
-    array_view = vkm(dev, dev.dev.createImageView(view_info));
+    array_view = vkm(dev, dev.logical.createImageView(view_info));
 
     view_info.viewType = base_type;
     for(unsigned i = 0; i < array_layers; ++i)
     {
         view_info.subresourceRange.baseArrayLayer = i;
         view_info.subresourceRange.layerCount = 1;
-        layer_views.emplace_back(dev, dev.dev.createImageView(view_info));
+        layer_views.emplace_back(dev, dev.logical.createImageView(view_info));
     }
 
     view_info.viewType = array_type;
@@ -69,7 +69,7 @@ void create_tex(
         );
         multiview_block_views.emplace_back(
             dev,
-            dev.dev.createImageView(view_info)
+            dev.logical.createImageView(view_info)
         );
     }
 }
@@ -274,7 +274,8 @@ vk::ImageView texture::get_array_image_view(device_id id) const
 }
 
 vk::ImageView texture::get_layer_image_view(
-    uint32_t layer_index, device_id id
+    device_id id,
+    uint32_t layer_index
 ) const
 {
     return buffers[id].layer_views[layer_index];
@@ -282,7 +283,7 @@ vk::ImageView texture::get_layer_image_view(
 
 vk::ImageView texture::get_image_view(device_id id) const
 {
-    return get_layer_image_view(0, id);
+    return get_layer_image_view(id, 0);
 }
 
 vk::Image texture::get_image(device_id id) const
@@ -360,16 +361,16 @@ render_target texture::get_array_render_target(device_id id) const
 }
 
 render_target texture::get_layer_render_target(
-    uint32_t layer_index,
-    device_id id
+    device_id id,
+    uint32_t layer_index
 ) const {
     const auto& buf = buffers[id];
     return render_target(dim, layer_index, 1, buf.img, buf.layer_views[layer_index], layout, fmt, msaa);
 }
 
 render_target texture::get_multiview_block_render_target(
-    uint32_t block_index,
-    device_id id
+    device_id id,
+    uint32_t block_index
 ) const {
     const auto& buf = buffers[id];
     uint32_t block_size = buffers.get_device(id).mv_props.maxMultiviewViewCount;

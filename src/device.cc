@@ -8,7 +8,7 @@ namespace tr
 device_mask::device_mask(): ctx(nullptr), bitmask(0) {}
 
 device_mask::device_mask(device& dev)
-: ctx(dev.ctx), bitmask(1llu << uint64_t(dev.index))
+: ctx(dev.ctx), bitmask(1llu << uint64_t(dev.id))
 {
 }
 

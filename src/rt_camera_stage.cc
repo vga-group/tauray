@@ -120,7 +120,7 @@ void rt_camera_stage::init_descriptors(basic_pipeline& pp)
             TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
             {"distribution", {
-                distribution_data[dev->index], 0, VK_WHOLE_SIZE
+                distribution_data[dev->id], 0, VK_WHOLE_SIZE
             }}
         }, i);
     }
@@ -164,7 +164,7 @@ void rt_camera_stage::record_command_buffer(
 
     if(pass_index == 0)
     {
-        distribution_data.upload(dev->index, frame_index, cb);
+        distribution_data.upload(dev->id, frame_index, cb);
         cb.pipelineBarrier(
             vk::PipelineStageFlagBits::eTopOfPipe,
             vk::PipelineStageFlagBits::eRayTracingShaderKHR,

@@ -54,8 +54,8 @@ void environment_map::generate_alias_table()
     importance_pipeline.bind(cb);
     importance_pipeline.push_descriptors(cb, {
         {"environment", {
-            dev.ctx->get_placeholders().default_sampler.get_sampler(dev.index),
-            get_image_view(dev.index),
+            dev.ctx->get_placeholders().default_sampler.get_sampler(dev.id),
+            get_image_view(dev.id),
             vk::ImageLayout::eShaderReadOnlyOptimal
         }},
         {"importances", {*readback_buffer, 0, VK_WHOLE_SIZE}}

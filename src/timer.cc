@@ -9,7 +9,7 @@ timer::timer(device_mask dev, const std::string& name)
 {
     timer_id.init(dev,
         [&](device& d){
-            return d.ctx->get_timing().register_timer(d.index, name);
+            return d.ctx->get_timing().register_timer(d.id, name);
         }
     );
 }
@@ -23,13 +23,13 @@ timer::timer(timer&& other)
 timer::~timer()
 {
     for(auto[d, timer_id]: timer_id)
-        d.ctx->get_timing().unregister_timer(d.index, timer_id);
+        d.ctx->get_timing().unregister_timer(d.id, timer_id);
 }
 
 timer& timer::operator=(timer&& other)
 {
     for(auto[d, timer_id]: timer_id)
-        d.ctx->get_timing().unregister_timer(d.index, timer_id);
+        d.ctx->get_timing().unregister_timer(d.id, timer_id);
     timer_id = std::move(other.timer_id);
     other.timer_id.clear();
     return *this;

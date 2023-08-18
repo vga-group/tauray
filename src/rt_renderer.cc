@@ -96,12 +96,12 @@ void rt_renderer<Pipeline>::render()
     for(size_t i = 0; i < devices.size(); ++i)
     {
         dependencies device_deps = common_deps;
-        if(i == ctx->get_display_device().index)
+        if(i == ctx->get_display_device().id)
             device_deps.concat(post_processing->get_gbuffer_write_dependencies());
         device_deps = per_device[i].ray_tracer->run(device_deps);
         last_frame_deps.concat(device_deps);
 
-        if(i != display_device.index)
+        if(i != display_device.id)
             display_deps.add(per_device[i].transfer->run(device_deps, frame_index));
         else
         {
@@ -150,11 +150,11 @@ void rt_renderer<Pipeline>::set_device_workloads(const std::vector<double>& rati
             ratio,
             i,
             ctx->get_devices().size(),
-            i == ctx->get_display_device().index
+            i == ctx->get_display_device().id
         );
         cumulative += ratio;
         per_device[i].ray_tracer->reset_distribution_params(r.dist);
-        if(i != display_device.index)
+        if(i != display_device.id)
         {
             // Only the primary device renders in-place, so it's the only device
             // that can actually accumulate samples normally when workload ratio
@@ -231,7 +231,7 @@ void rt_renderer<Pipeline>::init_resources()
     for(device_id id = 0; id < per_device.size(); ++id)
     {
         device& d = ctx->get_devices()[id];
-        bool is_display_device = id == ctx->get_display_device().index;
+        bool is_display_device = id == ctx->get_display_device().id;
         per_device_data& r = per_device[id];
         r.dist = get_device_distribution_params(
             ctx->get_size(),
@@ -254,7 +254,7 @@ void rt_renderer<Pipeline>::init_resources()
             r.gbuffer_copy.add(copy_spec);
         }
 
-        gbuffer_target transfer_target = gbuffer.get_array_target(d.index);
+        gbuffer_target transfer_target = gbuffer.get_array_target(d.id);
         if(use_raster_gbuffer)
         {
             gbuffer_target limited_target;
@@ -279,10 +279,10 @@ void rt_renderer<Pipeline>::init_resources()
         for(size_t i = 0; i < per_device.size(); ++i)
         {
             gbuffer_target dimg;
-            if(i == display_device.index)
-                dimg = gbuffer.get_array_target(display_device.index);
+            if(i == display_device.id)
+                dimg = gbuffer.get_array_target(display_device.id);
             else
-                dimg = per_device[i].gbuffer_copy.get_array_target(display_device.index);
+                dimg = per_device[i].gbuffer_copy.get_array_target(display_device.id);
 
             if(use_raster_gbuffer)
             {
@@ -325,7 +325,7 @@ void rt_renderer<Pipeline>::init_resources()
         std::vector<gbuffer_target> gbuffer_block_targets;
         for(size_t i = 0; i < gbuffer.get_multiview_block_count(); ++i)
         {
-            gbuffer_target mv_target = gbuffer.get_multiview_block_target(display_device.index, i);
+            gbuffer_target mv_target = gbuffer.get_multiview_block_target(display_device.id, i);
             mv_target.color = render_target();
             mv_target.diffuse = render_target();
             mv_target.direct = render_target();
@@ -340,7 +340,7 @@ void rt_renderer<Pipeline>::init_resources()
         }
     }
 
-    gbuffer_target pp_target = gbuffer.get_array_target(display_device.index);
+    gbuffer_target pp_target = gbuffer.get_array_target(display_device.id);
     pp_target.set_layout(vk::ImageLayout::eGeneral);
 
     post_processing->set_display(pp_target);
@@ -354,13 +354,13 @@ void rt_renderer<Pipeline>::prepare_transfers(bool reserve)
 
     for(size_t i = 0; i < per_device.size(); ++i)
     {
-        if(i == display_device.index)
+        if(i == display_device.id)
             continue;
         auto& r = per_device[i];
 
         std::vector<device_transfer_interface::image_transfer> images;
         gbuffer_target target = gbuffer.get_array_target(i);
-        gbuffer_target target_copy = r.gbuffer_copy.get_array_target(display_device.index);
+        gbuffer_target target_copy = r.gbuffer_copy.get_array_target(display_device.id);
 
         for(size_t i = 0; i < MAX_GBUFFER_ENTRIES; ++i)
         {

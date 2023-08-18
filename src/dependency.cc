@@ -89,8 +89,8 @@ uint64_t dependencies::value(device_id id, size_t index) const
 void dependencies::wait(device& dev)
 {
     size_t begin, end;
-    get_range(dev.index, begin, end);
-    (void)dev.dev.waitSemaphores({{}, uint32_t(end-begin), semaphores.data()+begin, values.data()+begin}, UINT64_MAX);
+    get_range(dev.id, begin, end);
+    (void)dev.logical.waitSemaphores({{}, uint32_t(end-begin), semaphores.data()+begin, values.data()+begin}, UINT64_MAX);
 }
 
 vk::TimelineSemaphoreSubmitInfo dependencies::get_timeline_info(device_id id) const

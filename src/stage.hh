@@ -7,7 +7,7 @@ namespace tr
 
 // Stages are steps of the entire rendering pipeline that can be considered
 // separate and reusable modules.
-class stage
+class multi_device_stage
 {
 public:
     enum command_buffer_strategy
@@ -17,10 +17,10 @@ public:
         COMMAND_BUFFER_PER_FRAME_AND_SWAPCHAIN_IMAGE
     };
 
-    stage(device_mask dev, command_buffer_strategy strategy = COMMAND_BUFFER_PER_FRAME);
-    stage(const stage& other) = delete;
-    stage(stage&& other) = delete;
-    virtual ~stage();
+    multi_device_stage(device_mask dev, command_buffer_strategy strategy = COMMAND_BUFFER_PER_FRAME);
+    multi_device_stage(const multi_device_stage& other) = delete;
+    multi_device_stage(multi_device_stage&& other) = delete;
+    virtual ~multi_device_stage();
 
     dependencies run(dependencies deps);
 
@@ -56,12 +56,9 @@ private:
     command_buffer_strategy strategy;
 };
 
-// TODO: Remove the 'using' and straight up rename stage => multi_device_stage
-using multi_device_stage = stage;
-
 // Many stages can only take one device at a time. They should derive from this
 // class. This simplifies their implementation considerably.
-class single_device_stage: public stage
+class single_device_stage: public multi_device_stage
 {
 public:
     single_device_stage(device& dev, command_buffer_strategy strategy = COMMAND_BUFFER_PER_FRAME);

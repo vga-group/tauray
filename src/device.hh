@@ -12,13 +12,10 @@ class context;
 using device_id = unsigned;
 struct device
 {
-    // TODO: rename to id
-    device_id index = 0;
+    device_id id = 0;
     context* ctx = nullptr;
-    // TODO rename to physical
-    vk::PhysicalDevice pdev;
-    // TODO rename to logical
-    vk::Device dev;
+    vk::PhysicalDevice physical;
+    vk::Device logical;
     vk::PhysicalDeviceProperties props;
     vk::PhysicalDeviceSubgroupProperties subgroup_props;
     vk::PhysicalDeviceFeatures feats;

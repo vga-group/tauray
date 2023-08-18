@@ -140,7 +140,7 @@ void progress_tracker::poll_worker(progress_tracker* self)
         {
             size_t steps = d.expected_steps_per_frame * self->opt.expected_frame_count;
             device_total_steps[d.id] += steps;
-            uint64_t finished = devices[d.id].dev.getSemaphoreCounterValue(d.timeline);
+            uint64_t finished = devices[d.id].logical.getSemaphoreCounterValue(d.timeline);
             device_finished_steps[d.id] += finished;
         }
 

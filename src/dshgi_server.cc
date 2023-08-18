@@ -64,7 +64,7 @@ private:
         {
             // Record command buffer
             vk::CommandBuffer cb = begin_compute();
-            stage_timer.begin(cb, dev->index, i);
+            stage_timer.begin(cb, dev->id, i);
 
             for(sh_grid* grid: grids)
             {
@@ -75,7 +75,7 @@ private:
                 uvec3 dim = tex.get_dimensions();
                 transition_image_layout(
                     cb,
-                    tex.get_image(dev->index),
+                    tex.get_image(dev->id),
                     tex.get_format(),
                     vk::ImageLayout::eShaderReadOnlyOptimal,
                     vk::ImageLayout::eTransferSrcOptimal,
@@ -83,7 +83,7 @@ private:
                 );
 
                 cb.copyImageToBuffer(
-                    tex.get_image(dev->index),
+                    tex.get_image(dev->id),
                     vk::ImageLayout::eTransferSrcOptimal,
                     d.staging_buffer,
                     vk::BufferImageCopy{
@@ -95,7 +95,7 @@ private:
                 );
             }
 
-            stage_timer.end(cb, dev->index, i);
+            stage_timer.end(cb, dev->id, i);
             end_compute(cb, i);
         }
     }
@@ -153,7 +153,7 @@ void dshgi_server::render()
         {
             // Make sure we don't overwrite the SH probes while the server is
             // sending them!
-            deps.add({d.index, sender_semaphore, signal_value});
+            deps.add({d.id, sender_semaphore, signal_value});
         }
 
         deps = sh->render(deps);
@@ -274,7 +274,7 @@ void dshgi_server::sender_worker(dshgi_server* s)
             zmsg_send(&msg, socket);
         }
 
-        dev.dev.signalSemaphore({*s->sender_semaphore, deps.value(dev.index, 0)});
+        dev.logical.signalSemaphore({*s->sender_semaphore, deps.value(dev.id, 0)});
     }
     zpoller_destroy(&poller);
     zsock_destroy(&socket);

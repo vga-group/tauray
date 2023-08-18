@@ -53,7 +53,7 @@ looking_glass::~looking_glass()
 void looking_glass::recreate_swapchains()
 {
     device& dev_data = get_display_device();
-    dev_data.dev.waitIdle();
+    dev_data.logical.waitIdle();
 
     deinit_swapchain();
     init_swapchain();
@@ -89,7 +89,7 @@ void looking_glass::setup_cameras(
 uint32_t looking_glass::prepare_next_image(uint32_t frame_index)
 {
     device& d = get_display_device();
-    uint32_t swapchain_index = d.dev.acquireNextImageKHR(
+    uint32_t swapchain_index = d.logical.acquireNextImageKHR(
         swapchain, UINT64_MAX, frame_available[frame_index], {}
     ).value;
     return swapchain_index;
@@ -358,7 +358,7 @@ void looking_glass::init_swapchain()
 {
     device& dev_data = get_display_device();
     std::vector<vk::SurfaceFormatKHR> formats =
-        dev_data.pdev.getSurfaceFormatsKHR(surface);
+        dev_data.physical.getSurfaceFormatsKHR(surface);
 
     // Find the format matching our desired format.
     bool found_format = false;
@@ -385,7 +385,7 @@ void looking_glass::init_swapchain()
 
     // Find the present mode matching our vsync setting.
     std::vector<vk::PresentModeKHR> modes =
-        dev_data.pdev.getSurfacePresentModesKHR(surface);
+        dev_data.physical.getSurfacePresentModesKHR(surface);
     bool found_mode = false;
     vk::PresentModeKHR selected_mode = modes[0];
     if(opt.vsync)
@@ -432,7 +432,7 @@ void looking_glass::init_swapchain()
 
     // Find the size that matches our looking_glass size
     vk::SurfaceCapabilitiesKHR caps =
-        dev_data.pdev.getSurfaceCapabilitiesKHR(surface);
+        dev_data.physical.getSurfaceCapabilitiesKHR(surface);
     vk::Extent2D selected_extent = caps.currentExtent;
     if(caps.currentExtent.width == UINT32_MAX)
     {
@@ -472,7 +472,7 @@ void looking_glass::init_swapchain()
             dev_data.present_family_index
         };
     }
-    swapchain = dev_data.dev.createSwapchainKHR({
+    swapchain = dev_data.logical.createSwapchainKHR({
         {},
         surface,
         image_count,
@@ -492,12 +492,12 @@ void looking_glass::init_swapchain()
     });
 
     // Get swap chain images & create image views
-    auto swapchain_images = dev_data.dev.getSwapchainImagesKHR(swapchain);
+    auto swapchain_images = dev_data.logical.getSwapchainImagesKHR(swapchain);
     for(vk::Image img: swapchain_images)
     {
         window_images.emplace_back(vkm(dev_data, img));
         window_image_views.emplace_back(dev_data,
-            dev_data.dev.createImageView({
+            dev_data.logical.createImageView({
                 {},
                 img,
                 vk::ImageViewType::e2D,
@@ -530,7 +530,7 @@ void looking_glass::init_swapchain()
 
 void looking_glass::deinit_swapchain()
 {
-    vk::Device& dev = get_display_device().dev;
+    vk::Device& dev = get_display_device().logical;
     array_image_views.clear();
     images.clear();
     window_images.clear();

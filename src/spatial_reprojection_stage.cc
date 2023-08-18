@@ -64,19 +64,19 @@ spatial_reprojection_stage::spatial_reprojection_stage(
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         comp.update_descriptor_set({
-            {"camera_data", {camera_data[dev.index], 0, VK_WHOLE_SIZE}},
+            {"camera_data", {camera_data[dev.id], 0, VK_WHOLE_SIZE}},
             {"color_tex", {{}, target_viewport.color.view, vk::ImageLayout::eGeneral}},
             {"normal_tex", {{}, target_viewport.normal.view, vk::ImageLayout::eGeneral}},
             {"position_tex", {{}, target_viewport.pos.view, vk::ImageLayout::eGeneral}}
         }, i);
         vk::CommandBuffer cb = begin_compute();
 
-        stage_timer.begin(cb, dev.index, i);
+        stage_timer.begin(cb, dev.id, i);
 
         target_viewport.color.transition_layout_temporary(
             cb, vk::ImageLayout::eGeneral, true
         );
-        camera_data.upload(dev.index, i, cb);
+        camera_data.upload(dev.id, i, cb);
 
         comp.bind(cb, i);
 
@@ -90,7 +90,7 @@ spatial_reprojection_stage::spatial_reprojection_stage(
         comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, target_viewport.get_layer_count() - control.source_count);
 
-        stage_timer.end(cb, dev.index, i);
+        stage_timer.end(cb, dev.id, i);
         end_compute(cb, i);
     }
 }

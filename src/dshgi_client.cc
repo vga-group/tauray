@@ -84,8 +84,8 @@ protected:
             {
                 // Record command buffer
                 vk::CommandBuffer cb = begin_compute();
-                stage_timer.begin(cb, dev->index, i);
-                blend_infos.upload(dev->index, i, cb);
+                stage_timer.begin(cb, dev->id, i);
+                blend_infos.upload(dev->id, i, cb);
 
                 size_t j = 0;
                 for(sh_grid* grid: grids)
@@ -101,7 +101,7 @@ protected:
                     // Upload new texture
                     transition_image_layout(
                         cb,
-                        new_tex.get_image(dev->index),
+                        new_tex.get_image(dev->id),
                         new_tex.get_format(),
                         vk::ImageLayout::eUndefined,
                         vk::ImageLayout::eTransferDstOptimal,
@@ -110,7 +110,7 @@ protected:
 
                     cb.copyBufferToImage(
                         d.staging_buffer,
-                        new_tex.get_image(dev->index),
+                        new_tex.get_image(dev->id),
                         vk::ImageLayout::eTransferDstOptimal,
                         vk::BufferImageCopy{
                             0, 0, 0,
@@ -122,7 +122,7 @@ protected:
 
                     transition_image_layout(
                         cb,
-                        new_tex.get_image(dev->index),
+                        new_tex.get_image(dev->id),
                         new_tex.get_format(),
                         vk::ImageLayout::eTransferDstOptimal,
                         vk::ImageLayout::eGeneral,
@@ -131,7 +131,7 @@ protected:
 
                     transition_image_layout(
                         cb,
-                        out_tex.get_image(dev->index),
+                        out_tex.get_image(dev->id),
                         out_tex.get_format(),
                         vk::ImageLayout::eUndefined,
                         vk::ImageLayout::eGeneral,
@@ -140,10 +140,10 @@ protected:
 
                     // Blend with temporary texture
                     comp->update_descriptor_set({
-                        {"input_sh", {{}, new_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
-                        {"inout_sh", {{}, tmp_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
-                        {"output_sh", {{}, out_tex.get_image_view(dev->index), vk::ImageLayout::eGeneral}},
-                        {"info", {blend_infos[dev->index], j*sizeof(blend_info), sizeof(blend_info)}}
+                        {"input_sh", {{}, new_tex.get_image_view(dev->id), vk::ImageLayout::eGeneral}},
+                        {"inout_sh", {{}, tmp_tex.get_image_view(dev->id), vk::ImageLayout::eGeneral}},
+                        {"output_sh", {{}, out_tex.get_image_view(dev->id), vk::ImageLayout::eGeneral}},
+                        {"info", {blend_infos[dev->id], j*sizeof(blend_info), sizeof(blend_info)}}
                     }, set_index);
 
                     comp->bind(cb, set_index);
@@ -159,7 +159,7 @@ protected:
 
                     transition_image_layout(
                         cb,
-                        out_tex.get_image(dev->index),
+                        out_tex.get_image(dev->id),
                         out_tex.get_format(),
                         vk::ImageLayout::eGeneral,
                         vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -170,7 +170,7 @@ protected:
                     set_index++;
                 }
 
-                stage_timer.end(cb, dev->index, i);
+                stage_timer.end(cb, dev->id, i);
                 end_compute(cb, i);
             }
         }

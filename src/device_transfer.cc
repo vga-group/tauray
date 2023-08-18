@@ -62,11 +62,11 @@ struct external_semaphore_host_buffer: public device_transfer_interface
                 vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueFd
             );
             sem_info.pNext = &esem_info;
-            f.src_to_host_sem = vkm(from, from.dev.createSemaphore(sem_info));
-            f.external_sem_fd = from.dev.getSemaphoreFdKHR({f.src_to_host_sem});
+            f.src_to_host_sem = vkm(from, from.logical.createSemaphore(sem_info));
+            f.external_sem_fd = from.logical.getSemaphoreFdKHR({f.src_to_host_sem});
 
             f.src_to_host_sem_dst_copy = create_binary_semaphore(to);
-            to.dev.importSemaphoreFdKHR({
+            to.logical.importSemaphoreFdKHR({
                 f.src_to_host_sem_dst_copy, {},
                 vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueFd,
                 f.external_sem_fd
@@ -150,12 +150,12 @@ struct external_semaphore_host_buffer: public device_transfer_interface
             f.src_to_host_cb = create_graphics_command_buffer(*from);
 
             f.src_to_host_cb->begin(vk::CommandBufferBeginInfo{});
-            src_to_host_timer.begin(f.src_to_host_cb, from->index, frame_index);
+            src_to_host_timer.begin(f.src_to_host_cb, from->id, frame_index);
 
             f.host_to_dst_cb = create_graphics_command_buffer(*to);
             f.host_to_dst_cb->begin(vk::CommandBufferBeginInfo{});
 
-            host_to_dst_timer.begin(f.host_to_dst_cb, to->index, frame_index);
+            host_to_dst_timer.begin(f.host_to_dst_cb, to->id, frame_index);
 
             size_t offset = 0;
             for(const image_transfer& t: images)
@@ -242,9 +242,9 @@ struct external_semaphore_host_buffer: public device_transfer_interface
                 offset += get_transfer_size(t);
             }
 
-            src_to_host_timer.end(f.src_to_host_cb, from->index, frame_index);
+            src_to_host_timer.end(f.src_to_host_cb, from->id, frame_index);
             f.src_to_host_cb->end();
-            host_to_dst_timer.end(f.host_to_dst_cb, to->index, frame_index);
+            host_to_dst_timer.end(f.host_to_dst_cb, to->id, frame_index);
             f.host_to_dst_cb->end();
             frame_index++;
         }
@@ -280,8 +280,8 @@ struct external_semaphore_host_buffer: public device_transfer_interface
     {
         timeline++;
         auto& f = frames[frame_index];
-        vk::TimelineSemaphoreSubmitInfo timeline_info = deps.get_timeline_info(from->index);
-        vk::SubmitInfo submit_info = deps.get_submit_info(from->index, timeline_info);
+        vk::TimelineSemaphoreSubmitInfo timeline_info = deps.get_timeline_info(from->id);
+        vk::SubmitInfo submit_info = deps.get_submit_info(from->id, timeline_info);
         submit_info.commandBufferCount = 1;
         submit_info.pCommandBuffers = f.src_to_host_cb.get();
         submit_info.signalSemaphoreCount = 1;
@@ -304,7 +304,7 @@ struct external_semaphore_host_buffer: public device_transfer_interface
         submit_info.pSignalSemaphores = host_to_dst_sem.get();
 
         to->graphics_queue.submit(submit_info, {});
-        return {to->index, host_to_dst_sem, timeline};
+        return {to->id, host_to_dst_sem, timeline};
     }
 };
 

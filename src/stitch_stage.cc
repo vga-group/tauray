@@ -130,7 +130,7 @@ void stitch_stage::record_commands()
     {
         // Record command buffer
         vk::CommandBuffer cb = begin_compute();
-        stitch_timer.begin(cb, dev->index, i);
+        stitch_timer.begin(cb, dev->id, i);
 
         comp.bind(cb, i);
 
@@ -183,7 +183,7 @@ void stitch_stage::record_commands()
             break;
         }
 
-        stitch_timer.end(cb, dev->index, i);
+        stitch_timer.end(cb, dev->id, i);
         end_compute(cb, i);
     }
 }

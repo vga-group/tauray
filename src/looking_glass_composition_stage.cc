@@ -22,7 +22,7 @@ looking_glass_composition_stage::looking_glass_composition_stage(
     render_target& input,
     std::vector<render_target>& output_frames,
     const options& opt
-):  single_device_stage(dev, stage::COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE),
+):  single_device_stage(dev, single_device_stage::COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE),
     comp(dev, compute_pipeline::params{
         {"shader/looking_glass_composition.comp"},
         {},
@@ -41,7 +41,7 @@ looking_glass_composition_stage::looking_glass_composition_stage(
     {
         // Bind descriptors
         comp.update_descriptor_set({
-            {"in_color", {input_sampler.get_sampler(dev.index), input.view, vk::ImageLayout::eShaderReadOnlyOptimal}},
+            {"in_color", {input_sampler.get_sampler(dev.id), input.view, vk::ImageLayout::eShaderReadOnlyOptimal}},
             {"out_color", {{}, output_frames[i].view, vk::ImageLayout::eGeneral}}
         }, i);
 

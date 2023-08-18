@@ -67,10 +67,10 @@ void gpu_buffer::foreach(uint32_t frame_index, size_t entries, F&& f)
     if(buffers.get_mask().size() == 1)
     {
         device& dev = *buffers.get_mask().begin();
-        buffer_data& buf = buffers[dev.index];
+        buffer_data& buf = buffers[dev.id];
 
         if(flags & vk::BufferUsageFlagBits::eUniformBuffer)
-            alignment = calc_buffer_entry_alignment(dev.index, alignment);
+            alignment = calc_buffer_entry_alignment(dev.id, alignment);
 
         char* data = nullptr;
         vkm<vk::Buffer>& staging_buffer = buf.staging[frame_index];
@@ -98,7 +98,7 @@ void gpu_buffer::foreach(uint32_t frame_index, size_t entries, F&& f)
             // requirements :/
             for(auto[dev, buf]: buffers)
             {
-                size_t local_alignment = calc_buffer_entry_alignment(dev.index, alignment);
+                size_t local_alignment = calc_buffer_entry_alignment(dev.id, alignment);
                 char* data = nullptr;
                 vkm<vk::Buffer>& staging_buffer = buf.staging[frame_index];
                 vmaMapMemory(dev.allocator, staging_buffer.get_allocation(), (void**)&data);
@@ -120,7 +120,7 @@ void gpu_buffer::map(uint32_t frame_index, F&& f)
 
     if(buffers.get_mask().size() == 1)
     {
-        map_one<T, F>((*buffers.get_mask().begin()).index, frame_index, std::forward<F>(f));
+        map_one<T, F>((*buffers.get_mask().begin()).id, frame_index, std::forward<F>(f));
     }
     else
     {
@@ -136,7 +136,7 @@ void gpu_buffer::map_one(device_id id, uint32_t frame_index, F&& f)
     if(!*this) return;
 
     device& dev = buffers.get_device(id);
-    buffer_data& buf = buffers[dev.index];
+    buffer_data& buf = buffers[dev.id];
 
     vkm<vk::Buffer>& staging_buffer = buf.staging[frame_index];
     T* data = nullptr;

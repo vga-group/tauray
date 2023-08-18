@@ -32,7 +32,7 @@ void tracing_record::init(unsigned max_timestamps)
             for(size_t j = 0; j < MAX_FRAMES_IN_FLIGHT; ++j)
                 t.timestamp_pools[j] = vkm(
                     devices[i],
-                    devices[i].dev.createQueryPool({
+                    devices[i].logical.createQueryPool({
                         {}, vk::QueryType::eTimestamp, max_timestamps * 2u
                     })
                 );
@@ -46,7 +46,7 @@ void tracing_record::init(unsigned max_timestamps)
         {
            vk::CalibratedTimestampInfoEXT info;
            info.timeDomain = vk::TimeDomainEXT::eDevice;
-           timing_resources[i].device_reference_ns = double(devices[i].dev.getCalibratedTimestampEXT(info).first)*double(devices[i].props.limits.timestampPeriod);
+           timing_resources[i].device_reference_ns = double(devices[i].logical.getCalibratedTimestampEXT(info).first)*double(devices[i].props.limits.timestampPeriod);
         }
     }
 }
@@ -99,7 +99,7 @@ void tracing_record::device_finish_frame()
     {
         timing_data& t = timing_resources[i];
         std::vector<uint64_t> results(max_timestamps*2u);
-        (void)devices[i].dev.getQueryPoolResults(
+        (void)devices[i].logical.getQueryPoolResults(
             t.timestamp_pools[findex],
             0,
             max_timestamps*2u,

@@ -178,7 +178,7 @@ void post_processing_renderer::init_pipelines()
                 msaa
             ));
             if(pingpong_index == 0)
-                out_color = tex->get_array_render_target(dev->index);
+                out_color = tex->get_array_render_target(dev->id);
 
             pingpong_index++;
         }
@@ -193,7 +193,7 @@ void post_processing_renderer::init_pipelines()
         if(pingpong_index == 0)
         {
             // Swap the initial color to second pingpong target
-            out_color = pingpong[1]->get_array_render_target(dev->index);
+            out_color = pingpong[1]->get_array_render_target(dev->id);
         }
         pingpong_index++;
     };

@@ -60,7 +60,7 @@ vk::Buffer gpu_buffer::operator[](device_id id) const
 
 vk::DeviceAddress gpu_buffer::get_address(device_id id) const
 {
-    return buffers.get_device(id).dev.getBufferAddress({*buffers[id].buffer});
+    return buffers.get_device(id).logical.getBufferAddress({*buffers[id].buffer});
 }
 
 void gpu_buffer::update(uint32_t frame_index, const void* data, size_t offset, size_t bytes)

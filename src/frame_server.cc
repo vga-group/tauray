@@ -190,7 +190,7 @@ void frame_server::init_images()
 
         id.copy_cb->end();
 
-        id.copy_fence = vkm(dev_data, dev_data.dev.createFence({}));
+        id.copy_fence = vkm(dev_data, dev_data.logical.createFence({}));
 
         per_image.emplace_back(std::move(id));
     }
@@ -242,8 +242,8 @@ void frame_server::read_image_worker(frame_server* s)
 
         std::vector<uint8_t> latest_frame(s->opt.size.x * s->opt.size.y * 3);
 
-        (void)d.dev.waitForFences(*id.copy_fence, true, UINT64_MAX);
-        d.dev.resetFences(*id.copy_fence);
+        (void)d.logical.waitForFences(*id.copy_fence, true, UINT64_MAX);
+        d.logical.resetFences(*id.copy_fence);
 
         uint8_t* mem = nullptr;
         vmaMapMemory(d.allocator, id.staging_buffer.get_allocation(), (void**)&mem);

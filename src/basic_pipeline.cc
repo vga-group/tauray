@@ -26,7 +26,7 @@ basic_pipeline::basic_pipeline(
         descriptor_set_layout_info.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR;
 
     descriptor_set_layout = vkm(
-        dev, dev.dev.createDescriptorSetLayout(descriptor_set_layout_info)
+        dev, dev.logical.createDescriptorSetLayout(descriptor_set_layout_info)
     );
 
     if(!use_push_descriptors)
@@ -41,7 +41,7 @@ basic_pipeline::basic_pipeline(
         this->push_constant_ranges.data()
     );
 
-    pipeline_layout = vkm(dev, dev.dev.createPipelineLayout(pipeline_layout_info));
+    pipeline_layout = vkm(dev, dev.logical.createPipelineLayout(pipeline_layout_info));
 }
 
 void basic_pipeline::reset_descriptor_sets()
@@ -61,7 +61,7 @@ void basic_pipeline::reset_descriptor_sets()
     }
 
     descriptor_pool = vkm(*dev,
-        dev->dev.createDescriptorPool({
+        dev->logical.createDescriptorPool({
             {}, (uint32_t)descriptor_sets.size(),
             (uint32_t)pool_sizes.size(), pool_sizes.data()
         })
@@ -72,7 +72,7 @@ void basic_pipeline::reset_descriptor_sets()
         vk::DescriptorSetAllocateInfo dset_alloc_info(
             descriptor_pool, 1, descriptor_set_layout
         );
-        vk::Result res = dev->dev.allocateDescriptorSets(
+        vk::Result res = dev->logical.allocateDescriptorSets(
             &dset_alloc_info, &descriptor_sets[i]
         );
         if(res != vk::Result::eSuccess)
@@ -107,12 +107,12 @@ void basic_pipeline::update_descriptor_set(
             if(binding && !dstate.is_empty())
                 writes.push_back(
                     dstate.get_write(
-                        pl, dev->index, descriptor_sets[index],
+                        pl, dev->id, descriptor_sets[index],
                         *binding, buffer_holder, image_holder
                     )
                 );
         }
-        dev->dev.updateDescriptorSets(writes, nullptr);
+        dev->logical.updateDescriptorSets(writes, nullptr);
     }
 }
 
@@ -136,7 +136,7 @@ void basic_pipeline::push_descriptors(
         if(binding && !dstate.is_empty())
             writes.push_back(
                 dstate.get_write(
-                    pl, dev->index, VK_NULL_HANDLE,
+                    pl, dev->id, VK_NULL_HANDLE,
                     *binding, buffer_holder, image_holder
                 )
             );
@@ -196,7 +196,7 @@ void basic_pipeline::load_shader_module(
 ){
     if(src.data.empty()) return;
 
-    vkm<vk::ShaderModule> mod = vkm(*dev, dev->dev.createShaderModule({
+    vkm<vk::ShaderModule> mod = vkm(*dev, dev->logical.createShaderModule({
         {}, src.data.size()*sizeof(uint32_t), src.data.data()
     }));
     stages.push_back({{}, stage, mod, "main", specialization.pData != nullptr ? &specialization : nullptr});

@@ -84,7 +84,7 @@ void envmap_stage::update(uint32_t)
     {
         // Record command buffer
         vk::CommandBuffer cb = begin_graphics();
-        envmap_timer.begin(cb, dev->index, i);
+        envmap_timer.begin(cb, dev->id, i);
 
         size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
@@ -103,7 +103,7 @@ void envmap_stage::update(uint32_t)
 
             gfx->end_render_pass(cb);
         }
-        envmap_timer.end(cb, dev->index, i);
+        envmap_timer.end(cb, dev->id, i);
         end_graphics(cb, i);
     }
 }

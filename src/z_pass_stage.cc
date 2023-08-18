@@ -71,7 +71,7 @@ void z_pass_stage::update(uint32_t)
     {
         // Record command buffer
         vk::CommandBuffer cb = begin_graphics();
-        z_pass_timer.begin(cb, dev->index, i);
+        z_pass_timer.begin(cb, dev->id, i);
 
         size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
@@ -93,11 +93,11 @@ void z_pass_stage::update(uint32_t)
                 if(inst.mat->potentially_transparent())
                     continue;
                 const mesh* m = inst.m;
-                vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->index)};
+                vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->id)};
                 vk::DeviceSize offsets[] = {0};
                 cb.bindVertexBuffers(0, 1, vertex_buffers, offsets);
                 cb.bindIndexBuffer(
-                    m->get_index_buffer(dev->index),
+                    m->get_index_buffer(dev->id),
                     0, vk::IndexType::eUint32
                 );
                 control.instance_id = i;
@@ -108,7 +108,7 @@ void z_pass_stage::update(uint32_t)
             }
             gfx->end_render_pass(cb);
         }
-        z_pass_timer.end(cb, dev->index, i);
+        z_pass_timer.end(cb, dev->id, i);
         end_graphics(cb, i);
     }
 }

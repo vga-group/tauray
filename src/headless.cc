@@ -238,7 +238,7 @@ void headless::init_images()
 
         id.copy_cb->end();
 
-        id.copy_fence = vkm(dev_data, dev_data.dev.createFence({}));
+        id.copy_fence = vkm(dev_data, dev_data.logical.createFence({}));
 
         per_image.emplace_back(std::move(id));
     }
@@ -288,8 +288,8 @@ void headless::save_image(uint32_t swapchain_index)
     per_image_data& id = per_image[swapchain_index];
     if(!id.copy_ongoing) return;
 
-    (void)d.dev.waitForFences(*id.copy_fence, true, UINT64_MAX);
-    d.dev.resetFences(*id.copy_fence);
+    (void)d.logical.waitForFences(*id.copy_fence, true, UINT64_MAX);
+    d.logical.resetFences(*id.copy_fence);
 
     // Map memory, save images
     float* all_mem = nullptr;
@@ -417,7 +417,7 @@ void headless::save_image(uint32_t swapchain_index)
         // Saving these is similiar enough and they both use stbi_write_*.
         // Implementations can be separated in the future if they diverge.
         else if(
-            opt.output_file_type == headless::PNG || 
+            opt.output_file_type == headless::PNG ||
             opt.output_file_type == headless::BMP
         ){
             filename += opt.output_file_type == headless::PNG ? ".png" : ".bmp";
@@ -537,8 +537,8 @@ void headless::view_image(uint32_t swapchain_index)
     per_image_data& id = per_image[swapchain_index];
     if(!id.copy_ongoing) return;
 
-    (void)d.dev.waitForFences(*id.copy_fence, true, UINT64_MAX);
-    d.dev.resetFences(*id.copy_fence);
+    (void)d.logical.waitForFences(*id.copy_fence, true, UINT64_MAX);
+    d.logical.resetFences(*id.copy_fence);
 
     uint8_t* mem = nullptr;
     SDL_LockSurface(display_surface);

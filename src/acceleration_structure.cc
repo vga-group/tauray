@@ -30,7 +30,7 @@ bottom_level_acceleration_structure::bottom_level_acceleration_structure(
     for(device& d: dev)
     {
         vk::CommandBuffer cb = begin_command_buffer(d);
-        rebuild(d.index, 0, cb, entries, false);
+        rebuild(d.id, 0, cb, entries, false);
         end_command_buffer(d, cb);
     }
 }
@@ -82,11 +82,11 @@ void bottom_level_acceleration_structure::rebuild(
             geom.geometryType = vk::GeometryTypeKHR::eTriangles;
             geom.geometry = vk::AccelerationStructureGeometryTrianglesDataKHR(
                 vk::Format::eR32G32B32Sfloat,
-                dev.dev.getBufferAddress({m->get_vertex_buffer(id)}),
+                dev.logical.getBufferAddress({m->get_vertex_buffer(id)}),
                 sizeof(mesh::vertex),
                 m->get_vertices().size()-1,
                 vk::IndexType::eUint32,
-                dev.dev.getBufferAddress({m->get_index_buffer(id)}),
+                dev.logical.getBufferAddress({m->get_index_buffer(id)}),
                 transform_address
             );
             uint32_t triangle_count = m->get_indices().size()/3;
@@ -132,7 +132,7 @@ void bottom_level_acceleration_structure::rebuild(
     if(!*bd.blas)
     {
         // Need to calculate BLAS size.
-        vk::AccelerationStructureBuildSizesInfoKHR size_info = dev.dev.getAccelerationStructureBuildSizesKHR(
+        vk::AccelerationStructureBuildSizesInfoKHR size_info = dev.logical.getAccelerationStructureBuildSizesKHR(
             vk::AccelerationStructureBuildTypeKHR::eDevice, blas_info, primitive_count
         );
         vk::BufferCreateInfo scratch_info(
@@ -163,7 +163,7 @@ void bottom_level_acceleration_structure::rebuild(
             vk::AccelerationStructureTypeKHR::eBottomLevel,
             {}
         );
-        bd.blas = vkm(dev, dev.dev.createAccelerationStructureKHR(create_info));
+        bd.blas = vkm(dev, dev.logical.createAccelerationStructureKHR(create_info));
     }
     blas_info.srcAccelerationStructure = update ? *bd.blas : VK_NULL_HANDLE;
     blas_info.dstAccelerationStructure = bd.blas;
@@ -177,7 +177,7 @@ void bottom_level_acceleration_structure::rebuild(
     {
         initial_cb = begin_command_buffer(dev);
         transform_buffer.upload(id, frame_index, initial_cb);
-        query_pool = vkm(dev, dev.dev.createQueryPool({
+        query_pool = vkm(dev, dev.logical.createQueryPool({
             {},
             vk::QueryType::eAccelerationStructureCompactedSizeKHR,
             1,
@@ -209,7 +209,7 @@ void bottom_level_acceleration_structure::rebuild(
         // VkDeviceSize (uint64_t). We need to make sure that the size is
         // zero-initialized to avoid the higher 32 bits breaking everything.
         vk::DeviceSize compact_size = 0;
-        (void)dev.dev.getQueryPoolResults(
+        (void)dev.logical.getQueryPoolResults(
             query_pool, 0, 1,
             sizeof(vk::DeviceSize),
             &compact_size,
@@ -237,7 +237,7 @@ void bottom_level_acceleration_structure::rebuild(
             {}
         );
 
-        bd.blas = vkm(dev, dev.dev.createAccelerationStructureKHR(create_info));
+        bd.blas = vkm(dev, dev.logical.createAccelerationStructureKHR(create_info));
         blas_info.dstAccelerationStructure = bd.blas;
 
         cb.copyAccelerationStructureKHR({
@@ -254,7 +254,7 @@ void bottom_level_acceleration_structure::rebuild(
         transform_buffer.upload(id, frame_index, cb);
         cb.buildAccelerationStructuresKHR({blas_info}, range_ptr);
     }
-    bd.blas_address = dev.dev.getAccelerationStructureAddressKHR({bd.blas});
+    bd.blas_address = dev.logical.getAccelerationStructureAddressKHR({bd.blas});
 }
 
 size_t bottom_level_acceleration_structure::get_updates_since_rebuild() const
@@ -302,7 +302,7 @@ top_level_acceleration_structure::top_level_acceleration_structure(
         vk::AccelerationStructureGeometryKHR geom(
             VULKAN_HPP_NAMESPACE::GeometryTypeKHR::eInstances,
             vk::AccelerationStructureGeometryInstancesDataKHR{
-                VK_FALSE, instance_buffer.get_address(dev.index)
+                VK_FALSE, instance_buffer.get_address(dev.id)
             }
         );
 
@@ -318,7 +318,7 @@ top_level_acceleration_structure::top_level_acceleration_structure(
         );
 
         vk::AccelerationStructureBuildSizesInfoKHR size_info =
-            dev.dev.getAccelerationStructureBuildSizesKHR(
+            dev.logical.getAccelerationStructureBuildSizesKHR(
                 vk::AccelerationStructureBuildTypeKHR::eDevice, tlas_info, {(uint32_t)capacity}
             );
 
@@ -338,7 +338,7 @@ top_level_acceleration_structure::top_level_acceleration_structure(
             vk::AccelerationStructureTypeKHR::eTopLevel,
             {}
         );
-        bd.tlas = vkm(dev, dev.dev.createAccelerationStructureKHR(create_info));
+        bd.tlas = vkm(dev, dev.logical.createAccelerationStructureKHR(create_info));
         tlas_info.dstAccelerationStructure = bd.tlas;
 
         vk::BufferCreateInfo scratch_info(
@@ -353,7 +353,7 @@ top_level_acceleration_structure::top_level_acceleration_structure(
             dev.as_props.minAccelerationStructureScratchOffsetAlignment
         );
         tlas_info.scratchData = bd.scratch_buffer.get_address();
-        bd.tlas_address = dev.dev.getAccelerationStructureAddressKHR({bd.tlas});
+        bd.tlas_address = dev.logical.getAccelerationStructureAddressKHR({bd.tlas});
     }
 }
 
