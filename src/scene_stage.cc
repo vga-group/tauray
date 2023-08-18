@@ -1111,52 +1111,6 @@ void scene_stage::update(uint32_t frame_index)
     );
     if(force_instance_refresh_frames > 0) force_instance_refresh_frames--;
 
-    const std::vector<point_light*>& point_lights = cur_scene->get_point_lights();
-    const std::vector<spotlight*>& spotlights = cur_scene->get_spotlights();
-    const std::vector<directional_light*>& directional_lights =
-        cur_scene->get_directional_lights();
-
-    size_t point_light_count = point_lights.size() + spotlights.size();
-    lights_outdated |= point_light_data.resize(sizeof(point_light_entry) * point_light_count);
-    point_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
-        point_light_entry* point_light_data =
-            reinterpret_cast<point_light_entry*>(light_data);
-
-        size_t i = 0;
-        for(size_t j = 0; j < point_lights.size(); ++j)
-        {
-            const point_light& pl = *point_lights[j];
-            point_light_entry pe = point_light_entry(pl, get_shadow_map_index(&pl));
-            point_light_data[i] = pe;
-            ++i;
-        }
-        for(size_t j = 0; j < spotlights.size(); ++j)
-        {
-            const spotlight& sl = *spotlights[j];
-            point_light_entry pe = point_light_entry(sl, get_shadow_map_index(&sl));
-            point_light_data[i] = pe;
-            ++i;
-        }
-    });
-
-    lights_outdated |= directional_light_data.resize(sizeof(directional_light_entry) * cur_scene->get_directional_lights().size());
-    directional_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
-        directional_light_entry* directional_light_data =
-            reinterpret_cast<directional_light_entry*>(light_data);
-
-        // Punctual directional lights
-        for(size_t i = 0; i < directional_lights.size(); ++i)
-        {
-            const directional_light& dl = *directional_lights[i];
-            directional_light_data[i] = directional_light_entry(dl, get_shadow_map_index(&dl));
-        }
-    });
-
-    if(opt.gather_emissive_triangles)
-        lights_outdated |= tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
-    else
-        tri_light_data.resize(0);
-
     const std::vector<sh_grid*>& sh_grids = cur_scene->get_sh_grids();
     sh_grid_data.resize(sizeof(sh_grid_buffer) * sh_grids.size());
     sh_grid_data.foreach<sh_grid_buffer>(
@@ -1308,6 +1262,53 @@ void scene_stage::update(uint32_t frame_index)
             }
         });
     }
+
+    const std::vector<point_light*>& point_lights = cur_scene->get_point_lights();
+    const std::vector<spotlight*>& spotlights = cur_scene->get_spotlights();
+    const std::vector<directional_light*>& directional_lights =
+        cur_scene->get_directional_lights();
+
+    size_t point_light_count = point_lights.size() + spotlights.size();
+    lights_outdated |= point_light_data.resize(sizeof(point_light_entry) * point_light_count);
+    point_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
+        point_light_entry* point_light_data =
+            reinterpret_cast<point_light_entry*>(light_data);
+
+        size_t i = 0;
+        for(size_t j = 0; j < point_lights.size(); ++j)
+        {
+            const point_light& pl = *point_lights[j];
+            point_light_entry pe = point_light_entry(pl, get_shadow_map_index(&pl));
+            point_light_data[i] = pe;
+            ++i;
+        }
+        for(size_t j = 0; j < spotlights.size(); ++j)
+        {
+            const spotlight& sl = *spotlights[j];
+            point_light_entry pe = point_light_entry(sl, get_shadow_map_index(&sl));
+            point_light_data[i] = pe;
+            ++i;
+        }
+    });
+
+    lights_outdated |= directional_light_data.resize(sizeof(directional_light_entry) * cur_scene->get_directional_lights().size());
+    directional_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
+        directional_light_entry* directional_light_data =
+            reinterpret_cast<directional_light_entry*>(light_data);
+
+        // Punctual directional lights
+        for(size_t i = 0; i < directional_lights.size(); ++i)
+        {
+            const directional_light& dl = *directional_lights[i];
+            directional_light_data[i] = directional_light_entry(dl, get_shadow_map_index(&dl));
+        }
+    });
+
+    if(opt.gather_emissive_triangles)
+        lights_outdated |= tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
+    else
+        tri_light_data.resize(0);
+
     scene_metadata.map<scene_metadata_buffer>(
         frame_index, [&](scene_metadata_buffer* data){
             data->point_light_count = point_lights.size() + spotlights.size();
