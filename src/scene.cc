@@ -1,6 +1,6 @@
 #include "scene.hh"
 #include "camera.hh"
-#include "mesh_object.hh"
+#include "model.hh"
 #include "light.hh"
 #include "sh_grid.hh"
 #include "shadow_map.hh"
@@ -66,9 +66,8 @@ std::vector<uint32_t> get_viewport_reorder_mask(
 size_t get_instance_count(scene& s)
 {
     size_t total = 0;
-    s.foreach([&](mesh_object& o){
-        const model* m = o.get_model();
-        if(m) total += m->group_count();
+    s.foreach([&](transformable&, model& mod){
+        total += mod.group_count();
     });
     return total;
 }
@@ -79,10 +78,8 @@ size_t get_sampler_count(scene& s)
         combined_tex_sampler, combined_tex_sampler_hash
     > samplers;
 
-    s.foreach([&](mesh_object& o){
-        const model* m = o.get_model();
-        if(!m) return;
-        for(const auto& group: *m)
+    s.foreach([&](model& mod){
+        for(const auto& group: mod)
         {
             samplers.insert(group.mat.albedo_tex);
             samplers.insert(group.mat.metallic_roughness_tex);
@@ -153,10 +150,13 @@ void auto_assign_shadow_maps(
 void track_shadow_maps(scene& s)
 {
     std::vector<camera*> cameras;
-    s.foreach([&](camera& c){ cameras.push_back(&c); });
+    std::vector<transformable*> camera_transforms;
+    s.foreach([&](transformable& t, camera& c){
+        cameras.push_back(&c); camera_transforms.push_back(&t);
+    });
     if(cameras.size() == 0) return;
-    s.foreach([&](directional_light& dl, directional_shadow_map& dsm){
-        dsm.track_cameras(dl.get_global_transform(), cameras);
+    s.foreach([&](transformable& t, directional_shadow_map& dsm){
+        dsm.track_cameras(t.get_global_transform(), cameras, camera_transforms);
     });
 }
 
@@ -166,14 +166,14 @@ sh_grid* get_sh_grid(scene& s, vec3 pos, int* index)
     float densest = 0.0f;
     entity best = INVALID_ENTITY;
     int cur_index = 0;
-    s.foreach([&](entity id, sh_grid& g){
-        float distance = g.point_distance(pos);
+    s.foreach([&](entity id, transformable& self, sh_grid& g){
+        float distance = g.point_distance(self, pos);
         if(distance >= 0 && distance <= closest_distance)
         {
             closest_distance = distance;
             if(distance == 0)
             {
-                float density = g.calc_density();
+                float density = g.calc_density(self);
                 if(density > densest)
                 {
                     densest = density;
@@ -197,8 +197,8 @@ sh_grid* get_largest_sh_grid(scene& s, int* index)
     float largest = 0.0f;
     entity best = INVALID_ENTITY;
     int cur_index = 0;
-    s.foreach([&](entity id, sh_grid& g){
-        float volume = g.calc_volume();
+    s.foreach([&](entity id, transformable& self, sh_grid& g){
+        float volume = g.calc_volume(self);
         if(volume > largest)
         {
             largest = volume;
@@ -216,17 +216,10 @@ void play(
     bool loop,
     bool use_fallback
 ){
-    auto play_handler = [&](animated_node* n){
-        n->play(name, loop, use_fallback);
-    };
-
-    s.foreach([&](camera& a){ play_handler(&a); });
-    s.foreach([&](animated_node& a){ play_handler(&a); });
-    s.foreach([&](point_light& a){ play_handler(&a); });
-    s.foreach([&](spotlight& a){ play_handler(&a); });
-    s.foreach([&](directional_light& a){ play_handler(&a); });
-    s.foreach([&](mesh_object& a){ if(!a.is_static()) play_handler(&a); });
-
+    s.foreach([&](transformable& t, animated& a){
+        if(!t.is_static())
+            a.play(name, loop, use_fallback);
+    });
     s.emit(animation_update_event{true, 0});
 }
 
@@ -236,12 +229,7 @@ void update(scene& s, time_ticks dt, bool force_update)
 
     if(dt > 0 || force_update)
     {
-        s.foreach([&](camera& a){ a.update(dt); });
-        s.foreach([&](animated_node& a){ a.update(dt); });
-        s.foreach([&](point_light& a){ a.update(dt); });
-        s.foreach([&](spotlight& a){ a.update(dt); });
-        s.foreach([&](directional_light& a){ a.update(dt); });
-        s.foreach([&](mesh_object& a){ if(!a.is_static()) a.update(dt); });
+        s.foreach([&](transformable& t, animated& a){ a.update(t, dt); });
     }
     s.emit(animation_update_event{false, dt});
 }
@@ -249,33 +237,21 @@ void update(scene& s, time_ticks dt, bool force_update)
 bool is_playing(scene& s)
 {
     bool playing = false;
-    auto check_playing = [&](animated_node* n){
-        if(n->is_playing()) playing = true;
-    };
-
-    s.foreach([&](camera& a){ check_playing(&a); });
-    s.foreach([&](animated_node& a){ check_playing(&a); });
-    s.foreach([&](point_light& a){ check_playing(&a); });
-    s.foreach([&](spotlight& a){ check_playing(&a); });
-    s.foreach([&](directional_light& a){ check_playing(&a); });
-    s.foreach([&](mesh_object& a){ if(!a.is_static()) check_playing(&a); });
-
+    s.foreach([&](transformable& t, animated& a){
+        if(!t.is_static() && a.is_playing()) playing = true;
+    });
     return playing;
 }
 
 void set_animation_time(scene& s, time_ticks dt)
 {
-    auto reset_handler = [&](animated_node* n){
-        n->restart();
-        n->update(dt);
-    };
-    s.foreach([&](camera& a){ reset_handler(&a); });
-    s.foreach([&](animated_node& a){ reset_handler(&a); });
-    s.foreach([&](point_light& a){ reset_handler(&a); });
-    s.foreach([&](spotlight& a){ reset_handler(&a); });
-    s.foreach([&](directional_light& a){ reset_handler(&a); });
-    s.foreach([&](mesh_object& a){ reset_handler(&a); });
-
+    s.foreach([&](transformable& t, animated& a){
+        if(!t.is_static())
+        {
+            a.restart();
+            a.update(t, dt);
+        }
+    });
     s.emit(animation_update_event{true, dt});
 }
 

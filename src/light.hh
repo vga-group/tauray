@@ -5,14 +5,13 @@
 
 namespace tr
 {
-class camera_node;
 
 struct ambient_light
 {
     vec3 color;
 };
 
-class light: public animated_node
+class light
 {
 public:
     light(vec3 color = vec3(1.0));
@@ -28,7 +27,6 @@ class directional_light: public light
 {
 public:
     directional_light(
-        vec3 direction = vec3(0,-1,0),
         vec3 color = vec3(1.0),
         float angle = 0.0f
     );

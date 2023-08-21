@@ -145,6 +145,7 @@ private:
     std::vector<vkm<vk::Semaphore>> window_frame_available;
     std::vector<vkm<vk::Semaphore>> window_frame_finished;
     std::vector<camera*> cameras;
+    std::vector<transformable*> camera_transforms;
 };
 
 }

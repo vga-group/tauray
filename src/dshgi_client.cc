@@ -297,8 +297,9 @@ bool dshgi_client::refresh()
     {
         if(lg.id == INVALID_ENTITY)
         {
-            lg.id = cur_scene->add(sh_grid());
+            lg.id = cur_scene->add(sh_grid(), transformable());
             lg.grid = cur_scene->get<sh_grid>(lg.id);
+            lg.transform = cur_scene->get<transformable>(lg.id);
         }
         kept_ids.insert(lg.id);
     }
@@ -316,6 +317,7 @@ bool dshgi_client::refresh()
         {
             reset = true;
             *lg.grid = *rg.grid;
+            *lg.transform = *rg.transform;
         }
         lg.data_updated |= rg.data_updated;
         rg.data_updated = false;
@@ -421,7 +423,7 @@ void dshgi_client::receiver_worker(dshgi_client* s)
                 gd.topo_changed = true;
             }
             gd.grid->set_radius(order);
-            gd.grid->set_transform(transform);
+            gd.transform->set_transform(transform);
             if(gd.grid->get_resolution() != uvec3(res))
             {
                 gd.grid->set_resolution(res);

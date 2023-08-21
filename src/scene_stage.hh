@@ -2,9 +2,9 @@
 #define TAURAY_SCENE_STAGE_HH
 #include "scene.hh"
 #include "mesh.hh"
-#include "mesh_object.hh"
 #include "stage.hh"
 #include "light.hh"
+#include "model.hh"
 #include "compute_pipeline.hh"
 #include "radix_sort.hh"
 #include "sampler_table.hh"
@@ -62,7 +62,7 @@ public:
         mat4 normal_transform;
         const material* mat;
         const mesh* m;
-        const mesh_object* o;
+        const model* mod;
         uint64_t last_refresh_frame;
     };
     const std::vector<instance>& get_instances() const;
@@ -89,14 +89,19 @@ public:
         float min_bias;
         float max_bias;
         vec2 radius;
-        std::vector<camera> faces;
+        struct cam_transform
+        {
+            camera cam;
+            mat4 transform;
+        };
+        std::vector<cam_transform> faces;
         struct cascade
         {
             unsigned atlas_index;
             vec2 offset;
             float scale;
             float bias_scale;
-            camera cam;
+            cam_transform cam;
         };
         std::vector<cascade> cascades;
     };
@@ -216,6 +221,7 @@ private:
     std::unordered_map<sh_grid*, texture> sh_grid_textures;
 
     std::optional<top_level_acceleration_structure> tlas;
+    std::optional<event_subscription> events[10];
 
     //==========================================================================
     // Pipelines

@@ -112,17 +112,10 @@ void set_camera_params(const options& opt, scene& s)
 
 void apply_transform(scene& s, const mat4& transform)
 {
-    auto apply_transform = [&](transformable& node, const mat4& transform)
-    {
-        if(node.get_parent() == nullptr)
-            node.set_transform(node.get_transform() * transform);
-    };
-    s.foreach([&](mesh_object& t){ apply_transform(t, transform); });
-    s.foreach([&](directional_light& t){ apply_transform(t, transform); });
-    s.foreach([&](point_light& t){ apply_transform(t, transform); });
-    s.foreach([&](spotlight& t){ apply_transform(t, transform); });
-    s.foreach([&](sh_grid& t){ apply_transform(t, transform); });
-    s.foreach([&](animated_node& t){ apply_transform(t, transform); });
+    s.foreach([&](transformable& t){
+        if(t.get_parent() == nullptr)
+            t.set_transform(t.get_transform() * transform);
+    });
 }
 
 scene_data load_scenes(context& ctx, const options& opt)
@@ -238,10 +231,13 @@ scene_data load_scenes(context& ctx, const options& opt)
         if(first)
         { // Still no camera, so just add one arbitrarily.
             camera cam;
-            cam.set_position(vec3(0,0,2));
             cam.perspective(90, opt.width/(float)opt.height, 0.1f, 300.0f);
 
-            data.s->add(std::move(cam), camera_metadata{true, 0, true});
+            data.s->add(
+                std::move(cam),
+                transformable(vec3(0,0,2)),
+                camera_metadata{true, 0, true}
+            );
 
             TR_WARN(
                 "Warning: no camera is defined in the scene, so a default "
@@ -368,11 +364,10 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     bool has_tri_lights = false;
     bool has_point_lights = s.count<point_light>() + s.count<spotlight>() > 0;
     bool has_directional_lights = s.count<directional_light>() > 0;
-    s.foreach([&](mesh_object& o){
-        if(o.get_shadow_terminator_offset() > 0.0f)
+    s.foreach([&](model& mod){
+        if(mod.get_shadow_terminator_offset() > 0.0f)
             use_shadow_terminator_fix = true;
-        const model* m = o.get_model();
-        if(m) for(const model::vertex_group& vg: *m)
+        for(const model::vertex_group& vg: mod)
         {
             if(vg.mat.emission_factor != vec3(0))
                 has_tri_lights = true;
@@ -663,7 +658,7 @@ std::vector<entity> generate_cameras(entity cam_id, scene& s, options& opt, bool
     float width = (opt.camera_grid.w-1)*opt.camera_grid.x;
     float height = (opt.camera_grid.h-1)*opt.camera_grid.y;
 
-    transformable& tracked = *s.get<camera>(cam_id);
+    transformable& tracked = *s.get<transformable>(cam_id);
     camera& parent_cam = *s.get<camera>(cam_id);
 
     vec2 fov = vec2(parent_cam.get_hfov(), parent_cam.get_vfov());
@@ -678,7 +673,8 @@ std::vector<entity> generate_cameras(entity cam_id, scene& s, options& opt, bool
     for(int y = 0; y < opt.camera_grid.h; ++y)
     for(int x = 0; x < opt.camera_grid.w; ++x)
     {
-        camera cam(&tracked);
+        transformable cam_transform(&tracked);
+        camera cam;
         cam.copy_projection(parent_cam);
         vec3 grid_pos = grid_rotation * vec3(
             -width*0.5f + x*opt.camera_grid.x,
@@ -686,10 +682,11 @@ std::vector<entity> generate_cameras(entity cam_id, scene& s, options& opt, bool
             0
         );
         vec2 pan = -vec2(grid_pos.x, grid_pos.y)/(tfov * opt.camera_recentering_distance);
-        cam.set_position(grid_pos + opt.camera_offset);
+        cam_transform.set_position(grid_pos + opt.camera_offset);
         cam.set_pan(pan);
         res.push_back(s.add(
             std::move(cam),
+            std::move(cam_transform),
             camera_metadata{enable_by_default, int(res.size()), false}
         ));
     }
@@ -708,12 +705,9 @@ void show_stats(scene& s, options& opt)
     std::cout << "\nScene statistics: \n";
 
     std::set<const mesh*> meshes;
-    s.foreach([&](mesh_object& mo){
-        if(mo.get_model())
-        {
-            for(const model::vertex_group& vg: *mo.get_model())
-                meshes.insert(vg.m);
-        }
+    s.foreach([&](model& mod){
+        for(const model::vertex_group& vg: mod)
+            meshes.insert(vg.m);
     });
     std::cout << "Number of unique meshes = " << meshes.size() << std::endl;
     std::cout << "Number of mesh instances = " << get_instance_count(s) << std::endl;
@@ -722,14 +716,14 @@ void show_stats(scene& s, options& opt)
     //Calculating the number of triangles and dynamic objects
     uint32_t triangle_count = 0;
     uint32_t dyn_obj_count = 0;
-    s.foreach([&](mesh_object& mo){
-        for(auto& group: *mo.get_model())
+    s.foreach([&](transformable& t, model& mod){
+        for(auto& group: mod)
             triangle_count += group.m->get_indices().size() / 3;
-        dyn_obj_count += mo.is_static() ? 0:1;
+        dyn_obj_count += t.is_static() ? 0:1;
     });
     std::cout << "Number of triangles = " << triangle_count << std::endl;
 
-    uint32_t objects_count = s.count<mesh_object>();
+    uint32_t objects_count = s.count<model>();
     std::cout << "\nNumber of objects = " <<  objects_count << std::endl;
     std::cout << "Static objects = " << objects_count - dyn_obj_count << std::endl;
     std::cout << "Dynamic objects = " << dyn_obj_count << std::endl;
@@ -747,17 +741,17 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
     load_balancer lb(ctx, opt.workload);
 
     entity cam_id = INVALID_ENTITY;
-    s.foreach([&](entity id, camera& cam, camera_metadata& md){
+    s.foreach([&](entity id, transformable& cam_t, animated* cam_a, camera_metadata& md){
         if(md.enabled)
         {
             cam_id = id;
-            cam.set_parent(nullptr, true);
-            cam.stop();
+            cam_t.set_parent(nullptr, true);
+            if(cam_a)
+                cam_a->stop();
         }
     });
 
-    camera* cam = s.get<camera>(cam_id);
-    transformable* cam_transform = cam;
+    transformable* cam = s.get<transformable>(cam_id);
 
     std::vector<entity> cameras = generate_cameras(cam_id, s, opt, false);
     if(cameras.size() != 0)
@@ -766,7 +760,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
     std::unique_ptr<renderer> rr;
 
     float speed = 1.0f;
-    vec3 euler = cam_transform->get_orientation_euler();
+    vec3 euler = cam->get_orientation_euler();
     float pitch = euler.x;
     float yaw = euler.y;
     float roll = euler.z;
@@ -865,8 +859,8 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                 if(event.key.keysym.sym == SDLK_0)
                 {
                     // Full camera reset, for when you get lost ;)
-                    cam_transform->set_global_position();
-                    cam_transform->set_global_orientation();
+                    cam->set_global_position();
+                    cam->set_global_orientation();
                     camera_moved = true;
                 }
                 if(event.key.keysym.sym == SDLK_F1)
@@ -939,8 +933,8 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
             camera_movement = clamp(camera_movement, ivec3(-1), ivec3(1));
             if(camera_movement != ivec3(0))
                 camera_moved = true;
-            cam_transform->translate_local(vec3(camera_movement)*delta*speed);
-            cam_transform->set_orientation(pitch, yaw, roll);
+            cam->translate_local(vec3(camera_movement)*delta*speed);
+            cam->set_orientation(pitch, yaw, roll);
         }
 
         if(camera_moved || !opt.accumulation)
@@ -1001,16 +995,11 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
     load_balancer lb(ctx, opt.workload);
 
     entity cam_id = INVALID_ENTITY;
-    s.foreach([&](entity id, camera& cam, camera_metadata& md){
-        if(md.enabled)
-        {
-            cam_id = id;
-            cam.set_parent(nullptr, true);
-            cam.stop();
-        }
+    s.foreach([&](entity id, camera_metadata& md){
+        if(md.enabled) cam_id = id;
     });
 
-    camera* cam = s.get<camera>(cam_id);
+    transformable* cam = s.get<transformable>(cam_id);
 
     std::vector<camera_log> camera_logs;
     std::vector<entity> cameras = generate_cameras(cam_id, s, opt, true);
@@ -1022,9 +1011,9 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
             lkg->setup_cameras(s, cam);
     }
 
-    s.foreach([&](camera& cam, camera_metadata& md){
+    s.foreach([&](transformable& t, camera& cam, camera_metadata& md){
         if(md.enabled)
-            camera_logs.emplace_back(&cam);
+            camera_logs.emplace_back(&t, &cam);
     });
 
     s.foreach([&](camera_metadata& md){

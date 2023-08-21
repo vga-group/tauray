@@ -1,7 +1,6 @@
 #include "assimp.hh"
 #include "log.hh"
 #include "model.hh"
-#include "mesh_object.hh"
 #include "stb_image.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -386,11 +385,11 @@ scene_assets load_assimp(device_mask dev, scene& s, const std::string& path)
         m.add_vertex_group(mat, out_mesh);
 
         std::string name = ai_mesh->mName.C_Str();
-        model& mod = add_unique_named(s, name, std::move(m));
 
         // Mesh is loaded, still need to an object for it
-        mesh_object& obj = add_unique_named(s, name, mesh_object{});
-        obj.set_model(&mod);
+        entity id;
+        add_unique_named(s, name, transformable{}, &id);
+        s.attach(id, std::move(m));
     }
 
     for(auto& m: md.meshes)

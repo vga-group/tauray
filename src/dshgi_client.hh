@@ -48,6 +48,7 @@ private:
         bool data_updated = true;
         entity id = INVALID_ENTITY;
         sh_grid* grid = nullptr;
+        transformable* transform = nullptr;
         std::vector<uint8_t> data;
     };
     std::vector<sh_grid_data> remote_grids;

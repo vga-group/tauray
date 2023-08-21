@@ -5,7 +5,6 @@
 #include "camera.hh"
 #include "light.hh"
 #include "sh_grid.hh"
-#include "mesh_object.hh"
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #include "tiny_gltf.h"
 #include "stb_image.h"
@@ -286,9 +285,9 @@ struct skin
     std::vector<int> joints;
     std::vector<mat4> inverse_bind_matrices;
     std::unordered_map<int, int> node_index_to_skin_index;
-    std::vector<animated_node*> joint_nodes;
+    std::vector<transformable*> joint_nodes;
     std::unordered_set<model*> related_models;
-    animated_node* root_node = nullptr;
+    transformable* root_node = nullptr;
 
     std::vector<model::joint_data> build_joint_data() const
     {
@@ -328,8 +327,6 @@ void load_gltf_node(
     bool static_lock
 ){
     tinygltf::Node& node = model.nodes[node_index];
-    transformable* tnode = nullptr;
-    animated_node* anode = nullptr;
 
     tinygltf::Value* tr_data = nullptr;
     if(node.extensions.count("TR_data"))
@@ -345,17 +342,45 @@ void load_gltf_node(
         }
     }
 
+    entity id;
+    transformable& tnode = add_unique_named(s, node.name, transformable(), &id);
+
+    tnode.set_parent(parent);
+
+    // Set transformation for node
+    if(node.matrix.size())
+        tnode.set_transform(glm::make_mat4(node.matrix.data()));
+    else
+    {
+        if(node.translation.size())
+            tnode.set_position((vec3)glm::make_vec3(node.translation.data()));
+
+        if(node.scale.size())
+            tnode.set_scaling((vec3)glm::make_vec3(node.scale.data()));
+
+        if(node.rotation.size())
+            tnode.set_orientation(glm::make_quat(node.rotation.data()));
+    }
+
+    tnode.set_static(static_lock);
+
+    auto it = meta.animations.find(node_index);
+    if(it != meta.animations.end())
+    {
+        static_lock = false;
+        tnode.set_static(false);
+        s.attach(id, animated(it->second));
+    }
+
     // Add object if mesh is present
     if(node.mesh != -1)
     {
-        entity id;
-        mesh_object& obj = add_unique_named(s, node.name, mesh_object(), &id);
         s.attach(id, tr::model(meta.models[node.mesh]));
-        obj.set_model(s.get<tr::model>(id));
+        tr::model* mod = s.get<tr::model>(id);
         if(tr_data && tr_data->Has("mesh"))
         {
             tinygltf::Value mesh = tr_data->Get("mesh");
-            obj.set_shadow_terminator_offset(
+            mod->set_shadow_terminator_offset(
                 mesh.Get("shadow_terminator_offset").GetNumberAsDouble()
             );
         }
@@ -363,20 +388,21 @@ void load_gltf_node(
         if(node.skin != -1)
         {
             static_lock = false;
+            tnode.set_static(false);
             meta.skins[node.skin].related_models.insert(
-                const_cast<class model*>(obj.get_model())
+                const_cast<class model*>(mod)
             );
         }
-        anode = &obj;
-        tnode = anode;
     }
+
     // Add camera if that's present
-    else if(node.camera != -1)
+    if(node.camera != -1)
     {
         camera cam;
         tinygltf::Camera& c = model.cameras[node.camera];
         // Cameras can be moved dynamically basically always.
         static_lock = false;
+        tnode.set_static(false);
 
         if(c.type == "perspective")
         {
@@ -393,11 +419,11 @@ void load_gltf_node(
             );
 
         // Add object to graph
-        anode = &add_unique_named(s, node.name, std::move(cam));
-        tnode = anode;
+        s.attach(id, std::move(cam));
     }
+
     // Add light, if present.
-    else if(node.extensions.count("KHR_lights_punctual"))
+    if(node.extensions.count("KHR_lights_punctual"))
     {
         tinygltf::Light& l = model.lights[
             node.extensions["KHR_lights_punctual"].Get("light").Get<int>()
@@ -410,34 +436,31 @@ void load_gltf_node(
         vec3 color(vector_to_vec4(l.color) * (float)l.intensity);
         if(l.type == "directional")
         {
-            directional_light* dl = &add_unique_named(s, node.name, directional_light());
-            anode = dl;
-            dl->set_color(color);
-            dl->set_angle(degrees(meta.light_angle));
+            directional_light dl;
+            dl.set_color(color);
+            dl.set_angle(degrees(meta.light_angle));
+            s.attach(id, std::move(dl));
         }
         else if(l.type == "point")
         {
-            point_light* pl = &add_unique_named(s, node.name, point_light());
-            anode = pl;
-            pl->set_color(color/float(4*M_PI));
-            pl->set_radius(meta.light_radius);
+            point_light pl;
+            pl.set_color(color/float(4*M_PI));
+            pl.set_radius(meta.light_radius);
+            s.attach(id, std::move(pl));
         }
         else if(l.type == "spot")
         {
-            spotlight* sl = &add_unique_named(s, node.name, spotlight());
-            anode = sl;
-            sl->set_color(color/float(4*M_PI));
-            sl->set_cutoff_angle(glm::degrees(l.spot.outerConeAngle));
-            sl->set_inner_angle(
-                glm::degrees(l.spot.innerConeAngle),
-                4/255.0f
-            );
-            sl->set_radius(meta.light_radius);
+            spotlight sl;
+            sl.set_color(color/float(4*M_PI));
+            sl.set_cutoff_angle(glm::degrees(l.spot.outerConeAngle));
+            sl.set_inner_angle(glm::degrees(l.spot.innerConeAngle), 4/255.0f);
+            sl.set_radius(meta.light_radius);
+            s.attach(id, std::move(sl));
         }
-        tnode = anode;
     }
+
     // Add light probe
-    else if(tr_data && tr_data->Has("light_probe"))
+    if(tr_data && tr_data->Has("light_probe"))
     {
         tinygltf::Value light_probe = tr_data->Get("light_probe");
         std::string type = light_probe.Get("type").Get<std::string>();
@@ -453,45 +476,9 @@ void load_gltf_node(
             // Irradiance volume scale must not be negative, it will break
             // things.
             for(double& v: node.scale) v = fabs(v);
-            tnode = &add_unique_named(s, node.name, std::move(g));
+            s.attach(id, std::move(g));
         }
     }
-    // If there is nothing, just add an empty node so that transformations work
-    // correctly.
-    else
-    {
-        anode = &add_unique_named(s, node.name, animated_node());
-        tnode = anode;
-    }
-
-    if(anode)
-    {
-        auto it = meta.animations.find(node_index);
-        if(it != meta.animations.end())
-        {
-            static_lock = false;
-            anode->set_animation_pool(it->second);
-        }
-    }
-
-    tnode->set_parent(parent);
-
-    // Set transformation for node
-    if(node.matrix.size())
-        tnode->set_transform(glm::make_mat4(node.matrix.data()));
-    else
-    {
-        if(node.translation.size())
-            tnode->set_position((vec3)glm::make_vec3(node.translation.data()));
-
-        if(node.scale.size())
-            tnode->set_scaling((vec3)glm::make_vec3(node.scale.data()));
-
-        if(node.rotation.size())
-            tnode->set_orientation(glm::make_quat(node.rotation.data()));
-    }
-
-    tnode->set_static(static_lock);
 
     // Save joints & root node
     for(int skin_index: meta.node_to_skin[node_index])
@@ -500,18 +487,18 @@ void load_gltf_node(
         auto it = sk.node_index_to_skin_index.find(node_index);
         if(it != sk.node_index_to_skin_index.end())
         {
-            sk.joint_nodes[it->second] = anode;
+            sk.joint_nodes[it->second] = &tnode;
         }
         if(sk.root == node_index)
         {
-            sk.root_node = anode;
+            sk.root_node = &tnode;
         }
     }
 
     // Load child nodes
     for(int child_index: node.children)
     {
-        load_gltf_node(model, scene, child_index, data, s, tnode, meta, static_lock);
+        load_gltf_node(model, scene, child_index, data, s, &tnode, meta, static_lock);
     }
 }
 
@@ -657,7 +644,7 @@ scene_assets load_gltf(
             joints,
             inverse_bind_matrices,
             node_index_to_skin_index,
-            std::vector<animated_node*>(joints.size()),
+            std::vector<transformable*>(joints.size()),
             {},
             {}
         };
@@ -784,15 +771,15 @@ scene_assets load_gltf(
         m->refresh_buffers();
 
     // Post-processing
-    s.foreach([&](entity id, added_by_this_file&, mesh_object& mo, model& animation_model){
+    s.foreach([&](entity id, added_by_this_file&, transformable& t, animated* a, model& animation_model){
         if(animation_model.get_joints().size() != 0)
         { // Detach animated mesh clones
             // glTF explicitly specifies that skinned meshes must be placed at the
             // origin of the scene. This doesn't always seem to be the case in all
             // models, so fix it here.
-            mo.set_transform(mat4(1));
-            mo.set_parent(nullptr);
-            mo.set_animation_pool(nullptr);
+            t.set_transform(mat4(1));
+            t.set_parent(nullptr);
+            if(a) a->set_animation_pool(nullptr);
 
             animation_model.init_joints_buffer(dev);
             for(auto& vg: animation_model)

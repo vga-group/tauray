@@ -108,7 +108,6 @@ add_library(tauray-core STATIC
   src/material.cc
   src/math.cc
   src/mesh.cc
-  src/mesh_object.cc
   src/misc.cc
   src/model.cc
   src/assimp.cc

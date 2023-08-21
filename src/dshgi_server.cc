@@ -240,7 +240,7 @@ void dshgi_server::sender_worker(dshgi_server* s)
         }
 
         int i = 0;
-        s->cur_scene->foreach([&](sh_grid& grid){
+        s->cur_scene->foreach([&](transformable& t, sh_grid& grid){
             size_t size = 0;
             void* mem = nullptr;
             s->sh_grid_to_cpu->get_memory(&grid, size, mem);
@@ -257,7 +257,7 @@ void dshgi_server::sender_worker(dshgi_server* s)
             float radius = grid.get_radius();
             zmsg_addmem(msg, &radius, sizeof(radius));
 
-            mat4 transform = grid.get_global_transform();
+            mat4 transform = t.get_global_transform();
             zmsg_addmem(msg, &transform, sizeof(transform));
 
             puvec3 res = grid.get_resolution();

@@ -6,6 +6,7 @@ namespace tr
 {
 
 class camera;
+class transformable;
 struct directional_shadow_map
 {
     uvec2 resolution = uvec2(512);
@@ -24,6 +25,7 @@ struct directional_shadow_map
     void track_cameras(
         const mat4& light_transform,
         const std::vector<camera*>& cam,
+        const std::vector<transformable*>& camera_transforms,
         bool conservative = true
     );
 };

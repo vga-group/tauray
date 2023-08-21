@@ -167,7 +167,7 @@ time_ticks animation_controller<Derived>::get_animation_time() const
 }
 
 template<typename Derived>
-void animation_controller<Derived>::update(time_ticks dt)
+void animation_controller<Derived>::update(transformable& self, time_ticks dt)
 {
     if(!is_playing()) return;
 
@@ -200,7 +200,7 @@ void animation_controller<Derived>::update(time_ticks dt)
         return;
     }
 
-    static_cast<Derived*>(this)->apply_animation(timer);
+    static_cast<Derived*>(this)->apply_animation(self, timer);
 }
 
 }

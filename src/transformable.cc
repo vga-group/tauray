@@ -21,6 +21,15 @@ transformable::transformable(transformable* parent):
     orientation(1,0,0,0), position(0), scaling(1), static_locked(false)
 {}
 
+transformable::transformable(vec3 pos, vec3 scale, vec3 direction, vec3 forward)
+: transformable(nullptr)
+{
+    set_position(pos);
+    set_scaling(scale);
+    if(direction != forward)
+        set_direction(direction, forward);
+}
+
 void transformable::rotate(float angle, vec3 axis, vec3 local_origin)
 {
     quat rotation = angleAxis(radians(angle), axis);

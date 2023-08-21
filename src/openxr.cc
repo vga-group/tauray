@@ -159,9 +159,13 @@ void openxr::setup_xr_surroundings(
         camera cam;
         float aspect = image_size.x/(float)image_size.y;
         cam.perspective(90, aspect, 0.1f, 300.0f);
-        cam.set_parent(reference_frame);
-        entity id = s.add(std::move(cam), camera_metadata{true, int(i), true});
+        entity id = s.add(
+            std::move(cam),
+            transformable(reference_frame),
+            camera_metadata{true, int(i), true}
+        );
         cameras.push_back(s.get<camera>(id));
+        camera_transforms.push_back(s.get<transformable>(id));
     }
 }
 
@@ -1042,6 +1046,7 @@ void openxr::update_xr_views()
             continue;
 
         camera& cam = *cameras[i];
+        transformable& cam_transform = *camera_transforms[i];
         const XrView& v = view_states[i];
 
         cam.set_fov(
@@ -1053,7 +1058,7 @@ void openxr::update_xr_views()
 
         if(vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)
         {
-            cam.set_orientation(quat(
+            cam_transform.set_orientation(quat(
                 v.pose.orientation.w,
                 v.pose.orientation.x,
                 v.pose.orientation.y,
@@ -1064,7 +1069,7 @@ void openxr::update_xr_views()
 
         if(vs.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT)
         {
-            cam.set_position(vec3(
+            cam_transform.set_position(vec3(
                 v.pose.position.x,
                 v.pose.position.y,
                 v.pose.position.z

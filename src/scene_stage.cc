@@ -44,10 +44,11 @@ struct directional_light_entry
 {
     directional_light_entry() = default;
     directional_light_entry(
+        const transformable& t,
         const directional_light& dl,
         int shadow_map_index
     ):  color(dl.get_color()), shadow_map_index(shadow_map_index),
-        dir(dl.get_global_direction()), dir_cutoff(cos(radians(dl.get_angle())))
+        dir(t.get_global_direction()), dir_cutoff(cos(radians(dl.get_angle())))
     {
     }
 
@@ -60,17 +61,17 @@ struct directional_light_entry
 struct point_light_entry
 {
     point_light_entry() = default;
-    point_light_entry(const point_light& pl, int shadow_map_index)
-    :   color(pl.get_color()), dir(vec3(0)), pos(pl.get_global_position()),
+    point_light_entry(const transformable& t, const point_light& pl, int shadow_map_index)
+    :   color(pl.get_color()), dir(vec3(0)), pos(t.get_global_position()),
         radius(pl.get_radius()), dir_cutoff(0.0f), dir_falloff(0.0f),
         cutoff_radius(pl.get_cutoff_radius()), spot_radius(-1.0f),
         shadow_map_index(shadow_map_index)
     {
     }
 
-    point_light_entry(const spotlight& sl, int shadow_map_index)
-    :   color(sl.get_color()), dir(sl.get_global_direction()),
-        pos(sl.get_global_position()), radius(sl.get_radius()),
+    point_light_entry(const transformable& t, const spotlight& sl, int shadow_map_index)
+    :   color(sl.get_color()), dir(t.get_global_direction()),
+        pos(t.get_global_position()), radius(sl.get_radius()),
         dir_cutoff(cos(radians(sl.get_cutoff_angle()))),
         dir_falloff(sl.get_falloff_exponent()),
         cutoff_radius(sl.get_cutoff_radius()),
@@ -323,8 +324,16 @@ void scene_stage::set_scene(scene* target)
 {
     cur_scene = target;
 
-    // TODO: Latch outdates to various component addition / removal
-    // events once we have the ECS.
+    events[0].emplace(target->subscribe([this](scene&, const add_component<model>&){ geometry_outdated = true; }));
+    events[1].emplace(target->subscribe([this](scene&, const remove_component<model>&){ geometry_outdated = true; }));
+    events[2].emplace(target->subscribe([this](scene&, const add_component<point_light>&){ lights_outdated = true; }));
+    events[3].emplace(target->subscribe([this](scene&, const remove_component<point_light>&){ lights_outdated = true; }));
+    events[4].emplace(target->subscribe([this](scene&, const add_component<directional_light>&){ lights_outdated = true; }));
+    events[5].emplace(target->subscribe([this](scene&, const remove_component<directional_light>&){ lights_outdated = true; }));
+    events[6].emplace(target->subscribe([this](scene&, const add_component<spotlight>&){ lights_outdated = true; }));
+    events[7].emplace(target->subscribe([this](scene&, const remove_component<spotlight>&){ lights_outdated = true; }));
+    events[8].emplace(target->subscribe([this](scene&, const add_component<sh_grid>&){ lights_outdated = true; }));
+    events[9].emplace(target->subscribe([this](scene&, const remove_component<sh_grid>&){ lights_outdated = true; }));
 
     prev_was_rebuild = false;
     force_instance_refresh_frames = MAX_FRAMES_IN_FLIGHT;
@@ -417,13 +426,13 @@ bool scene_stage::update_shadow_map_params()
     shadow_maps.clear();
     shadow_map_indices.clear();
 
-    cur_scene->foreach([&](directional_light& dl, directional_shadow_map& spec){
+    cur_scene->foreach([&](transformable& t, directional_light& dl, directional_shadow_map& spec){
         total_shadow_map_count++;
         total_viewport_count++;
 
         shadow_map_indices[&dl] = shadow_maps.size();
         shadow_map_instance* sm = &shadow_maps.emplace_back();
-        mat4 transform = dl.get_global_transform();
+        mat4 transform = t.get_global_transform();
 
         sm->atlas_index = shadow_map_sizes.size();
         sm->map_index = shadow_maps.size()-1;
@@ -450,8 +459,7 @@ bool scene_stage::update_shadow_map_params()
             spec.y_range.x+top_offset.y, spec.y_range.y+top_offset.y,
             spec.depth_range.x, spec.depth_range.y
         );
-        face_cam.set_transform(transform);
-        sm->faces = {face_cam};
+        sm->faces = {{face_cam, transform}};
 
         float cascade_scale = 2.0f;
         for(size_t i = 1; i < spec.cascades.size(); ++i)
@@ -474,8 +482,8 @@ bool scene_stage::update_shadow_map_params()
                 abs(0.5f*vec2(area.x-area.y, area.z-area.w));
             c.scale = cascade_scale;
             c.bias_scale = sqrt(cascade_scale);
-            c.cam = face_cam;
-            c.cam.ortho(
+            c.cam = sm->faces[0];
+            c.cam.cam.ortho(
                 area.x, area.y, area.z, area.w,
                 spec.depth_range.x, spec.depth_range.y
             );
@@ -485,7 +493,7 @@ bool scene_stage::update_shadow_map_params()
         }
     });
 
-    cur_scene->foreach([&](point_light& pl, point_shadow_map& spec){
+    cur_scene->foreach([&](transformable& t, point_light& pl, point_shadow_map& spec){
         total_shadow_map_count++;
 
         shadow_map_indices[&pl] = shadow_maps.size();
@@ -497,7 +505,7 @@ bool scene_stage::update_shadow_map_params()
 
         shadow_map_sizes.push_back(spec.resolution*uvec2(3,2));
 
-        mat4 transform = pl.get_global_transform();
+        mat4 transform = t.get_global_transform();
 
         sm->min_bias = spec.min_bias;
         sm->max_bias = spec.max_bias;
@@ -505,21 +513,25 @@ bool scene_stage::update_shadow_map_params()
 
         // Omnidirectional
         sm->faces.clear();
+        transformable temp;
+
+        temp.set_position(get_matrix_translation(transform));
+
         for(int i = 0; i < 6; ++i)
         {
             camera face_cam;
-            face_cam.set_position(get_matrix_translation(transform));
-            face_cam.set_orientation(face_orientations[i]);
             face_cam.perspective(
                 90.0f, 1.0f, spec.near, pl.get_cutoff_radius()
             );
-            sm->faces.push_back(face_cam);
+
+            temp.set_orientation(face_orientations[i]);
+            sm->faces.push_back({face_cam, temp.get_global_transform()});
             total_viewport_count++;
         }
     });
 
-    cur_scene->foreach([&](spotlight& sl, point_shadow_map& spec){
-        mat4 transform = sl.get_global_transform();
+    cur_scene->foreach([&](transformable& t, spotlight& sl, point_shadow_map& spec){
+        mat4 transform = t.get_global_transform();
         shadow_map_indices[&sl] = shadow_maps.size();
         shadow_map_instance* sm = &shadow_maps.emplace_back();
 
@@ -528,12 +540,11 @@ bool scene_stage::update_shadow_map_params()
         {
             shadow_map_sizes.push_back(spec.resolution);
             camera face_cam;
-            face_cam.set_transform(transform);
             face_cam.perspective(
                 sl.get_cutoff_angle()*2, 1.0f,
                 spec.near, sl.get_cutoff_radius()
             );
-            sm->faces = {face_cam};
+            sm->faces = {{face_cam, transform}};
         }
         // Otherwise, just use omnidirectional shadow map like other point
         // lights
@@ -541,15 +552,16 @@ bool scene_stage::update_shadow_map_params()
         {
             shadow_map_sizes.push_back(spec.resolution * uvec2(3,2));
             sm->faces.clear();
+            transformable temp;
+            temp.set_position(get_matrix_translation(transform));
             for(int i = 0; i < 6; ++i)
             {
                 camera face_cam;
-                face_cam.set_position(get_matrix_translation(transform));
-                face_cam.set_orientation(face_orientations[i]);
+                temp.set_orientation(face_orientations[i]);
                 face_cam.perspective(
                     90.0f, 1.0f, spec.near, sl.get_cutoff_radius()
                 );
-                sm->faces.push_back(face_cam);
+                sm->faces.push_back({face_cam, temp.get_global_transform()});
             }
         }
         total_viewport_count += sm->faces.size();
@@ -583,18 +595,16 @@ bool scene_stage::refresh_instance_cache()
     bool scene_changed = false;
 
     auto add_instances = [&](bool static_mesh, bool static_transformable){
-        cur_scene->foreach([&](entity id, mesh_object& o){
+        cur_scene->foreach([&](entity id, transformable& t, model& mod){
             // If requesting dynamic meshes, we don't care about the
             // transformable staticness any more.
-            if(static_mesh && static_transformable != o.is_static())
+            if(static_mesh && static_transformable != t.is_static())
                 return;
 
-            const model* m = o.get_model();
-            if(!m) return;
             bool fetched_transforms = false;
             mat4 transform;
             mat4 normal_transform;
-            for(const auto& vg: *m)
+            for(const auto& vg: mod)
             {
                 bool is_static = !vg.m->is_skinned() && !vg.m->get_animation_source();
                 if(static_mesh != is_static)
@@ -637,20 +647,20 @@ bool scene_stage::refresh_instance_cache()
                     inst.last_refresh_frame = frame_counter;
                     scene_changed = true;
                 }
-                if(inst.o != &o)
+                if(inst.mod != &mod)
                 {
-                    inst.o = &o;
+                    inst.mod = &mod;
                     inst.prev_transform = mat4(0);
                     inst.last_refresh_frame = frame_counter;
                     scene_changed = true;
                 }
 
-                if(inst.last_refresh_frame+1 >= frame_counter || !o.is_static())
+                if(inst.last_refresh_frame+1 >= frame_counter || !t.is_static())
                 {
                     if(!fetched_transforms)
                     {
-                        transform = o.get_global_transform();
-                        normal_transform = o.get_global_inverse_transpose_transform();
+                        transform = t.get_global_transform();
+                        normal_transform = t.get_global_inverse_transpose_transform();
                         fetched_transforms = true;
                     }
 
@@ -1022,10 +1032,9 @@ void scene_stage::update(uint32_t frame_index)
     track_shadow_maps(*cur_scene);
 
     uint64_t frame_counter = get_context()->get_frame_counter();
-    cur_scene->foreach([&](mesh_object& obj){
-        model* m = const_cast<model*>(obj.get_model());
-        if(m && m->has_joints_buffer())
-            m->update_joints(frame_index);
+    cur_scene->foreach([&](model& mod){
+        if(mod.has_joints_buffer())
+            mod.update_joints(frame_index);
     });
 
     size_t tri_light_count = 0;
@@ -1068,7 +1077,7 @@ void scene_stage::update(uint32_t frame_index)
             inst.sh_grid_index = index;
             inst.pad = 0;
             inst.shadow_terminator_mul = 1.0f/(
-                1.0f-0.5f * instances[i].o->get_shadow_terminator_offset()
+                1.0f-0.5f * instances[i].mod->get_shadow_terminator_offset()
             );
 
             const material& mat = *instances[i].mat;
@@ -1097,10 +1106,10 @@ void scene_stage::update(uint32_t frame_index)
         frame_index,
         [&](sh_grid_buffer* sh_data){
             size_t i =0;
-            cur_scene->foreach([&](sh_grid& s) {
+            cur_scene->foreach([&](transformable& t, sh_grid& s) {
                 sh_data[i].grid_clamp = 0.5f/vec3(s.get_resolution());
                 sh_data[i].grid_resolution = s.get_resolution();
-                mat4 transform = s.get_global_transform();
+                mat4 transform = t.get_global_transform();
                 quat orientation = get_matrix_orientation(transform);
                 sh_data[i].pos_from_world = glm::affineInverse(transform);
                 sh_data[i].normal_from_world = mat4(inverse(orientation));
@@ -1136,9 +1145,10 @@ void scene_stage::update(uint32_t frame_index)
             for(entity id: camera_entities)
             {
                 camera* cam = cur_scene->get<camera>(id);
+                transformable* t = cur_scene->get<transformable>(id);
                 uint8_t* cur_data = data + camera_data_offsets[i].first;
                 size_t buf_size = camera::get_projection_type_uniform_buffer_size(cam->get_projection_type());
-                cam->write_uniform_buffer(cur_data);
+                cam->write_uniform_buffer(*t, cur_data);
                 memcpy(cur_data + buf_size, old_data, buf_size);
                 memcpy(old_data, cur_data, buf_size);
                 old_data += buf_size;
@@ -1170,18 +1180,18 @@ void scene_stage::update(uint32_t frame_index)
             for(const auto& sm: shadow_maps)
             {
                 shadow_map_entry& map = shadow_map_data[sm.map_index];
-                const camera& first_cam = sm.faces[0];
+                const auto& first_cam = sm.faces[0];
 
                 map.clip_info = vec4(
-                    first_cam.get_clip_info(),
-                    first_cam.get_near()
+                    first_cam.cam.get_clip_info(),
+                    first_cam.cam.get_near()
                 );
                 map.projection_info_radius = vec4(
-                    first_cam.get_projection_info(), sm.radius
+                    first_cam.cam.get_projection_info(), sm.radius
                 );
 
                 // Determine shadow map type from projection
-                switch(first_cam.get_projection_type())
+                switch(first_cam.cam.get_projection_type())
                 {
                 case camera::PERSPECTIVE:
                     { // Cubemap / perspective shadow map
@@ -1189,22 +1199,22 @@ void scene_stage::update(uint32_t frame_index)
                         {
                             map.type = 1;
                             map.world_to_shadow = glm::inverse(
-                                sm.faces[5].get_global_transform());
+                                sm.faces[5].transform);
                         }
                         else
                         {
                             map.type = 0;
                             map.world_to_shadow = glm::inverse(
-                                first_cam.get_global_transform());
+                                first_cam.transform);
                         }
                     }
                     break;
                 case camera::ORTHOGRAPHIC:
                     { // Directional
-                        map.clip_info.z = first_cam.get_far();
+                        map.clip_info.z = first_cam.cam.get_far();
                         map.type = sm.cascades.size();
                         map.cascade_index = cascade_index;
-                        map.world_to_shadow = first_cam.get_view_projection();
+                        map.world_to_shadow = first_cam.cam.get_view_projection(first_cam.transform);
                     }
                     break;
                 default:
@@ -1254,13 +1264,13 @@ void scene_stage::update(uint32_t frame_index)
             reinterpret_cast<point_light_entry*>(light_data);
 
         size_t i = 0;
-        cur_scene->foreach([&](point_light& pl) {
-            point_light_entry pe = point_light_entry(pl, get_shadow_map_index(&pl));
+        cur_scene->foreach([&](transformable& t, point_light& pl) {
+            point_light_entry pe = point_light_entry(t, pl, get_shadow_map_index(&pl));
             point_light_data[i] = pe;
             ++i;
         });
-        cur_scene->foreach([&](spotlight& sl) {
-            point_light_entry pe = point_light_entry(sl, get_shadow_map_index(&sl));
+        cur_scene->foreach([&](transformable& t, spotlight& sl) {
+            point_light_entry pe = point_light_entry(t, sl, get_shadow_map_index(&sl));
             point_light_data[i] = pe;
             ++i;
         });
@@ -1274,8 +1284,8 @@ void scene_stage::update(uint32_t frame_index)
 
         // Punctual directional lights
         size_t i = 0;
-        cur_scene->foreach([&](directional_light& dl) {
-            directional_light_data[i] = directional_light_entry(dl, get_shadow_map_index(&dl));
+        cur_scene->foreach([&](transformable& t, directional_light& dl) {
+            directional_light_data[i] = directional_light_entry(t, dl, get_shadow_map_index(&dl));
             ++i;
         });
     });
@@ -1301,21 +1311,21 @@ void scene_stage::update(uint32_t frame_index)
             [&](vk::AabbPositionsKHR* aabb){
                 size_t i = 0;
 
-                cur_scene->foreach([&](point_light& pl){
+                cur_scene->foreach([&](transformable& t, point_light& pl){
                     if(i >= opt.max_lights) return;
 
                     float radius = pl.get_radius();
-                    vec3 pos = radius == 0.0f ? vec3(0) : pl.get_global_position();
+                    vec3 pos = radius == 0.0f ? vec3(0) : t.get_global_position();
                     vec3 min = pos - vec3(radius);
                     vec3 max = pos + vec3(radius);
                     aabb[i] = vk::AabbPositionsKHR(
                         min.x, min.y, min.z, max.x, max.y, max.z);
                     i++;
                 });
-                cur_scene->foreach([&](spotlight& sl){
+                cur_scene->foreach([&](transformable& t, spotlight& sl){
                     if(i >= opt.max_lights) return;
                     float radius = sl.get_radius();
-                    vec3 pos = radius == 0.0f ? vec3(0) : sl.get_global_position();
+                    vec3 pos = radius == 0.0f ? vec3(0) : t.get_global_position();
                     vec3 min = pos - vec3(radius);
                     vec3 max = pos + vec3(radius);
                     aabb[i] = vk::AabbPositionsKHR(
@@ -1472,12 +1482,11 @@ void scene_stage::record_skinning(device_id id, uint32_t frame_index, vk::Comman
     skinning[id].bind(cb);
 
     // Update vertex buffers
-    cur_scene->foreach([&](mesh_object& obj){
-        model* m = const_cast<model*>(obj.get_model());
-        if(!m || !m->has_joints_buffer()) return;
+    cur_scene->foreach([&](model& mod){
+        if(!mod.has_joints_buffer()) return;
 
-        m->upload_joints(cb, id, frame_index);
-        for(auto& vg: *m)
+        mod.upload_joints(cb, id, frame_index);
+        for(auto& vg: mod)
         {
             mesh* dst = vg.m;
             mesh* src = dst->get_animation_source();
@@ -1488,7 +1497,7 @@ void scene_stage::record_skinning(device_id id, uint32_t frame_index, vk::Comman
                 {"source_data", {src->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}},
                 {"destination_data", {dst->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}},
                 {"skin_data", {src->get_skin_buffer(id), 0, VK_WHOLE_SIZE}},
-                {"joint_data", {m->get_joint_buffer()[id], 0, VK_WHOLE_SIZE}}
+                {"joint_data", {mod.get_joint_buffer()[id], 0, VK_WHOLE_SIZE}}
             });
             cb.dispatch((vertex_count+31u)/32u, 1, 1);
         }

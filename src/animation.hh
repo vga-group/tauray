@@ -103,7 +103,7 @@ public:
     const std::string& get_playing_animation_name() const;
     time_ticks get_animation_time() const;
 
-    void update(time_ticks dt);
+    void update(transformable& self, time_ticks dt);
 
 private:
     struct animation_step
@@ -117,22 +117,18 @@ private:
     bool paused;
 };
 
-class animated_node
-: public animation_controller<animated_node>, public transformable
+class animated: public animation_controller<animated>
 {
-friend class animation_controller<animated_node>;
+friend class animation_controller<animated>;
 public:
-    animated_node(
-        transformable* parent = nullptr,
-        const animation_pool* pool = nullptr
-    );
+    animated(const animation_pool* pool = nullptr);
 
     void set_animation_pool(const animation_pool* pool);
     const animation_pool* get_animation_pool() const;
 
 protected:
     time_ticks set_animation(const std::string& name, bool use_fallback);
-    void apply_animation(time_ticks time);
+    void apply_animation(transformable& self, time_ticks time);
 
 private:
     const animation_pool* pool;

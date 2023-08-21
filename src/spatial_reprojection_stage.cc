@@ -103,7 +103,9 @@ void spatial_reprojection_stage::update(uint32_t frame_index)
         frame_index,
         opt.active_viewport_count,
         [&](camera_data_buffer& data, size_t i){
-            data.view_proj = cur_scene->get<camera>(cameras[i])->get_view_projection();
+            data.view_proj = cur_scene->get<camera>(cameras[i])->get_view_projection(
+                *cur_scene->get<transformable>(cameras[i])
+            );
         }
     );
 }

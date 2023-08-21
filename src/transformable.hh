@@ -13,6 +13,7 @@ class transformable
 {
 public:
     transformable(transformable* parent = nullptr);
+    transformable(vec3 pos, vec3 scale = vec3(1), vec3 direction = vec3(0,0,-1), vec3 forward = vec3(0,0,-1));
 
     void rotate(float angle, vec3 axis, vec3 local_origin = vec3(0));
     void rotate(vec3 axis_magnitude, vec3 local_origin = vec3(0));

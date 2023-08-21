@@ -79,9 +79,11 @@ void looking_glass::setup_cameras(
         cam.set_pan(vec2(-ta, 0));
         vec4 dir = cam.get_projection_matrix() * vec4(0.0f, 0.0f, 1.0f, 1.0f);
         dir /= dir.z;
-        cam.set_position(opt.mid_plane_dist * vec3(dir));
-        cam.set_parent(reference_frame);
-        s.add(std::move(cam), camera_metadata{true, int(i), true});
+
+        transformable cam_transform;
+        cam_transform.set_position(opt.mid_plane_dist * vec3(dir));
+        cam_transform.set_parent(reference_frame);
+        s.add(std::move(cam), std::move(cam_transform), camera_metadata{true, int(i), true});
     }
 }
 

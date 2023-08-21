@@ -6,7 +6,7 @@
 namespace tr
 {
 
-class camera: public animated_node
+class camera
 {
 public:
     enum projection_type
@@ -16,7 +16,7 @@ public:
         EQUIRECTANGULAR = 2
     };
 
-    explicit camera(transformable* parent = nullptr);
+    camera();
 
     void copy_projection(const camera& other);
 
@@ -26,8 +26,6 @@ public:
 
     projection_type get_projection_type() const;
     mat4 get_projection_matrix() const;
-
-    vec3 get_global_view_direction(vec3 local_view = vec3(0,0,-1)) const;
 
     void set_near(float near);
     void set_far(float far);
@@ -53,11 +51,12 @@ public:
     float get_hfov() const;
 
     ray get_view_ray(vec2 uv, float near_mul = 1.0f) const;
-    ray get_global_view_ray(vec2 uv = vec2(0.5)) const;
+    ray get_global_view_ray(transformable& self, vec2 uv = vec2(0.5)) const;
 
     // This function may throw, if the current projection does not have a matrix
     // representation!
-    mat4 get_view_projection() const;
+    mat4 get_view_projection(transformable& self) const;
+    mat4 get_view_projection(const mat4& global_transform) const;
 
     // These two should only be used in rasterization-related things and as
     // such, they expect the projection type to be matrix-based.
@@ -65,7 +64,7 @@ public:
     vec2 get_projection_info() const;
 
     static size_t get_projection_type_uniform_buffer_size(projection_type type);
-    void write_uniform_buffer(void* data) const;
+    void write_uniform_buffer(transformable& self, void* data) const;
 
     void set_jitter(const std::vector<vec2>& jitter_sequence);
     void step_jitter();
@@ -105,13 +104,14 @@ private:
 class camera_log
 {
 public:
-    camera_log(camera* cam);
+    camera_log(transformable* cam_transform, camera* cam);
     ~camera_log();
 
     void frame(time_ticks dt);
     void write(const std::string& path);
 
 private:
+    transformable* cam_transform;
     camera* cam;
     struct frame_data
     {

@@ -24,9 +24,9 @@ public:
         mesh* m;
     };
 
-    struct joint_data 
+    struct joint_data
     {
-        animated_node* node;
+        transformable* node;
         mat4 inverse_bind_matrix;
     };
 
@@ -60,12 +60,15 @@ public:
     void update_joints(uint32_t frame_index);
     void upload_joints(vk::CommandBuffer buf, device_id id, uint32_t frame_index);
 
+    void set_shadow_terminator_offset(float offset = 0.0f);
+    float get_shadow_terminator_offset() const;
+
 private:
     std::vector<vertex_group> groups;
     std::vector<joint_data> joints;
-
     std::optional<gpu_buffer> joint_buffer;
-}; 
+    float shadow_terminator_offset;
+};
 
 }
 
