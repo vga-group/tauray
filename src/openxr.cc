@@ -622,7 +622,7 @@ void openxr::init_xr_swapchain()
         XR_TYPE_SWAPCHAIN_CREATE_INFO,
         nullptr,
         0,
-        XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT,
+        XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT|XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT,
         swapchain_format,
         1,
         image_size.x,
@@ -679,7 +679,7 @@ void openxr::init_xr_swapchain()
             dev_data.logical.createImageView({
                 {},
                 img.image,
-                vk::ImageViewType::e2D,
+                vk::ImageViewType::e2DArray,
                 vk::Format((VkFormat)swapchain_format),
                 {},
                 {vk::ImageAspectFlagBits::eColor, 0, 1, 0, image_array_layers}
@@ -920,7 +920,7 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
                 {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
                 {
                     vk::Offset3D{(int)(opt.size.x/image_array_layers*i),0,0},
-                    {(int)(opt.size.x/image_array_layers), (int)opt.size.y, 1}
+                    {(int)(opt.size.x/image_array_layers*(i+1)), (int)opt.size.y, 1}
                 }
             },
             vk::Filter::eLinear
@@ -933,9 +933,9 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
         xr_images[swapchain_index],
         vk::ImageLayout::eTransferDstOptimal,
         vk::ImageBlit{
-            {vk::ImageAspectFlagBits::eColor, 0, 0, VK_REMAINING_ARRAY_LAYERS},
+            {vk::ImageAspectFlagBits::eColor, 0, 0, image_array_layers},
             {vk::Offset3D{0,0,0}, {(int)image_size.x, (int)image_size.y, 1}},
-            {vk::ImageAspectFlagBits::eColor, 0, 0, VK_REMAINING_ARRAY_LAYERS},
+            {vk::ImageAspectFlagBits::eColor, 0, 0, image_array_layers},
             {vk::Offset3D{0,0,0}, {(int)image_size.x, (int)image_size.y, 1}}
         },
         vk::Filter::eNearest
