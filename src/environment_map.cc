@@ -8,8 +8,8 @@ namespace tr
 {
 
 environment_map::environment_map(
-    context& ctx, const std::string& path, projection proj, vec3 factor
-): texture(ctx, path), factor(factor), proj(proj)
+    device_mask dev, const std::string& path, projection proj, vec3 factor
+): texture(dev, path), factor(factor), proj(proj)
 {
     generate_alias_table();
 }
@@ -38,13 +38,13 @@ vk::Buffer environment_map::get_alias_table(size_t device_index) const
 void environment_map::generate_alias_table()
 {
     alias_table.clear();
-    device_data& dev = ctx->get_display_device();
+    device& dev = *get_mask().begin();
     compute_pipeline importance_pipeline(
         dev, compute_pipeline::params{
             {"shader/alias_table_importance.comp", {}}, {}, 0, true
         }
     );
-    sampler envmap_sampler(*dev.ctx);
+    sampler envmap_sampler(dev);
     ivec2 size = texture::get_size();
     unsigned pixel_count = size.x * size.y;
     size_t bytes = sizeof(float) * pixel_count;
@@ -54,8 +54,8 @@ void environment_map::generate_alias_table()
     importance_pipeline.bind(cb);
     importance_pipeline.push_descriptors(cb, {
         {"environment", {
-            dev.ctx->get_placeholders().default_sampler.get_sampler(dev.index),
-            get_image_view(dev.index),
+            dev.ctx->get_placeholders().default_sampler.get_sampler(dev.id),
+            get_image_view(dev.id),
             vk::ImageLayout::eShaderReadOnlyOptimal
         }},
         {"importances", {*readback_buffer, 0, VK_WHOLE_SIZE}}
@@ -126,21 +126,21 @@ void environment_map::generate_alias_table()
 
     vmaUnmapMemory(dev.allocator, readback_buffer.get_allocation());
 
-    std::vector<device_data>& devices = ctx->get_devices();
-    alias_table_buffers.resize(devices.size());
-    for(size_t i = 0; i < devices.size(); ++i)
-    {
-        alias_table_buffers[i] = create_buffer(
-            devices[i],
-            vk::BufferCreateInfo{
-                {},
-                sizeof(alias_table_entry) * pixel_count,
-                vk::BufferUsageFlagBits::eStorageBuffer
-            },
-            VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-            alias_table.data()
-        );
-    }
+    alias_table_buffers.init(
+        get_mask(),
+        [&](device& dev){
+            return create_buffer(
+                dev,
+                vk::BufferCreateInfo{
+                    {},
+                    sizeof(alias_table_entry) * pixel_count,
+                    vk::BufferUsageFlagBits::eStorageBuffer
+                },
+                VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+                alias_table.data()
+            );
+        }
+    );
 }
 
 }

@@ -3,7 +3,6 @@
 #include "transformable.hh"
 #include "animation.hh"
 
-class json;
 namespace tr
 {
 
@@ -68,13 +67,13 @@ public:
     static size_t get_projection_type_uniform_buffer_size(projection_type type);
     void write_uniform_buffer(void* data) const;
 
-    json serialize_projection() const;
-
     void set_jitter(const std::vector<vec2>& jitter_sequence);
     void step_jitter();
     vec2 get_jitter() const;
 
 private:
+    friend class camera_log;
+
     void refresh();
 
     projection_type type;

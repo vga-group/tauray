@@ -104,7 +104,7 @@ headless::~headless()
 
 uint32_t headless::prepare_next_image(uint32_t frame_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     d.graphics_queue.submit(
         vk::SubmitInfo(
             0, nullptr, nullptr, 0, nullptr,
@@ -120,7 +120,7 @@ void headless::finish_image(
     uint32_t swapchain_index,
     bool display
 ){
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eTopOfPipe;
 
     if(!display || opt.output_file_type == EMPTY)
@@ -173,7 +173,7 @@ bool headless::queue_can_present(
 
 void headless::init_images()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     opt.display_count = max(opt.display_count, 1u);
 
     image_size = opt.size;
@@ -238,7 +238,7 @@ void headless::init_images()
 
         id.copy_cb->end();
 
-        id.copy_fence = vkm(dev_data, dev_data.dev.createFence({}));
+        id.copy_fence = vkm(dev_data, dev_data.logical.createFence({}));
 
         per_image.emplace_back(std::move(id));
     }
@@ -284,12 +284,12 @@ void headless::deinit_sdl()
 
 void headless::save_image(uint32_t swapchain_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     per_image_data& id = per_image[swapchain_index];
     if(!id.copy_ongoing) return;
 
-    (void)d.dev.waitForFences(*id.copy_fence, true, UINT64_MAX);
-    d.dev.resetFences(*id.copy_fence);
+    (void)d.logical.waitForFences(*id.copy_fence, true, UINT64_MAX);
+    d.logical.resetFences(*id.copy_fence);
 
     // Map memory, save images
     float* all_mem = nullptr;
@@ -417,7 +417,7 @@ void headless::save_image(uint32_t swapchain_index)
         // Saving these is similiar enough and they both use stbi_write_*.
         // Implementations can be separated in the future if they diverge.
         else if(
-            opt.output_file_type == headless::PNG || 
+            opt.output_file_type == headless::PNG ||
             opt.output_file_type == headless::BMP
         ){
             filename += opt.output_file_type == headless::PNG ? ".png" : ".bmp";
@@ -533,12 +533,12 @@ void headless::save_image(uint32_t swapchain_index)
 
 void headless::view_image(uint32_t swapchain_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     per_image_data& id = per_image[swapchain_index];
     if(!id.copy_ongoing) return;
 
-    (void)d.dev.waitForFences(*id.copy_fence, true, UINT64_MAX);
-    d.dev.resetFences(*id.copy_fence);
+    (void)d.logical.waitForFences(*id.copy_fence, true, UINT64_MAX);
+    d.logical.resetFences(*id.copy_fence);
 
     uint8_t* mem = nullptr;
     SDL_LockSurface(display_surface);

@@ -7,7 +7,7 @@ namespace tr
 {
 
 rt_pipeline::rt_pipeline(
-    device_data& dev, const options& opt
+    device& dev, const options& opt
 ):  basic_pipeline(
         dev,
         get_bindings(opt.src, opt.binding_array_lengths),
@@ -116,7 +116,7 @@ void rt_pipeline::init_pipeline()
         -1
     );
 
-    pipeline = vkm(*dev, dev->dev.createRayTracingPipelineKHR({}, dev->pp_cache, pipeline_info).value);
+    pipeline = vkm(*dev, dev->logical.createRayTracingPipelineKHR({}, dev->pp_cache, pipeline_info).value);
 
     // Create shader binding table
     uint32_t group_handle_size = align_up_to(
@@ -126,7 +126,7 @@ void rt_pipeline::init_pipeline()
 
     // Fetch handles
     std::vector<uint8_t> shader_handles(rt_shader_groups.size() * dev->rt_props.shaderGroupHandleSize);
-    (void)dev->dev.getRayTracingShaderGroupHandlesKHR(
+    (void)dev->logical.getRayTracingShaderGroupHandlesKHR(
         pipeline, 0, rt_shader_groups.size(),
         shader_handles.size(), shader_handles.data()
     );

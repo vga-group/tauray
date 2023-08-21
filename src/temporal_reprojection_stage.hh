@@ -10,7 +10,7 @@
 namespace tr
 {
 
-class temporal_reprojection_stage: public stage
+class temporal_reprojection_stage: public single_device_stage
 {
 public:
     struct options
@@ -20,7 +20,7 @@ public:
     };
 
     temporal_reprojection_stage(
-        device_data& dev,
+        device& dev,
         gbuffer_target& current_features,
         gbuffer_target& previous_features,
         const options& opt

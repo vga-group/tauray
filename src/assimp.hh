@@ -5,7 +5,7 @@
 namespace tr
 {
 
-scene_graph load_assimp(context& ctx, const std::string& path);
+scene_graph load_assimp(device_mask dev, const std::string& path);
 
 }
 

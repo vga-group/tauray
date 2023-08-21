@@ -91,7 +91,7 @@ std::vector<mesh::vertex> read_vertices(aiMesh* ai_mesh)
         for(unsigned int i = 0; i < ai_mesh->mNumVertices; i++)
             mesh_vert[i].uv = to_vec2(ai_mesh->mTextureCoords[0][i]);
     }
-    
+
     return mesh_vert;
 }
 
@@ -121,7 +121,7 @@ bool is_opaque(std::vector<uint8_t>& data) {
 
 std::unique_ptr<texture> read_texture(
     aiTextureType type,
-    context& ctx,
+    device_mask dev,
     const aiScene* ai_scene,
     const aiMaterial* ai_mat,
     fs::path& base_path
@@ -131,7 +131,7 @@ std::unique_ptr<texture> read_texture(
     {
         return nullptr;
     }
-    
+
     // Check if texture is embedded (e.g in fbx models)
     if(auto ai_texture = ai_scene->GetEmbeddedTexture(path.C_Str()))
     {
@@ -173,7 +173,7 @@ std::unique_ptr<texture> read_texture(
         bool opaque = is_opaque(image_data);
 
         auto t = std::unique_ptr<texture>(new texture(
-            ctx, 
+            dev,
             uvec2(width, height),
             1,
             vk::Format::eR8G8B8A8Unorm,
@@ -188,22 +188,22 @@ std::unique_ptr<texture> read_texture(
 
         return t;
     }
-    
-    // Texture is not embedded. 
+
+    // Texture is not embedded.
     // It should be in a file relative to the model file.
     return std::unique_ptr<texture>(
-        new texture(ctx, (base_path / path.C_Str()).string())
+        new texture(dev, (base_path / path.C_Str()).string())
     );
 }
 
 material create_material(
-    context& ctx,
+    device_mask dev,
     scene_graph& md,
     fs::path& base_path,
     const aiScene* ai_scene,
     const aiMaterial* ai_mat
 ){
-    // Almost up to date material docs (doesn't include PBR properties): 
+    // Almost up to date material docs (doesn't include PBR properties):
     // https://assimp-docs.readthedocs.io/en/latest/usage/use_the_lib.html?highlight=matkey#constants
 
     material mat;
@@ -225,7 +225,7 @@ material create_material(
 
     // Check if pbr is using metallic/roughness or specular/glossiness workflow
     if(is_pbr)
-    {   
+    {
         // If Specular/glossiness is used, fall back to phong
         float glossiness;
         if (ai_mat->Get(AI_MATKEY_GLOSSINESS_FACTOR, glossiness) == AI_SUCCESS)
@@ -243,7 +243,7 @@ material create_material(
             mat.albedo_factor = to_vec4(base);
         }
         if(auto t = read_texture(aiTextureType_BASE_COLOR,
-            ctx, ai_scene, ai_mat, base_path))
+            dev, ai_scene, ai_mat, base_path))
         {
             md.textures.push_back(std::move(t));
             mat.albedo_tex.first = md.textures.back().get();
@@ -260,7 +260,7 @@ material create_material(
             mat.roughness_factor = roughness;
         }
         if(auto t = read_texture(aiTextureType_DIFFUSE_ROUGHNESS,
-            ctx, ai_scene, ai_mat, base_path))
+            dev, ai_scene, ai_mat, base_path))
         {
             md.textures.push_back(std::move(t));
             mat.metallic_roughness_tex.first = md.textures.back().get();
@@ -274,14 +274,14 @@ material create_material(
     }
     else
     {
-        // Read phong properties. This mode is assumed, although shading_mode 
+        // Read phong properties. This mode is assumed, although shading_mode
         // could specify something else.
         aiColor3D albedo;
         if(ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, albedo) == AI_SUCCESS) {
             mat.albedo_factor = to_vec4(albedo);
         }
         if(auto t = read_texture(aiTextureType_DIFFUSE,
-            ctx, ai_scene, ai_mat, base_path))
+            dev, ai_scene, ai_mat, base_path))
         {
             md.textures.push_back(std::move(t));
             mat.albedo_tex.first = md.textures.back().get();
@@ -290,7 +290,7 @@ material create_material(
         aiColor3D transparent;
         if(ai_mat->Get(AI_MATKEY_COLOR_TRANSPARENT, transparent) == AI_SUCCESS)
         {
-            mat.transmittance = 
+            mat.transmittance =
                 1.0f - (transparent.r + transparent.g + transparent.b) / 3.0f;
         }
 
@@ -302,7 +302,7 @@ material create_material(
         //     m.roughness_factor = shininess;
         // }
     }
-    
+
     // Read parameter shared by both pbr and phong
 
     float opacity;
@@ -312,7 +312,7 @@ material create_material(
     }
 
     if(auto t = read_texture(aiTextureType_NORMALS,
-        ctx, ai_scene, ai_mat, base_path))
+        dev, ai_scene, ai_mat, base_path))
     {
         md.textures.push_back(std::move(t));
         mat.normal_tex.first = md.textures.back().get();
@@ -330,7 +330,7 @@ material create_material(
         mat.emission_factor = to_vec3(emissive);
     }
     if(auto t = read_texture(aiTextureType_EMISSIVE,
-        ctx, ai_scene, ai_mat, base_path))
+        dev, ai_scene, ai_mat, base_path))
     {
         md.textures.push_back(std::move(t));
         mat.emission_tex.first = md.textures.back().get();
@@ -350,7 +350,7 @@ material create_material(
 namespace tr
 {
 
-scene_graph load_assimp(context& ctx, const std::string& path)
+scene_graph load_assimp(device_mask dev, const std::string& path)
 {
     TR_LOG("Started loading scene from ", path);
     fs::path base_path = fs::path(path).parent_path();
@@ -359,7 +359,7 @@ scene_graph load_assimp(context& ctx, const std::string& path)
 
     Assimp::Importer importer;
     const aiScene* ai_scene = importer.ReadFile(
-        path, 
+        path,
         aiProcess_CalcTangentSpace |
         aiProcess_Triangulate |
         aiProcess_JoinIdenticalVertices |
@@ -380,11 +380,11 @@ scene_graph load_assimp(context& ctx, const std::string& path)
         aiMesh* ai_mesh = ai_scene->mMeshes[i];
 
         model m;
-        mesh* out_mesh = new mesh(ctx);
+        mesh* out_mesh = new mesh(dev);
 
         out_mesh->get_vertices() = read_vertices(ai_mesh);
         out_mesh->get_indices() = read_indices(ai_mesh);
-       
+
         if(!ai_mesh->HasNormals())
             out_mesh->calculate_normals();
         if(!ai_mesh->HasTangentsAndBitangents())
@@ -393,14 +393,14 @@ scene_graph load_assimp(context& ctx, const std::string& path)
         md.meshes.emplace_back(out_mesh);
 
         material mat = create_material(
-            ctx,
+            dev,
             md,
             base_path,
             ai_scene,
             ai_scene->mMaterials[ai_mesh->mMaterialIndex]
         );
         m.add_vertex_group(mat, out_mesh);
-        
+
         std::string tmp_name = ai_mesh->mName.C_Str();
         std::string name = gen_free_name(tmp_name, md.models);
         md.models[name] = std::move(m);

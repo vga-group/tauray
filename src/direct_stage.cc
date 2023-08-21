@@ -1,5 +1,5 @@
 #include "direct_stage.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "misc.hh"
 #include "environment_map.hh"
 
@@ -91,11 +91,12 @@ namespace tr
 {
 
 direct_stage::direct_stage(
-    device_data& dev,
+    device& dev,
+    scene_stage& ss,
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(
-        dev, output_target, opt, "direct light",
+        dev, ss, output_target, opt, "direct light",
         opt.samples_per_pixel / opt.samples_per_pass
     ),
     gfx(dev, rt_stage::get_common_options(
@@ -120,10 +121,9 @@ void direct_stage::record_command_buffer_pass(
     if(first_in_command_buffer)
         gfx.bind(cb, frame_index);
 
-    scene* cur_scene = get_scene();
     direct::push_constant_buffer control;
 
-    environment_map* envmap = cur_scene->get_environment_map();
+    environment_map* envmap = ss->get_environment_map();
     if(envmap)
     {
         control.environment_factor = vec4(envmap->get_factor(), 1);

@@ -14,7 +14,7 @@ void main()
 {
     instance o = scene.o[control.instance_id];
     vec3 pos = vec3(o.model * vec4(in_pos, 1.0f));
-    gl_Position = camera.view_proj * vec4(pos, 1.0f);
+    gl_Position = camera.view_proj[control.camera_index] * vec4(pos, 1.0f);
     out_uv = in_uv;
 }
 

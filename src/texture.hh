@@ -9,12 +9,11 @@ namespace tr
 class texture
 {
 public:
-    texture(context& ctx, const std::string& path);
-    texture(device_data& dev, const std::string& path);
+    texture(device_mask dev, const std::string& path);
     // If no data is given, it is assumed that the texture will be a render
     // target!
     texture(
-        context& ctx,
+        device_mask dev,
         uvec2 size,
         unsigned array_layers,
         vk::Format fmt,
@@ -26,27 +25,7 @@ public:
         vk::SampleCountFlagBits msaa = vk::SampleCountFlagBits::e1
     );
     texture(
-        device_data& dev,
-        uvec2 size,
-        unsigned array_layers,
-        vk::Format fmt,
-        size_t data_size = 0,
-        void* data = nullptr,
-        vk::ImageTiling tiling = vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eSampled,
-        vk::ImageLayout layout = vk::ImageLayout::eGeneral,
-        vk::SampleCountFlagBits msaa = vk::SampleCountFlagBits::e1
-    );
-    texture(
-        context& ctx,
-        uvec3 dim,
-        vk::Format fmt,
-        vk::ImageTiling tiling = vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eSampled,
-        vk::ImageLayout layout = vk::ImageLayout::eGeneral
-    );
-    texture(
-        device_data& dev,
+        device_mask dev,
         uvec3 dim,
         vk::Format fmt,
         vk::ImageTiling tiling = vk::ImageTiling::eOptimal,
@@ -56,10 +35,10 @@ public:
     texture(const context& other) = delete;
     texture(texture&& other);
 
-    vk::ImageView get_array_image_view(size_t device_index) const;
-    vk::ImageView get_layer_image_view(uint32_t layer_index, size_t device_index) const;
-    vk::ImageView get_image_view(size_t device_index) const;
-    vk::Image get_image(size_t device_index) const;
+    vk::ImageView get_array_image_view(device_id id) const;
+    vk::ImageView get_layer_image_view(device_id id, uint32_t layer_index) const;
+    vk::ImageView get_image_view(device_id id) const;
+    vk::Image get_image(device_id id) const;
 
     vk::Format get_format() const;
     vk::SampleCountFlagBits get_msaa() const;
@@ -71,25 +50,22 @@ public:
     uvec2 get_size() const;
     uvec3 get_dimensions() const;
 
-    render_target get_array_render_target(size_t device_index) const;
-    render_target get_layer_render_target(uint32_t layer_index, size_t device_index) const;
-    render_target get_multiview_block_render_target(uint32_t block_index, size_t device_index) const;
+    render_target get_array_render_target(device_id id) const;
+    render_target get_layer_render_target(device_id id, uint32_t layer_index) const;
+    render_target get_multiview_block_render_target(device_id id, uint32_t block_index) const;
     size_t get_multiview_block_count() const;
+
+    device_mask get_mask() const;
 
 protected:
     // This can be dangerous, it discards the previous image & view along with
     // the data.
     void resize(uvec2 size);
 
-    context* ctx;
-
 private:
     // Also creates mip chain.
     void load_from_file(const std::string& path);
     void create(size_t data_size, void* data);
-
-    // nullptr only if this is a single-device texture.
-    device_data* dev;
 
     uvec3 dim;
     unsigned array_layers;
@@ -109,8 +85,7 @@ private:
         std::vector<vkm<vk::ImageView>> layer_views;
         std::vector<vkm<vk::ImageView>> multiview_block_views;
     };
-    // vector is per-device
-    std::vector<buffer_data> buffers;
+    per_device<buffer_data> buffers;
 };
 
 }

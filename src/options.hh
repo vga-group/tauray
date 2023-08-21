@@ -552,7 +552,7 @@
 #include "feature_stage.hh"
 #include "raster_stage.hh"
 #include "camera.hh"
-#include "mesh_scene.hh"
+#include "scene.hh"
 #include <string>
 #include <variant>
 #include <stdexcept>

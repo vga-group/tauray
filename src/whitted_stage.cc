@@ -1,5 +1,6 @@
 #include "whitted_stage.hh"
 #include "scene.hh"
+#include "scene_stage.hh"
 #include "environment_map.hh"
 
 namespace
@@ -63,13 +64,11 @@ namespace tr
 {
 
 whitted_stage::whitted_stage(
-    device_data& dev,
+    device& dev,
+    scene_stage& ss,
     const gbuffer_target& output_target,
     const options& opt
-):  rt_camera_stage(
-        dev, output_target,
-        opt
-    ),
+):  rt_camera_stage(dev, ss, output_target, opt),
     gfx(dev, build_state(rt_stage::get_common_options(
         whitted::load_sources(opt), opt
     ), opt)),
@@ -91,7 +90,7 @@ void whitted_stage::record_command_buffer_pass(
 ){
     gfx.bind(cb, frame_index);
 
-    scene* cur_scene = get_scene();
+    scene* cur_scene = ss->get_scene();
     whitted::push_constant_buffer control;
     control.directional_light_count = cur_scene->get_directional_lights().size();
     control.point_light_count =

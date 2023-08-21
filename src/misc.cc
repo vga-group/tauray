@@ -16,9 +16,9 @@ namespace fs = std::filesystem;
 namespace tr
 {
 
-vk::CommandBuffer begin_command_buffer(device_data& d)
+vk::CommandBuffer begin_command_buffer(device& d)
 {
-    vk::CommandBuffer cb = d.dev.allocateCommandBuffers({
+    vk::CommandBuffer cb = d.logical.allocateCommandBuffers({
         d.graphics_pool, vk::CommandBufferLevel::ePrimary, 1
     })[0];
 
@@ -28,7 +28,7 @@ vk::CommandBuffer begin_command_buffer(device_data& d)
     return cb;
 }
 
-void end_command_buffer(device_data& d, vk::CommandBuffer cb)
+void end_command_buffer(device& d, vk::CommandBuffer cb)
 {
     cb.end();
 
@@ -37,42 +37,42 @@ void end_command_buffer(device_data& d, vk::CommandBuffer cb)
     );
     d.graphics_queue.waitIdle();
 
-    d.dev.freeCommandBuffers(d.graphics_pool, cb);
+    d.logical.freeCommandBuffers(d.graphics_pool, cb);
 }
 
-vkm<vk::CommandBuffer> create_compute_command_buffer(device_data& d)
+vkm<vk::CommandBuffer> create_compute_command_buffer(device& d)
 {
     return vkm<vk::CommandBuffer>(d,
-        d.dev.allocateCommandBuffers({
+        d.logical.allocateCommandBuffers({
             d.compute_pool, vk::CommandBufferLevel::ePrimary, 1
         })[0],
         d.compute_pool
     );
 }
 
-vkm<vk::CommandBuffer> create_graphics_command_buffer(device_data& d)
+vkm<vk::CommandBuffer> create_graphics_command_buffer(device& d)
 {
     return vkm<vk::CommandBuffer>(d,
-        d.dev.allocateCommandBuffers({
+        d.logical.allocateCommandBuffers({
             d.graphics_pool, vk::CommandBufferLevel::ePrimary, 1
         })[0],
         d.graphics_pool
     );
 }
 
-vkm<vk::Semaphore> create_binary_semaphore(device_data& d)
+vkm<vk::Semaphore> create_binary_semaphore(device& d)
 {
     return vkm<vk::Semaphore>(
-        d, d.dev.createSemaphore(vk::SemaphoreCreateInfo{})
+        d, d.logical.createSemaphore(vk::SemaphoreCreateInfo{})
     );
 }
 
-vkm<vk::Semaphore> create_timeline_semaphore(device_data& d)
+vkm<vk::Semaphore> create_timeline_semaphore(device& d)
 {
     vk::SemaphoreTypeCreateInfo type(vk::SemaphoreType::eTimeline, 0);
     vk::SemaphoreCreateInfo info;
     info.pNext = &type;
-    return vkm<vk::Semaphore>(d, d.dev.createSemaphore(info));
+    return vkm<vk::Semaphore>(d, d.logical.createSemaphore(info));
 }
 
 void transition_image_layout(
@@ -133,7 +133,7 @@ void transition_image_layout(
 }
 
 vkm<vk::Buffer> create_buffer(
-    device_data& dev,
+    device& dev,
     vk::BufferCreateInfo info,
     VmaAllocationCreateFlagBits flags,
     const void* data,
@@ -168,7 +168,7 @@ vkm<vk::Buffer> create_buffer(
 }
 
 vkm<vk::Buffer> create_buffer_aligned(
-    device_data& dev,
+    device& dev,
     vk::BufferCreateInfo info,
     VmaAllocationCreateFlagBits flags,
     size_t alignment,
@@ -200,7 +200,7 @@ vkm<vk::Buffer> create_buffer_aligned(
 }
 
 vkm<vk::Buffer> create_staging_buffer(
-    device_data& dev,
+    device& dev,
     size_t size,
     const void* data
 ){
@@ -231,7 +231,7 @@ vkm<vk::Buffer> create_staging_buffer(
 }
 
 vkm<vk::Buffer> create_download_buffer(
-    device_data& dev,
+    device& dev,
     size_t size
 ){
     vk::Buffer res;
@@ -253,11 +253,11 @@ vkm<vk::Buffer> create_download_buffer(
 }
 
 void* allocate_host_buffer(
-    const std::vector<device_data*>& supported_devices,
+    const std::vector<device*>& supported_devices,
     size_t size
 ){
     vk::DeviceSize alignment = 16;
-    for(device_data* dev: supported_devices)
+    for(device* dev: supported_devices)
         alignment = max(
             dev->ext_mem_props.minImportedHostPointerAlignment,
             alignment
@@ -272,7 +272,7 @@ void release_host_buffer(void* host_buffer)
 }
 
 void create_host_allocated_buffer(
-    device_data& dev,
+    device& dev,
     vk::Buffer& res,
     vk::DeviceMemory& mem,
     size_t size,
@@ -288,16 +288,16 @@ void create_host_allocated_buffer(
         vk::ExternalMemoryHandleTypeFlagBits::eHostAllocationEXT
     );
     staging_info.pNext = &ext_info;
-    res = dev.dev.createBuffer(staging_info);
+    res = dev.logical.createBuffer(staging_info);
 
     vk::MemoryHostPointerPropertiesEXT host_ptr_props =
-        dev.dev.getMemoryHostPointerPropertiesEXT(
+        dev.logical.getMemoryHostPointerPropertiesEXT(
             vk::ExternalMemoryHandleTypeFlagBits::eHostAllocationEXT, data
         );
 
     uint32_t memory_type_index = 0;
     vk::PhysicalDeviceMemoryProperties mem_props =
-        dev.pdev.getMemoryProperties();
+        dev.physical.getMemoryProperties();
     for(uint32_t i = 0; i < mem_props.memoryTypeCount; ++i)
     {
         if(host_ptr_props.memoryTypeBits & (1 << i))
@@ -314,15 +314,15 @@ void create_host_allocated_buffer(
         vk::ExternalMemoryHandleTypeFlagBits::eHostAllocationEXT, data
     );
     alloc_info.pNext = &host_ptr_info;
-    mem = dev.dev.allocateMemory(alloc_info);
-    dev.dev.bindBufferMemory(res, mem, 0);
+    mem = dev.logical.allocateMemory(alloc_info);
+    dev.logical.bindBufferMemory(res, mem, 0);
 }
 
 void destroy_host_allocated_buffer(
-    device_data& dev, vk::Buffer& res, vk::DeviceMemory& mem
+    device& dev, vk::Buffer& res, vk::DeviceMemory& mem
 ){
-    dev.dev.destroyBuffer(res);
-    dev.dev.freeMemory(mem);
+    dev.logical.destroyBuffer(res);
+    dev.logical.freeMemory(mem);
 }
 
 vk::ImageAspectFlags deduce_aspect_mask(vk::Format fmt)
@@ -388,7 +388,7 @@ void deduce_layout_access_stage(
 }
 
 vkm<vk::Image> sync_create_gpu_image(
-    device_data& dev,
+    device& dev,
     vk::ImageCreateInfo info,
     vk::ImageLayout final_layout,
     size_t data_size,
@@ -529,7 +529,7 @@ vk::SampleCountFlagBits get_max_available_sample_count(context& ctx)
 {
     vk::SampleCountFlags mask = (vk::SampleCountFlags)0xFFFFFFFF;
 
-    for(device_data& dev: ctx.get_devices())
+    for(device& dev: ctx.get_devices())
     {
         mask &= dev.props.limits.storageImageSampleCounts;
         mask &= dev.props.limits.sampledImageColorSampleCounts;

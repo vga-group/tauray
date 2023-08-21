@@ -7,7 +7,7 @@ namespace tr
 placeholders::placeholders(context& ctx)
 :   ctx(&ctx),
     sample2d(
-        ctx,
+        device_mask::all(ctx),
         uvec2(1),
         1,
         vk::Format::eR8G8B8A8Unorm,
@@ -17,7 +17,7 @@ placeholders::placeholders(context& ctx)
         vk::ImageLayout::eShaderReadOnlyOptimal
     ),
     sample3d(
-        ctx,
+        device_mask::all(ctx),
         uvec3(1),
         vk::Format::eR8G8B8A8Unorm,
         vk::ImageTiling::eOptimal,
@@ -25,7 +25,7 @@ placeholders::placeholders(context& ctx)
         vk::ImageLayout::eShaderReadOnlyOptimal
     ),
     depth_test_sample(
-        ctx,
+        device_mask::all(ctx),
         uvec2(1),
         1,
         vk::Format::eD32Sfloat,
@@ -35,19 +35,19 @@ placeholders::placeholders(context& ctx)
         vk::ImageLayout::eShaderReadOnlyOptimal
     ),
     default_sampler(
-        ctx, vk::Filter::eNearest, vk::Filter::eNearest,
+        device_mask::all(ctx),
+        vk::Filter::eNearest, vk::Filter::eNearest,
         vk::SamplerAddressMode::eRepeat,
         vk::SamplerAddressMode::eRepeat,
         vk::SamplerMipmapMode::eNearest, 0,
         true, false
-    )
+    ),
+    buffers(device_mask::all(ctx))
 {
-    std::vector<device_data>& devices = ctx.get_devices();
-    per_device.resize(devices.size());
-    for(size_t i = 0; i < per_device.size(); ++i)
+    for(auto[d, buf]: buffers)
     {
-        per_device[i].storage_buffer = create_buffer(
-            devices[i],
+        buf.storage_buffer = create_buffer(
+            d,
             {
                 {},
                 4,
@@ -57,18 +57,18 @@ placeholders::placeholders(context& ctx)
             VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
         );
 
-        per_device[i].img_2d_info = {
-            default_sampler.get_sampler(i),
-            sample2d.get_image_view(i),
+        buf.img_2d_info = {
+            default_sampler.get_sampler(d.id),
+            sample2d.get_image_view(d.id),
             vk::ImageLayout::eShaderReadOnlyOptimal
         };
-        per_device[i].img_3d_info = {
-            default_sampler.get_sampler(i),
-            sample3d.get_image_view(i),
+        buf.img_3d_info = {
+            default_sampler.get_sampler(d.id),
+            sample3d.get_image_view(d.id),
             vk::ImageLayout::eShaderReadOnlyOptimal
         };
-        per_device[i].storage_info = vk::DescriptorBufferInfo{
-            per_device[i].storage_buffer, 0, VK_WHOLE_SIZE
+        buf.storage_info = vk::DescriptorBufferInfo{
+            buf.storage_buffer, 0, VK_WHOLE_SIZE
         };
     }
 }

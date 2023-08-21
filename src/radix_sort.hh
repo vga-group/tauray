@@ -6,12 +6,12 @@
 namespace tr
 {
 
-struct device_data;
+struct device;
 
 class radix_sort
 {
 public:
-    radix_sort(device_data& ctx);
+    radix_sort(device& ctx);
     radix_sort(radix_sort&& other) = delete;
     radix_sort(const radix_sort& other) = delete;
     ~radix_sort();
@@ -29,7 +29,7 @@ public:
     );
 
 private:
-    device_data* dev;
+    device* dev;
     void* rs_instance;
     compute_pipeline reorder;
 };

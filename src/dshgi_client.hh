@@ -3,7 +3,7 @@
 #include "context.hh"
 #include "stage.hh"
 #include "texture.hh"
-#include "scene_update_stage.hh"
+#include "scene_stage.hh"
 #include "compute_pipeline.hh"
 #include "sh_grid.hh"
 #include <condition_variable>
@@ -26,12 +26,11 @@ public:
         std::string server_address;
     };
 
-    dshgi_client(context& ctx, const options& opt);
+    dshgi_client(context& ctx, scene_stage& ss, const options& opt);
     dshgi_client(const dshgi_client& other) = delete;
     dshgi_client(dshgi_client&& other) = delete;
     ~dshgi_client();
 
-    void set_scene(scene* s);
     // If this returns true, you will need to rebuild the scene buffers.
     bool refresh();
     dependencies render(dependencies deps);
@@ -41,7 +40,7 @@ private:
 
     context* ctx;
     options opt;
-    scene* cur_scene;
+    scene_stage* ss;
 
     std::mutex remote_grids_mutex;
     struct sh_grid_data
@@ -58,7 +57,7 @@ private:
     // The latest states of the grid data should be uploaded here.
     std::unordered_map<sh_grid*, texture> sh_grid_upload_textures;
     std::unordered_map<sh_grid*, texture> sh_grid_tmp_textures;
-    std::unordered_map<sh_grid*, texture> sh_grid_blended_textures;
+    // The blended result textures are stored in scene_stage's sh grid textures!
 
     time_ticks remote_timestamp;
     bool new_remote_timestamp;

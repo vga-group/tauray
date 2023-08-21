@@ -43,7 +43,7 @@ void progress_tracker::end()
     std::cout << "\x1b[?25h";
 }
 
-void progress_tracker::set_timeline(size_t device_index, vk::Semaphore timeline, size_t expected_steps_per_frame)
+void progress_tracker::set_timeline(device_id id, vk::Semaphore timeline, size_t expected_steps_per_frame)
 {
     if(!running) return;
 
@@ -57,7 +57,7 @@ void progress_tracker::set_timeline(size_t device_index, vk::Semaphore timeline,
         }
     }
     tracking_resources.push_back({
-        device_index,
+        id,
         timeline,
         expected_steps_per_frame
     });
@@ -118,7 +118,7 @@ void progress_tracker::update_progress_bar(
 
 void progress_tracker::poll_worker(progress_tracker* self)
 {
-    std::vector<device_data>& devices = self->ctx->get_devices();
+    std::vector<device>& devices = self->ctx->get_devices();
 
     std::chrono::steady_clock::time_point start_time;
     bool first = true;
@@ -139,9 +139,9 @@ void progress_tracker::poll_worker(progress_tracker* self)
         for(tracking_data& d: self->tracking_resources)
         {
             size_t steps = d.expected_steps_per_frame * self->opt.expected_frame_count;
-            device_total_steps[d.device_index] += steps;
-            uint64_t finished = devices[d.device_index].dev.getSemaphoreCounterValue(d.timeline);
-            device_finished_steps[d.device_index] += finished;
+            device_total_steps[d.id] += steps;
+            uint64_t finished = devices[d.id].logical.getSemaphoreCounterValue(d.timeline);
+            device_finished_steps[d.id] += finished;
         }
 
         float progress = 10.0f;

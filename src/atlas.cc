@@ -5,7 +5,7 @@ namespace tr
 {
 
 atlas::atlas(
-    device_data& dev,
+    device_mask dev,
     const std::vector<uvec2>& sub_sizes,
     unsigned pad_size,
     vk::Format fmt,

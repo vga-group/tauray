@@ -30,7 +30,8 @@ public:
     };
 
     path_tracer_stage(
-        device_data& dev,
+        device& dev,
+        scene_stage& ss,
         const gbuffer_target& output_target,
         const options& opt
     );

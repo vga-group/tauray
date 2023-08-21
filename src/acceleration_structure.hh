@@ -14,13 +14,18 @@ class bottom_level_acceleration_structure
 public:
     struct entry
     {
+        // If nullptr, this entry is AABBs instead of a triangle mesh.
         const mesh* m = nullptr;
-        mat4 transform = mat4(1);
+        size_t aabb_count = 0;
+        // Pointer to AABB buffer
+        gpu_buffer* aabb_buffer = nullptr;
+
+        mat4 transform = mat4(1.0f);
         bool opaque = true;
     };
 
     bottom_level_acceleration_structure(
-        context& ctx,
+        device_mask dev,
         const std::vector<entry>& entries,
         bool backface_culled,
         bool dynamic,
@@ -33,77 +38,74 @@ public:
     );
 
     void rebuild(
-        size_t device_index,
+        device_id id,
         size_t frame_index,
         vk::CommandBuffer cb,
         const std::vector<entry>& entries,
         bool update = true
     );
     size_t get_updates_since_rebuild() const;
-    vk::AccelerationStructureKHR get_blas_handle(size_t device_index) const;
-    vk::DeviceAddress get_blas_address(size_t device_index) const;
+    vk::AccelerationStructureKHR get_blas_handle(device_id id) const;
+    vk::DeviceAddress get_blas_address(device_id id) const;
 
     size_t get_geometry_count() const;
     bool is_backface_culled() const;
 
 private:
-    context* ctx;
     size_t updates_since_rebuild;
     size_t geometry_count;
     bool backface_culled;
     bool dynamic;
     bool compact;
 
-    // Per-device
+    gpu_buffer transform_buffer;
+
     struct buffer_data
     {
-        gpu_buffer transform_buffer;
         vkm<vk::AccelerationStructureKHR> blas;
         vkm<vk::Buffer> blas_buffer;
         vk::DeviceAddress blas_address;
         vkm<vk::Buffer> scratch_buffer;
         vk::DeviceAddress scratch_address;
     };
-    std::vector<buffer_data> buffers;
+    per_device<buffer_data> buffers;
 };
 
 class top_level_acceleration_structure
 {
 public:
     top_level_acceleration_structure(
-        context& ctx,
+        device_mask dev,
         size_t capacity
     );
 
-    gpu_buffer& get_instances_buffer(size_t device_index);
+    gpu_buffer& get_instances_buffer();
     void rebuild(
-        size_t device_index,
+        device_id id,
         vk::CommandBuffer cb,
         size_t instance_count,
         bool update
     );
     size_t get_updates_since_rebuild() const;
-    const vk::AccelerationStructureKHR* get_tlas_handle(size_t device_index) const;
-    vk::DeviceAddress get_tlas_address(size_t device_index) const;
+    const vk::AccelerationStructureKHR* get_tlas_handle(device_id id) const;
+    vk::DeviceAddress get_tlas_address(device_id id) const;
 
 private:
-    context* ctx;
-
     size_t updates_since_rebuild;
     size_t instance_count;
     size_t instance_capacity;
     bool require_rebuild;
 
-    // Per-device
+    gpu_buffer instance_buffer;
+
     struct buffer_data
     {
         vkm<vk::AccelerationStructureKHR> tlas;
         vkm<vk::Buffer> tlas_buffer;
         vkm<vk::Buffer> scratch_buffer;
         vk::DeviceAddress tlas_address;
-        gpu_buffer instance_buffer;
     };
-    std::vector<buffer_data> buffers;
+    per_device<buffer_data> buffers;
 };
 
 }

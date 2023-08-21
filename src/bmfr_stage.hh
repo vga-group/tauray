@@ -10,7 +10,7 @@
 namespace tr
 {
 
-class bmfr_stage: public stage
+class bmfr_stage: public single_device_stage
 {
 public:
     enum class bmfr_settings
@@ -24,7 +24,7 @@ public:
     };
 
     bmfr_stage(
-        device_data& dev,
+        device& dev,
         gbuffer_target& current_features,
         gbuffer_target& prev_features,
         const options& opt
@@ -39,7 +39,7 @@ private:
     void record_command_buffers();
     static shader_source load_shader_source(const std::string& path, const options& opt);
 
-    void copy_image(vk::CommandBuffer& cb, uint32_t frame_index, render_target& src, render_target& dst);
+    void copy_image(vk::CommandBuffer& cb, render_target& src, render_target& dst);
 
     compute_pipeline bmfr_preprocess_comp;
     compute_pipeline bmfr_fit_comp;
@@ -57,7 +57,7 @@ private:
     vkm<vk::Buffer> tmp_data[MAX_FRAMES_IN_FLIGHT];
     vkm<vk::Buffer> weights[MAX_FRAMES_IN_FLIGHT];
     vkm<vk::Buffer> accepts[MAX_FRAMES_IN_FLIGHT];
-    gpu_buffer ubos[MAX_FRAMES_IN_FLIGHT];
+    gpu_buffer ubos;
     std::unique_ptr<texture> rt_textures[10];
     options opt;
     timer stage_timer, bmfr_preprocess_timer, bmfr_fit_timer, bmfr_weighted_sum_timer, bmfr_accumulate_output_timer, image_copy_timer;

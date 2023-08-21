@@ -18,7 +18,7 @@ struct reorder_push_constants
 namespace tr
 {
 
-radix_sort::radix_sort(device_data& dev)
+radix_sort::radix_sort(device& dev)
 : dev(&dev), reorder(dev, {{"shader/array_reorder.comp"}, {}, 1, true})
 {
     radix_sort_vk_target* rs_target =  radix_sort_vk_target_auto_detect(
@@ -28,7 +28,7 @@ radix_sort::radix_sort(device_data& dev)
     );
 
     rs_instance = radix_sort_vk_create(
-        dev.dev,
+        dev.logical,
         nullptr,
         VK_NULL_HANDLE,
         rs_target
@@ -39,7 +39,7 @@ radix_sort::radix_sort(device_data& dev)
 
 radix_sort::~radix_sort()
 {
-    dev->ctx->queue_frame_finish_callback([rs_instance = rs_instance, dev = dev->dev](){
+    dev->ctx->queue_frame_finish_callback([rs_instance = rs_instance, dev = dev->logical](){
         radix_sort_vk_destroy((radix_sort_vk_t*)rs_instance, dev, nullptr);
     });
 }
@@ -116,7 +116,7 @@ void radix_sort::sort(
     radix_sort_vk_sort(
         (const radix_sort_vk_t*)rs_instance,
         &sort_info,
-        dev->dev,
+        dev->logical,
         cb,
         (VkDescriptorBufferInfo*)&sorted_keyvals_buf
     );

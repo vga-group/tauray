@@ -3,53 +3,56 @@
 namespace tr
 {
 
-timer::timer()
-: dev(nullptr), timer_id(-1)
-{
-}
+timer::timer(){}
 
-timer::timer(device_data& dev, const std::string& name)
-: dev(&dev)
+timer::timer(device_mask dev, const std::string& name)
 {
-    timer_id = dev.ctx->get_timing().register_timer(dev.index, name);
+    timer_id.init(dev,
+        [&](device& d){
+            return d.ctx->get_timing().register_timer(d.id, name);
+        }
+    );
 }
 
 timer::timer(timer&& other)
-: dev(other.dev), timer_id(other.timer_id)
+: timer_id(std::move(other.timer_id))
 {
-    other.dev = nullptr;
+    other.timer_id.clear();
 }
 
 timer::~timer()
 {
-    if(dev) dev->ctx->get_timing().unregister_timer(dev->index, timer_id);
+    for(auto[d, timer_id]: timer_id)
+        d.ctx->get_timing().unregister_timer(d.id, timer_id);
 }
 
 timer& timer::operator=(timer&& other)
 {
-    if(dev) dev->ctx->get_timing().unregister_timer(dev->index, timer_id);
-    dev = other.dev;
-    timer_id = other.timer_id;
-    other.dev = nullptr;
+    for(auto[d, timer_id]: timer_id)
+        d.ctx->get_timing().unregister_timer(d.id, timer_id);
+    timer_id = std::move(other.timer_id);
+    other.timer_id.clear();
     return *this;
 }
 
 void timer::begin(
-    vk::CommandBuffer cb, uint32_t frame_index, vk::PipelineStageFlagBits stage
+    vk::CommandBuffer cb, device_id id, uint32_t frame_index, vk::PipelineStageFlagBits stage
 ){
-    if(timer_id < 0 || !dev) return;
-    uint32_t query_id = timer_id * 2u;
-    vk::QueryPool pool = dev->ctx->get_timing().get_timestamp_pool(dev->index, frame_index);
+    int tid = timer_id[id];
+    if(tid < 0) return;
+    uint32_t query_id = tid * 2u;
+    vk::QueryPool pool = timer_id.get_context()->get_timing().get_timestamp_pool(id, frame_index);
     cb.resetQueryPool(pool, query_id, 2);
     cb.writeTimestamp(stage, pool, query_id);
 }
 
 void timer::end(
-    vk::CommandBuffer cb, uint32_t frame_index, vk::PipelineStageFlagBits stage
+    vk::CommandBuffer cb, device_id id, uint32_t frame_index, vk::PipelineStageFlagBits stage
 ){
-    if(timer_id < 0 || !dev) return;
-    uint32_t query_id = timer_id * 2u;
-    vk::QueryPool pool = dev->ctx->get_timing().get_timestamp_pool(dev->index, frame_index);
+    int tid = timer_id[id];
+    if(tid < 0) return;
+    uint32_t query_id = tid * 2u;
+    vk::QueryPool pool = timer_id.get_context()->get_timing().get_timestamp_pool(id, frame_index);
     cb.writeTimestamp(stage, pool, query_id+1);
 }
 

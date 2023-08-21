@@ -142,8 +142,8 @@ bool openxr::init_frame()
 
 void openxr::recreate_swapchains()
 {
-    device_data& dev_data = get_display_device();
-    dev_data.dev.waitIdle();
+    device& dev_data = get_display_device();
+    dev_data.logical.waitIdle();
 
     deinit_window_swapchain();
     init_window_swapchain();
@@ -163,7 +163,7 @@ void openxr::setup_xr_surroundings(
 
 uint32_t openxr::prepare_next_image(uint32_t frame_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
 
     uint32_t swapchain_index = 0;
     XrSwapchainImageAcquireInfo acquire_info = {
@@ -189,7 +189,7 @@ uint32_t openxr::prepare_next_image(uint32_t frame_index)
         {}
     );
 
-    window_swapchain_index = d.dev.acquireNextImageKHR(
+    window_swapchain_index = d.logical.acquireNextImageKHR(
         window_swapchain, UINT64_MAX, window_frame_available[frame_index], {}
     ).value;
 
@@ -200,7 +200,7 @@ void openxr::finish_image(uint32_t frame_index, uint32_t swapchain_index, bool)
 {
     blit_images(frame_index, swapchain_index);
 
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     (void)d.present_queue.presentKHR({
         1, window_frame_finished[frame_index],
         1, &window_swapchain,
@@ -531,13 +531,13 @@ void openxr::deinit_xr()
 
 void openxr::init_session()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     XrGraphicsBindingVulkan2KHR binding = {
         XR_TYPE_GRAPHICS_BINDING_VULKAN2_KHR,
         nullptr,
         instance,
-        dev_data.pdev,
-        dev_data.dev,
+        dev_data.physical,
+        dev_data.logical,
         dev_data.present_family_index,
         0
     };
@@ -586,7 +586,7 @@ void openxr::deinit_session()
 
 void openxr::init_xr_swapchain()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
 
     uint32_t format_count = 0;
     xrEnumerateSwapchainFormats(xr_session, 0, &format_count, nullptr);
@@ -676,7 +676,7 @@ void openxr::init_xr_swapchain()
         xr_images.emplace_back(dev_data, vk::Image(img.image));
         xr_images.back().leak();
         xr_image_views.emplace_back(dev_data,
-            dev_data.dev.createImageView({
+            dev_data.logical.createImageView({
                 {},
                 img.image,
                 vk::ImageViewType::e2D,
@@ -731,9 +731,9 @@ void openxr::deinit_xr_swapchain()
 
 void openxr::init_window_swapchain()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     std::vector<vk::SurfaceFormatKHR> formats =
-        dev_data.pdev.getSurfaceFormatsKHR(surface);
+        dev_data.physical.getSurfaceFormatsKHR(surface);
 
     // Find the format matching our desired format.
     bool found_format = false;
@@ -755,7 +755,7 @@ void openxr::init_window_swapchain()
     window_image_format = swapchain_format.format;
 
     std::vector<vk::PresentModeKHR> modes =
-        dev_data.pdev.getSurfacePresentModesKHR(surface);
+        dev_data.physical.getSurfacePresentModesKHR(surface);
     bool found_mode = false;
     vk::PresentModeKHR selected_mode = modes[0];
     if(
@@ -776,7 +776,7 @@ void openxr::init_window_swapchain()
 
     // Find the size that matches our window size
     vk::SurfaceCapabilitiesKHR caps =
-        dev_data.pdev.getSurfaceCapabilitiesKHR(surface);
+        dev_data.physical.getSurfaceCapabilitiesKHR(surface);
     vk::Extent2D selected_extent = caps.currentExtent;
     if(caps.currentExtent.width == UINT32_MAX)
     {
@@ -816,7 +816,7 @@ void openxr::init_window_swapchain()
             dev_data.present_family_index
         };
     }
-    window_swapchain = dev_data.dev.createSwapchainKHR({
+    window_swapchain = dev_data.logical.createSwapchainKHR({
         {},
         surface,
         image_count,
@@ -836,14 +836,14 @@ void openxr::init_window_swapchain()
     });
 
     // Get swap chain images & create image views
-    auto swapchain_images = dev_data.dev.getSwapchainImagesKHR(
+    auto swapchain_images = dev_data.logical.getSwapchainImagesKHR(
         window_swapchain
     );
     for(vk::Image img: swapchain_images)
     {
         window_images.emplace_back(vkm(dev_data, img));
         window_image_views.emplace_back(dev_data,
-            dev_data.dev.createImageView({
+            dev_data.logical.createImageView({
                 {},
                 img,
                 vk::ImageViewType::e2D,
@@ -857,7 +857,7 @@ void openxr::init_window_swapchain()
 
 void openxr::deinit_window_swapchain()
 {
-    vk::Device& dev = get_display_device().dev;
+    vk::Device& dev = get_display_device().logical;
     window_image_views.clear();
     window_images.clear();
     sync();
@@ -866,7 +866,7 @@ void openxr::deinit_window_swapchain()
 
 void openxr::init_local_resources()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     window_frame_available.resize(MAX_FRAMES_IN_FLIGHT);
     window_frame_finished.resize(MAX_FRAMES_IN_FLIGHT);
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -875,7 +875,7 @@ void openxr::init_local_resources()
         window_frame_finished[i] = create_binary_semaphore(dev_data);
     }
 
-    finish_fence = vkm(dev_data, dev_data.dev.createFence({}));
+    finish_fence = vkm(dev_data, dev_data.logical.createFence({}));
 }
 
 void openxr::deinit_local_resources()
@@ -887,7 +887,7 @@ void openxr::deinit_local_resources()
 
 void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
 {
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     vkm<vk::CommandBuffer> cmd = create_graphics_command_buffer(d);
     cmd->begin(vk::CommandBufferBeginInfo{
         vk::CommandBufferUsageFlagBits::eOneTimeSubmit

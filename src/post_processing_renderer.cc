@@ -4,8 +4,8 @@ namespace tr
 {
 
 post_processing_renderer::post_processing_renderer(
-    device_data& dev, uvec2 output_size, const options& opt
-): dev(&dev), opt(opt), output_size(output_size)
+    device& dev, scene_stage& ss, uvec2 output_size, const options& opt
+): dev(&dev), opt(opt), output_size(output_size), ss(&ss)
 {
     // It's easiest to test WIP post processing pipelines by forcing their
     // options from here
@@ -72,6 +72,7 @@ void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
 void post_processing_renderer::set_display(gbuffer_target input_gbuffer)
 {
     this->input_gbuffer = input_gbuffer;
+    init_pipelines();
 }
 
 dependencies post_processing_renderer::get_gbuffer_write_dependencies() const
@@ -81,13 +82,6 @@ dependencies post_processing_renderer::get_gbuffer_write_dependencies() const
     return delay_deps[(frame_index + 1) % MAX_FRAMES_IN_FLIGHT];
 }
 
-void post_processing_renderer::set_scene(scene* s)
-{
-    cur_scene = s;
-    deinit_pipelines();
-    init_pipelines();
-}
-
 dependencies post_processing_renderer::render(dependencies deps)
 {
     uint32_t swapchain_index, frame_index;
@@ -95,30 +89,27 @@ dependencies post_processing_renderer::render(dependencies deps)
     bool first_frame = dev->ctx->get_frame_counter() <= 1;
 
     if(temporal_reprojection && !first_frame)
-        deps.add(temporal_reprojection->run(deps));
+        deps = temporal_reprojection->run(deps);
 
-    dependencies out_deps;
-
-    delay_deps[frame_index].clear();
     if(spatial_reprojection)
-        deps.add(spatial_reprojection->run(deps));
+        deps = spatial_reprojection->run(deps);
 
     if(example_denoiser)
-        deps.add(example_denoiser->run(deps));
+        deps = example_denoiser->run(deps);
 
     if(svgf)
-        deps.add(svgf->run(deps));
+        deps = svgf->run(deps);
 
     if (bmfr)
-        deps.add(bmfr->run(deps));
+        deps = bmfr->run(deps);
 
     if(taa)
-        deps.add(taa->run(deps));
+        deps = taa->run(deps);
 
-    out_deps.add(tonemap->run(deps));
+    dependencies out_deps = tonemap->run(deps);
 
     if(delay)
-        delay_deps[frame_index].add(delay->run(deps));
+        delay_deps[frame_index] = delay->run(deps);
 
     return out_deps;
 }
@@ -126,7 +117,7 @@ dependencies post_processing_renderer::render(dependencies deps)
 void post_processing_renderer::init_pipelines()
 {
     gbuffer_target input_target = input_gbuffer;
-    vk::SampleCountFlagBits msaa = input_target.color.get_msaa();
+    vk::SampleCountFlagBits msaa = input_target.color.msaa;
 
     if(opt.spatial_reprojection.has_value())
     {
@@ -134,10 +125,10 @@ void post_processing_renderer::init_pipelines()
 
         spatial_reprojection.reset(new spatial_reprojection_stage(
             *dev,
+            *ss,
             input_target,
             opt.spatial_reprojection.value()
         ));
-        spatial_reprojection->set_scene(cur_scene);
     }
 
     render_target in_color = input_target.color;
@@ -187,7 +178,7 @@ void post_processing_renderer::init_pipelines()
                 msaa
             ));
             if(pingpong_index == 0)
-                out_color = tex->get_array_render_target(dev->index);
+                out_color = tex->get_array_render_target(dev->id);
 
             pingpong_index++;
         }
@@ -202,7 +193,7 @@ void post_processing_renderer::init_pipelines()
         if(pingpong_index == 0)
         {
             // Swap the initial color to second pingpong target
-            out_color = pingpong[1]->get_array_render_target(dev->index);
+            out_color = pingpong[1]->get_array_render_target(dev->id);
         }
         pingpong_index++;
     };
@@ -228,11 +219,11 @@ void post_processing_renderer::init_pipelines()
         opt.svgf_denoiser.value().active_viewport_count = opt.active_viewport_count;
         svgf.reset(new svgf_stage(
             *dev,
+            *ss,
             input_target,
             prev_gbuffer,
             opt.svgf_denoiser.value()
         ));
-        svgf->set_scene(cur_scene);
     }
     if(opt.bmfr.has_value())
     {
@@ -251,15 +242,15 @@ void post_processing_renderer::init_pipelines()
         tmp.color = in_color;
         taa.reset(new taa_stage(
             *dev,
+            *ss,
             tmp,
             opt.taa.value()
         ));
-        taa->set_scene(cur_scene);
     }
 
     opt.tonemap.input_msaa = (int)msaa;
     opt.tonemap.transition_output_layout = true;
-    render_target display = dev->ctx->get_array_render_target();
+    std::vector<render_target> display = dev->ctx->get_array_render_target();
     tonemap.reset(new tonemap_stage(
         *dev,
         in_color,

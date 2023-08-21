@@ -33,11 +33,12 @@ namespace tr
 {
 
 spatial_reprojection_stage::spatial_reprojection_stage(
-    device_data& dev,
+    device& dev,
+    scene_stage& ss,
     gbuffer_target& target,
     const options& opt
-):  stage(dev),
-    current_scene(nullptr),
+):  single_device_stage(dev),
+    ss(&ss),
     target_viewport(target),
     comp(dev, compute_pipeline::params{
         load_source(opt), {}
@@ -57,35 +58,25 @@ spatial_reprojection_stage::spatial_reprojection_stage(
     )
 {
     target_viewport.set_layout(vk::ImageLayout::eGeneral);
-    this->target_viewport.color.set_layout(vk::ImageLayout::eUndefined);
+    this->target_viewport.color.layout = vk::ImageLayout::eUndefined;
 
+    clear_commands();
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         comp.update_descriptor_set({
-            {"camera_data", {*camera_data, 0, VK_WHOLE_SIZE}},
-            {"color_tex", {{}, target_viewport.color[i].view, vk::ImageLayout::eGeneral}},
-            {"normal_tex", {{}, target_viewport.normal[i].view, vk::ImageLayout::eGeneral}},
-            {"position_tex", {{}, target_viewport.pos[i].view, vk::ImageLayout::eGeneral}}
+            {"camera_data", {camera_data[dev.id], 0, VK_WHOLE_SIZE}},
+            {"color_tex", {{}, target_viewport.color.view, vk::ImageLayout::eGeneral}},
+            {"normal_tex", {{}, target_viewport.normal.view, vk::ImageLayout::eGeneral}},
+            {"position_tex", {{}, target_viewport.pos.view, vk::ImageLayout::eGeneral}}
         }, i);
-    }
-}
-
-void spatial_reprojection_stage::set_scene(scene* s)
-{
-    current_scene = s;
-    clear_commands();
-    if(!current_scene) return;
-
-    for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
         vk::CommandBuffer cb = begin_compute();
 
-        stage_timer.begin(cb, i);
+        stage_timer.begin(cb, dev.id, i);
 
         target_viewport.color.transition_layout_temporary(
-            cb, i, vk::ImageLayout::eGeneral, true
+            cb, vk::ImageLayout::eGeneral, true
         );
-        camera_data.upload(i, cb);
+        camera_data.upload(dev.id, i, cb);
 
         comp.bind(cb, i);
 
@@ -99,20 +90,18 @@ void spatial_reprojection_stage::set_scene(scene* s)
         comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, target_viewport.get_layer_count() - control.source_count);
 
-        stage_timer.end(cb, i);
+        stage_timer.end(cb, dev.id, i);
         end_compute(cb, i);
     }
 }
 
 void spatial_reprojection_stage::update(uint32_t frame_index)
 {
-    if(!current_scene) return;
-
     camera_data.foreach<camera_data_buffer>(
         frame_index,
         opt.active_viewport_count,
         [&](camera_data_buffer& data, size_t i){
-            data.view_proj = current_scene->get_camera(i)->get_view_projection();
+            data.view_proj = ss->get_scene()->get_camera(i)->get_view_projection();
         }
     );
 }

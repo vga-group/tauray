@@ -21,7 +21,7 @@ public:
         bool use_push_descriptors = false;
     };
 
-    compute_pipeline(device_data& dev, const params& p);
+    compute_pipeline(device& dev, const params& p);
 };
 
 }

@@ -9,26 +9,27 @@
 namespace tr
 {
 
-class scene;
-class z_pass_stage: public stage
+class scene_stage;
+class z_pass_stage: public single_device_stage
 {
 public:
     z_pass_stage(
-        device_data& dev, 
+        device& dev, 
+        scene_stage& ss,
         const std::vector<render_target>& depth_buffer_arrays
     );
 
-    void set_scene(scene* s);
-    scene* get_scene();
+protected:
+    void update(uint32_t frame_index) override;
 
 private:
     std::vector<std::unique_ptr<raster_pipeline>> array_pipelines;
 
-    scene* cur_scene;
+    scene_stage* ss;
     timer z_pass_timer;
+    uint32_t scene_state_counter;
 };
 
 }
 
 #endif
-

@@ -7,7 +7,7 @@ namespace tr
 {
 
 raster_pipeline::raster_pipeline(
-    device_data& dev, const pipeline_state& state
+    device& dev, const pipeline_state& state
 ):  basic_pipeline(
         dev,
         get_bindings(state.src, state.binding_array_lengths),
@@ -70,14 +70,14 @@ uint32_t raster_pipeline::get_multiview_layer_count() const
     for(const auto& att: state.color_attachments)
     {
         if(att.target)
-            layer_count = std::max(att.target.get_layer_count(), layer_count);
+            layer_count = std::max(att.target.layer_count, layer_count);
         else
-            layer_count = std::max(att.target.get_layer_count(), layer_count);
+            layer_count = std::max(att.target.layer_count, layer_count);
     }
     if(state.depth_attachment)
     {
         layer_count = std::max(
-            state.depth_attachment->target.get_layer_count(),
+            state.depth_attachment->target.layer_count,
             layer_count
         );
     }
@@ -156,7 +156,7 @@ void raster_pipeline::init_render_pass()
             );
         }
     }
-    render_pass = vkm(*dev, dev->dev.createRenderPass(render_pass_info));
+    render_pass = vkm(*dev, dev->logical.createRenderPass(render_pass_info));
 }
 
 void raster_pipeline::init_pipeline()
@@ -204,8 +204,11 @@ void raster_pipeline::init_pipeline()
         0.0f
     );
 
+    std::vector<vk::DynamicState> dynamic_states;
+    if(state.dynamic_viewport)
+        dynamic_states.push_back(vk::DynamicState::eViewport);
     vk::PipelineDynamicStateCreateInfo dynamic_state = {
-        {}, 0, nullptr
+        {}, (uint32_t)dynamic_states.size(), dynamic_states.data()
     };
 
     std::vector<vk::PipelineColorBlendAttachmentState> color_blend_attachments;
@@ -265,7 +268,7 @@ void raster_pipeline::init_pipeline()
         -1
     );
 
-    pipeline = vkm(*dev, dev->dev.createGraphicsPipeline(dev->pp_cache, pipeline_info).value);
+    pipeline = vkm(*dev, dev->logical.createGraphicsPipeline(dev->pp_cache, pipeline_info).value);
 
     init_framebuffers();
 }
@@ -280,14 +283,14 @@ void raster_pipeline::init_framebuffers()
         {
             if(att.target)
             {
-                assert(att.target.get_size() == state.output_size);
-                fb_attachments.push_back(att.target[i].view);
+                assert(att.target.size == state.output_size);
+                fb_attachments.push_back(att.target.view);
             }
         }
         if(auto& att = state.depth_attachment)
         {
-            assert(att->target.get_size() == state.output_size);
-            fb_attachments.push_back(att->target[i].view);
+            assert(att->target.size == state.output_size);
+            fb_attachments.push_back(att->target.view);
         }
 
         vk::FramebufferCreateInfo framebuffer_info(
@@ -299,7 +302,7 @@ void raster_pipeline::init_framebuffers()
             state.output_size.y,
             1
         );
-        framebuffers[i] = vkm(*dev, dev->dev.createFramebuffer(framebuffer_info));
+        framebuffers[i] = vkm(*dev, dev->logical.createFramebuffer(framebuffer_info));
     }
 }
 

@@ -7,9 +7,8 @@ namespace tr
 {
 
 // These placeholder assets are used when some resource is missing.
-class placeholders
+struct placeholders
 {
-    public:
     placeholders(context& ctx);
 
     context* ctx;
@@ -18,7 +17,7 @@ class placeholders
     texture depth_test_sample;
     sampler default_sampler;
 
-    struct per_device_data
+    struct buffer
     {
         vkm<vk::Buffer> storage_buffer;
 
@@ -26,7 +25,7 @@ class placeholders
         vk::DescriptorImageInfo img_3d_info;
         vk::DescriptorBufferInfo storage_info;
     };
-    std::vector<per_device_data> per_device;
+    per_device<buffer> buffers;
 };
 
 }

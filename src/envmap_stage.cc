@@ -1,4 +1,5 @@
 #include "envmap_stage.hh"
+#include "scene_stage.hh"
 #include "environment_map.hh"
 #include "scene.hh"
 #include "placeholders.hh"
@@ -23,18 +24,19 @@ namespace tr
 {
 
 envmap_stage::envmap_stage(
-    device_data& dev,
+    device& dev,
+    scene_stage& ss,
     const std::vector<render_target>& color_arrays
-):  stage(dev),
+):  single_device_stage(dev),
     envmap_timer(dev, "envmap ("+ std::to_string(count_array_layers(color_arrays)) +" viewports)"),
-    cur_scene(nullptr)
+    scene_state_counter(0),
+    ss(&ss)
 {
-    set_scene(nullptr);
     for(const render_target& target: color_arrays)
     {
         array_pipelines.emplace_back(new raster_pipeline(dev, {
-            target.get_size(),
-            uvec4(0, 0, target.get_size()),
+            target.size,
+            uvec4(0, 0, target.size),
             {{"shader/envmap.vert"}, {"shader/envmap.frag"}},
             {},
             {}, {},
@@ -42,8 +44,8 @@ envmap_stage::envmap_stage(
                 target,
                 {
                     {},
-                    target.get_format(),
-                    target.get_msaa(),
+                    target.format,
+                    target.msaa,
                     vk::AttachmentLoadOp::eDontCare,
                     vk::AttachmentStoreOp::eStore,
                     vk::AttachmentLoadOp::eDontCare,
@@ -58,13 +60,13 @@ envmap_stage::envmap_stage(
     }
 }
 
-void envmap_stage::set_scene(scene* s)
+void envmap_stage::update(uint32_t)
 {
-    cur_scene = s;
-    clear_commands();
-    if(!s) return;
+    if(!ss->check_update(scene_stage::ENVMAP, scene_state_counter))
+        return;
 
-    environment_map* envmap = cur_scene ? cur_scene->get_environment_map() : nullptr;
+    clear_commands();
+    environment_map* envmap = ss->get_environment_map();
 
     push_constant_buffer control;
     if(envmap)
@@ -82,13 +84,13 @@ void envmap_stage::set_scene(scene* s)
     {
         // Record command buffer
         vk::CommandBuffer cb = begin_graphics();
-        envmap_timer.begin(cb, i);
+        envmap_timer.begin(cb, dev->id, i);
 
         size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             // Bind descriptors
-            cur_scene->bind(*gfx, i, j);
+            ss->bind(*gfx, i, j);
             j += gfx->get_multiview_layer_count();
 
             gfx->begin_render_pass(cb, i);
@@ -101,7 +103,7 @@ void envmap_stage::set_scene(scene* s)
 
             gfx->end_render_pass(cb);
         }
-        envmap_timer.end(cb, i);
+        envmap_timer.end(cb, dev->id, i);
         end_graphics(cb, i);
     }
 }

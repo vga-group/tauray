@@ -1,9 +1,8 @@
 #include "raster_stage.hh"
 #include "mesh.hh"
 #include "shader_source.hh"
-#include "shadow_map_renderer.hh"
 #include "placeholders.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "camera.hh"
 #include "misc.hh"
 #include "sh_grid.hh"
@@ -69,11 +68,11 @@ std::vector<color_attachment_state> get_color_attachments(
             return;
         color_attachment_state att = proto;
         att.target = entry;
-        att.desc.format = entry.get_format();
+        att.desc.format = entry.format;
         bool clear = opt.clear_color || &entry != &gbuf.color;
         att.desc.initialLayout = clear?
             vk::ImageLayout::eUndefined :
-            entry.get_layout();
+            entry.layout;
         if(clear)
             att.desc.loadOp = vk::AttachmentLoadOp::eClear;
         att.desc.finalLayout = opt.output_layout;
@@ -92,7 +91,7 @@ depth_attachment_state get_depth_attachment(
         gbuf.depth,
         {
             {},
-            gbuf.depth.get_format(),
+            gbuf.depth.format,
             (vk::SampleCountFlagBits)gbuf.get_msaa(),
             opt.clear_depth ? vk::AttachmentLoadOp::eClear :
                 vk::AttachmentLoadOp::eLoad,
@@ -116,14 +115,16 @@ namespace tr
 {
 
 raster_stage::raster_stage(
-    device_data& dev,
+    device& dev,
+    scene_stage& ss,
     const std::vector<gbuffer_target>& output_array_targets,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     output_targets(output_array_targets),
     opt(opt),
+    scene_state_counter(0),
     brdf_integration_sampler(
-        *dev.ctx,
+        dev,
         vk::Filter::eLinear,
         vk::Filter::eLinear,
         vk::SamplerAddressMode::eClampToEdge,
@@ -133,14 +134,14 @@ raster_stage::raster_stage(
         true,
         false
     ),
-    cur_scene(nullptr),
+    ss(&ss),
     brdf_integration(dev, get_resource_path("data/brdf_integration.exr")),
     noise_vector_2d(dev, get_resource_path("data/noise_vector_2d.exr")),
     noise_vector_3d(dev, get_resource_path("data/noise_vector_3d.exr")),
     raster_timer(
         dev,
         std::string(output_array_targets[0].color ? "forward" : "gbuffer") +
-        " rasterization (" + std::to_string(count_array_layers(output_array_targets)) +
+        " rasterization (" + std::to_string(count_gbuffer_array_layers(output_array_targets)) +
         " viewports)"
     )
 {
@@ -163,7 +164,7 @@ raster_stage::raster_stage(
             opt.sample_shading, (bool)target.color || opt.force_alpha_to_coverage, true
         }));
 
-        scene::bind_placeholders(
+        scene_stage::bind_placeholders(
             *array_pipelines.back(),
             opt.max_samplers,
             opt.max_3d_samplers
@@ -171,59 +172,45 @@ raster_stage::raster_stage(
 
         array_pipelines.back()->update_descriptor_set({
             {"pcf_noise_vector_2d", {
-                pl.default_sampler.get_sampler(dev.index),
-                noise_vector_2d.get_image_view(dev.index),
+                pl.default_sampler.get_sampler(dev.id),
+                noise_vector_2d.get_image_view(dev.id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }},
             {"pcf_noise_vector_3d", {
-                pl.default_sampler.get_sampler(dev.index),
-                noise_vector_3d.get_image_view(dev.index),
+                pl.default_sampler.get_sampler(dev.id),
+                noise_vector_3d.get_image_view(dev.id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }},
             {"brdf_integration", {
-                brdf_integration_sampler.get_sampler(dev.index),
-                brdf_integration.get_image_view(dev.index),
+                brdf_integration_sampler.get_sampler(dev.id),
+                brdf_integration.get_image_view(dev.id),
                 vk::ImageLayout::eShaderReadOnlyOptimal
             }}
         });
     }
 }
 
-void raster_stage::set_scene(scene* s)
+void raster_stage::update(uint32_t)
 {
-    cur_scene = s;
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        size_t j = 0;
-        for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
-        {
-            // Bind descriptors
-            cur_scene->bind(*gfx, i, j);
-            j += gfx->get_multiview_layer_count();
-        }
-    }
-    record_command_buffers();
-}
+    if(!ss->check_update(scene_stage::GEOMETRY|scene_stage::LIGHT, scene_state_counter))
+        return;
 
-scene* raster_stage::get_scene()
-{
-    return cur_scene;
-}
-
-void raster_stage::record_command_buffers()
-{
     clear_commands();
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vk::CommandBuffer cb = begin_graphics();
 
-        raster_timer.begin(cb, i);
+        raster_timer.begin(cb, dev->id, i);
+        size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
+            ss->bind(*gfx, i, j);
+            j += gfx->get_multiview_layer_count();
+
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
 
-            const std::vector<scene::instance>& instances = cur_scene->get_instances();
+            const std::vector<scene_stage::instance>& instances = ss->get_instances();
             push_constant_buffer control;
             control.pcf_samples = opt.pcf_samples;
             control.omni_pcf_samples = opt.omni_pcf_samples;
@@ -231,18 +218,18 @@ void raster_stage::record_command_buffers()
             control.pcss_minimum_radius = opt.pcss_minimum_radius;
             control.noise_scale =
                 opt.sample_shading ? ceil(sqrt((int)output_targets[0].get_msaa())) : 1.0f;
-            control.ambient_color = cur_scene->get_ambient();
-            control.shadow_map_atlas_pixel_margin = cur_scene->get_shadow_map_atlas_pixel_margin();
+            control.ambient_color = ss->get_ambient();
+            control.shadow_map_atlas_pixel_margin = ss->get_shadow_map_atlas_pixel_margin();
 
             for(size_t i = 0; i < instances.size(); ++i)
             {
-                const scene::instance& inst = instances[i];
+                const scene_stage::instance& inst = instances[i];
                 const mesh* m = inst.m;
-                vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->index)};
+                vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->id)};
                 vk::DeviceSize offsets[] = {0};
                 cb.bindVertexBuffers(0, 1, vertex_buffers, offsets);
                 cb.bindIndexBuffer(
-                    m->get_index_buffer(dev->index),
+                    m->get_index_buffer(dev->id),
                     0, vk::IndexType::eUint32
                 );
                 control.instance_id = i;
@@ -253,7 +240,7 @@ void raster_stage::record_command_buffers()
             }
             gfx->end_render_pass(cb);
         }
-        raster_timer.end(cb, i);
+        raster_timer.end(cb, dev->id, i);
         end_graphics(cb, i);
     }
 }

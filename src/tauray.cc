@@ -11,18 +11,14 @@
 #include "dshgi_server.hh"
 #include "frame_client.hh"
 #include "rt_renderer.hh"
-#include "patched_sphere.hh"
 #include "scene.hh"
 #include "camera.hh"
 #include "texture.hh"
 #include "environment_map.hh"
 #include "sampler.hh"
-#include "heightfield.hh"
-#include "plane.hh"
 #include "material.hh"
 #include "gltf.hh"
 #include "assimp.hh"
-#include "ply.hh"
 #include "misc.hh"
 #include "load_balancer.hh"
 #include <chrono>
@@ -117,50 +113,30 @@ scene_data load_scenes(context& ctx, const options& opt)
     if(opt.display == options::display_type::FRAME_CLIENT)
         return {};
 
+    device_mask dev = device_mask::all(ctx);
+
     std::unique_ptr<environment_map> sky;
     if(opt.envmap.size())
-        sky.reset(new environment_map(ctx, opt.envmap));
+        sky.reset(new environment_map(dev, opt.envmap));
 
     std::vector<scene_graph> scenes;
-    std::unique_ptr<ply_streamer> ply_stream;
-    size_t instance_capacity = 0;
-    size_t light_capacity = 0;
     for(const std::string& path: opt.scene_paths)
     {
         scene_graph sg_temp;
 
         fs::path fsp(path);
-        if(fsp.extension() == ".ply")
-        {
-            if(opt.ply_streaming)
-            {
-                ply_stream.reset(new ply_streamer(
-                    ctx, sg_temp, path, opt.force_single_sided
-                ));
-            }
-            else sg_temp = load_ply(ctx, path, opt.force_single_sided);
-        }
-        else if(fsp.extension() == ".gltf" || fsp.extension() == ".glb")
+        if(fsp.extension() == ".gltf" || fsp.extension() == ".glb")
         {
             sg_temp = load_gltf(
-                ctx, path, opt.force_single_sided, opt.force_double_sided
+                dev, path, opt.force_single_sided, opt.force_double_sided
             );
         }
         else
         {
-            sg_temp = load_assimp(ctx, path);
+            sg_temp = load_assimp(dev, path);
         }
         scenes.emplace_back(std::move(sg_temp));
         scene_graph& sg = scenes.back();
-        if(ply_stream) ply_stream->sg = &sg;
-        light_capacity += sg.point_lights.size() + sg.spotlights.size();
-
-        for(const auto& pair: sg.mesh_objects)
-        {
-            const model* m = pair.second.get_model();
-            if(!m) continue;
-            instance_capacity += m->group_count();
-        }
 
         for(auto& pair: sg.sh_grids)
             pair.second.set_order(opt.sh_order);
@@ -211,12 +187,10 @@ scene_data load_scenes(context& ctx, const options& opt)
     scene_data s{
         std::move(sky),
         std::move(scenes),
-        std::make_unique<scene>(ctx, max(instance_capacity, 1lu), max(light_capacity, 1lu)),
-        std::move(ply_stream)
+        std::make_unique<scene>()
     };
     s.s->set_environment_map(s.sky.get());
     s.s->set_ambient(opt.ambient);
-    s.s->set_blas_strategy(opt.as_strategy);
     for(scene_graph& sg: s.scenes)
     {
         sg.to_scene(*s.s);
@@ -382,10 +356,12 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         }
     }
 
-    scene_update_stage::options scene_options;
+    scene_stage::options scene_options;
     scene_options.max_instances = s.get_instance_count();
+    scene_options.max_lights = s.get_point_lights().size() + s.get_spotlights().size();
     scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles > 0;
     scene_options.pre_transform_vertices = opt.pre_transform_vertices;
+    scene_options.group_strategy = opt.as_strategy;
 
     taa_stage::options taa;
     taa.blending_ratio = 1.0f - 1.0f/opt.taa.sequence_length;
@@ -405,6 +381,10 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.local_sampler = opt.sampler;
     rc_opt.transparent_background = opt.transparent_background;
     rc_opt.pre_transformed_vertices = opt.pre_transform_vertices;
+    rc_opt.active_viewport_count =
+        opt.spatial_reprojection.size() == 0 ?
+        ctx.get_display_count() :
+        opt.spatial_reprojection.size();
 
     if(opt.progress)
     {
@@ -476,10 +456,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
                 rt_opt.hide_lights = opt.hide_lights;
-                rt_opt.active_viewport_count =
-                    opt.spatial_reprojection.size() == 0 ?
-                    ctx.get_display_count() :
-                    opt.spatial_reprojection.size();
                 rt_opt.accumulate = opt.accumulation;
                 rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
                     opt.spatial_reprojection,
@@ -524,10 +500,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                         spatial_reprojection_stage::options{};
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
-                rt_opt.active_viewport_count =
-                    opt.spatial_reprojection.size() == 0 ?
-                    ctx.get_display_count() :
-                    opt.spatial_reprojection.size();
                 rt_opt.accumulate = opt.accumulation;
                 rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
                     opt.spatial_reprojection,
@@ -578,7 +550,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rr_opt.pcss_samples = min(opt.pcss, 64);
                 rr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
                 rr_opt.z_pre_pass = opt.use_z_pre_pass;
-                rr_opt.max_skinned_meshes = s.get_instance_count();
                 rr_opt.scene_options = scene_options;
                 return new raster_renderer(ctx, rr_opt);
             }
@@ -611,6 +582,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
                 dr_opt.z_pre_pass = opt.use_z_pre_pass;
                 dr_opt.scene_options = scene_options;
+                dr_opt.scene_options.alloc_sh_grids = true;
                 return new dshgi_renderer(ctx, dr_opt);
             }
         case options::DSHGI_SERVER:
@@ -626,9 +598,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.sh.indirect_clamping = opt.indirect_clamping;
                 dr_opt.sh.regularization_gamma = opt.regularization;
                 dr_opt.sh.sampling_weights = sampling_weights;
-                dr_opt.max_skinned_meshes = s.get_instance_count();
                 dr_opt.port_number = opt.port;
-                //dr_opt.scene_options = scene_options;
                 return new dshgi_server(ctx, dr_opt);
             }
         case options::DSHGI_CLIENT:
@@ -651,6 +621,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
                 dr_opt.z_pre_pass = opt.use_z_pre_pass;
                 dr_opt.scene_options = scene_options;
+                dr_opt.scene_options.alloc_sh_grids = true;
                 return new dshgi_renderer(ctx, dr_opt);
             }
         };
@@ -703,11 +674,15 @@ void show_stats(scene_data& sd, options& opt)
     std::cout << "\nScene statistics: \n";
 
     std::set<const mesh*> meshes;
-    for(const mesh_scene::instance& inst: sd.s->get_instances())
-        meshes.insert(inst.m);
+    for(const mesh_object* mo: sd.s->get_mesh_objects())
+    {
+        if(!mo || !mo->get_model()) continue;
+        for(const model::vertex_group& vg: *mo->get_model())
+            meshes.insert(vg.m);
+    }
     std::cout << "Number of unique meshes = " << meshes.size() << std::endl;
     std::cout << "Number of mesh instances = " << sd.s->get_instance_count() << std::endl;
-    std::cout << "Number of BLASes (depends on settings) = " << sd.s->get_blas_group_count() << std::endl;
+    //std::cout << "Number of BLASes (depends on settings) = " << sd.s->get_blas_group_count() << std::endl;
 
     //Calculating the number of triangles and dynamic objects
     uint32_t triangle_count = 0;
@@ -813,9 +788,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         {
             try
             {
-                s.set_shadow_map_renderer(nullptr);
-                s.set_sh_grid_textures(nullptr);
-                s.set_blas_strategy(opt.as_strategy);
                 s.set_camera_jitter(get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
                 rr.reset(create_renderer(ctx, opt, s));
                 rr->set_scene(&s);
@@ -946,12 +918,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
             // with some samplers in the future.
             //if(rr) rr->reset_accumulation(opt.accumulation);
             if(rr) rr->reset_accumulation(false);
-        }
-
-        if(sd.ply_stream && sd.ply_stream->refresh())
-        {
-            ctx.sync();
-            if(rr) rr->set_scene(&s);
         }
 
         s.update(paused || !opt.animation_flag ? 0 : delta * 1000000);

@@ -21,7 +21,7 @@ public:
     >;
 
     basic_pipeline(
-        device_data& dev,
+        device& dev,
         std::vector<vk::DescriptorSetLayoutBinding>&& bindings,
         std::map<std::string, uint32_t>&& binding_names,
         std::vector<vk::PushConstantRange>&& push_constant_ranges,
@@ -56,7 +56,7 @@ public:
         );
     }
 
-    device_data* get_device() const;
+    device* get_device() const;
 
     void bind(vk::CommandBuffer cmd, uint32_t descriptor_set_index) const;
     void bind(vk::CommandBuffer cmd) const;
@@ -68,7 +68,7 @@ protected:
         std::vector<vk::PipelineShaderStageCreateInfo>& stages,
         const vk::SpecializationInfo& specialization
     );
-    device_data* dev;
+    device* dev;
     vk::PipelineBindPoint bind_point;
     vkm<vk::Pipeline> pipeline;
     vkm<vk::PipelineLayout> pipeline_layout;

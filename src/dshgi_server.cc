@@ -9,11 +9,11 @@
 namespace tr
 {
 
-class sh_grid_to_cpu_stage: public stage
+class sh_grid_to_cpu_stage: public single_device_stage
 {
 public:
-    sh_grid_to_cpu_stage(device_data& dev)
-    : stage(dev), cur_scene(nullptr), stage_timer(dev, "sh_grid_to_cpu")
+    sh_grid_to_cpu_stage(device& dev, scene_stage& ss)
+    : single_device_stage(dev), ss(&ss), stage_timer(dev, "sh_grid_to_cpu")
     {
     }
 
@@ -28,12 +28,28 @@ public:
         }
     }
 
-    void set_scene(scene* s, sh_renderer* ren)
+    void set_renderer(sh_renderer* ren)
     {
-        cur_scene = s;
+        this->ren = ren;
+    }
+
+    void get_memory(sh_grid* sh, size_t& size, void*& mem)
+    {
+        grid_data& d = data.at(sh);
+        size = d.size;
+        mem = d.mem;
+    }
+
+private:
+    void update(uint32_t) override
+    {
+        if(!ss->check_update(scene_stage::LIGHT, scene_state_counter))
+            return;
+
         clear_commands();
         data.clear();
 
+        scene* s = ss->get_scene();
         const std::vector<sh_grid*>& grids = s->get_sh_grids();
 
         for(sh_grid* grid: grids)
@@ -48,18 +64,18 @@ public:
         {
             // Record command buffer
             vk::CommandBuffer cb = begin_compute();
-            stage_timer.begin(cb, i);
+            stage_timer.begin(cb, dev->id, i);
 
             for(sh_grid* grid: grids)
             {
                 grid_data& d = data.at(grid);
 
-                texture& tex = ren->get_sh_grid_texture(grid);
+                const texture& tex = ss->get_sh_grid_textures().at(grid);
 
                 uvec3 dim = tex.get_dimensions();
                 transition_image_layout(
                     cb,
-                    tex.get_image(dev->index),
+                    tex.get_image(dev->id),
                     tex.get_format(),
                     vk::ImageLayout::eShaderReadOnlyOptimal,
                     vk::ImageLayout::eTransferSrcOptimal,
@@ -67,7 +83,7 @@ public:
                 );
 
                 cb.copyImageToBuffer(
-                    tex.get_image(dev->index),
+                    tex.get_image(dev->id),
                     vk::ImageLayout::eTransferSrcOptimal,
                     d.staging_buffer,
                     vk::BufferImageCopy{
@@ -79,23 +95,15 @@ public:
                 );
             }
 
-            stage_timer.end(cb, i);
+            stage_timer.end(cb, dev->id, i);
             end_compute(cb, i);
         }
     }
 
-    void get_memory(sh_grid* sh, size_t& size, void*& mem)
-    {
-        grid_data& d = data.at(sh);
-        size = d.size;
-        mem = d.mem;
-    }
-
-private:
-    void update(uint32_t) override {}
-
-    scene* cur_scene;
+    scene_stage* ss;
     timer stage_timer;
+    uint32_t scene_state_counter = 0;
+    sh_renderer* ren;
 
     struct grid_data
     {
@@ -107,12 +115,15 @@ private:
 };
 
 dshgi_server::dshgi_server(context& ctx, const options& opt)
-:   ctx(&ctx), opt(opt), sh(ctx, opt.sh), exit_sender(false),
-    subscriber_count(0), sender_thread(sender_worker, this)
+:   ctx(&ctx), opt(opt), exit_sender(false), subscriber_count(0),
+    sender_thread(sender_worker, this)
 {
-    skinning.reset(new skinning_stage(ctx.get_display_device(), opt.max_skinned_meshes));
-    scene_update.reset(new scene_update_stage(ctx.get_display_device(), {}));
-    sh_grid_to_cpu.reset(new sh_grid_to_cpu_stage(ctx.get_display_device()));
+    scene_stage::options scene_opts;
+    scene_opts.alloc_sh_grids = true;
+    scene_update.reset(new scene_stage(ctx.get_display_device(), scene_opts));
+    sh_grid_to_cpu.reset(new sh_grid_to_cpu_stage(ctx.get_display_device(), *scene_update));
+
+    sh.emplace(ctx, *scene_update, opt.sh);
 
     sender_semaphore = create_timeline_semaphore(ctx.get_display_device());
 }
@@ -126,11 +137,7 @@ dshgi_server::~dshgi_server()
 
 void dshgi_server::set_scene(scene* s)
 {
-    cur_scene = s;
-    sh.set_scene(s);
-    skinning->set_scene(s);
     scene_update->set_scene(s);
-    sh_grid_to_cpu->set_scene(s, &sh);
 }
 
 void dshgi_server::render()
@@ -138,18 +145,18 @@ void dshgi_server::render()
     if(subscriber_count != 0)
     {
         dependencies deps(ctx->begin_frame());
+        device& d = ctx->get_display_device();
 
-        deps = skinning->run(deps);
         deps = scene_update->run(deps);
         uint64_t signal_value = ctx->get_frame_counter()-1;
         if(signal_value != 0)
         {
             // Make sure we don't overwrite the SH probes while the server is
             // sending them!
-            deps.add({sender_semaphore, signal_value});
+            deps.add({d.id, sender_semaphore, signal_value});
         }
 
-        deps = sh.render(deps);
+        deps = sh->render(deps);
         {
             std::unique_lock lk(frame_queue_mutex);
             frame_queue.emplace_back(deps);
@@ -174,7 +181,7 @@ void dshgi_server::sender_worker(dshgi_server* s)
     if(err < 0)
         throw std::runtime_error(strerror(errno));
 
-    device_data& dev = s->ctx->get_display_device();
+    device& dev = s->ctx->get_display_device();
     zpoller_t* poller = zpoller_new(socket, nullptr);
 
     auto check_recv = [&](){
@@ -259,7 +266,7 @@ void dshgi_server::sender_worker(dshgi_server* s)
             puvec3 res = grid->get_resolution();
             zmsg_addmem(msg, &res, sizeof(res));
 
-            VkFormat fmt = (VkFormat)s->sh.get_sh_grid_texture(grid).get_format();
+            VkFormat fmt = (VkFormat)s->scene_update->get_sh_grid_textures().at(grid).get_format();
             zmsg_addmem(msg, &fmt, sizeof(fmt));
 
             zmsg_addmem(msg, mem, size);
@@ -267,7 +274,7 @@ void dshgi_server::sender_worker(dshgi_server* s)
             zmsg_send(&msg, socket);
         }
 
-        dev.dev.signalSemaphore({*s->sender_semaphore, deps.value(0)});
+        dev.logical.signalSemaphore({*s->sender_semaphore, deps.value(dev.id, 0)});
     }
     zpoller_destroy(&poller);
     zsock_destroy(&socket);

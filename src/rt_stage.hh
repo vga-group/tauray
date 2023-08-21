@@ -14,8 +14,8 @@
 namespace tr
 {
 
-class scene;
-class rt_stage: public stage
+class scene_stage;
+class rt_stage: public single_device_stage
 {
 public:
     enum class sampler_type
@@ -56,16 +56,14 @@ public:
     );
 
     rt_stage(
-        device_data& dev,
+        device& dev,
+        scene_stage& ss,
         const options& opt,
         const std::string& timer_name,
         unsigned pass_count = 1
     );
     rt_stage(const rt_stage& other) = delete;
     rt_stage(rt_stage&& other) = delete;
-
-    void set_scene(scene* s);
-    scene* get_scene();
 
     void reset_sample_counter();
 
@@ -85,19 +83,21 @@ protected:
     virtual void init_scene_resources() = 0;
     void init_descriptors(basic_pipeline& pp);
     void record_command_buffers();
+    void force_command_buffer_refresh();
 
     unsigned get_pass_count() const;
 
+    scene_stage* ss;
 private:
     options opt;
     unsigned pass_count = 1;
     timer rt_timer;
 
-    scene* cur_scene;
     gpu_buffer sampling_data;
     uvec3 sampling_target_size;
     uint32_t sampling_frame_counter_increment;
     uint32_t sample_counter;
+    uint32_t scene_state_counter;
 };
 
 }

@@ -109,7 +109,7 @@ vk::WriteDescriptorSet descriptor_state::get_write(
 
 vk::WriteDescriptorSet descriptor_state::get_placeholder_write(
     placeholders& pl,
-    uint32_t device_index,
+    device_id id,
     const vk::DescriptorSet& ds,
     const vk::DescriptorSetLayoutBinding& binding,
     std::vector<std::vector<vk::DescriptorBufferInfo>>& buffer_holder,
@@ -120,7 +120,7 @@ vk::WriteDescriptorSet descriptor_state::get_placeholder_write(
     if(binding.descriptorType == vk::DescriptorType::eCombinedImageSampler)
     {
         image_holder.emplace_back(
-            length, pl.per_device[device_index].img_2d_info
+            length, pl.buffers[id].img_2d_info
         );
         return {
             ds, binding.binding, 0, (uint32_t)length, binding.descriptorType,
@@ -130,7 +130,7 @@ vk::WriteDescriptorSet descriptor_state::get_placeholder_write(
     else if(binding.descriptorType == vk::DescriptorType::eStorageBuffer)
     {
         buffer_holder.emplace_back(
-            length, pl.per_device[device_index].storage_info
+            length, pl.buffers[id].storage_info
         );
         return {
             ds, binding.binding, 0, (uint32_t)length, binding.descriptorType,

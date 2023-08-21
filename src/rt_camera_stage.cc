@@ -2,7 +2,7 @@
 #include "mesh.hh"
 #include "shader_source.hh"
 #include "placeholders.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "camera.hh"
 #include "environment_map.hh"
 #include "misc.hh"
@@ -38,13 +38,14 @@ void rt_camera_stage::get_common_defines(
 }
 
 rt_camera_stage::rt_camera_stage(
-    device_data& dev,
+    device& dev,
+    scene_stage& ss,
     const gbuffer_target& output_target,
     const options& opt,
     const std::string& timer_name,
     unsigned pass_count
 ):  rt_stage(
-        dev, opt,
+        dev, ss, opt,
         timer_name + " ("+ std::to_string(opt.active_viewport_count) +" viewports)",
         pass_count
     ),
@@ -72,7 +73,7 @@ int rt_camera_stage::get_accumulated_samples() const
 void rt_camera_stage::reset_distribution_params(distribution_params distribution)
 {
     opt.distribution = distribution;
-    record_command_buffers();
+    force_command_buffer_refresh();
 }
 
 void rt_camera_stage::update(uint32_t frame_index)
@@ -93,7 +94,7 @@ void rt_camera_stage::update(uint32_t frame_index)
 
     for(size_t i = 0; i < opt.active_viewport_count; ++i)
     {
-        camera* cam = get_scene()->get_camera(i);
+        camera* cam = ss->get_scene()->get_camera(i);
         if(cam->get_projection_type() != opt.projection)
             throw std::runtime_error(
                 "Camera projection type does not match what this pipeline is "
@@ -110,16 +111,16 @@ void rt_camera_stage::init_descriptors(basic_pipeline& pp)
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        get_scene()->bind(pp, i);
+        ss->bind(pp, i);
         pp.update_descriptor_set({
 #define TR_GBUFFER_ENTRY(name, ...)\
             {#name "_target", {\
-                {}, target.name ? target.name[i].view : VK_NULL_HANDLE, vk::ImageLayout::eGeneral\
+                {}, target.name ? target.name.view : VK_NULL_HANDLE, vk::ImageLayout::eGeneral\
             }},
             TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
             {"distribution", {
-                *distribution_data, 0, VK_WHOLE_SIZE
+                distribution_data[dev->id], 0, VK_WHOLE_SIZE
             }}
         }, i);
     }
@@ -137,7 +138,7 @@ void rt_camera_stage::record_command_buffer(
             {}, vk::AccessFlagBits::eShaderWrite,
             vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
             VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-            target[frame_index].image,
+            target.image,
             target.get_range()
         );
         if(get_pass_count() > 0)
@@ -150,7 +151,7 @@ void rt_camera_stage::record_command_buffer(
             barrier.srcAccessMask = barrier.dstAccessMask;
             barrier.dstAccessMask = {};
             barrier.oldLayout = vk::ImageLayout::eGeneral;
-            barrier.newLayout = target.get_layout();
+            barrier.newLayout = target.layout;
         }
         else
         {
@@ -163,7 +164,7 @@ void rt_camera_stage::record_command_buffer(
 
     if(pass_index == 0)
     {
-        distribution_data.upload(frame_index, cb);
+        distribution_data.upload(dev->id, frame_index, cb);
         cb.pipelineBarrier(
             vk::PipelineStageFlagBits::eTopOfPipe,
             vk::PipelineStageFlagBits::eRayTracingShaderKHR,

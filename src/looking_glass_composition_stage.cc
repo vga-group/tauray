@@ -18,18 +18,18 @@ namespace tr
 {
 
 looking_glass_composition_stage::looking_glass_composition_stage(
-    device_data& dev,
+    device& dev,
     render_target& input,
-    render_target& output,
+    std::vector<render_target>& output_frames,
     const options& opt
-):  stage(dev, stage::COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE),
+):  single_device_stage(dev, single_device_stage::COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE),
     comp(dev, compute_pipeline::params{
         {"shader/looking_glass_composition.comp"},
         {},
-        (uint32_t)output.get_frame_count()
+        (uint32_t)output_frames.size()
     }),
     input_sampler(
-        *dev.ctx, vk::Filter::eLinear, vk::Filter::eLinear,
+        dev, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerAddressMode::eClampToEdge,
         vk::SamplerMipmapMode::eNearest,
@@ -37,27 +37,28 @@ looking_glass_composition_stage::looking_glass_composition_stage(
     ),
     stage_timer(dev, "looking glass composition")
 {
-    for(uint32_t i = 0; i < output.get_frame_count(); ++i)
+    for(uint32_t i = 0; i < output_frames.size(); ++i)
     {
         // Bind descriptors
         comp.update_descriptor_set({
-            {"in_color", {input_sampler.get_sampler(dev.index), input[i].view, vk::ImageLayout::eShaderReadOnlyOptimal}},
-            {"out_color", {{}, output[i].view, vk::ImageLayout::eGeneral}}
+            {"in_color", {input_sampler.get_sampler(dev.id), input.view, vk::ImageLayout::eShaderReadOnlyOptimal}},
+            {"out_color", {{}, output_frames[i].view, vk::ImageLayout::eGeneral}}
         }, i);
 
         // Record command buffer
         vk::CommandBuffer cb = begin_graphics();
 
-        input.transition_layout_temporary(cb, i, vk::ImageLayout::eShaderReadOnlyOptimal, true, true);
-        output.transition_layout_save(cb, i, vk::ImageLayout::eGeneral, true);
+        input.transition_layout_temporary(cb, vk::ImageLayout::eShaderReadOnlyOptimal, true, true);
+        output_frames[i].transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true);
+        output_frames[i].layout = vk::ImageLayout::eGeneral;
 
         //stage_timer.begin(cb, i);
 
         comp.bind(cb, i);
 
         push_constant_buffer control;
-        control.output_size = output.get_size();
-        control.viewport_size = input.get_size();
+        control.output_size = output_frames[i].size;
+        control.viewport_size = input.size;
         control.viewport_count = opt.viewport_count;
         control.calibration_info = vec4(
             opt.pitch,
@@ -70,14 +71,15 @@ looking_glass_composition_stage::looking_glass_composition_stage(
 
         comp.push_constants(cb, control);
 
-        uvec2 wg = (output.get_size()+15u)/16u;
+        uvec2 wg = (output_frames[i].size+15u)/16u;
         cb.dispatch(wg.x, wg.y, 1);
 
         //stage_timer.end(cb, i);
-        output.transition_layout_save(cb, i, vk::ImageLayout::ePresentSrcKHR);
+        output_frames[i].transition_layout_temporary(cb, vk::ImageLayout::ePresentSrcKHR);
+        output_frames[i].layout = vk::ImageLayout::ePresentSrcKHR;
         end_graphics(cb, 0, i);
     }
-    input.set_layout(vk::ImageLayout::eShaderReadOnlyOptimal);
+    input.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
 }
 
 }

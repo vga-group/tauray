@@ -26,7 +26,6 @@ public:
     dshgi_renderer(dshgi_renderer&& other) = delete;
     ~dshgi_renderer();
 
-    void set_scene(scene* s) override;
     void render() override;
 
 private:

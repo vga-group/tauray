@@ -2,7 +2,7 @@
 #include "mesh.hh"
 #include "shader_source.hh"
 #include "placeholders.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "environment_map.hh"
 #include "misc.hh"
 #include "texture.hh"
@@ -69,38 +69,24 @@ void rt_stage::get_common_defines(
 }
 
 rt_stage::rt_stage(
-    device_data& dev,
+    device& dev,
+    scene_stage& ss,
     const options& opt,
     const std::string& timer_name,
     unsigned pass_count
-):  stage(dev),
+):  single_device_stage(dev),
+    ss(&ss),
     opt(opt),
     pass_count(pass_count),
     rt_timer(dev, timer_name),
-    cur_scene(nullptr),
     sampling_data(
         dev, sizeof(sampling_data_buffer),
         vk::BufferUsageFlagBits::eUniformBuffer
     ),
     sampling_frame_counter_increment(1),
-    sample_counter(0)
+    sample_counter(0),
+    scene_state_counter(0)
 {
-}
-
-void rt_stage::set_scene(scene* s)
-{
-    cur_scene = s;
-    if(s->get_instance_count() > opt.max_instances)
-        throw std::runtime_error(
-            "The scene has more meshes than this pipeline can support!"
-        );
-    init_scene_resources();
-    record_command_buffers();
-}
-
-scene* rt_stage::get_scene()
-{
-    return cur_scene;
 }
 
 void rt_stage::set_local_sampler_parameters(
@@ -127,6 +113,16 @@ void rt_stage::update(uint32_t frame_index)
         }
     );
     sample_counter += sampling_frame_counter_increment;
+
+    if(ss->check_update(scene_stage::GEOMETRY|scene_stage::LIGHT|scene_stage::ENVMAP, scene_state_counter))
+    {
+        if(ss->get_instances().size() > opt.max_instances)
+            throw std::runtime_error(
+                "The scene has more meshes than this pipeline can support!"
+            );
+        init_scene_resources();
+        record_command_buffers();
+    }
 }
 
 void rt_stage::init_scene_resources() {}
@@ -143,7 +139,7 @@ void rt_stage::init_descriptors(basic_pipeline& pp)
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         pp.update_descriptor_set({
-            {"sampling_data", {*sampling_data, 0, VK_WHOLE_SIZE}}
+            {"sampling_data", {sampling_data[dev->id], 0, VK_WHOLE_SIZE}}
         }, i);
     }
 }
@@ -163,8 +159,8 @@ void rt_stage::record_command_buffers()
         {
             vk::CommandBuffer cb = begin_graphics();
             if(pass_count_left == pass_count)
-                rt_timer.begin(cb, i);
-            sampling_data.upload(i, cb);
+                rt_timer.begin(cb, dev->id, i);
+            sampling_data.upload(dev->id, i, cb);
             size_t local_pass_count = opt.max_passes_per_command_buffer == 0 ?
                 pass_count :
                 min(pass_count_left, opt.max_passes_per_command_buffer);
@@ -172,10 +168,15 @@ void rt_stage::record_command_buffers()
                 record_command_buffer(cb, i, (pass_count - pass_count_left) + j, j == 0);
             pass_count_left -= local_pass_count;
             if(pass_count_left == 0)
-                rt_timer.end(cb, i);
+                rt_timer.end(cb, dev->id, i);
             end_graphics(cb, i);
         }
     }
+}
+
+void rt_stage::force_command_buffer_refresh()
+{
+    scene_state_counter = 0;
 }
 
 }

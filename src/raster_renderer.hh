@@ -5,9 +5,8 @@
 #include "z_pass_stage.hh"
 #include "raster_stage.hh"
 #include "envmap_stage.hh"
-#include "scene_update_stage.hh"
-#include "skinning_stage.hh"
-#include "shadow_map_renderer.hh"
+#include "scene_stage.hh"
+#include "shadow_map_stage.hh"
 #include "post_processing_renderer.hh"
 #include "renderer.hh"
 
@@ -21,14 +20,13 @@ public:
     struct options: raster_stage::options
     {
         int msaa_samples = 1;
-        scene_update_stage::options scene_options = {};
+        scene_stage::options scene_options = {};
         post_processing_renderer::options post_process = {};
         // Enabling the Z pre-pass can help with performance if the scene is
         // overdraw + bandwidth-heavy. It essentially just prevents all overdraw
         // from taking place during final rasterization at the cost of an extra
         // z pass.
         bool z_pre_pass = true;
-        int max_skinned_meshes = 1024;
     };
 
     raster_renderer(context& ctx, const options& opt);
@@ -47,17 +45,16 @@ protected:
     context* ctx;
     options opt;
     scene* cur_scene = nullptr;
-    std::unique_ptr<skinning_stage> skinning;
-    std::unique_ptr<scene_update_stage> scene_update;
+    std::unique_ptr<scene_stage> scene_update;
 
 private:
-    shadow_map_renderer smr;
-    post_processing_renderer post_processing;
+    std::optional<post_processing_renderer> post_processing;
     std::vector<vkm<vk::Semaphore>> shared_resource_semaphores;
     gbuffer_texture gbuffer;
-    std::unique_ptr<envmap_stage> envmap;
-    std::unique_ptr<z_pass_stage> z_pass;
-    std::unique_ptr<raster_stage> raster;
+    std::optional<shadow_map_stage> sms;
+    std::optional<envmap_stage> envmap;
+    std::optional<z_pass_stage> z_pass;
+    std::optional<raster_stage> raster;
 };
 
 }

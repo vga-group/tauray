@@ -13,7 +13,7 @@ vkm_generic<T>::vkm_generic()
 }
 
 template<typename T>
-vkm_generic<T>::vkm_generic(device_data& dev, T resource)
+vkm_generic<T>::vkm_generic(device& dev, T resource)
 : dev(&dev), resource(resource)
 {
 }
@@ -107,7 +107,7 @@ void vkm_generic<T>::leak()
 template<typename T>
 vk::Device vkm_generic<T>::get_device()
 {
-    return dev->dev;
+    return dev->logical;
 }
 
 template<typename T>
@@ -123,7 +123,7 @@ void vkm_generic<T>::queue_destroy()
 }
 
 template<typename T>
-vkm<T>::vkm(device_data& dev, T resource)
+vkm<T>::vkm(device& dev, T resource)
 : vkm_generic<T>(dev, resource) {}
 
 template<typename T>
@@ -205,7 +205,7 @@ bool vkm<T>::destroy_func(std::function<void()>& func)
     return false;
 }
 
-vkm<vk::Image>::vkm(device_data& dev, vk::Image img, VmaAllocation alloc)
+vkm<vk::Image>::vkm(device& dev, vk::Image img, VmaAllocation alloc)
 : vkm_generic<vk::Image>(dev, img), alloc(alloc)
 {}
 
@@ -223,7 +223,7 @@ bool vkm<vk::Image>::destroy_func(std::function<void()>& func)
     return false;
 }
 
-vkm<vk::CommandBuffer>::vkm(device_data& dev, vk::CommandBuffer cmd, vk::CommandPool pool)
+vkm<vk::CommandBuffer>::vkm(device& dev, vk::CommandBuffer cmd, vk::CommandPool pool)
 : vkm_generic<vk::CommandBuffer>(dev, cmd), pool(pool)
 {}
 
@@ -238,7 +238,7 @@ bool vkm<vk::CommandBuffer>::destroy_func(std::function<void()>& func)
 {
     if(resource && pool)
     {
-        func = [cmd=resource, dev=dev->dev, pool=pool](){
+        func = [cmd=resource, dev=dev->logical, pool=pool](){
             dev.freeCommandBuffers(pool, cmd);
         };
         return true;
@@ -246,7 +246,7 @@ bool vkm<vk::CommandBuffer>::destroy_func(std::function<void()>& func)
     return false;
 }
 
-vkm<vk::Buffer>::vkm(device_data& dev, vk::Buffer buf, VmaAllocation alloc)
+vkm<vk::Buffer>::vkm(device& dev, vk::Buffer buf, VmaAllocation alloc)
 : vkm_generic<vk::Buffer>(dev, buf), alloc(alloc)
 {}
 
@@ -259,7 +259,7 @@ VmaAllocation vkm<vk::Buffer>::get_allocation() const
 
 vk::DeviceAddress vkm<vk::Buffer>::get_address() const
 {
-    return dev->dev.getBufferAddress({resource});
+    return dev->logical.getBufferAddress({resource});
 }
 
 bool vkm<vk::Buffer>::destroy_func(std::function<void()>& func)

@@ -7,6 +7,7 @@
 #include "render_target.hh"
 #include "tracing.hh"
 #include "progress_tracker.hh"
+#include "device.hh"
 #include <set>
 #include <map>
 #include <memory>
@@ -16,45 +17,7 @@
 namespace tr
 {
 
-class context;
-struct device_data
-{
-    size_t index = 0;
-    context* ctx = nullptr;
-    vk::PhysicalDevice pdev;
-    vk::Device dev;
-    vk::PhysicalDeviceProperties props;
-    vk::PhysicalDeviceSubgroupProperties subgroup_props;
-    vk::PhysicalDeviceFeatures feats;
-    vk::PhysicalDeviceVulkan11Features vulkan_11_feats;
-    vk::PhysicalDeviceVulkan12Features vulkan_12_feats;
-    vk::PhysicalDeviceExternalMemoryHostPropertiesEXT ext_mem_props;
-    vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rt_props;
-    vk::PhysicalDeviceRayTracingPipelineFeaturesKHR rt_feats;
-    vk::PhysicalDeviceAccelerationStructurePropertiesKHR as_props;
-    vk::PhysicalDeviceAccelerationStructureFeaturesKHR as_feats;
-    vk::PhysicalDeviceMultiviewProperties mv_props;
-    uint32_t graphics_family_index = 0;
-    uint32_t compute_family_index = 0;
-    uint32_t present_family_index = 0;
-    uint32_t transfer_family_index = 0;
-    bool has_graphics = false;
-    bool has_compute = false;
-    bool has_present = false;
-    bool has_transfer = false;
-    vk::Queue graphics_queue;
-    vk::Queue compute_queue;
-    vk::Queue present_queue;
-    vk::Queue transfer_queue;
-    vk::CommandPool graphics_pool;
-    vk::CommandPool compute_pool;
-    vk::CommandPool present_pool;
-    vk::CommandPool transfer_pool;
-    vk::PipelineCache pp_cache;
-    VmaAllocator allocator;
-};
-
-class placeholders;
+struct placeholders;
 
 // This should typically be _lower_ than the number of images in the display
 // targets! In any case, there really cannot be more frames than the number
@@ -86,8 +49,8 @@ public:
 
     virtual bool init_frame();
 
-    device_data& get_display_device();
-    std::vector<device_data>& get_devices();
+    device& get_display_device();
+    std::vector<device>& get_devices();
     uvec2 get_size() const;
     vk::Format get_display_format() const;
     vk::ImageLayout get_expected_display_layout() const;
@@ -100,7 +63,8 @@ public:
     // one display per image (and not that one image is divided into multiple
     // separate viewports).
     size_t get_display_count() const;
-    render_target get_array_render_target();
+    // If vector length is > 1, one render target per in-flight frame.
+    std::vector<render_target> get_array_render_target();
 
     placeholders& get_placeholders();
 
@@ -177,13 +141,12 @@ protected:
     std::vector<vkm<vk::Semaphore>> frame_finished;
 
 private:
-    void free_purgatory();
     void call_frame_end_actions(uint32_t frame_index);
 
     options opt;
     std::vector<const char*> validation_layers;
     vk::DebugUtilsMessengerEXT debug_messenger;
-    std::vector<device_data> devices;
+    std::vector<device> devices;
     size_t display_device_index;
 
     std::vector<vkm<vk::Semaphore>> image_available;

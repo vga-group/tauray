@@ -30,7 +30,8 @@ public:
     };
 
     sh_path_tracer_stage(
-        device_data& dev,
+        device& dev,
+        scene_stage& ss,
         texture& output_grid,
         vk::ImageLayout output_layout,
         const options& opt

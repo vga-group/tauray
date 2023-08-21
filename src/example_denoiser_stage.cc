@@ -29,12 +29,12 @@ namespace tr
 {
 
 example_denoiser_stage::example_denoiser_stage(
-    device_data& dev,
+    device& dev,
     gbuffer_target& input_features,
     render_target& tmp_color1,
     render_target& tmp_color2,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     comp(dev, compute_pipeline::params{load_source(opt), {}}),
     opt(opt),
     input_features(input_features),
@@ -55,13 +55,13 @@ void example_denoiser_stage::init_resources()
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         comp.update_descriptor_set({
-            {"in_color", {{}, input_features.color[i].view, vk::ImageLayout::eGeneral}},
-            {"in_normal", {{}, input_features.normal[i].view, vk::ImageLayout::eGeneral}},
-            {"in_pos", {{}, input_features.pos[i].view, vk::ImageLayout::eGeneral}},
-            {"in_albedo", {{}, input_features.albedo[i].view, vk::ImageLayout::eGeneral}},
+            {"in_color", {{}, input_features.color.view, vk::ImageLayout::eGeneral}},
+            {"in_normal", {{}, input_features.normal.view, vk::ImageLayout::eGeneral}},
+            {"in_pos", {{}, input_features.pos.view, vk::ImageLayout::eGeneral}},
+            {"in_albedo", {{}, input_features.albedo.view, vk::ImageLayout::eGeneral}},
             {"inout_color", {
-                {{}, tmp_color[1][i].view, vk::ImageLayout::eGeneral},
-                {{}, tmp_color[0][i].view, vk::ImageLayout::eGeneral}
+                {{}, tmp_color[1].view, vk::ImageLayout::eGeneral},
+                {{}, tmp_color[0].view, vk::ImageLayout::eGeneral}
             }},
         }, i);
     }
@@ -73,7 +73,7 @@ void example_denoiser_stage::record_command_buffers()
     {
         vk::CommandBuffer cb = begin_compute();
 
-        denoiser_timer.begin(cb, i);
+        denoiser_timer.begin(cb, dev->id, i);
 
         comp.bind(cb, i);
 
@@ -104,7 +104,7 @@ void example_denoiser_stage::record_command_buffers()
             cb.dispatch(wg.x, wg.y, input_features.get_layer_count());
         }
 
-        denoiser_timer.end(cb, i);
+        denoiser_timer.end(cb, dev->id, i);
         end_compute(cb, i);
     }
 }

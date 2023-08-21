@@ -62,12 +62,12 @@ namespace tr
 {
 
 stitch_stage::stitch_stage(
-    device_data& dev,
+    device& dev,
     uvec2 size,
     const std::vector<gbuffer_target>& images,
     const std::vector<distribution_params>& params,
     const options& opt
-):  stage(dev),
+):  single_device_stage(dev),
     comp(dev, compute_pipeline::params{
     load_source(opt.strategy),
         {
@@ -82,27 +82,24 @@ stitch_stage::stitch_stage(
     params(params),
     stitch_timer(dev, "stitch (" + std::to_string(opt.active_viewport_count) + " viewports)")
 {
-    for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    // Bind descriptors
+    std::vector<vk::DescriptorImageInfo> input_images;
+    std::vector<vk::DescriptorImageInfo> output_images;
+
+    for(size_t j = 0; j < images.size(); ++j)
     {
-        // Bind descriptors
-        std::vector<vk::DescriptorImageInfo> input_images;
-        std::vector<vk::DescriptorImageInfo> output_images;
+        auto* target_vec = params[j].primary ?
+            &output_images : &input_images;
 
-        for(size_t j = 0; j < images.size(); ++j)
-        {
-            auto* target_vec = params[j].primary ?
-                &output_images : &input_images;
-
-            images[j].visit([&](const render_target& img){
-                target_vec->push_back({{}, img[i].view, vk::ImageLayout::eGeneral});
-            });
-        }
-
-        comp.update_descriptor_set({
-            {"input_images", input_images},
-            {"output_images", output_images}
-        }, i);
+        images[j].visit([&](const render_target& img){
+            target_vec->push_back({{}, img.view, vk::ImageLayout::eGeneral});
+        });
     }
+
+    comp.update_descriptor_set({
+        {"input_images", input_images},
+        {"output_images", output_images}
+    });
     record_commands();
 }
 
@@ -133,7 +130,7 @@ void stitch_stage::record_commands()
     {
         // Record command buffer
         vk::CommandBuffer cb = begin_compute();
-        stitch_timer.begin(cb, i);
+        stitch_timer.begin(cb, dev->id, i);
 
         comp.bind(cb, i);
 
@@ -186,7 +183,7 @@ void stitch_stage::record_commands()
             break;
         }
 
-        stitch_timer.end(cb, i);
+        stitch_timer.end(cb, dev->id, i);
         end_compute(cb, i);
     }
 }

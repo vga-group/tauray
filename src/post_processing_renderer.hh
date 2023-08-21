@@ -32,7 +32,7 @@ public:
     };
 
     post_processing_renderer(
-        device_data& dev, uvec2 output_size, const options& opt
+        device& dev, scene_stage& ss, uvec2 output_size, const options& opt
     );
     ~post_processing_renderer();
 
@@ -44,17 +44,16 @@ public:
     // to handle temporal algorithms.
     dependencies get_gbuffer_write_dependencies() const;
 
-    void set_scene(scene* s);
     dependencies render(dependencies deps);
 
 private:
     void init_pipelines();
     void deinit_pipelines();
 
-    device_data* dev;
+    device* dev;
     options opt;
     uvec2 output_size;
-    scene* cur_scene = nullptr;
+    scene_stage* ss = nullptr;
 
     gbuffer_target input_gbuffer;
 

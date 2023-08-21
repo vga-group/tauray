@@ -39,7 +39,7 @@ namespace feature
             feature = "vec4((cam.view * vec4(v.pos, 1) - prev_cam.view * vec4(v.prev_pos, 1)).xyz, 1)";
             break;
         case feature_stage::SCREEN_MOTION:
-            feature = "vec4(get_camera_projection(prev_cam, v.prev_pos), 0, 1)";
+            feature = "vec4(get_camera_projection(prev_cam, v.prev_pos), 1)";
             break;
         case feature_stage::INSTANCE_ID:
             feature = "vec4(gl_InstanceID, gl_PrimitiveID, 0, 1)";
@@ -77,10 +77,11 @@ namespace tr
 {
 
 feature_stage::feature_stage(
-    device_data& dev,
+    device& dev,
+    scene_stage& ss,
     const gbuffer_target& output_target,
     const options& opt
-):  rt_camera_stage(dev, output_target, opt),
+):  rt_camera_stage(dev, ss, output_target, opt),
     gfx(dev, rt_stage::get_common_options(::feature::load_sources(opt), opt)),
     opt(opt)
 {

@@ -52,8 +52,8 @@ looking_glass::~looking_glass()
 
 void looking_glass::recreate_swapchains()
 {
-    device_data& dev_data = get_display_device();
-    dev_data.dev.waitIdle();
+    device& dev_data = get_display_device();
+    dev_data.logical.waitIdle();
 
     deinit_swapchain();
     init_swapchain();
@@ -88,8 +88,8 @@ void looking_glass::setup_cameras(
 
 uint32_t looking_glass::prepare_next_image(uint32_t frame_index)
 {
-    device_data& d = get_display_device();
-    uint32_t swapchain_index = d.dev.acquireNextImageKHR(
+    device& d = get_display_device();
+    uint32_t swapchain_index = d.logical.acquireNextImageKHR(
         swapchain, UINT64_MAX, frame_available[frame_index], {}
     ).value;
     return swapchain_index;
@@ -105,7 +105,7 @@ void looking_glass::finish_image(
     uint32_t swapchain_index,
     bool /*display*/
 ){
-    device_data& d = get_display_device();
+    device& d = get_display_device();
     (void)d.present_queue.presentKHR({
         1, frame_finished[frame_index],
         1, &swapchain,
@@ -130,10 +130,10 @@ void looking_glass::get_lkg_metadata()
         // TODO: Use the official API instead, if it turns out to be available and
         // usable in Tauray.
         nng_socket sock;
-        if (int err = nng_req0_open(&sock))
+        if(int err = nng_req0_open(&sock))
             throw std::runtime_error(nng_strerror(err));
         nng_dialer dialer;
-        if (int err = nng_dial(sock, "ipc:///tmp/holoplay-driver.ipc", &dialer, 0))
+        if(nng_dial(sock, "ipc:///tmp/holoplay-driver.ipc", &dialer, 0))
             throw std::runtime_error("HoloPlay service doesn't seem to be running.");
 
         // Initial handshake message
@@ -356,9 +356,9 @@ void looking_glass::deinit_sdl()
 
 void looking_glass::init_swapchain()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
     std::vector<vk::SurfaceFormatKHR> formats =
-        dev_data.pdev.getSurfaceFormatsKHR(surface);
+        dev_data.physical.getSurfaceFormatsKHR(surface);
 
     // Find the format matching our desired format.
     bool found_format = false;
@@ -385,7 +385,7 @@ void looking_glass::init_swapchain()
 
     // Find the present mode matching our vsync setting.
     std::vector<vk::PresentModeKHR> modes =
-        dev_data.pdev.getSurfacePresentModesKHR(surface);
+        dev_data.physical.getSurfacePresentModesKHR(surface);
     bool found_mode = false;
     vk::PresentModeKHR selected_mode = modes[0];
     if(opt.vsync)
@@ -432,7 +432,7 @@ void looking_glass::init_swapchain()
 
     // Find the size that matches our looking_glass size
     vk::SurfaceCapabilitiesKHR caps =
-        dev_data.pdev.getSurfaceCapabilitiesKHR(surface);
+        dev_data.physical.getSurfaceCapabilitiesKHR(surface);
     vk::Extent2D selected_extent = caps.currentExtent;
     if(caps.currentExtent.width == UINT32_MAX)
     {
@@ -472,7 +472,7 @@ void looking_glass::init_swapchain()
             dev_data.present_family_index
         };
     }
-    swapchain = dev_data.dev.createSwapchainKHR({
+    swapchain = dev_data.logical.createSwapchainKHR({
         {},
         surface,
         image_count,
@@ -492,12 +492,12 @@ void looking_glass::init_swapchain()
     });
 
     // Get swap chain images & create image views
-    auto swapchain_images = dev_data.dev.getSwapchainImagesKHR(swapchain);
+    auto swapchain_images = dev_data.logical.getSwapchainImagesKHR(swapchain);
     for(vk::Image img: swapchain_images)
     {
         window_images.emplace_back(vkm(dev_data, img));
         window_image_views.emplace_back(dev_data,
-            dev_data.dev.createImageView({
+            dev_data.logical.createImageView({
                 {},
                 img,
                 vk::ImageViewType::e2D,
@@ -506,32 +506,31 @@ void looking_glass::init_swapchain()
                 {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
             })
         );
-
-        vk::ImageCreateInfo info{
-            {},
-            vk::ImageType::e2D,
-            swapchain_format.format,
-            {opt.viewport_size.x, opt.viewport_size.y, 1},
-            1,
-            opt.viewport_count,
-            vk::SampleCountFlagBits::e1,
-            vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eSampled|
-            vk::ImageUsageFlagBits::eStorage|
-            vk::ImageUsageFlagBits::eTransferDst|
-            vk::ImageUsageFlagBits::eTransferSrc,
-            vk::SharingMode::eExclusive
-        };
-        images.emplace_back(sync_create_gpu_image(
-            dev_data, info, vk::ImageLayout::eGeneral
-        ));
     }
+    vk::ImageCreateInfo info{
+        {},
+        vk::ImageType::e2D,
+        swapchain_format.format,
+        {opt.viewport_size.x, opt.viewport_size.y, 1},
+        1,
+        opt.viewport_count,
+        vk::SampleCountFlagBits::e1,
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eSampled|
+        vk::ImageUsageFlagBits::eStorage|
+        vk::ImageUsageFlagBits::eTransferDst|
+        vk::ImageUsageFlagBits::eTransferSrc,
+        vk::SharingMode::eExclusive
+    };
+    images.emplace_back(sync_create_gpu_image(
+        dev_data, info, vk::ImageLayout::eGeneral
+    ));
     reset_image_views();
 }
 
 void looking_glass::deinit_swapchain()
 {
-    vk::Device& dev = get_display_device().dev;
+    vk::Device& dev = get_display_device().logical;
     array_image_views.clear();
     images.clear();
     window_images.clear();
@@ -542,32 +541,28 @@ void looking_glass::deinit_swapchain()
 
 void looking_glass::init_render_target()
 {
-    render_target input = get_array_render_target();
-    input.set_layout(expected_image_layout);
+    render_target input = get_array_render_target()[0];
+    input.layout = expected_image_layout;
 
-    std::vector<render_target::frame> output_frames;
+    std::vector<render_target> output_frames;
     for(size_t i = 0; i < window_images.size(); ++i)
     {
-        output_frames.push_back({
+        output_frames.emplace_back(
+            metadata.size, 0, 1,
             window_images[i],
             window_image_views[i],
-            vk::ImageLayout::eUndefined
-        });
+            vk::ImageLayout::eUndefined,
+            image_format,
+            vk::SampleCountFlagBits::e1
+        );
     }
-
-    render_target output(
-        metadata.size, 0, 1,
-        output_frames,
-        image_format,
-        vk::SampleCountFlagBits::e1
-    );
 
     try
     {
         composition.reset(new looking_glass_composition_stage(
             get_display_device(),
             input,
-            output,
+            output_frames,
             {
                 opt.viewport_count,
                 metadata.corrected_pitch,

@@ -15,11 +15,11 @@ namespace tr
 // which generate the input_features for the next frame must wait for the
 // dependency of the frame_delay_stage. These cross-frame dependencies ensure
 // that we can avoid synchronization issues.
-class frame_delay_stage: public stage
+class frame_delay_stage: public single_device_stage
 {
 public:
     frame_delay_stage(
-        device_data& dev,
+        device& dev,
         gbuffer_target& input_features
     );
     gbuffer_target get_output();

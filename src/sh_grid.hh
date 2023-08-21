@@ -20,15 +20,15 @@ public:
     );
 
     texture create_target_texture(
-        device_data& dev,
+        device_mask dev,
         int samples_per_probe
     );
     void get_target_sampling_info(
-        device_data& dev,
+        device_mask dev,
         int& samples_per_probe,
         int& samples_per_invocation
     );
-    texture create_texture(device_data& dev);
+    texture create_texture(device_mask dev);
     size_t get_required_bytes() const;
 
     void set_resolution(uvec3 res);

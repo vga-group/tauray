@@ -4,77 +4,78 @@
 namespace tr
 {
 
-stage::stage(device_data& dev, command_buffer_strategy strategy)
-: dev(&dev), local_step_counter(0), strategy(strategy)
+multi_device_stage::multi_device_stage(device_mask dev, command_buffer_strategy strategy)
+: buffers(dev), strategy(strategy)
 {
-    progress = create_timeline_semaphore(dev);
-    switch(strategy)
+    for(auto[dev, c]: buffers)
     {
-    case COMMAND_BUFFER_PER_FRAME:
-        command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-        break;
-    case COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE:
-        command_buffers.resize(dev.ctx->get_swapchain_image_count());
-        break;
-    case COMMAND_BUFFER_PER_FRAME_AND_SWAPCHAIN_IMAGE:
-        command_buffers.resize(MAX_FRAMES_IN_FLIGHT * dev.ctx->get_swapchain_image_count());
-        break;
+        c.local_step_counter = 0;
+        c.progress = create_timeline_semaphore(dev);
+        switch(strategy)
+        {
+        case COMMAND_BUFFER_PER_FRAME:
+            c.command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+            break;
+        case COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE:
+            c.command_buffers.resize(dev.ctx->get_swapchain_image_count());
+            break;
+        case COMMAND_BUFFER_PER_FRAME_AND_SWAPCHAIN_IMAGE:
+            c.command_buffers.resize(MAX_FRAMES_IN_FLIGHT * dev.ctx->get_swapchain_image_count());
+            break;
+        }
     }
 }
 
-stage::~stage()
+multi_device_stage::~multi_device_stage()
 {
-    dev->ctx->get_progress_tracker().erase_timeline(*progress);
+    for(auto[dev, c]: buffers)
+        dev.ctx->get_progress_tracker().erase_timeline(*c.progress);
 }
 
-dependency stage::run(dependencies deps)
+dependencies multi_device_stage::run(dependencies deps)
 {
-    dependency dep;
-
     uint32_t swapchain_index = 0, frame_index = 0;
-    dev->ctx->get_indices(swapchain_index, frame_index);
+    buffers.get_context()->get_indices(swapchain_index, frame_index);
 
     update(frame_index);
 
     size_t cb_index = get_command_buffer_index(frame_index, swapchain_index);
 
-    dev->ctx->get_progress_tracker().set_timeline(dev->index, progress, command_buffers[cb_index].size());
-
-    for(size_t i = 0; i < command_buffers[cb_index].size(); ++i)
+    for(auto[dev, c]: buffers)
     {
-        const vkm<vk::CommandBuffer>& cmd = command_buffers[cb_index][i];
+        dev.ctx->get_progress_tracker().set_timeline(dev.id, c.progress, c.command_buffers[cb_index].size());
 
-        if(i > 0)
-            deps.add(dep);
+        for(size_t i = 0; i < c.command_buffers[cb_index].size(); ++i)
+        {
+            const vkm<vk::CommandBuffer>& cmd = c.command_buffers[cb_index][i];
 
-        vk::TimelineSemaphoreSubmitInfo timeline_info = deps.get_timeline_info();
-        local_step_counter++;
-        timeline_info.signalSemaphoreValueCount = 1;
-        timeline_info.pSignalSemaphoreValues = &local_step_counter;
+            vk::TimelineSemaphoreSubmitInfo timeline_info = deps.get_timeline_info(dev.id);
+            c.local_step_counter++;
+            timeline_info.signalSemaphoreValueCount = 1;
+            timeline_info.pSignalSemaphoreValues = &c.local_step_counter;
 
-        vk::SubmitInfo submit_info = deps.get_submit_info(timeline_info);
-        submit_info.signalSemaphoreCount = 1;
-        submit_info.pSignalSemaphores = progress.get();
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = cmd.get();
+            vk::SubmitInfo submit_info = deps.get_submit_info(dev.id, timeline_info);
+            submit_info.signalSemaphoreCount = 1;
+            submit_info.pSignalSemaphores = c.progress.get();
+            submit_info.commandBufferCount = 1;
+            submit_info.pCommandBuffers = cmd.get();
 
-        if(cmd.get_pool() == dev->graphics_pool)
-            dev->graphics_queue.submit(submit_info, {});
-        if(cmd.get_pool() == dev->compute_pool)
-            dev->compute_queue.submit(submit_info, {});
-        if(cmd.get_pool() == dev->transfer_pool)
-            dev->transfer_queue.submit(submit_info, {});
+            if(cmd.get_pool() == dev.graphics_pool)
+                dev.graphics_queue.submit(submit_info, {});
+            if(cmd.get_pool() == dev.compute_pool)
+                dev.compute_queue.submit(submit_info, {});
+            if(cmd.get_pool() == dev.transfer_pool)
+                dev.transfer_queue.submit(submit_info, {});
 
-        if(i > 0)
-            deps.pop();
-
-        dep = {*progress, local_step_counter};
+            deps.clear(dev.id);
+            deps.add({dev.id, *c.progress, c.local_step_counter});
+        }
     }
 
-    return dep;
+    return deps;
 }
 
-size_t stage::get_command_buffer_index(uint32_t frame_index, uint32_t swapchain_index)
+size_t multi_device_stage::get_command_buffer_index(uint32_t frame_index, uint32_t swapchain_index)
 {
     switch(strategy)
     {
@@ -89,41 +90,51 @@ size_t stage::get_command_buffer_index(uint32_t frame_index, uint32_t swapchain_
     return 0;
 }
 
-void stage::update(uint32_t) { /* NO-OP by default */ }
+void multi_device_stage::update(uint32_t) { /* NO-OP by default */ }
 
-vk::CommandBuffer stage::begin_compute(bool single_use)
+device_mask multi_device_stage::get_device_mask() const
 {
-    return begin_commands(dev->compute_pool, single_use);
+    return buffers.get_mask();
 }
 
-void stage::end_compute(vk::CommandBuffer buf, uint32_t frame_index, uint32_t swapchain_index)
+context* multi_device_stage::get_context() const
 {
-    end_commands(buf, dev->compute_pool, frame_index, swapchain_index);
+    return buffers.get_context();
 }
 
-vk::CommandBuffer stage::begin_graphics(bool single_use)
+vk::CommandBuffer multi_device_stage::begin_compute(device_id id, bool single_use)
 {
-    return begin_commands(dev->graphics_pool, single_use);
+    return begin_commands(buffers.get_device(id).compute_pool, id, single_use);
 }
 
-void stage::end_graphics(vk::CommandBuffer buf, uint32_t frame_index, uint32_t swapchain_index)
+void multi_device_stage::end_compute(vk::CommandBuffer buf, device_id id, uint32_t frame_index, uint32_t swapchain_index)
 {
-    end_commands(buf, dev->graphics_pool, frame_index, swapchain_index);
+    end_commands(buf, buffers.get_device(id).compute_pool, id, frame_index, swapchain_index);
 }
 
-vk::CommandBuffer stage::begin_transfer(bool single_use)
+vk::CommandBuffer multi_device_stage::begin_graphics(device_id id, bool single_use)
 {
-    return begin_commands(dev->transfer_pool, single_use);
+    return begin_commands(buffers.get_device(id).graphics_pool, id, single_use);
 }
 
-void stage::end_transfer(vk::CommandBuffer buf, uint32_t frame_index, uint32_t swapchain_index)
+void multi_device_stage::end_graphics(vk::CommandBuffer buf, device_id id, uint32_t frame_index, uint32_t swapchain_index)
 {
-    end_commands(buf, dev->transfer_pool, frame_index, swapchain_index);
+    end_commands(buf, buffers.get_device(id).graphics_pool, id, frame_index, swapchain_index);
 }
 
-vk::CommandBuffer stage::begin_commands(vk::CommandPool pool, bool single_use)
+vk::CommandBuffer multi_device_stage::begin_transfer(device_id id, bool single_use)
 {
-    vk::CommandBuffer cb = dev->dev.allocateCommandBuffers({
+    return begin_commands(buffers.get_device(id).transfer_pool, id, single_use);
+}
+
+void multi_device_stage::end_transfer(vk::CommandBuffer buf, device_id id, uint32_t frame_index, uint32_t swapchain_index)
+{
+    end_commands(buf, buffers.get_device(id).transfer_pool, id, frame_index, swapchain_index);
+}
+
+vk::CommandBuffer multi_device_stage::begin_commands(vk::CommandPool pool, device_id id, bool single_use)
+{
+    vk::CommandBuffer cb = buffers.get_device(id).logical.allocateCommandBuffers({
         pool, vk::CommandBufferLevel::ePrimary, 1
     })[0];
 
@@ -135,16 +146,53 @@ vk::CommandBuffer stage::begin_commands(vk::CommandPool pool, bool single_use)
     return cb;
 }
 
-void stage::end_commands(vk::CommandBuffer buf, vk::CommandPool pool, uint32_t frame_index, uint32_t swapchain_index)
+void multi_device_stage::end_commands(vk::CommandBuffer buf, vk::CommandPool pool, device_id id, uint32_t frame_index, uint32_t swapchain_index)
 {
     buf.end();
     size_t index = get_command_buffer_index(frame_index, swapchain_index);
-    command_buffers[index].emplace_back(*dev, buf, pool);
+    buffers[id].command_buffers[index].emplace_back(buffers.get_device(id), buf, pool);
 }
 
-void stage::clear_commands()
+void multi_device_stage::clear_commands()
 {
-    for(auto& vec: command_buffers) vec.clear();
+    for(auto[d, c]: buffers)
+        for(auto& vec: c.command_buffers)
+            vec.clear();
+}
+
+single_device_stage::single_device_stage(device& dev, command_buffer_strategy strategy)
+: multi_device_stage(dev, strategy), dev(&dev)
+{
+}
+
+vk::CommandBuffer single_device_stage::begin_compute(bool single_use)
+{
+    return multi_device_stage::begin_compute(dev->id, single_use);
+}
+
+void single_device_stage::end_compute(vk::CommandBuffer buf, uint32_t frame_index, uint32_t swapchain_index)
+{
+    multi_device_stage::end_compute(buf, dev->id, frame_index, swapchain_index);
+}
+
+vk::CommandBuffer single_device_stage::begin_graphics(bool single_use)
+{
+    return multi_device_stage::begin_graphics(dev->id, single_use);
+}
+
+void single_device_stage::end_graphics(vk::CommandBuffer buf, uint32_t frame_index, uint32_t swapchain_index)
+{
+    multi_device_stage::end_graphics(buf, dev->id, frame_index, swapchain_index);
+}
+
+vk::CommandBuffer single_device_stage::begin_transfer(bool single_use)
+{
+    return multi_device_stage::begin_transfer(dev->id, single_use);
+}
+
+void single_device_stage::end_transfer(vk::CommandBuffer buf, uint32_t frame_index, uint32_t swapchain_index)
+{
+    multi_device_stage::end_transfer(buf, dev->id, frame_index, swapchain_index);
 }
 
 }

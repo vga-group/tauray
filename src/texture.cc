@@ -10,7 +10,7 @@ namespace
 using namespace tr;
 
 void create_tex(
-    device_data& dev,
+    device& dev,
     unsigned array_layers,
     vkm<vk::Image>& img,
     vkm<vk::ImageView>& array_view,
@@ -21,6 +21,8 @@ void create_tex(
     size_t data_size,
     void* pixel_data
 ){
+    layer_views.clear();
+    multiview_block_views.clear();
     img = sync_create_gpu_image(
         dev,
         info,
@@ -47,14 +49,14 @@ void create_tex(
             0, info.mipLevels, 0, VK_REMAINING_ARRAY_LAYERS
         }
     };
-    array_view = vkm(dev, dev.dev.createImageView(view_info));
+    array_view = vkm(dev, dev.logical.createImageView(view_info));
 
     view_info.viewType = base_type;
     for(unsigned i = 0; i < array_layers; ++i)
     {
         view_info.subresourceRange.baseArrayLayer = i;
         view_info.subresourceRange.layerCount = 1;
-        layer_views.emplace_back(dev, dev.dev.createImageView(view_info));
+        layer_views.emplace_back(dev, dev.logical.createImageView(view_info));
     }
 
     view_info.viewType = array_type;
@@ -67,7 +69,7 @@ void create_tex(
         );
         multiview_block_views.emplace_back(
             dev,
-            dev.dev.createImageView(view_info)
+            dev.logical.createImageView(view_info)
         );
     }
 }
@@ -218,20 +220,14 @@ float* read_exr(
 namespace tr
 {
 
-texture::texture(context& ctx, const std::string& path)
-: ctx(&ctx), dev(nullptr), opaque(false)
-{
-    load_from_file(path);
-}
-
-texture::texture(device_data& dev, const std::string& path)
-: ctx(dev.ctx), dev(&dev), opaque(false)
+texture::texture(device_mask dev, const std::string& path)
+: opaque(false), buffers(dev)
 {
     load_from_file(path);
 }
 
 texture::texture(
-    context& ctx,
+    device_mask dev,
     uvec2 size,
     unsigned array_layers,
     vk::Format fmt,
@@ -241,94 +237,58 @@ texture::texture(
     vk::ImageUsageFlags usage,
     vk::ImageLayout layout,
     vk::SampleCountFlagBits msaa
-):  ctx(&ctx), dev(nullptr), dim(size, 1), array_layers(array_layers),
+):  dim(size, 1), array_layers(array_layers),
     fmt(fmt), type(vk::ImageType::e2D), tiling(tiling), usage(usage),
-    layout(layout), msaa(msaa), opaque(false)
+    layout(layout), msaa(msaa), opaque(false), buffers(dev)
 {
     create(data_size, data);
 }
 
 texture::texture(
-    device_data& dev,
-    uvec2 size,
-    unsigned array_layers,
-    vk::Format fmt,
-    size_t data_size,
-    void* data,
-    vk::ImageTiling tiling,
-    vk::ImageUsageFlags usage,
-    vk::ImageLayout layout,
-    vk::SampleCountFlagBits msaa
-):  ctx(dev.ctx), dev(&dev), dim(size, 1), array_layers(array_layers), fmt(fmt),
-    type(vk::ImageType::e2D), tiling(tiling), usage(usage), layout(layout),
-    msaa(msaa), opaque(false)
-{
-    create(data_size, data);
-}
-
-texture::texture(
-    context& ctx,
+    device_mask dev,
     uvec3 dim,
     vk::Format fmt,
     vk::ImageTiling tiling,
     vk::ImageUsageFlags usage,
     vk::ImageLayout layout
-):  ctx(&ctx), dev(nullptr), dim(dim), array_layers(1), fmt(fmt), type(vk::ImageType::e3D),
+):  dim(dim), array_layers(1), fmt(fmt), type(vk::ImageType::e3D),
     tiling(tiling), usage(usage), layout(layout),
-    msaa(vk::SampleCountFlagBits::e1), opaque(false)
-{
-    create(0, nullptr);
-}
-
-texture::texture(
-    device_data& dev,
-    uvec3 dim,
-    vk::Format fmt,
-    vk::ImageTiling tiling,
-    vk::ImageUsageFlags usage,
-    vk::ImageLayout layout
-):  ctx(dev.ctx), dev(&dev), dim(dim), array_layers(1), fmt(fmt),
-    type(vk::ImageType::e3D), tiling(tiling), usage(usage), layout(layout),
-    msaa(vk::SampleCountFlagBits::e1), opaque(false)
+    msaa(vk::SampleCountFlagBits::e1), opaque(false), buffers(dev)
 {
     create(0, nullptr);
 }
 
 texture::texture(texture&& other)
-:   ctx(other.ctx), dev(other.dev), dim(other.dim),
-    array_layers(other.array_layers), fmt(other.fmt),
+:   dim(other.dim), array_layers(other.array_layers), fmt(other.fmt),
     type(other.type), tiling(other.tiling), usage(other.usage),
     layout(other.layout), msaa(other.msaa),
     pixel_data(std::move(other.pixel_data)), opaque(other.opaque),
     buffers(std::move(other.buffers))
 {
-    other.ctx = nullptr;
-    other.dev = nullptr;
+    other.buffers.clear();
 }
 
-vk::ImageView texture::get_array_image_view(size_t device_index) const
+vk::ImageView texture::get_array_image_view(device_id id) const
 {
-    device_index = min(device_index, buffers.size()-1);
-    return buffers[device_index].array_view;
+    return buffers[id].array_view;
 }
 
 vk::ImageView texture::get_layer_image_view(
-    uint32_t layer_index, size_t device_index
+    device_id id,
+    uint32_t layer_index
 ) const
 {
-    device_index = min(device_index, buffers.size()-1);
-    return buffers[device_index].layer_views[layer_index];
+    return buffers[id].layer_views[layer_index];
 }
 
-vk::ImageView texture::get_image_view(size_t device_index) const
+vk::ImageView texture::get_image_view(device_id id) const
 {
-    return get_layer_image_view(0, device_index);
+    return get_layer_image_view(id, 0);
 }
 
-vk::Image texture::get_image(size_t device_index) const
+vk::Image texture::get_image(device_id id) const
 {
-    device_index = min(device_index, buffers.size()-1);
-    return buffers[device_index].img;
+    return buffers[id].img;
 }
 
 vk::Format texture::get_format() const
@@ -394,29 +354,26 @@ uvec3 texture::get_dimensions() const
     return dim;
 }
 
-render_target texture::get_array_render_target(size_t device_index) const
+render_target texture::get_array_render_target(device_id id) const
 {
-    std::vector<render_target::frame> frames;
-    const auto& buf = buffers[device_index];
-    return render_target(dim, 0, array_layers, {{buf.img, buf.array_view, layout}}, fmt, msaa);
+    const auto& buf = buffers[id];
+    return render_target(dim, 0, array_layers, buf.img, buf.array_view, layout, fmt, msaa);
 }
 
 render_target texture::get_layer_render_target(
-    uint32_t layer_index,
-    size_t device_index
+    device_id id,
+    uint32_t layer_index
 ) const {
-    std::vector<render_target::frame> frames;
-    const auto& buf = buffers[device_index];
-    return render_target(dim, layer_index, 1, {{buf.img, buf.layer_views[layer_index], layout}}, fmt, msaa);
+    const auto& buf = buffers[id];
+    return render_target(dim, layer_index, 1, buf.img, buf.layer_views[layer_index], layout, fmt, msaa);
 }
 
 render_target texture::get_multiview_block_render_target(
-    uint32_t block_index,
-    size_t device_index
+    device_id id,
+    uint32_t block_index
 ) const {
-    std::vector<render_target::frame> frames;
-    const auto& buf = buffers[device_index];
-    uint32_t block_size = ctx->get_devices()[device_index].mv_props.maxMultiviewViewCount;
+    const auto& buf = buffers[id];
+    uint32_t block_size = buffers.get_device(id).mv_props.maxMultiviewViewCount;
     return render_target(
         dim,
         block_index * block_size,
@@ -424,10 +381,15 @@ render_target texture::get_multiview_block_render_target(
             array_layers - block_index * block_size,
             block_size
         ),
-        {{buf.img, buf.multiview_block_views[block_index], layout}},
+        buf.img, buf.multiview_block_views[block_index], layout,
         fmt,
         msaa
     );
+}
+
+device_mask texture::get_mask() const
+{
+    return buffers.get_mask();
 }
 
 size_t texture::get_multiview_block_count() const
@@ -438,7 +400,6 @@ size_t texture::get_multiview_block_count() const
 void texture::resize(uvec2 size)
 {
     pixel_data.clear();
-    buffers.clear();
     dim = uvec3(size, 1u);
     create(0, nullptr);
 }
@@ -582,28 +543,12 @@ void texture::create(size_t data_size, void* data)
         vk::SharingMode::eExclusive
     };
 
-    if(!dev)
+    for(auto[dev, buf]: buffers)
     {
-        std::vector<device_data>& devices = ctx->get_devices();
-        buffers.resize(devices.size());
-        for(size_t i = 0; i < devices.size(); ++i)
-        {
-            auto& buf = buffers[i];
-            create_tex(
-                devices[i], array_layers, buf.img, buf.array_view,
-                buf.layer_views, buf.multiview_block_views, img_info,
-                layout, data_size, data
-            );
-        }
-    }
-    else
-    {
-        buffers.resize(1);
-
-        auto& buf = buffers[0];
         create_tex(
-            *dev, array_layers, buf.img, buf.array_view, buf.layer_views,
-            buf.multiview_block_views, img_info, layout, data_size, data
+            dev, array_layers, buf.img, buf.array_view,
+            buf.layer_views, buf.multiview_block_views, img_info,
+            layout, data_size, data
         );
     }
 }

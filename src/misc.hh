@@ -5,7 +5,7 @@
 namespace tr
 {
 
-struct device_data;
+struct device;
 class context;
 
 template<typename T, size_t count>
@@ -15,14 +15,14 @@ inline std::string to_string(const vk::ArrayWrapper1D<T, count>& vkstring)
 }
 
 // These are for one-off command buffers.
-vk::CommandBuffer begin_command_buffer(device_data& d);
-void end_command_buffer(device_data& d, vk::CommandBuffer cb);
+vk::CommandBuffer begin_command_buffer(device& d);
+void end_command_buffer(device& d, vk::CommandBuffer cb);
 
-vkm<vk::CommandBuffer> create_compute_command_buffer(device_data& d);
-vkm<vk::CommandBuffer> create_graphics_command_buffer(device_data& d);
+vkm<vk::CommandBuffer> create_compute_command_buffer(device& d);
+vkm<vk::CommandBuffer> create_graphics_command_buffer(device& d);
 
-vkm<vk::Semaphore> create_binary_semaphore(device_data& d);
-vkm<vk::Semaphore> create_timeline_semaphore(device_data& d);
+vkm<vk::Semaphore> create_binary_semaphore(device& d);
+vkm<vk::Semaphore> create_timeline_semaphore(device& d);
 
 void transition_image_layout(
     vk::CommandBuffer cb,
@@ -39,7 +39,7 @@ void transition_image_layout(
 );
 
 vkm<vk::Buffer> create_buffer(
-    device_data& dev,
+    device& dev,
     vk::BufferCreateInfo info,
     VmaAllocationCreateFlagBits flags,
     const void* data = nullptr,
@@ -47,7 +47,7 @@ vkm<vk::Buffer> create_buffer(
 );
 
 vkm<vk::Buffer> create_buffer_aligned(
-    device_data& dev,
+    device& dev,
     vk::BufferCreateInfo info,
     VmaAllocationCreateFlagBits flags,
     size_t alignment,
@@ -55,26 +55,26 @@ vkm<vk::Buffer> create_buffer_aligned(
 );
 
 vkm<vk::Buffer> create_staging_buffer(
-    device_data& dev,
+    device& dev,
     size_t size,
     const void* data = nullptr
 );
 
 // Staging but in reverse, GPU->CPU.
 vkm<vk::Buffer> create_download_buffer(
-    device_data& dev,
+    device& dev,
     size_t size
 );
 
 void* allocate_host_buffer(
-    const std::vector<device_data*>& supported_devices,
+    const std::vector<device*>& supported_devices,
     size_t size
 );
 
 void release_host_buffer(void* host_buffer);
 
 void create_host_allocated_buffer(
-    device_data& dev,
+    device& dev,
     vk::Buffer& res,
     vk::DeviceMemory& mem,
     size_t size,
@@ -82,7 +82,7 @@ void create_host_allocated_buffer(
 );
 
 void destroy_host_allocated_buffer(
-    device_data& dev,
+    device& dev,
     vk::Buffer& res,
     vk::DeviceMemory& mem
 );
@@ -96,7 +96,7 @@ void deduce_layout_access_stage(
 );
 
 vkm<vk::Image> sync_create_gpu_image(
-    device_data& dev,
+    device& dev,
     vk::ImageCreateInfo info,
     vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal,
     size_t data_size = 0,
@@ -168,8 +168,15 @@ template<typename T>
 size_t count_array_layers(const std::vector<T>& targets)
 {
     size_t count = 0;
-    for(const T& t: targets)
-        count += t.get_layer_count();
+    for(const T& t: targets) count += t.layer_count;
+    return count;
+}
+
+template<typename T>
+size_t count_gbuffer_array_layers(const std::vector<T>& targets)
+{
+    size_t count = 0;
+    for(const T& t: targets) count += t.get_layer_count();
     return count;
 }
 

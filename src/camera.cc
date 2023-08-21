@@ -2,19 +2,11 @@
 #include "json.hpp"
 #include <fstream>
 
-// This stupid wrapper exists because forward declaring nlohmann::json is more
-// complicated than doing this.
-class json: public nlohmann::json
-{
-public:
-    using nlohmann::json::basic_json;
-};
-
 namespace
 {
 using namespace tr;
 
-json matrix_to_json(const mat4& m)
+nlohmann::json matrix_to_json(const mat4& m)
 {
     return {
         m[0][0], m[0][1], m[0][2], m[0][3],
@@ -472,28 +464,6 @@ void camera::write_uniform_buffer(void* data) const
     }
 }
 
-json camera::serialize_projection() const
-{
-    switch(type)
-    {
-    case PERSPECTIVE:
-    case ORTHOGRAPHIC:
-        {
-            mat4 projection = get_projection_matrix();
-            return matrix_to_json(projection);
-        }
-    case EQUIRECTANGULAR:
-        {
-            return json({
-                pd.equirectangular.fov.x,
-                pd.equirectangular.fov.y
-            });
-        }
-    }
-    assert(false);
-    return {};
-}
-
 void camera::set_jitter(const std::vector<vec2>& jitter_sequence)
 {
     this->jitter_sequence = jitter_sequence;
@@ -530,8 +500,23 @@ void camera_log::frame(time_ticks dt)
 
 void camera_log::write(const std::string& path)
 {
-    json out;
-    out["projection"] = cam->serialize_projection();
+    nlohmann::json out = nlohmann::json::object();
+
+    switch(cam->type)
+    {
+    case camera::PERSPECTIVE:
+    case camera::ORTHOGRAPHIC:
+        out["projection"] = matrix_to_json(cam->get_projection_matrix());
+        break;
+    case camera::EQUIRECTANGULAR:
+        out["projection"] = {
+            cam->pd.equirectangular.fov.x,
+            cam->pd.equirectangular.fov.y
+        };
+        break;
+    default:
+        break;
+    }
 
     for(frame_data fd: frames)
     {

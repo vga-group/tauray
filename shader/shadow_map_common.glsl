@@ -5,15 +5,16 @@
 
 #include "scene.glsl"
 
-layout(binding = 1, set = 0) uniform camera_data_buffer
+layout(binding = 1, set = 0) buffer camera_data_buffer
 {
-    mat4 view_proj;
+    mat4 view_proj[];
 } camera;
 
 layout(push_constant) uniform push_constant_buffer
 {
     uint instance_id;
     float alpha_clip;
+    uint camera_index;
 } control;
 
 #endif

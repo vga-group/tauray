@@ -9,7 +9,7 @@ class sampler
 {
 public:
     sampler(
-        context& ctx,
+        device_mask dev,
         vk::Filter min = vk::Filter::eLinear,
         vk::Filter mag = vk::Filter::eLinear,
         vk::SamplerAddressMode extend_x = vk::SamplerAddressMode::eRepeat,
@@ -21,15 +21,13 @@ public:
         bool shadow = false,
         float mip_bias = 0.0f
     );
-    sampler(const context& other) = delete;
+    sampler(const sampler& other) = delete;
     sampler(sampler&& other) = default;
 
-    vk::Sampler get_sampler(size_t device_index) const;
+    vk::Sampler get_sampler(device_id id) const;
 
 private:
-    context* ctx;
-    vk::SamplerCreateInfo info;
-    std::vector<vkm<vk::Sampler>> samplers;
+    per_device<vkm<vk::Sampler>> samplers;
 };
 
 }

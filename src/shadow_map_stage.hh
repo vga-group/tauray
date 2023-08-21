@@ -7,12 +7,13 @@
 #include "timer.hh"
 #include "gpu_buffer.hh"
 #include "stage.hh"
+#include "atlas.hh"
+#include "scene_stage.hh"
 
 namespace tr
 {
 
-class scene;
-class shadow_map_stage: public stage
+class shadow_map_stage: public single_device_stage
 {
 public:
     struct options
@@ -20,30 +21,23 @@ public:
         size_t max_samplers = 128;
     };
 
-    shadow_map_stage(
-        device_data& dev,
-        uvec4 local_rect,
-        render_target& depth_buffer,
-        const options& opt
-    );
-
-    void set_scene(scene* s);
-    void set_camera(const camera& cur_cam);
+    shadow_map_stage(device& dev, scene_stage& ss, const options& opt);
 
 private:
     void update(uint32_t frame_index) override;
 
-    raster_pipeline gfx;
+    std::optional<raster_pipeline> gfx;
     options opt;
     gpu_buffer camera_data;
+    std::vector<scene_stage::shadow_map_instance> shadow_maps;
+    uvec2 prev_atlas_size;
 
     timer shadow_timer;
 
-    camera cur_cam;
-    scene* cur_scene;
+    scene_stage* ss;
+    uint32_t scene_state_counter;
 };
 
 }
 
 #endif
-

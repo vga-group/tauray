@@ -1,13 +1,13 @@
 #include "sampler_table.hh"
 #include "placeholders.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 
 namespace tr
 {
 
-sampler_table::sampler_table(device_data& dev, bool use_mipmaps)
-:   dev(&dev), default_sampler(
-        *dev.ctx, vk::Filter::eLinear, vk::Filter::eLinear,
+sampler_table::sampler_table(device_mask dev, bool use_mipmaps)
+:   default_sampler(
+        dev, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerAddressMode::eRepeat,
         vk::SamplerAddressMode::eRepeat,
         vk::SamplerMipmapMode::eLinear,
@@ -16,26 +16,37 @@ sampler_table::sampler_table(device_data& dev, bool use_mipmaps)
 {
 }
 
-std::vector<vk::DescriptorImageInfo> sampler_table::update_scene(scene* s)
+void sampler_table::update_scene(scene_stage* s)
 {
-    const std::vector<scene::instance>& instances = s->get_instances();
+    const std::vector<scene_stage::instance>& instances = s->get_instances();
     table.clear();
-    std::vector<vk::DescriptorImageInfo> dii;
+    index_counter = 0;
     for(size_t i = 0; i < instances.size(); ++i)
     {
         const material& mat = *instances[i].mat;
-        register_tex_id(mat.albedo_tex, dii);
-        register_tex_id(mat.metallic_roughness_tex, dii);
-        register_tex_id(mat.normal_tex, dii);
-        register_tex_id(mat.emission_tex, dii);
+        register_tex_id(mat.albedo_tex);
+        register_tex_id(mat.metallic_roughness_tex);
+        register_tex_id(mat.normal_tex);
+        register_tex_id(mat.emission_tex);
+    }
+}
+
+std::vector<vk::DescriptorImageInfo> sampler_table::get_image_infos(device_id id) const
+{
+    std::vector<vk::DescriptorImageInfo> dii(index_counter);
+    for(const auto& pair: table)
+    {
+        dii[pair.second] = {
+            pair.first.second->get_sampler(id),
+            pair.first.first->get_image_view(id),
+            vk::ImageLayout::eShaderReadOnlyOptimal
+        };
     }
     return dii;
 }
 
-void sampler_table::register_tex_id(
-    combined_tex_sampler cs,
-    std::vector<vk::DescriptorImageInfo>& dii
-){
+void sampler_table::register_tex_id(combined_tex_sampler cs)
+{
     if(cs.first)
     {
         const sampler* s = cs.second ?  cs.second : &default_sampler;
@@ -44,12 +55,7 @@ void sampler_table::register_tex_id(
         auto it = table.find(key);
         if(it == table.end())
         {
-            table[key] = dii.size();
-            dii.push_back({
-                s->get_sampler(dev->index),
-                cs.first->get_image_view(dev->index),
-                vk::ImageLayout::eShaderReadOnlyOptimal
-            });
+            table[key] = index_counter++;
         }
     }
 }

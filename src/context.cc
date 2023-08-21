@@ -25,7 +25,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     TR_ERR(data->pMessage);
 
     // Handy assert for debugging where validation errors happen
-    //assert(false);
+    assert(false);
     return false;
 }
 
@@ -74,12 +74,12 @@ context::~context() {}
 
 bool context::init_frame() { return false; }
 
-device_data& context::get_display_device()
+device& context::get_display_device()
 {
     return devices[display_device_index];
 }
 
-std::vector<device_data>& context::get_devices()
+std::vector<device>& context::get_devices()
 {
     return devices;
 }
@@ -119,24 +119,22 @@ size_t context::get_swapchain_image_count() const
     return images.size();
 }
 
-render_target context::get_array_render_target()
+std::vector<render_target> context::get_array_render_target()
 {
-    std::vector<render_target::frame> frames;
+    std::vector<render_target> frames;
     for(size_t i = 0; i < get_swapchain_image_count(); ++i)
     {
-        frames.push_back({
+        frames.emplace_back(
+            image_size,
+            0, image_array_layers,
             images[i],
             array_image_views[i],
-            vk::ImageLayout::eUndefined
-        });
+            vk::ImageLayout::eUndefined,
+            image_format,
+            vk::SampleCountFlagBits::e1
+        );
     }
-    return render_target(
-        image_size,
-        0, image_array_layers,
-        frames,
-        image_format,
-        vk::SampleCountFlagBits::e1
-    );
+    return frames;
 }
 
 placeholders& context::get_placeholders()
@@ -155,8 +153,8 @@ dependency context::begin_frame()
     frame_counter++;
 
     timing.host_wait();
-    device_data& d = get_display_device();
-    (void)d.dev.waitForFences(*frame_fences[frame_index], true, UINT64_MAX);
+    device& d = get_display_device();
+    (void)d.logical.waitForFences(*frame_fences[frame_index], true, UINT64_MAX);
 
     // Get new images
     swapchain_index = prepare_next_image(frame_index);
@@ -180,10 +178,10 @@ dependency context::begin_frame()
     d.graphics_queue.submit(submit_info, {});
 
     if(image_fences[swapchain_index])
-        (void)d.dev.waitForFences(image_fences[swapchain_index], true, UINT64_MAX);
+        (void)d.logical.waitForFences(image_fences[swapchain_index], true, UINT64_MAX);
     image_fences[swapchain_index] = frame_fences[frame_index];
 
-    d.dev.resetFences(*frame_fences[frame_index]);
+    d.logical.resetFences(*frame_fences[frame_index]);
 
     call_frame_end_actions(frame_index);
 
@@ -191,21 +189,21 @@ dependency context::begin_frame()
         timing.device_finish_frame();
     timing.begin_frame();
 
-    return {*image_available[swapchain_index], frame_counter};
+    return {d.id, *image_available[swapchain_index], frame_counter};
 }
 
 void context::end_frame(const dependencies& deps)
 {
     dependencies local_deps = fill_end_frame_dependencies(deps);
 
-    device_data& d = get_display_device();
+    device& d = get_display_device();
 
     std::vector<vk::PipelineStageFlags> wait_stages(
-        local_deps.size(), vk::PipelineStageFlagBits::eTopOfPipe
+        local_deps.size(d.id), vk::PipelineStageFlagBits::eTopOfPipe
     );
 
-    vk::TimelineSemaphoreSubmitInfo timeline_info = local_deps.get_timeline_info();
-    vk::SubmitInfo submit_info = local_deps.get_submit_info(timeline_info);
+    vk::TimelineSemaphoreSubmitInfo timeline_info = local_deps.get_timeline_info(d.id);
+    vk::SubmitInfo submit_info = local_deps.get_submit_info(d.id, timeline_info);
     submit_info.signalSemaphoreCount = image_array_layers != 0 ? 1 : 0;
     submit_info.pSignalSemaphores = frame_finished[frame_index];
 
@@ -233,8 +231,8 @@ uint32_t context::get_displayed_frame_counter() const
 
 void context::sync()
 {
-    for(device_data& dev: devices)
-        dev.dev.waitIdle();
+    for(device& dev: devices)
+        dev.logical.waitIdle();
 
     // No frames can be in flight anymore, so we can safely call all frame end
     // actions.
@@ -416,8 +414,8 @@ void context::init_devices()
             (!opt.physical_device_indices.count(-1) || devices.size() != 0)
         ) continue;
 
-        vk::PhysicalDevice& pdev = physical_devices[pdev_index];
-        auto props_pack = pdev.getProperties2<
+        vk::PhysicalDevice& physical = physical_devices[pdev_index];
+        auto props_pack = physical.getProperties2<
             vk::PhysicalDeviceProperties2,
             vk::PhysicalDeviceSubgroupProperties
         >();
@@ -426,7 +424,7 @@ void context::init_devices()
         if(props.apiVersion < VK_API_VERSION_1_2)
             continue;
 
-        auto feats_pack = pdev.getFeatures2<
+        auto feats_pack = physical.getFeatures2<
             vk::PhysicalDeviceFeatures2,
             vk::PhysicalDeviceVulkan11Features,
             vk::PhysicalDeviceVulkan12Features,
@@ -443,9 +441,9 @@ void context::init_devices()
             feats_pack.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
 
         std::vector<vk::QueueFamilyProperties> queue_family_props =
-            pdev.getQueueFamilyProperties();
+            physical.getQueueFamilyProperties();
         std::vector<vk::ExtensionProperties> available_extensions =
-            pdev.enumerateDeviceExtensionProperties();
+            physical.enumerateDeviceExtensionProperties();
         std::vector<const char*> enabled_device_extensions =
             required_device_extensions;
 
@@ -460,7 +458,7 @@ void context::init_devices()
         if(opt.disable_ray_tracing)
             vulkan_12_feats.pNext = nullptr;
 
-        device_data dev_data;
+        device dev_data;
         for(uint32_t i = 0; i < queue_family_props.size(); ++i)
         {
             auto flags = queue_family_props[i].queueFlags;
@@ -479,7 +477,7 @@ void context::init_devices()
             }
 
             if(
-                queue_can_present(pdev, i, queue_family_props[i]) &&
+                queue_can_present(physical, i, queue_family_props[i]) &&
                 (!dev_data.has_present || cur_has_graphics)
             ){
                 dev_data.present_family_index = i;
@@ -557,7 +555,7 @@ void context::init_devices()
                 {{}, dev_data.transfer_family_index, 1, &priority}
             );
 
-            auto props2 = pdev.getProperties2<
+            auto props2 = physical.getProperties2<
                 vk::PhysicalDeviceProperties2,
                 vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
                 vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
@@ -565,9 +563,9 @@ void context::init_devices()
                 vk::PhysicalDeviceMultiviewProperties
             >();
 
-            dev_data.index = devices.size();
+            dev_data.id = devices.size();
             dev_data.ctx = this;
-            dev_data.pdev = pdev;
+            dev_data.physical = physical;
             vk::DeviceCreateInfo device_create_info(
                 {},
                 queue_infos.size(),
@@ -580,7 +578,7 @@ void context::init_devices()
             );
             device_create_info.pNext = &feats;
 
-            dev_data.dev = create_device(pdev, device_create_info);
+            dev_data.logical = create_device(physical, device_create_info);
             dev_data.props = props;
             dev_data.subgroup_props = subgroup_props;
             dev_data.feats = feats.features;
@@ -605,25 +603,25 @@ void context::init_devices()
                 16u,
                 dev_data.mv_props.maxMultiviewViewCount
             );
-            dev_data.dev.getQueue(
+            dev_data.logical.getQueue(
                 dev_data.graphics_family_index, 0, &dev_data.graphics_queue
             );
-            dev_data.graphics_pool = dev_data.dev.createCommandPool(
+            dev_data.graphics_pool = dev_data.logical.createCommandPool(
                 {{}, dev_data.graphics_family_index}
             );
-            dev_data.dev.getQueue(
+            dev_data.logical.getQueue(
                 dev_data.compute_family_index, 0, &dev_data.compute_queue
             );
-            dev_data.compute_pool = dev_data.dev.createCommandPool(
+            dev_data.compute_pool = dev_data.logical.createCommandPool(
                 {{}, dev_data.compute_family_index}
             );
 
             if(dev_data.has_present)
             {
-                dev_data.dev.getQueue(
+                dev_data.logical.getQueue(
                     dev_data.present_family_index, 0, &dev_data.present_queue
                 );
-                dev_data.present_pool = dev_data.dev.createCommandPool(
+                dev_data.present_pool = dev_data.logical.createCommandPool(
                     {{}, dev_data.present_family_index}
                 );
                 if(!display_device_set)
@@ -633,18 +631,18 @@ void context::init_devices()
                 }
             }
 
-            dev_data.dev.getQueue(
+            dev_data.logical.getQueue(
                 dev_data.transfer_family_index, 0, &dev_data.transfer_queue
             );
-            dev_data.transfer_pool = dev_data.dev.createCommandPool(
+            dev_data.transfer_pool = dev_data.logical.createCommandPool(
                 {{}, dev_data.transfer_family_index}
             );
-            dev_data.pp_cache = dev_data.dev.createPipelineCache({
+            dev_data.pp_cache = dev_data.logical.createPipelineCache({
             });
 
             VmaAllocatorCreateInfo allocator_info = {};
-            allocator_info.physicalDevice = pdev;
-            allocator_info.device = dev_data.dev;
+            allocator_info.physicalDevice = physical;
+            allocator_info.device = dev_data.logical;
             allocator_info.instance = instance;
             allocator_info.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
             vmaCreateAllocator(&allocator_info, &dev_data.allocator);
@@ -660,24 +658,24 @@ void context::init_devices()
 void context::deinit_devices()
 {
     sync();
-    for(device_data& dev_data: devices)
+    for(device& dev_data: devices)
     {
-        dev_data.dev.destroyPipelineCache(dev_data.pp_cache);
-        dev_data.dev.destroyCommandPool(dev_data.graphics_pool);
-        dev_data.dev.destroyCommandPool(dev_data.compute_pool);
+        dev_data.logical.destroyPipelineCache(dev_data.pp_cache);
+        dev_data.logical.destroyCommandPool(dev_data.graphics_pool);
+        dev_data.logical.destroyCommandPool(dev_data.compute_pool);
         if(dev_data.has_present)
         {
-            dev_data.dev.destroyCommandPool(dev_data.present_pool);
+            dev_data.logical.destroyCommandPool(dev_data.present_pool);
         }
-        dev_data.dev.destroyCommandPool(dev_data.transfer_pool);
+        dev_data.logical.destroyCommandPool(dev_data.transfer_pool);
         vmaDestroyAllocator(dev_data.allocator);
-        dev_data.dev.destroy();
+        dev_data.logical.destroy();
     }
 }
 
 void context::init_resources()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
 
     // Create fences & semaphores
     frame_available.resize(MAX_FRAMES_IN_FLIGHT);
@@ -689,7 +687,7 @@ void context::init_resources()
         frame_available[i] = create_binary_semaphore(dev_data);
         frame_finished[i] = create_binary_semaphore(dev_data);
         frame_fences[i] =
-            vkm(dev_data, dev_data.dev.createFence({vk::FenceCreateFlagBits::eSignaled}));
+            vkm(dev_data, dev_data.logical.createFence({vk::FenceCreateFlagBits::eSignaled}));
     }
 
     for(size_t i = 0; i < get_swapchain_image_count(); ++i)
@@ -710,14 +708,14 @@ void context::init_resources()
 
 void context::reset_image_views()
 {
-    device_data& dev_data = get_display_device();
+    device& dev_data = get_display_device();
 
     // Create image views
     array_image_views.clear();
     for(size_t i = 0; i < images.size(); ++i)
     {
         array_image_views.emplace_back(dev_data,
-            dev_data.dev.createImageView({
+            dev_data.logical.createImageView({
                 {},
                 *images[i],
                 vk::ImageViewType::e2DArray,

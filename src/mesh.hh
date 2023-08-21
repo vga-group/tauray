@@ -35,9 +35,9 @@ public:
         pvec4 weights;
     };
 
-    mesh(context& ctx);
+    mesh(device_mask dev);
     mesh(
-        context& ctx,
+        device_mask dev,
         std::vector<vertex>&& vertices,
         std::vector<uint32_t>&& indices,
         std::vector<skin_data>&& skin = {}
@@ -64,9 +64,9 @@ public:
     std::vector<skin_data>& get_skin();
     const std::vector<skin_data>& get_skin() const;
 
-    vk::Buffer get_vertex_buffer(size_t device_index) const;
-    vk::Buffer get_index_buffer(size_t device_index) const;
-    vk::Buffer get_skin_buffer(size_t device_index) const;
+    vk::Buffer get_vertex_buffer(device_id id) const;
+    vk::Buffer get_index_buffer(device_id id) const;
+    vk::Buffer get_skin_buffer(device_id id) const;
 
     bool is_skinned() const;
     mesh* get_animation_source() const;
@@ -92,20 +92,18 @@ private:
 
     static uint64_t id_counter;
 
-    context* ctx;
     uint64_t id;
     std::vector<vertex> vertices;
     std::vector<uint32_t> indices;
     std::vector<skin_data> skin;
     mesh* animation_source;
-    // Per-device
     struct buffer_data
     {
         vkm<vk::Buffer> vertex_buffer;
         vkm<vk::Buffer> index_buffer;
         vkm<vk::Buffer> skin_buffer;
     };
-    std::vector<buffer_data> buffers;
+    per_device<buffer_data> buffers;
 };
 
 }
