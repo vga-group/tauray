@@ -150,14 +150,22 @@ void openxr::recreate_swapchains()
 }
 
 void openxr::setup_xr_surroundings(
-    scene& s, transformable_node* reference_frame
+    scene& s, transformable* reference_frame
 ){
-    s.clear_cameras();
+    s.foreach([&](entity id, camera&){s.remove<camera>(id);});
+    cameras.clear();
     for(size_t i = 0; i < view_states.size(); ++i)
     {
-        camera& cam = cameras[i];
-        cam.set_parent(reference_frame);
-        s.add(cam);
+        camera cam;
+        float aspect = image_size.x/(float)image_size.y;
+        cam.perspective(90, aspect, 0.1f, 300.0f);
+        entity id = s.add(
+            std::move(cam),
+            transformable(reference_frame),
+            camera_metadata{true, int(i), true}
+        );
+        cameras.push_back(s.get<camera>(id));
+        camera_transforms.push_back(s.get<transformable>(id));
     }
 }
 
@@ -499,14 +507,6 @@ void openxr::init_xr()
     }
 
     image_array_layers = views.size();
-
-    cameras.resize(views.size());
-    for(size_t i = 0; i < views.size(); ++i)
-    {
-        camera& cam = cameras[i];
-        float aspect = image_size.x/(float)image_size.y;
-        cam.perspective(90, aspect, 0.1f, 300.0f);
-    }
 
     view_states.resize(views.size(), {XR_TYPE_VIEW, nullptr, {}, {}});
 
@@ -1042,7 +1042,11 @@ void openxr::update_xr_views()
 
     for(size_t i = 0; i < view_states.size(); ++i)
     {
-        camera& cam = cameras[i];
+        if(i >= cameras.size())
+            continue;
+
+        camera& cam = *cameras[i];
+        transformable& cam_transform = *camera_transforms[i];
         const XrView& v = view_states[i];
 
         cam.set_fov(
@@ -1054,7 +1058,7 @@ void openxr::update_xr_views()
 
         if(vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)
         {
-            cam.set_orientation(quat(
+            cam_transform.set_orientation(quat(
                 v.pose.orientation.w,
                 v.pose.orientation.x,
                 v.pose.orientation.y,
@@ -1065,7 +1069,7 @@ void openxr::update_xr_views()
 
         if(vs.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT)
         {
-            cam.set_position(vec3(
+            cam_transform.set_position(vec3(
                 v.pose.position.x,
                 v.pose.position.y,
                 v.pose.position.z

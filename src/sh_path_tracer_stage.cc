@@ -124,8 +124,9 @@ sh_path_tracer_stage::sh_path_tracer_stage(
 void sh_path_tracer_stage::update(uint32_t frame_index)
 {
     rt_stage::update(frame_index);
-    sh_grid* grid = ss->get_scene()->get_sh_grids()[opt.sh_grid_index];
-    mat4 transform = grid->get_global_transform();
+    sh_grid* grid = ss->get_scene()->get<sh_grid>(opt.sh_grid_id);
+    transformable* grid_transform = ss->get_scene()->get<transformable>(opt.sh_grid_id);
+    mat4 transform = grid_transform->get_global_transform();
 
     uint32_t sampling_start_counter =
         dev->ctx->get_frame_counter() * opt.samples_per_probe;
@@ -136,7 +137,7 @@ void sh_path_tracer_stage::update(uint32_t frame_index)
             guni->normal_transform = mat4(get_matrix_orientation(transform));
             guni->grid_size = grid->get_resolution();
             guni->mix_ratio = max(1.0f/dev->ctx->get_frame_counter(), opt.temporal_ratio);
-            guni->cell_scale = 0.5f*vec3(grid->get_resolution())/grid->get_scaling();
+            guni->cell_scale = 0.5f*vec3(grid->get_resolution())/grid_transform->get_scaling();
             guni->rotation_x = pcg(sampling_start_counter)/float(0xFFFFFFFFu);
             guni->rotation_y = pcg(sampling_start_counter+1)/float(0xFFFFFFFFu);
         }
@@ -163,7 +164,7 @@ void sh_path_tracer_stage::record_command_buffer(
 ){
     grid_data.upload(dev->id, frame_index, cb);
 
-    sh_grid* grid = ss->get_scene()->get_sh_grids()[opt.sh_grid_index];
+    sh_grid* grid = ss->get_scene()->get<sh_grid>(opt.sh_grid_id);
     uvec3 dim = grid->get_resolution();
 
     vk::ImageMemoryBarrier img_barrier(

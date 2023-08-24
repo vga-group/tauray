@@ -50,31 +50,30 @@ protected:
             clear_commands();
             unmap_all();
 
-            const std::vector<sh_grid*>& grids = cur_scene->get_sh_grids();
-            for(sh_grid* grid: grids)
-            {
-                grid_data& d = data[grid];
+            cur_scene->foreach([&](sh_grid& grid){
+                grid_data& d = data[&grid];
                 d.last_update = std::chrono::steady_clock::now();
-                d.size = grid->get_required_bytes();
+                d.size = grid.get_required_bytes();
                 d.staging_buffer = create_staging_buffer(*dev, d.size);
                 d.progress = 1.0f;
                 d.frames_since_update = 0;
                 d.mem = nullptr;
                 vmaMapMemory(dev->allocator, d.staging_buffer.get_allocation(), &d.mem);
-            }
+            });
 
-            if(grids.size() > 0)
+            size_t grid_count = cur_scene->count<sh_grid>();
+            if(grid_count > 0)
             {
                 comp.reset(new compute_pipeline(
                     *dev,
                     compute_pipeline::params{
                         {"shader/sh_grid_blend.comp"}, {},
-                        (uint32_t)(grids.size()*MAX_FRAMES_IN_FLIGHT)
+                        (uint32_t)(grid_count*MAX_FRAMES_IN_FLIGHT)
                     }
                 ));
 
                 blend_infos = gpu_buffer(
-                    *dev, sizeof(blend_info) * grids.size(),
+                    *dev, sizeof(blend_info) * grid_count,
                     vk::BufferUsageFlagBits::eUniformBuffer
                 );
             }
@@ -88,13 +87,12 @@ protected:
                 blend_infos.upload(dev->id, i, cb);
 
                 size_t j = 0;
-                for(sh_grid* grid: grids)
-                {
-                    grid_data& d = data.at(grid);
+                cur_scene->foreach([&](sh_grid& grid){
+                    grid_data& d = data.at(&grid);
 
-                    texture& new_tex = client->sh_grid_upload_textures.at(grid);
-                    texture& tmp_tex = client->sh_grid_tmp_textures.at(grid);
-                    const texture& out_tex = client->ss->get_sh_grid_textures().at(grid);
+                    texture& new_tex = client->sh_grid_upload_textures.at(&grid);
+                    texture& tmp_tex = client->sh_grid_tmp_textures.at(&grid);
+                    const texture& out_tex = client->ss->get_sh_grid_textures().at(&grid);
 
                     uvec3 dim = new_tex.get_dimensions();
 
@@ -168,7 +166,7 @@ protected:
 
                     j++;
                     set_index++;
-                }
+                });
 
                 stage_timer.end(cb, dev->id, i);
                 end_compute(cb, i);
@@ -178,7 +176,7 @@ protected:
         auto now = std::chrono::steady_clock::now();
         for(auto& gd: client->local_grids)
         {
-            grid_data& d = data.at(&gd.grid);
+            grid_data& d = data.at(gd.grid);
             if(gd.data_updated)
             {
                 d.last_duration = now - d.last_update;
@@ -191,11 +189,10 @@ protected:
             }
         }
 
-        const std::vector<sh_grid*>& grids = cur_scene->get_sh_grids();
+        int i = 0;
         blend_infos.map<blend_info>(frame_index, [&](blend_info* bi){
-            for(size_t i = 0; i < grids.size(); ++i)
-            {
-                grid_data& d = data.at(grids[i]);
+            cur_scene->foreach([&](sh_grid& grid){
+                grid_data& d = data.at(&grid);
                 auto duration_now = now - d.last_update;
                 float progress =
                     std::chrono::duration_cast<std::chrono::duration<double>>(duration_now)/
@@ -217,7 +214,8 @@ protected:
                     d.progress = progress;
                 }
                 d.frames_since_update++;
-            }
+                i++;
+            });
         });
     }
 
@@ -255,7 +253,7 @@ private:
 
 dshgi_client::dshgi_client(context& ctx, scene_stage& ss, const options& opt)
 :   ctx(&ctx), opt(opt), ss(&ss),
-    remote_timestamp(0), new_remote_timestamp(false), exit_receiver(false),
+    remote_timestamp(0), new_remote_timestamp(false), local_timestamp(0), exit_receiver(false),
     receiver_thread(receiver_worker, this)
 {
     sh_refresher.reset(new dshgi_client_stage(ctx.get_display_device(), ss, *this));
@@ -287,9 +285,27 @@ bool dshgi_client::refresh()
     }
 
     scene* cur_scene = ss->get_scene();
-    cur_scene->clear_sh_grids();
+    if(!update_event)
+    {
+        update_event.emplace(cur_scene->subscribe([&](scene&, const animation_update_event& ev){
+            local_timestamp = ev.reset ? ev.delta : local_timestamp + ev.delta;
+        }));
+    }
+
+    std::set<entity> kept_ids;
     for(sh_grid_data& lg: local_grids)
-        cur_scene->add(lg.grid);
+    {
+        if(lg.id == INVALID_ENTITY)
+        {
+            lg.id = cur_scene->add(sh_grid(), transformable());
+            lg.grid = cur_scene->get<sh_grid>(lg.id);
+            lg.transform = cur_scene->get<transformable>(lg.id);
+        }
+        kept_ids.insert(lg.id);
+    }
+    cur_scene->foreach([&](entity id, sh_grid&){
+        if(!kept_ids.count(id)) cur_scene->remove(id);
+    });
 
     for(size_t i = 0; i < local_grids.size(); ++i)
     {
@@ -300,7 +316,8 @@ bool dshgi_client::refresh()
         if(lg.topo_changed)
         {
             reset = true;
-            lg.grid = rg.grid;
+            *lg.grid = *rg.grid;
+            *lg.transform = *rg.transform;
         }
         lg.data_updated |= rg.data_updated;
         rg.data_updated = false;
@@ -313,10 +330,10 @@ bool dshgi_client::refresh()
         if(lg.topo_changed)
         {
             sh_grid_upload_textures.emplace(
-                &lg.grid, lg.grid.create_texture(ctx->get_display_device())
+                lg.grid, lg.grid->create_texture(ctx->get_display_device())
             );
             sh_grid_tmp_textures.emplace(
-                &lg.grid, lg.grid.create_texture(ctx->get_display_device())
+                lg.grid, lg.grid->create_texture(ctx->get_display_device())
             );
         }
 
@@ -326,14 +343,14 @@ bool dshgi_client::refresh()
     if(new_remote_timestamp)
     {
         // Hardcoded: if we're behind the remote animation timestamp, jump to it.
-        if(cur_scene->get_total_ticks() < remote_timestamp)
+        if(local_timestamp < remote_timestamp)
         {
-            cur_scene->update(remote_timestamp - cur_scene->get_total_ticks());
+            update(*cur_scene, remote_timestamp - local_timestamp);
         }
         // If we're a full second ahead the remote timestamp, time to rewind.
-        else if(cur_scene->get_total_ticks() > remote_timestamp + 1000000)
+        else if(local_timestamp > remote_timestamp + 1000000)
         {
-            cur_scene->set_animation_time(remote_timestamp);
+            set_animation_time(*cur_scene, local_timestamp);
         }
         new_remote_timestamp = false;
     }
@@ -400,16 +417,16 @@ void dshgi_client::receiver_worker(dshgi_client* s)
                 s->remote_grids.resize(index+1);
 
             sh_grid_data& gd = s->remote_grids[index];
-            if(gd.grid.get_order() != order)
+            if(gd.grid->get_order() != order)
             {
-                gd.grid.set_order(order);
+                gd.grid->set_order(order);
                 gd.topo_changed = true;
             }
-            gd.grid.set_radius(order);
-            gd.grid.set_transform(transform);
-            if(gd.grid.get_resolution() != uvec3(res))
+            gd.grid->set_radius(order);
+            gd.transform->set_transform(transform);
+            if(gd.grid->get_resolution() != uvec3(res))
             {
-                gd.grid.set_resolution(res);
+                gd.grid->set_resolution(res);
                 gd.topo_changed = true;
             }
             gd.data_updated = true;

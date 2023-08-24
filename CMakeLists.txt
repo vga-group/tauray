@@ -108,7 +108,6 @@ add_library(tauray-core STATIC
   src/material.cc
   src/math.cc
   src/mesh.cc
-  src/mesh_object.cc
   src/misc.cc
   src/model.cc
   src/assimp.cc
@@ -132,7 +131,6 @@ add_library(tauray-core STATIC
   src/sampler.cc
   src/sampler_table.cc
   src/scene.cc
-  src/scene_graph.cc
   src/scene_stage.cc
   src/server_context.cc
   src/sh_grid.cc

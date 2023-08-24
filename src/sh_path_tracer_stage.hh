@@ -1,12 +1,12 @@
 #ifndef TAURAY_SH_PATH_TRACER_HH
 #define TAURAY_SH_PATH_TRACER_HH
 #include "rt_stage.hh"
+#include "scene.hh"
 #include "path_tracer_stage.hh"
 
 namespace tr
 {
 
-class scene;
 class sh_path_tracer_stage: public rt_stage
 {
 public:
@@ -25,7 +25,7 @@ public:
 
         light_sampling_weights sampling_weights;
 
-        int sh_grid_index = 0;
+        entity sh_grid_id = 0;
         int sh_order = 2;
     };
 

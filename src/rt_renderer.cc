@@ -59,7 +59,7 @@ rt_renderer<Pipeline>::~rt_renderer()
 template<typename Pipeline>
 void rt_renderer<Pipeline>::set_scene(scene* s)
 {
-    opt.projection = s->get_camera(0)->get_projection_type();
+    s->foreach([&](camera& cam){ opt.projection = cam.get_projection_type(); });
     scene_update->set_scene(s);
 }
 

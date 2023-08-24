@@ -5,10 +5,8 @@ namespace tr
 
 sh_grid::sh_grid(
     uvec3 resolution,
-    int order,
-    transformable_node* parent
-):  transformable_node(parent), radius(0.0f), order(order),
-    resolution(resolution)
+    int order
+):  radius(0.0f), order(order), resolution(resolution)
 {
 }
 
@@ -115,9 +113,9 @@ int sh_grid::get_coef_count(int order)
     return coef;
 }
 
-float sh_grid::point_distance(vec3 p) const
+float sh_grid::point_distance(transformable& self, vec3 p) const
 {
-    vec3 local_p = transpose(get_global_inverse_transpose_transform()) * vec4(p, 1);
+    vec3 local_p = transpose(self.get_global_inverse_transpose_transform()) * vec4(p, 1);
 
     if(all(lessThanEqual(abs(local_p), vec3(1.0f))))
         return 0.0f;
@@ -134,14 +132,14 @@ float sh_grid::point_distance(vec3 p) const
     return -1.0f;
 }
 
-float sh_grid::calc_density() const
+float sh_grid::calc_density(transformable& self) const
 {
-    return (resolution.x * resolution.y * resolution.z) / calc_volume();
+    return (resolution.x * resolution.y * resolution.z) / calc_volume(self);
 }
 
-float sh_grid::calc_volume() const
+float sh_grid::calc_volume(transformable& self) const
 {
-    vec3 size = get_global_scaling() * 2.0f;
+    vec3 size = self.get_global_scaling() * 2.0f;
     return size.x * size.y * size.z;
 }
 

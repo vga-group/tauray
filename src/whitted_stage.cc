@@ -92,13 +92,14 @@ void whitted_stage::record_command_buffer_pass(
 
     scene* cur_scene = ss->get_scene();
     whitted::push_constant_buffer control;
-    control.directional_light_count = cur_scene->get_directional_lights().size();
+    control.directional_light_count =
+        cur_scene->count<directional_light>();
     control.point_light_count =
-        cur_scene->get_point_lights().size() +
-        cur_scene->get_spotlights().size();
+        cur_scene->count<point_light>() +
+        cur_scene->count<spotlight>();
     control.max_depth = opt.max_ray_depth;
 
-    environment_map* envmap = cur_scene->get_environment_map();
+    environment_map* envmap = ss->get_environment_map();
     if(envmap)
     {
         control.environment_factor = vec4(envmap->get_factor(), 1);
@@ -109,7 +110,7 @@ void whitted_stage::record_command_buffer_pass(
         control.environment_factor = vec4(0);
         control.environment_proj = -1;
     }
-    control.ambient = pvec4(cur_scene->get_ambient(), 1);
+    control.ambient = pvec4(ss->get_ambient(), 1);
     control.min_ray_dist = opt.min_ray_dist;
 
     gfx.push_constants(cb, control);

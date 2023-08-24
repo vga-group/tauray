@@ -97,11 +97,15 @@ spatial_reprojection_stage::spatial_reprojection_stage(
 
 void spatial_reprojection_stage::update(uint32_t frame_index)
 {
+    scene* cur_scene = ss->get_scene();
+    std::vector<entity> cameras = get_sorted_cameras(*cur_scene);
     camera_data.foreach<camera_data_buffer>(
         frame_index,
         opt.active_viewport_count,
         [&](camera_data_buffer& data, size_t i){
-            data.view_proj = ss->get_scene()->get_camera(i)->get_view_projection();
+            data.view_proj = cur_scene->get<camera>(cameras[i])->get_view_projection(
+                *cur_scene->get<transformable>(cameras[i])
+            );
         }
     );
 }

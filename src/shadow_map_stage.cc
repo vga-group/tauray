@@ -97,20 +97,20 @@ void shadow_map_stage::update(uint32_t frame_index)
             size_t i = 0;
             for(scene_stage::shadow_map_instance& info: shadow_maps)
             {
-                for(camera& face: info.faces)
+                for(auto& face: info.faces)
                 {
-                    mat4 inv_view = face.get_global_transform();
+                    mat4 inv_view = face.transform;
                     mat4 view = inverse(inv_view);
-                    mat4 projection = face.get_projection_matrix();
+                    mat4 projection = face.cam.get_projection_matrix();
 
                     cuni[i++].view_proj = projection * view;
                 }
 
                 for(scene_stage::shadow_map_instance::cascade& c: info.cascades)
                 {
-                    mat4 inv_view = c.cam.get_global_transform();
+                    mat4 inv_view = c.cam.transform;
                     mat4 view = inverse(inv_view);
-                    mat4 projection = c.cam.get_projection_matrix();
+                    mat4 projection = c.cam.cam.get_projection_matrix();
 
                     cuni[i++].view_proj = projection * view;
                 }

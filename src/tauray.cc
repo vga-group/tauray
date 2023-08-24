@@ -1,4 +1,5 @@
 #include "tauray.hh"
+#include "scene.hh"
 #include "options.hh"
 #include "window.hh"
 #include "headless.hh"
@@ -63,48 +64,58 @@ struct throttler
     std::chrono::high_resolution_clock::time_point time;
 };
 
-void set_camera_params(const options& opt, scene_data& s)
+void set_camera_params(const options& opt, scene& s)
 {
-    if(auto proj = opt.force_projection)
-    {
-        switch(*proj)
+    s.foreach([&](camera& c){
+        if(auto proj = opt.force_projection)
         {
-        case camera::PERSPECTIVE:
-            s.s->get_camera()->perspective(90.0f, 1.0f, 0.1f, 100.0f);
-            break;
-        case camera::ORTHOGRAPHIC:
-            s.s->get_camera()->ortho(
-                -1.0f, 1.0f, -1.0f, 1.0f, 0.0f, 100.0f
-            );
-            break;
-        case camera::EQUIRECTANGULAR:
-            s.s->get_camera()->equirectangular(360, 180);
-            break;
-        default:
-            break;
+            switch(*proj)
+            {
+            case camera::PERSPECTIVE:
+                c.perspective(90.0f, 1.0f, 0.1f, 100.0f);
+                break;
+            case camera::ORTHOGRAPHIC:
+                c.ortho(
+                    -1.0f, 1.0f, -1.0f, 1.0f, 0.0f, 100.0f
+                );
+                break;
+            case camera::EQUIRECTANGULAR:
+                c.equirectangular(360, 180);
+                break;
+            default:
+                break;
+            }
         }
-    }
 
-    s.s->get_camera()->set_aspect(
-        opt.aspect_ratio > 0 ?
-            opt.aspect_ratio : opt.width/(float)opt.height
-    );
-    if(opt.fov)
-        s.s->get_camera()->set_fov(opt.fov);
-
-    if(opt.camera_clip_range.near > 0)
-        s.s->get_camera()->set_near(opt.camera_clip_range.near);
-    if(opt.camera_clip_range.far > 0)
-        s.s->get_camera()->set_far(opt.camera_clip_range.far);
-
-    if(opt.depth_of_field.f_stop != 0)
-        s.s->get_camera()->set_focus(
-            opt.depth_of_field.f_stop,
-            opt.depth_of_field.distance,
-            opt.depth_of_field.sides,
-            opt.depth_of_field.angle,
-            opt.depth_of_field.sensor_size
+        c.set_aspect(
+            opt.aspect_ratio > 0 ?
+                opt.aspect_ratio : opt.width/(float)opt.height
         );
+        if(opt.fov)
+            c.set_fov(opt.fov);
+
+        if(opt.camera_clip_range.near > 0)
+            c.set_near(opt.camera_clip_range.near);
+        if(opt.camera_clip_range.far > 0)
+            c.set_far(opt.camera_clip_range.far);
+
+        if(opt.depth_of_field.f_stop != 0)
+            c.set_focus(
+                opt.depth_of_field.f_stop,
+                opt.depth_of_field.distance,
+                opt.depth_of_field.sides,
+                opt.depth_of_field.angle,
+                opt.depth_of_field.sensor_size
+            );
+    });
+}
+
+void apply_transform(scene& s, const mat4& transform)
+{
+    s.foreach([&](transformable& t){
+        if(t.get_parent() == nullptr)
+            t.set_transform(t.get_transform() * transform);
+    });
 }
 
 scene_data load_scenes(context& ctx, const options& opt)
@@ -114,37 +125,35 @@ scene_data load_scenes(context& ctx, const options& opt)
         return {};
 
     device_mask dev = device_mask::all(ctx);
+    scene_data data;
+    data.s.reset(new scene);
 
-    std::unique_ptr<environment_map> sky;
-    if(opt.envmap.size())
-        sky.reset(new environment_map(dev, opt.envmap));
-
-    std::vector<scene_graph> scenes;
     for(const std::string& path: opt.scene_paths)
     {
-        scene_graph sg_temp;
+        scene_assets& sa = data.assets.emplace_back();
 
         fs::path fsp(path);
         if(fsp.extension() == ".gltf" || fsp.extension() == ".glb")
         {
-            sg_temp = load_gltf(
-                dev, path, opt.force_single_sided, opt.force_double_sided
+            sa = load_gltf(
+                dev, *data.s, path, opt.force_single_sided, opt.force_double_sided
             );
         }
         else
         {
-            sg_temp = load_assimp(dev, path);
+            sa = load_assimp(dev, *data.s, path);
         }
-        scenes.emplace_back(std::move(sg_temp));
-        scene_graph& sg = scenes.back();
 
-        for(auto& pair: sg.sh_grids)
-            pair.second.set_order(opt.sh_order);
+    }
 
-        if(opt.alpha_to_transmittance)
-        {
-            for(auto& pair: sg.models)
-            for(auto& vg: pair.second)
+    data.s->foreach([&](sh_grid& sg){
+        sg.set_order(opt.sh_order);
+    });
+
+    if(opt.alpha_to_transmittance)
+    {
+        data.s->foreach([&](model& mod){
+            for(auto& vg: mod)
             {
                 if(vg.mat.albedo_factor.a < 1.0f)
                 {
@@ -152,86 +161,97 @@ scene_data load_scenes(context& ctx, const options& opt)
                     vg.mat.albedo_factor.a = 1.0f;
                 }
             }
-        }
-        else if(opt.transmittance_to_alpha >= 0.0f)
-        {
-            for(auto& pair: sg.models)
-            for(auto& vg: pair.second)
+        });
+    }
+    else if(opt.transmittance_to_alpha >= 0.0f)
+    {
+        data.s->foreach([&](model& mod){
+            for(auto& vg: mod)
             {
                 vg.mat.albedo_factor *= mix(
                     1.0f, opt.transmittance_to_alpha, vg.mat.transmittance
                 );
             }
-        }
-
-        if(opt.up_axis == 0)
-        {
-            sg.apply_transform(mat4(
-                0,1,0,0,
-                0,0,1,0,
-                1,0,0,0,
-                0,0,0,1
-            ));
-        }
-        else if(opt.up_axis == 2)
-        {
-            sg.apply_transform(mat4(
-                0,0,1,0,
-                1,0,0,0,
-                0,1,0,0,
-                0,0,0,1
-            ));
-        }
+        });
     }
 
-    scene_data s{
-        std::move(sky),
-        std::move(scenes),
-        std::make_unique<scene>()
-    };
-    s.s->set_environment_map(s.sky.get());
-    s.s->set_ambient(opt.ambient);
-    for(scene_graph& sg: s.scenes)
+    if(opt.up_axis == 0)
     {
-        sg.to_scene(*s.s);
-
-        if(opt.camera != "")
-        {
-            auto it = sg.cameras.find(opt.camera);
-            if(it != sg.cameras.end())
-            {
-                s.s->set_camera(&it->second);
-            }
-            else
-            {
-                // Blender's camera export is really annoying.
-                it = sg.cameras.find(opt.camera + "_Orientation");
-                if(it != sg.cameras.end())
-                    s.s->set_camera(&it->second);
-            }
-        }
-        else if(sg.cameras.size() != 0 && s.s->get_camera() == nullptr)
-        {
-            s.s->set_camera(&sg.cameras.begin()->second);
-        }
+        apply_transform(*data.s, mat4(
+            0,1,0,0,
+            0,0,1,0,
+            1,0,0,0,
+            0,0,0,1
+        ));
+    }
+    else if(opt.up_axis == 2)
+    {
+        apply_transform(*data.s, mat4(
+            0,0,1,0,
+            1,0,0,0,
+            0,1,0,0,
+            0,0,0,1
+        ));
     }
 
-    if(s.s->get_camera() == nullptr)
+    if(opt.envmap.size())
+    {
+        entity id = data.s->add();
+        data.s->emplace<environment_map>(id, dev, opt.envmap);
+    }
+
+    data.s->add(ambient_light{opt.ambient});
+
+    int index = 0;
+    int enabled_count = 0;
+    data.s->foreach([&](entity id, camera&, name_component& name){
+        camera_metadata md = {false, index, true};
+        if(enabled_count == 0 && opt.camera != "" && (name.name == opt.camera || name.name == opt.camera + "_Orientation"))
+        {
+            md.enabled = true;
+            enabled_count++;
+        }
+        data.s->attach(id, std::move(md));
+    });
+
+    if(enabled_count == 0)
     {
         if(opt.camera != "")
+        {
             throw std::runtime_error(
                 "Failed to find a camera named " + opt.camera + "."
             );
+        }
+        bool first = true;
+        data.s->foreach([&](camera_metadata& md){
+            md.enabled = first;
+            first = false;
+        });
+
+        if(first)
+        { // Still no camera, so just add one arbitrarily.
+            camera cam;
+            cam.perspective(90, opt.width/(float)opt.height, 0.1f, 300.0f);
+
+            data.s->add(
+                std::move(cam),
+                transformable(vec3(0,0,2)),
+                camera_metadata{true, 0, true}
+            );
+
+            TR_WARN(
+                "Warning: no camera is defined in the scene, so a default "
+                "camera setup is used."
+            );
+        }
     }
-    else
-    {
-        set_camera_params(opt, s);
-    }
+
+    set_camera_params(opt, *data.s);
 
     if(opt.animation_flag)
-        s.s->play(opt.animation, !opt.replay, opt.animation == "");
+        play(*data.s, opt.animation, !opt.replay, opt.animation == "");
 
-    return s;
+    return data;
 }
 
 context* create_context(const options& opt)
@@ -342,23 +362,21 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     bool use_shadow_terminator_fix = false;
     bool has_tri_lights = false;
-    bool has_point_lights = s.get_point_lights().size() + s.get_spotlights().size() > 0;
-    bool has_directional_lights = s.get_directional_lights().size() > 0;
-    for(const mesh_object* o: s.get_mesh_objects())
-    {
-        if(o->get_shadow_terminator_offset() > 0.0f)
+    bool has_point_lights = s.count<point_light>() + s.count<spotlight>() > 0;
+    bool has_directional_lights = s.count<directional_light>() > 0;
+    s.foreach([&](model& mod){
+        if(mod.get_shadow_terminator_offset() > 0.0f)
             use_shadow_terminator_fix = true;
-        const model* m = o->get_model();
-        if(m) for(const model::vertex_group& vg: *m)
+        for(const model::vertex_group& vg: mod)
         {
             if(vg.mat.emission_factor != vec3(0))
                 has_tri_lights = true;
         }
-    }
+    });
 
     scene_stage::options scene_options;
-    scene_options.max_instances = s.get_instance_count();
-    scene_options.max_lights = s.get_point_lights().size() + s.get_spotlights().size();
+    scene_options.max_instances = get_instance_count(s);
+    scene_options.max_lights = s.count<point_light>() + s.count<spotlight>();
     scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles > 0;
     scene_options.pre_transform_vertices = opt.pre_transform_vertices;
     scene_options.group_strategy = opt.as_strategy;
@@ -367,9 +385,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     taa.blending_ratio = 1.0f - 1.0f/opt.taa.sequence_length;
 
     rt_camera_stage::options rc_opt;
-    rc_opt.projection = s.get_camera()->get_projection_type();
-    rc_opt.max_instances = s.get_instance_count();
-    rc_opt.max_samplers = s.get_sampler_count();
+    s.foreach([&](camera& cam){ rc_opt.projection = cam.get_projection_type(); });
+    rc_opt.max_instances = scene_options.max_instances;
+    rc_opt.max_samplers = get_sampler_count(s);
     rc_opt.min_ray_dist = opt.min_ray_dist;
     rc_opt.max_ray_depth = opt.max_ray_depth;
     rc_opt.samples_per_pass = min(opt.samples_per_pass, opt.samples_per_pixel);
@@ -397,10 +415,11 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     light_sampling_weights sampling_weights;
     sampling_weights.point_lights = has_point_lights ? opt.sample_point_lights : 0.0f;
     sampling_weights.directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
-    sampling_weights.envmap = s.get_environment_map() ? opt.sample_envmap : 0.0f;
+    sampling_weights.envmap = get_environment_map(s) ? opt.sample_envmap : 0.0f;
     sampling_weights.emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
 
-    s.auto_shadow_maps(
+    auto_assign_shadow_maps(
+        s,
         opt.shadow_map_resolution,
         vec3(
             opt.shadow_map_radius,
@@ -539,7 +558,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         case options::RASTER:
             {
                 raster_renderer::options rr_opt;
-                rr_opt.max_samplers = s.get_sampler_count();
+                rr_opt.max_samplers = get_sampler_count(s);
                 rr_opt.msaa_samples = opt.samples_per_pixel;
                 rr_opt.sample_shading = opt.sample_shading;
                 if(opt.taa.sequence_length != 0)
@@ -573,7 +592,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if(opt.taa.sequence_length != 0)
                     dr_opt.post_process.taa = taa;
                 dr_opt.post_process.tonemap = tonemap;
-                dr_opt.max_samplers = s.get_sampler_count();
+                dr_opt.max_samplers = get_sampler_count(s);
                 dr_opt.msaa_samples = opt.samples_per_pixel;
                 dr_opt.sample_shading = opt.sample_shading;
                 dr_opt.pcf_samples = min(opt.pcf, 64);
@@ -612,7 +631,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.post_process.tonemap = tonemap;
                 if(opt.taa.sequence_length != 0)
                     dr_opt.post_process.taa = taa;
-                dr_opt.max_samplers = s.get_sampler_count();
+                dr_opt.max_samplers = get_sampler_count(s);
                 dr_opt.msaa_samples = opt.samples_per_pixel;
                 dr_opt.sample_shading = opt.sample_shading;
                 dr_opt.pcf_samples = min(opt.pcf, 64);
@@ -629,18 +648,20 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     return nullptr;
 }
 
-std::vector<camera> generate_cameras(camera& tracked, options& opt)
+std::vector<entity> generate_cameras(entity cam_id, scene& s, options& opt, bool enable_by_default)
 {
     if(
         opt.camera_grid.w * opt.camera_grid.h <= 1 &&
         opt.camera_offset == vec3(0)
     ) return {};
 
-    std::vector<camera> res;
     float width = (opt.camera_grid.w-1)*opt.camera_grid.x;
     float height = (opt.camera_grid.h-1)*opt.camera_grid.y;
 
-    vec2 fov = vec2(tracked.get_hfov(), tracked.get_vfov());
+    transformable& tracked = *s.get<transformable>(cam_id);
+    camera& parent_cam = *s.get<camera>(cam_id);
+
+    vec2 fov = vec2(parent_cam.get_hfov(), parent_cam.get_vfov());
     vec2 tfov = tan(glm::radians(fov) * 0.5f);
 
     quat grid_rotation = tr::angleAxis(
@@ -648,25 +669,35 @@ std::vector<camera> generate_cameras(camera& tracked, options& opt)
         vec3(0.0f, 0.0f, 1.0f)
     );
 
+    std::vector<entity> res;
     for(int y = 0; y < opt.camera_grid.h; ++y)
     for(int x = 0; x < opt.camera_grid.w; ++x)
     {
-        camera cam(&tracked);
-        cam.copy_projection(tracked);
+        transformable cam_transform(&tracked);
+        camera cam;
+        cam.copy_projection(parent_cam);
         vec3 grid_pos = grid_rotation * vec3(
             -width*0.5f + x*opt.camera_grid.x,
             height*0.5f - y*opt.camera_grid.y,
             0
         );
         vec2 pan = -vec2(grid_pos.x, grid_pos.y)/(tfov * opt.camera_recentering_distance);
-        cam.set_position(grid_pos + opt.camera_offset);
+        cam_transform.set_position(grid_pos + opt.camera_offset);
         cam.set_pan(pan);
-        res.push_back(cam);
+        res.push_back(s.add(
+            std::move(cam),
+            std::move(cam_transform),
+            camera_metadata{enable_by_default, int(res.size()), false}
+        ));
     }
+
+    if(res.size() != 0)
+        s.get<camera_metadata>(cam_id)->enabled = false;
+
     return res;
 }
 
-void show_stats(scene_data& sd, options& opt)
+void show_stats(scene& s, options& opt)
 {
     if(!opt.scene_stats)
         return;
@@ -674,37 +705,32 @@ void show_stats(scene_data& sd, options& opt)
     std::cout << "\nScene statistics: \n";
 
     std::set<const mesh*> meshes;
-    for(const mesh_object* mo: sd.s->get_mesh_objects())
-    {
-        if(!mo || !mo->get_model()) continue;
-        for(const model::vertex_group& vg: *mo->get_model())
+    s.foreach([&](model& mod){
+        for(const model::vertex_group& vg: mod)
             meshes.insert(vg.m);
-    }
+    });
     std::cout << "Number of unique meshes = " << meshes.size() << std::endl;
-    std::cout << "Number of mesh instances = " << sd.s->get_instance_count() << std::endl;
+    std::cout << "Number of mesh instances = " << get_instance_count(s) << std::endl;
     //std::cout << "Number of BLASes (depends on settings) = " << sd.s->get_blas_group_count() << std::endl;
 
     //Calculating the number of triangles and dynamic objects
     uint32_t triangle_count = 0;
     uint32_t dyn_obj_count = 0;
-    for(auto& mesh_obj: sd.s->get_mesh_objects())
-    {
-        for (auto& group: *mesh_obj->get_model())
-        {
+    s.foreach([&](transformable& t, model& mod){
+        for(auto& group: mod)
             triangle_count += group.m->get_indices().size() / 3;
-        }
-        dyn_obj_count += mesh_obj->is_static() ? 0:1;
-    }
+        dyn_obj_count += t.is_static() ? 0:1;
+    });
     std::cout << "Number of triangles = " << triangle_count << std::endl;
 
-    uint32_t objects_count = sd.s->get_mesh_objects().size();
+    uint32_t objects_count = s.count<model>();
     std::cout << "\nNumber of objects = " <<  objects_count << std::endl;
     std::cout << "Static objects = " << objects_count - dyn_obj_count << std::endl;
     std::cout << "Dynamic objects = " << dyn_obj_count << std::endl;
 
-    std::cout << "\nNumber of textures = " << sd.s->get_sampler_count() << std::endl;
-    std::cout << "Number of point lights = " << sd.s->get_point_lights().size() << std::endl;
-    std::cout << "Number of spot lights = " << sd.s->get_spotlights().size() << std::endl;
+    std::cout << "\nNumber of textures = " << get_sampler_count(s) << std::endl;
+    std::cout << "Number of point lights = " << s.count<point_light>() << std::endl;
+    std::cout << "Number of spot lights = " << s.count<spotlight>() << std::endl;
 
     opt.scene_stats = false;
 }
@@ -713,30 +739,28 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 {
     scene& s = *sd.s;
     load_balancer lb(ctx, opt.workload);
-    camera cam;
-    if(s.get_camera())
-    {
-        cam = *s.get_camera();
-        cam.set_parent(nullptr, true);
-        cam.stop();
-    }
-    else
-    {
-        cam.set_position(vec3(0,0,2));
-        cam.perspective(90, opt.width/(float)opt.height, 0.1f, 300.0f);
-    }
-    std::vector<camera> cameras = generate_cameras(cam, opt);
-    if(cameras.size() == 0) s.set_camera(&cam);
-    else
-    {
-        s.set_camera(&cameras[0]);
-        s.add_control_node(cam);
-    }
+
+    entity cam_id = INVALID_ENTITY;
+    s.foreach([&](entity id, transformable& cam_t, animated* cam_a, camera_metadata& md){
+        if(md.enabled)
+        {
+            cam_id = id;
+            cam_t.set_parent(nullptr, true);
+            if(cam_a)
+                cam_a->stop();
+        }
+    });
+
+    transformable* cam = s.get<transformable>(cam_id);
+
+    std::vector<entity> cameras = generate_cameras(cam_id, s, opt, false);
+    if(cameras.size() != 0)
+        s.get<camera_metadata>(cameras[0])->enabled = true;
 
     std::unique_ptr<renderer> rr;
 
     float speed = 1.0f;
-    vec3 euler = cam.get_orientation_euler();
+    vec3 euler = cam->get_orientation_euler();
     float pitch = euler.x;
     float yaw = euler.y;
     float roll = euler.z;
@@ -747,18 +771,20 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
     if(openxr* xr = dynamic_cast<openxr*>(&ctx))
     {
-        xr->setup_xr_surroundings(s, &cam);
+        xr->setup_xr_surroundings(s, cam);
         sensitivity = 0;
     }
 
     if(looking_glass* lkg = dynamic_cast<looking_glass*>(&ctx))
     {
         cameras.clear();
-        lkg->setup_cameras(s, &cam);
+        lkg->setup_cameras(s, cam);
     }
 
-    s.reorder_cameras_by_active(opt.spatial_reprojection);
-    s.set_camera_jitter(get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
+    s.foreach([&](camera_metadata& md){
+        md.actively_rendered = opt.spatial_reprojection.count(md.index);
+    });
+    set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
 
     std::chrono::steady_clock::time_point start =
         std::chrono::steady_clock::now();
@@ -778,7 +804,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         {
             if(parse_command(command_line.c_str(), opt))
             {
-                set_camera_params(opt, sd);
+                set_camera_params(opt, s);
                 recreate_renderer = true;
                 camera_moved = true;
             }
@@ -788,7 +814,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         {
             try
             {
-                s.set_camera_jitter(get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
+                set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
                 rr.reset(create_renderer(ctx, opt, s));
                 rr->set_scene(&s);
                 ctx.set_displaying(false);
@@ -801,7 +827,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                 if(crash_on_exception) throw err;
                 else TR_ERR(err.what());
             }
-            show_stats(sd, opt);
+            show_stats(s, opt);
 
             recreate_renderer = false;
         }
@@ -833,8 +859,8 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                 if(event.key.keysym.sym == SDLK_0)
                 {
                     // Full camera reset, for when you get lost ;)
-                    cam.set_global_position();
-                    cam.set_global_orientation();
+                    cam->set_global_position();
+                    cam->set_global_orientation();
                     camera_moved = true;
                 }
                 if(event.key.keysym.sym == SDLK_F1)
@@ -896,9 +922,10 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
         if(cameras.size() != 0)
         {
+            s.get<camera_metadata>(cameras[camera_index])->enabled = false;
             while(camera_index < 0) camera_index += cameras.size();
             camera_index %= cameras.size();
-            s.set_camera(&cameras[camera_index]);
+            s.get<camera_metadata>(cameras[camera_index])->enabled = true;
         }
 
         if(!camera_locked)
@@ -906,8 +933,8 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
             camera_movement = clamp(camera_movement, ivec3(-1), ivec3(1));
             if(camera_movement != ivec3(0))
                 camera_moved = true;
-            cam.translate_local(vec3(camera_movement)*delta*speed);
-            cam.set_orientation(pitch, yaw, roll);
+            cam->translate_local(vec3(camera_movement)*delta*speed);
+            cam->set_orientation(pitch, yaw, roll);
         }
 
         if(camera_moved || !opt.accumulation)
@@ -920,7 +947,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
             if(rr) rr->reset_accumulation(false);
         }
 
-        s.update(paused || !opt.animation_flag ? 0 : delta * 1000000);
+        update(s, paused || !opt.animation_flag ? 0 : delta * 1000000);
 
         try
         {
@@ -966,42 +993,33 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
 {
     scene& s = *sd.s;
     load_balancer lb(ctx, opt.workload);
-    camera default_cam;
-    if(s.get_camera() == nullptr)
-    {
-        TR_WARN(
-            "Warning: no camera is defined in the scene, so a default camera "
-            "setup is used. You probably do not want this in replay mode."
-        );
-        default_cam.set_position(vec3(0,0,2));
-        default_cam.perspective(90, opt.width/(float)opt.height, 0.1f, 300.0f);
-        s.set_camera(&default_cam);
-    }
-    camera_log clog(s.get_camera());
+
+    entity cam_id = INVALID_ENTITY;
+    s.foreach([&](entity id, camera_metadata& md){
+        if(md.enabled) cam_id = id;
+    });
+
+    transformable* cam = s.get<transformable>(cam_id);
 
     std::vector<camera_log> camera_logs;
-    std::vector<camera> cameras = generate_cameras(*s.get_camera(), opt);
+    std::vector<entity> cameras = generate_cameras(cam_id, s, opt, true);
     if(cameras.size() == 0)
     {
         if(openxr* xr = dynamic_cast<openxr*>(&ctx))
-            xr->setup_xr_surroundings(s, s.get_camera());
+            xr->setup_xr_surroundings(s, cam);
         if(looking_glass* lkg = dynamic_cast<looking_glass*>(&ctx))
-            lkg->setup_cameras(s, s.get_camera());
-        for(camera* cam: s.get_cameras())
-            camera_logs.emplace_back(cam);
+            lkg->setup_cameras(s, cam);
     }
-    else
-    {
-        s.add_control_node(*s.get_camera());
-        s.clear_cameras();
-        for(camera& cam: cameras)
-        {
-            s.add(cam);
-            camera_logs.emplace_back(&cam);
-        }
-    }
-    s.reorder_cameras_by_active(opt.spatial_reprojection);
-    s.set_camera_jitter(get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
+
+    s.foreach([&](transformable& t, camera& cam, camera_metadata& md){
+        if(md.enabled)
+            camera_logs.emplace_back(&t, &cam);
+    });
+
+    s.foreach([&](camera_metadata& md){
+        md.actively_rendered = opt.spatial_reprojection.count(md.index);
+    });
+    set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
 
     std::unique_ptr<renderer> rr;
 
@@ -1009,7 +1027,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
     time_ticks update_dt = round(1000000.0/opt.framerate);
 
     size_t frame_count = opt.frames ? opt.frames : -1;
-    bool is_animated = s.is_playing();
+    bool is_animated = is_playing(s);
     if(!opt.frames && !is_animated) frame_count = 1;
 
     if(opt.progress && frame_count != size_t(-1))
@@ -1021,7 +1039,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
 
     for(size_t i = 0; i < frame_count; ++i)
     {
-        if(!opt.frames && is_animated && !s.is_playing())
+        if(!opt.frames && is_animated && !is_playing(s))
             break;
 
         if(!rr)
@@ -1034,7 +1052,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
             {
                 if(!opt.skip_render)
                 {
-                    s.update(0, true);
+                    update(s, 0, true);
                     rr->render();
                     lb.update(*rr);
                 }
@@ -1047,7 +1065,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
 
         // First frame should not update time.
         time_ticks dt = i == 0 ? 0 : update_dt;
-        s.update(dt, true);
+        update(s, dt, true);
         for(camera_log& clog: camera_logs)
             clog.frame(dt);
 
@@ -1104,7 +1122,7 @@ void headless_server(context& ctx, scene_data& sd, options& opt)
         if(ctx.init_frame())
             break;
 
-        s.update(delta * 1000000, true);
+        update(s, delta * 1000000, true);
 
         rr->reset_accumulation();
 

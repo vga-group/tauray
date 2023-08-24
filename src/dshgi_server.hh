@@ -13,7 +13,6 @@
 namespace tr
 {
 
-class scene;
 class sh_grid_to_cpu_stage;
 class dshgi_server: public renderer
 {
@@ -46,6 +45,9 @@ private:
     std::condition_variable frame_queue_cv;
     std::vector<dependencies> frame_queue;
     vkm<vk::Semaphore> sender_semaphore;
+
+    std::optional<event_subscription> update_event;
+    time_ticks timestamp;
 
     std::atomic_bool exit_sender;
     std::atomic_uint subscriber_count;

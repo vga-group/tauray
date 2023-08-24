@@ -15,7 +15,6 @@
 namespace tr
 {
 
-class scene;
 class post_processing_renderer
 {
 public:

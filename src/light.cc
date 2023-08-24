@@ -16,10 +16,9 @@ vec3 light::get_color() const
     return color;
 }
 
-directional_light::directional_light(vec3 direction, vec3 color, float angle)
+directional_light::directional_light(vec3 color, float angle)
 : light(color), angle(angle)
 {
-    set_direction(direction);
 }
 
 float directional_light::get_angle() const

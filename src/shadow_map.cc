@@ -97,7 +97,10 @@ namespace tr
 {
 
 void directional_shadow_map::track_cameras(
-    const mat4& light_transform, const std::vector<camera*>& cameras, bool conservative
+    const mat4& light_transform,
+    const std::vector<camera*>& cameras,
+    const std::vector<transformable*>& camera_transforms,
+    bool conservative
 ){
     if(cascades.size() == 0)
         cascades.push_back(vec2(0));
@@ -105,7 +108,8 @@ void directional_shadow_map::track_cameras(
     if(cameras.size() == 1)
     {
         const camera& cam = *cameras[0];
-        mat4 cam_transform = cam.get_global_transform();
+        const transformable& t = *camera_transforms[0];
+        mat4 cam_transform = t.get_global_transform();
         mat4 inv_light_transform = affineInverse(light_transform);
         mat4 cam_to_light_transform = inv_light_transform * cam_transform;
 
@@ -141,10 +145,10 @@ void directional_shadow_map::track_cameras(
     {
         vec2 cam_light_pos = vec2(0);
 
-        for(const camera* cam: cameras)
+        for(const transformable* t: camera_transforms)
         {
             mat4 inv_light_transform = affineInverse(light_transform);
-            vec2 pos = inv_light_transform * vec4(cam->get_global_position(), 1.0f);
+            vec2 pos = inv_light_transform * vec4(t->get_global_position(), 1.0f);
             cam_light_pos += pos;
         }
         cam_light_pos /= cameras.size();

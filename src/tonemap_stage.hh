@@ -10,7 +10,6 @@
 namespace tr
 {
 
-class scene;
 class tonemap_stage: public single_device_stage
 {
 public:

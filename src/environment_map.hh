@@ -6,7 +6,7 @@
 namespace tr
 {
 
-class environment_map: public texture, public transformable_node
+class environment_map: public texture, public transformable
 {
 public:
     enum projection

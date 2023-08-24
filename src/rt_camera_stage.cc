@@ -92,15 +92,15 @@ void rt_camera_stage::update(uint32_t frame_index)
         }
     );
 
-    for(size_t i = 0; i < opt.active_viewport_count; ++i)
-    {
-        camera* cam = ss->get_scene()->get_camera(i);
-        if(cam->get_projection_type() != opt.projection)
+    scene* cur_scene = ss->get_scene();
+
+    cur_scene->foreach([&](camera& cam, camera_metadata& md){
+        if(md.enabled && cam.get_projection_type() != opt.projection)
             throw std::runtime_error(
                 "Camera projection type does not match what this pipeline is "
                 "configured for"
             );
-    }
+    });
 
     accumulated_samples += opt.samples_per_pixel;
 }

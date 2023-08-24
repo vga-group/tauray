@@ -13,7 +13,6 @@
 namespace tr
 {
 
-class scene;
 class raster_renderer: public renderer
 {
 public:

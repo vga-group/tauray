@@ -141,10 +141,9 @@ void path_tracer_stage::record_command_buffer_pass(
     if(first_in_command_buffer)
         gfx.bind(cb, frame_index);
 
-    scene* cur_scene = ss->get_scene();
     path_tracer::push_constant_buffer control;
 
-    environment_map* envmap = cur_scene->get_environment_map();
+    environment_map* envmap = ss->get_environment_map();
     if(envmap)
     {
         control.environment_factor = vec4(envmap->get_factor(), 1);

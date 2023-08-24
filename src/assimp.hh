@@ -1,11 +1,12 @@
 #ifndef TAURAY_ASSIMP_HH
 #define TAURAY_ASSIMP_HH
-#include "scene_graph.hh"
+#include "scene_assets.hh"
+#include "scene.hh"
 
 namespace tr
 {
 
-scene_graph load_assimp(device_mask dev, const std::string& path);
+scene_assets load_assimp(device_mask dev, scene& s, const std::string& path);
 
 }
 

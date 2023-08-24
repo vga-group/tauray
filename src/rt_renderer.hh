@@ -26,8 +26,6 @@
 namespace tr
 {
 
-class scene;
-
 template<typename Pipeline>
 class rt_renderer: public renderer
 {

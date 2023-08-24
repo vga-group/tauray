@@ -9,7 +9,6 @@
 namespace tr
 {
 
-class scene;
 class sh_compact_stage: public single_device_stage
 {
 public:

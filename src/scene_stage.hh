@@ -1,7 +1,10 @@
 #ifndef TAURAY_SCENE_STAGE_HH
 #define TAURAY_SCENE_STAGE_HH
 #include "scene.hh"
+#include "mesh.hh"
 #include "stage.hh"
+#include "light.hh"
+#include "model.hh"
 #include "compute_pipeline.hh"
 #include "radix_sort.hh"
 #include "sampler_table.hh"
@@ -59,7 +62,7 @@ public:
         mat4 normal_transform;
         const material* mat;
         const mesh* m;
-        const mesh_object* o;
+        const model* mod;
         uint64_t last_refresh_frame;
     };
     const std::vector<instance>& get_instances() const;
@@ -86,14 +89,19 @@ public:
         float min_bias;
         float max_bias;
         vec2 radius;
-        std::vector<camera> faces;
+        struct cam_transform
+        {
+            camera cam;
+            mat4 transform;
+        };
+        std::vector<cam_transform> faces;
         struct cascade
         {
             unsigned atlas_index;
             vec2 offset;
             float scale;
             float bias_scale;
-            camera cam;
+            cam_transform cam;
         };
         std::vector<cascade> cascades;
     };
@@ -166,8 +174,8 @@ private:
         uint64_t id,
         bool static_mesh,
         bool static_transformable,
-        size_t object_index,
-        size_t& last_object_index
+        entity object_index,
+        entity& last_object_index
     );
     bool reserve_pre_transformed_vertices(size_t max_vertex_count);
     void clear_pre_transformed_vertices();
@@ -213,6 +221,7 @@ private:
     std::unordered_map<sh_grid*, texture> sh_grid_textures;
 
     std::optional<top_level_acceleration_structure> tlas;
+    std::optional<event_subscription> events[10];
 
     //==========================================================================
     // Pipelines

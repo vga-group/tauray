@@ -10,7 +10,6 @@
 namespace tr
 {
 
-class scene;
 class looking_glass_composition_stage: public single_device_stage
 {
 public:

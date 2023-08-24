@@ -36,7 +36,7 @@ void animation::set_orientation(
     determine_loop_time();
 }
 
-void animation::apply(transformable_node& node, time_ticks time) const
+void animation::apply(transformable& node, time_ticks time) const
 {
     if(position.size())
         node.set_position(interpolate(time, position, position_interpolation));
@@ -67,14 +67,12 @@ void animation::determine_loop_time()
         loop_time = std::max(orientation.back().timestamp, loop_time);
 }
 
-animated_node::animated_node(
-    transformable_node* parent,
-    const animation_pool* pool
-): transformable_node(parent), pool(pool), cur_anim(nullptr)
+animated::animated(const animation_pool* pool)
+: pool(pool), cur_anim(nullptr)
 {
 }
 
-void animated_node::set_animation_pool(const animation_pool* pool)
+void animated::set_animation_pool(const animation_pool* pool)
 {
     if(pool != this->pool)
     {
@@ -83,12 +81,12 @@ void animated_node::set_animation_pool(const animation_pool* pool)
     }
 }
 
-const animation_pool* animated_node::get_animation_pool() const
+const animation_pool* animated::get_animation_pool() const
 {
     return pool;
 }
 
-time_ticks animated_node::set_animation(
+time_ticks animated::set_animation(
     const std::string& name,
     bool use_fallback
 ){
@@ -110,9 +108,9 @@ time_ticks animated_node::set_animation(
     return 0;
 }
 
-void animated_node::apply_animation(time_ticks time)
+void animated::apply_animation(transformable& self, time_ticks time)
 {
-    if(cur_anim) cur_anim->apply(*this, time);
+    if(cur_anim) cur_anim->apply(self, time);
 }
 
 }
