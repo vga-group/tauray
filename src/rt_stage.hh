@@ -99,6 +99,7 @@ private:
     uint32_t sampling_frame_counter_increment;
     uint32_t sample_counter;
     uint32_t scene_state_counter;
+    bool force_refresh;
 };
 
 }

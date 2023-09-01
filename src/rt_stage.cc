@@ -85,7 +85,8 @@ rt_stage::rt_stage(
     ),
     sampling_frame_counter_increment(1),
     sample_counter(0),
-    scene_state_counter(0)
+    scene_state_counter(0),
+    force_refresh(true)
 {
 }
 
@@ -122,6 +123,13 @@ void rt_stage::update(uint32_t frame_index)
             );
         init_scene_resources();
         record_command_buffers();
+        force_refresh = false;
+    }
+
+    if(force_refresh)
+    {
+        record_command_buffers();
+        force_refresh = false;
     }
 }
 
@@ -176,7 +184,7 @@ void rt_stage::record_command_buffers()
 
 void rt_stage::force_command_buffer_refresh()
 {
-    scene_state_counter = 0;
+    force_refresh = true;
 }
 
 }
