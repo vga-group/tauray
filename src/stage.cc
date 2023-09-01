@@ -72,6 +72,8 @@ dependencies multi_device_stage::run(dependencies deps)
         }
     }
 
+    post_submit(frame_index);
+
     return deps;
 }
 
@@ -91,6 +93,7 @@ size_t multi_device_stage::get_command_buffer_index(uint32_t frame_index, uint32
 }
 
 void multi_device_stage::update(uint32_t) { /* NO-OP by default */ }
+void multi_device_stage::post_submit(uint32_t) { /* NO-OP by default */ }
 
 device_mask multi_device_stage::get_device_mask() const
 {

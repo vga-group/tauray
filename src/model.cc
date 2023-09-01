@@ -94,7 +94,7 @@ void model::init_joints_buffer(device_mask dev)
     );
 }
 
-bool model::has_joints_buffer()
+bool model::has_joints_buffer() const
 {
     return joint_buffer.has_value();
 }

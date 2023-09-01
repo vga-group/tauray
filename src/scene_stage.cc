@@ -94,22 +94,6 @@ struct point_light_entry
     int padding;
 };
 
-// These aren't built on the CPU, so this definition is only used for sizeof.
-// They're also not supported with rasterization, so they don't carry any shadow
-// mapping info.
-struct tri_light_entry
-{
-    pvec3 pos[3];
-    pvec3 emission_factor;
-
-    pvec2 uv[3];
-    int emission_tex_id;
-
-    // TODO: Put pre-calculated data here, since we want to pad to a multiple of
-    // 32 anyway. There's 5 ints left.
-    //int padding[5];
-};
-
 struct sh_grid_buffer
 {
     alignas(16) pmat4 pos_from_world;
@@ -218,6 +202,7 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     light_change_counter(1),
     geometry_outdated(true),
     lights_outdated(true),
+    light_bvh_outdated(true),
     force_instance_refresh_frames(0),
     cur_scene(nullptr),
     envmap(nullptr),
@@ -233,7 +218,7 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     scene_metadata(dev, sizeof(scene_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
     directional_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     point_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    tri_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    tri_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eTransferSrc),
     sh_grid_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     shadow_map_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     camera_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
@@ -1037,7 +1022,7 @@ void scene_stage::update(uint32_t frame_index)
             mod.update_joints(frame_index);
     });
 
-    size_t tri_light_count = 0;
+    tri_light_count = 0;
     size_t vertex_count = 0;
 
     if(geometry_outdated)
@@ -1056,6 +1041,9 @@ void scene_stage::update(uint32_t frame_index)
             {
                 inst.light_base_id = tri_light_count;
                 tri_light_count += instances[i].m->get_indices().size() / 3;
+
+                if(instances[i].mod->has_joints_buffer())
+                    light_bvh_outdated = true;
             }
             else inst.light_base_id = -1;
 
@@ -1066,6 +1054,9 @@ void scene_stage::update(uint32_t frame_index)
                 force_instance_refresh_frames == 0 &&
                 instances[i].last_refresh_frame+MAX_FRAMES_IN_FLIGHT < frame_counter
             ) return;
+
+            if(instances[i].mat->emission_factor != vec3(0) && instances[i].transform != instances[i].prev_transform)
+                light_bvh_outdated = true;
 
             pmat4 model = instances[i].transform;
             inst.model = model;
@@ -1291,7 +1282,7 @@ void scene_stage::update(uint32_t frame_index)
     });
 
     if(opt.gather_emissive_triangles)
-        lights_outdated |= tri_light_data.resize(tri_light_count * sizeof(tri_light_entry));
+        lights_outdated |= tri_light_data.resize(tri_light_count * sizeof(gpu_tri_light));
     else
         tri_light_data.resize(0);
 
@@ -1431,6 +1422,18 @@ void scene_stage::update(uint32_t frame_index)
     {
         record_command_buffers(light_aabb_count, false);
         prev_was_rebuild = false;
+    }
+}
+
+void scene_stage::post_submit(uint32_t frame_index)
+{
+    if(light_bvh_outdated)
+    {
+        light_bvh.build(tri_light_count, tri_light_data);
+        light_bvh_outdated = false;
+
+        // TODO Upload the related buffers and make sure they exist in the
+        // descriptor set too.
     }
 }
 

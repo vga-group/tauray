@@ -33,6 +33,8 @@ struct tri_light
 
     vec2 uv[3];
     int emission_tex_id;
+
+    float power_estimate;
 };
 
 void random_sample_point_light(vec3 world_pos, float u, int item_count, out float selected_weight, out int selected_index)

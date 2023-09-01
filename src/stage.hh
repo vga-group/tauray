@@ -28,6 +28,8 @@ public:
 
 protected:
     virtual void update(uint32_t frame_index);
+    virtual void post_submit(uint32_t frame_index);
+
     device_mask get_device_mask() const;
     context* get_context() const;
 

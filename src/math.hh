@@ -158,6 +158,9 @@ std::vector<vec2> get_camera_jitter_sequence(
 
 size_t hash_combine(size_t a, size_t b);
 
+vec2 octahedral_encode(vec3 normal);
+vec3 octahedral_decode(vec2 packed_normal);
+
 }
 
 #include "math.tcc"

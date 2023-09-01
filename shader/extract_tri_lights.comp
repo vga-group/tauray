@@ -7,6 +7,7 @@
 #define VERTEX_BUFFER_BINDING 1
 #define INDEX_BUFFER_BINDING 2
 #define SCENE_DATA_BUFFER_BINDING 3
+#define TEXTURE_ARRAY_BINDING 4
 #include "scene.glsl"
 
 layout(local_size_x = 256) in;
@@ -49,6 +50,18 @@ void main()
         light.uv[0] = v0.uv;
         light.uv[1] = v1.uv;
         light.uv[2] = v2.uv;
+
+        vec3 emission = light.emission_factor;
+        if(light.emission_tex_id >= 0)
+        {
+            vec2 uv = (v0.uv + v1.uv + v2.uv) / 3.0f;
+            vec2 grad = max(abs(v0.uv - uv), max(abs(v1.uv - uv), abs(v2.uv - uv)));
+            emission *= textureGrad(textures[nonuniformEXT(light.emission_tex_id)], uv, grad, grad).rgb;
+        }
+        light.power_estimate = rgb_to_luminance(emission) * triangle_surface_area(light.pos[0], light.pos[1], light.pos[2]);
+
+        if(o.mat.emission_factor_double_sided.a > 0.5f)
+            light.power_estimate = -light.power_estimate;
 
         tri_lights.lights[output_index] = light;
     }

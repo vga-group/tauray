@@ -12,6 +12,7 @@
 #include "timer.hh"
 #include "atlas.hh"
 #include "camera.hh"
+#include "light_bvh.hh"
 
 namespace tr
 {
@@ -111,6 +112,7 @@ public:
 
 protected:
     void update(uint32_t frame_index) override;
+    void post_submit(uint32_t frame_index) override;
 
 private:
     void record_command_buffers(size_t light_aabb_count, bool rebuild_as);
@@ -123,12 +125,14 @@ private:
 
     bool prev_was_rebuild;
     size_t as_instance_count;
+    size_t tri_light_count;
 
     uint32_t envmap_change_counter;
     uint32_t geometry_change_counter;
     uint32_t light_change_counter;
     bool geometry_outdated;
     bool lights_outdated;
+    bool light_bvh_outdated;
 
     unsigned force_instance_refresh_frames;
     scene* cur_scene;
@@ -140,6 +144,7 @@ private:
     vec3 ambient;
     std::optional<bottom_level_acceleration_structure> light_blas;
     gpu_buffer light_aabb_buffer;
+    cpu_light_bvh light_bvh;
 
     //==========================================================================
     // Mesh stuff

@@ -101,6 +101,7 @@ add_library(tauray-core STATIC
   src/gpu_buffer.cc
   src/headless.cc
   src/light.cc
+  src/light_bvh.cc
   src/load_balancer.cc
   src/log.cc
   src/looking_glass.cc

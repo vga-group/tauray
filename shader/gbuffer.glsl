@@ -212,20 +212,12 @@ vec2 read_gbuffer_material(ivec3 pos) { return vec2(0); }
 
 vec2 pack_gbuffer_normal(vec3 normal)
 {
-    normal /= abs(normal.x) + abs(normal.y) + abs(normal.z);
-    return normal.z >= 0.0 ?
-        normal.xy : (1 - abs(normal.yx)) * (step(vec2(0), normal.xy)*2-1);
+    return octahedral_encode(normal);
 }
 
 vec3 unpack_gbuffer_normal(vec2 packed_normal)
 {
-    vec3 normal = vec3(
-        packed_normal.x,
-        packed_normal.y,
-        1 - abs(packed_normal.x) - abs(packed_normal.y)
-    );
-    normal.xy += clamp(normal.z, -1.0f, 0.0f) * (step(vec2(0), normal.xy) * 2 - 1);
-    return normalize(normal);
+    return octahedral_decode(packed_normal);
 }
 #ifdef NORMAL_TARGET_BINDING
 layout(binding = NORMAL_TARGET_BINDING, set = 0, rg16_snorm) uniform image2DArray normal_target;
