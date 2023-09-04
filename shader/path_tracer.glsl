@@ -172,7 +172,7 @@ float bsdf_mis_pdf(
 
     float avg_nee_pdf =
         nee_pdf.directional_light_pdf * dir_prob / max(scene_metadata.directional_light_count, 1) +
-        nee_pdf.tri_light_pdf * triangle_prob / max(scene_metadata.tri_light_count, 1) +
+        nee_pdf.tri_light_pdf * triangle_prob +
         nee_pdf.envmap_pdf * envmap_prob +
         nee_pdf.point_light_pdf * point_prob / max(scene_metadata.point_light_count, 1);
 
@@ -200,6 +200,7 @@ float nee_mis_pdf(float nee_pdf, float bsdf_pdf)
 
 bool get_intersection_info(
     vec3 origin,
+    vec3 origin_normal,
     vec3 view,
     out pt_vertex_data v,
     out intersection_pdf nee_pdf,
@@ -213,6 +214,8 @@ bool get_intersection_info(
     if(payload.instance_id >= 0)
     {
         float pdf = 0.0f;
+
+        instance o = scene.o[payload.instance_id];
         vertex_data vd = get_interpolated_vertex(
             view, payload.barycentrics,
             payload.instance_id,
@@ -224,7 +227,10 @@ bool get_intersection_info(
         mat = sample_material(payload.instance_id, vd);
         mat.albedo.a = 1.0; // Alpha blending was handled by the any-hit shader!
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-        nee_pdf.tri_light_pdf = pdf == 0.0f ? 0.0f : pdf;
+        nee_pdf.tri_light_pdf = pdf == 0.0f || o.light_base_id < 0 ? 0.0f :
+            //pdf / max(scene_metadata.tri_light_count, 1)
+            pdf * tri_light_sample_pdf(origin, origin_normal, o.light_base_id + payload.primitive_id)
+            ;
         light = mat.emission;
         mat.emission = vec3(0);
 #else
@@ -307,7 +313,7 @@ bool get_intersection_info(
     }
 }
 
-vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, out float pdf)
+vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, vec3 normal, out vec3 out_dir, out float out_length, out float pdf)
 {
     float point_prob, triangle_prob, dir_prob, envmap_prob;
     get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
@@ -334,7 +340,11 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
     else if((u.w -= triangle_prob) < 0)
     { // Sample triangle light
         const int light_count = int(scene_metadata.tri_light_count);
-        int light_index = clamp(int(u.z*light_count), 0, light_count-1);
+        float pmf = 1.0f / light_count;
+        //uint light_index = clamp(int(u.z*light_count), 0, light_count-1);
+        uint light_index = 0;
+        random_sample_tri_light(pos, normal, u.z, pmf, light_index);
+
         tri_light tl = tri_lights.lights[light_index];
         vec3 A = tl.pos[0]-pos;
         vec3 B = tl.pos[1]-pos;
@@ -362,7 +372,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
         // Prevent shadow ray from intersecting with the target triangle
         out_length -= control.min_ray_dist;
 
-        pdf = triangle_prob * tri_pdf / light_count;
+        pdf = triangle_prob * tri_pdf * pmf;
         return color;
     }
 #endif
@@ -418,7 +428,7 @@ void next_event_estimation(
         float out_length = 0.0f;
         float light_pdf;
         // Sample lights
-        vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf);
+        vec3 contrib = sample_explicit_light(rand_uint, v.pos, tbn[2], out_dir, out_length, light_pdf);
 
         vec3 shading_light = out_dir * tbn;
         vec3 d, s;
@@ -468,6 +478,7 @@ void evaluate_ray(
     float regularization = 1.0f;
     float bsdf_pdf = 0.0f;
     payload.random_seed = pcg4d(lsampler.rs.seed).x;
+    vec3 prev_normal = vec3(0);
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
         traceRayEXT(
@@ -492,8 +503,7 @@ void evaluate_ray(
         sampled_material mat;
         intersection_pdf nee_pdf;
         vec3 light;
-        bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
-
+        bool terminal = !get_intersection_info(pos, prev_normal, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
@@ -512,6 +522,7 @@ void evaluate_ray(
             first_hit_vertex = v;
             first_hit_material = mat;
         }
+        prev_normal = v.mapped_normal;
 
 #ifdef PATH_SPACE_REGULARIZATION
         // Regularization strategy inspired by "Optimised Path Space Regularisation", 2021 Weier et al.

@@ -130,6 +130,8 @@ layout(binding = SCENE_METADATA_BUFFER_BINDING, set = 0, scalar) uniform scene_m
 } scene_metadata;
 #endif
 
+#include "light_bvh.glsl"
+
 #define POINT_LIGHT_FOR_BEGIN(world_pos) \
     for(uint item_index = 0; item_index < scene_metadata.point_light_count; ++item_index) {
 #define POINT_LIGHT_FOR_END }

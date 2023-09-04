@@ -34,8 +34,7 @@ struct cpu_light_bvh_node
 // Packed for cache reasons
 struct gpu_light_bvh_node
 {
-    uint16_t min_bound[3]; // Quantized to BVH-global AABB (lower bound)
-    uint16_t max_bound[3]; // Quantized to BVH-global AABB (upper bound)
+    uint32_t bounds[3]; // Quantized to BVH-global AABB (upper bound)
     uint32_t primary_dir; // Octahedral encoding
     float power; // Negative marks double-sided.
     float cos_normal_variation_angle;
@@ -66,8 +65,6 @@ public:
     void get_gpu_bit_trail_data(uint32_t* bit_trail);
 
 private:
-    vec3 min_bound;
-    vec3 max_bound;
     std::vector<cpu_light_bvh_node> nodes;
     std::vector<uint32_t> bit_trail_table;
 

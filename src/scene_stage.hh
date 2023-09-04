@@ -32,6 +32,7 @@ public:
     {
         uint32_t max_instances = 1024;
         uint32_t max_lights = 128;
+        uint32_t max_samplers = 1024;
         bool gather_emissive_triangles = false;
         bool pre_transform_vertices = false;
         bool shadow_mapping = false;
@@ -218,6 +219,8 @@ private:
     gpu_buffer sh_grid_data;
     gpu_buffer shadow_map_data;
     gpu_buffer camera_data;
+    gpu_buffer light_bvh_data;
+    gpu_buffer light_bit_trail_data;
     sampler envmap_sampler;
     sampler shadow_sampler;
     sampler sh_grid_sampler;

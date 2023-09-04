@@ -222,6 +222,8 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     sh_grid_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     shadow_map_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     camera_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    light_bvh_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    light_bit_trail_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     envmap_sampler(
         dev, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerAddressMode::eRepeat,
@@ -908,7 +910,9 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
             envmap ? envmap->get_alias_table(id) : vk::Buffer{}, 0, VK_WHOLE_SIZE
         }},
         {"textures3d", dii_3d},
-        {"sh_grids", {sh_grid_data[id], 0, VK_WHOLE_SIZE}}
+        {"sh_grids", {sh_grid_data[id], 0, VK_WHOLE_SIZE}},
+        {"light_bvh", {light_bvh_data[id], 0, VK_WHOLE_SIZE}},
+        {"light_bit_trail", {light_bit_trail_data[id], 0, VK_WHOLE_SIZE}}
     };
 
     if(camera_index >= 0)
@@ -1432,8 +1436,31 @@ void scene_stage::post_submit(uint32_t frame_index)
         light_bvh.build(tri_light_count, tri_light_data);
         light_bvh_outdated = false;
 
-        // TODO Upload the related buffers and make sure they exist in the
-        // descriptor set too.
+        light_bvh_data.resize(light_bvh.get_gpu_bvh_size());
+        light_bvh_data.map<gpu_light_bvh>(
+            frame_index,
+            [&](gpu_light_bvh* bvh){
+                light_bvh.get_gpu_bvh_data(bvh);
+            }
+        );
+        light_bit_trail_data.resize(light_bvh.get_gpu_bit_trail_size());
+        light_bit_trail_data.map<uint32_t>(
+            frame_index,
+            [&](uint32_t* bit_trail){
+                light_bvh.get_gpu_bit_trail_data(bit_trail);
+            }
+        );
+
+        for(device& d: get_device_mask())
+        {
+            vk::CommandBuffer cmd = begin_command_buffer(d);
+            light_bvh_data.upload(d.id, frame_index, cmd);
+            light_bit_trail_data.upload(d.id, frame_index, cmd);
+            end_command_buffer(d, cmd);
+        }
+
+        TR_LOG("Built and uploaded light BVH ", light_bvh.get_gpu_bvh_size());
+        light_change_counter++;
     }
 }
 
@@ -1446,6 +1473,9 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
         if(opt.gather_emissive_triangles)
         {
             extract_tri_lights[dev.id].reset_descriptor_sets();
+            extract_tri_lights[dev.id].update_descriptor_set({
+                {"textures", opt.max_samplers}
+            });
             bind(extract_tri_lights[dev.id], 0, 0);
         }
 

@@ -274,21 +274,30 @@ void cpu_light_bvh::build(size_t triangle_count, const gpu_buffer& triangles)
 
 size_t cpu_light_bvh::get_gpu_bvh_size() const
 {
-    return sizeof(gpu_light_bvh) + sizeof(gpu_light_bvh_node)*nodes.size();
+    return sizeof(gpu_light_bvh) + sizeof(gpu_light_bvh_node) * nodes.size();
 }
 
 void cpu_light_bvh::get_gpu_bvh_data(gpu_light_bvh* bvh)
 {
+    vec3 min_bound = vec3(0);
+    vec3 max_bound = vec3(0);
+    if(nodes.size() != 0)
+    {
+        min_bound = nodes[0].bounds.min_bound;
+        max_bound = nodes[0].bounds.max_bound;
+    }
     bvh->min_bound = pvec4(min_bound, 0.0f);
     bvh->max_bound = pvec4(max_bound, 0.0f);
+
     for(size_t i = 0; i < nodes.size(); ++i)
     {
         gpu_light_bvh_node gpu_node;
 
         for(size_t j = 0; j < 3; ++j)
         {
-            gpu_node.min_bound[j] = floor(clamp(65535 * (nodes[i].bounds.min_bound[j]-min_bound[j])/(max_bound[j]-min_bound[j]), 0.0f, 1.0f));
-            gpu_node.max_bound[j] = ceil(clamp(65535 * (nodes[i].bounds.max_bound[j]-min_bound[j])/(max_bound[j]-min_bound[j]), 0.0f, 1.0f));
+            uint32_t qmin_bound = floor(clamp(65535 * (nodes[i].bounds.min_bound[j]-min_bound[j])/(max_bound[j]-min_bound[j]), 0.0f, 65535.0f));
+            uint32_t qmax_bound = ceil(clamp(65535 * (nodes[i].bounds.max_bound[j]-min_bound[j])/(max_bound[j]-min_bound[j]), 0.0f, 65535.0f));
+            gpu_node.bounds[j] = qmin_bound|(qmax_bound<<16);
         }
         gpu_node.primary_dir = packSnorm2x16(octahedral_encode(nodes[i].bounds.primary_dir));
         gpu_node.power = nodes[i].bounds.power;
