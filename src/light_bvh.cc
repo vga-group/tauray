@@ -126,14 +126,6 @@ void cpu_light_bvh::build_recursive(cpu_light_bvh_node* begin, size_t count, siz
         bit_trail_table[begin->child_or_light_index] = bit_trail;
         return;
     }
-    if(count == 2)
-    {
-        nodes.push_back(begin[0]);
-        bit_trail_table[begin[0].child_or_light_index] = bit_trail;
-        nodes.push_back(begin[1]);
-        bit_trail_table[begin[1].child_or_light_index] = bit_trail|(1<<bit_index);
-        return;
-    }
 
     aabb bounds = {begin[0].bounds.min_bound, begin[0].bounds.max_bound};
     for(size_t i = 1; i < count; ++i)
@@ -161,7 +153,7 @@ void cpu_light_bvh::build_recursive(cpu_light_bvh_node* begin, size_t count, siz
     {
         cpu_light_bvh_node& n  = begin[i];
         vec3 centroid = (n.bounds.min_bound + n.bounds.max_bound)*0.5f;
-        ivec3 index = (centroid - bounds.min) * inv_size;
+        ivec3 index = clamp(ivec3((centroid - bounds.min) * inv_size), ivec3(0), ivec3(SPLIT_BUCKET_COUNT-1));
 
         for(size_t axis = 0; axis < 3; ++axis)
         {
