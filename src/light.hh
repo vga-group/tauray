@@ -88,14 +88,10 @@ struct gpu_tri_light
 {
     pvec3 pos[3];
     pvec3 emission_factor;
-
-    pvec2 uv[3];
+    uint32_t uv[3];
     int emission_tex_id;
 
-    // TODO: Put pre-calculated data here, since we want to pad to a multiple of
-    // 32 anyway. There's 5 ints left.
-    float power_estimate; // Negative marks double-sided triangles.
-    //int padding[5];
+    float power_estimate;
 };
 
 }

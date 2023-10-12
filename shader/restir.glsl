@@ -295,6 +295,8 @@ void sample_canonical(
         light_index = clamp(int(u.z*light_count), 0, light_count-1);
         float selection_pmf = 1.0f / light_count;
 
+        random_sample_tri_light(dom.pos, dom.tbn[2], u.z, selection_pmf, light_index);
+
         if(selection_pmf == 0)
         {
             light_type = 0;

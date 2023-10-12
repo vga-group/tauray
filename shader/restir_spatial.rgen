@@ -63,6 +63,7 @@
 #define TRI_LIGHT_BUFFER_BINDING 25
 #define TRI_LIGHT_INDEX_BUFFER_BINDING 26
 #endif
+#define LIGHT_BVH_BUFFER_BINDING 27
 
 layout(push_constant, scalar) uniform push_constant_buffer
 {

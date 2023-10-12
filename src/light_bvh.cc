@@ -41,6 +41,9 @@ void cone_union(
     }
 
     union_dir = rotate(a_dir, union_angle - a_angle, normalize(n));
+
+    assert(!any(isnan(union_dir)));
+    assert(!isnan(union_angle) && !isinf(union_angle));
 }
 
 float evaluate_cost(
@@ -61,6 +64,13 @@ float evaluate_cost(
     vec3 lb_size = lb.max_bound - lb.min_bound;
     float Kr = vecmax(size)/size[axis];
     float surface_area = 2 * lb_size.x * lb_size.y + 2 * lb_size.x * lb_size.z + 2 * lb_size.y * lb_size.z;
+
+    if(isinf(Kr)) return INFINITY;
+
+    assert(!isnan(lb.power) && !isinf(lb.power));
+    assert(!isnan(Kr) && !isinf(Kr));
+    assert(!isnan(m_omega) && !isinf(m_omega));
+    assert(!isnan(surface_area) && !isinf(surface_area));
 
     return lb.power * Kr * m_omega * surface_area;
 }
@@ -101,7 +111,10 @@ void cpu_light_bvh::build(size_t triangle_count, const gpu_tri_light* triangles)
 
         leaf.bounds.min_bound = min(min(tl.pos[0], tl.pos[1]), tl.pos[2]);
         leaf.bounds.max_bound = max(max(tl.pos[0], tl.pos[1]), tl.pos[2]);
+        assert(!any(isnan(leaf.bounds.min_bound)));
+        assert(!any(isnan(leaf.bounds.max_bound)));
         leaf.bounds.primary_dir = normalize(cross(tl.pos[1]-tl.pos[0], tl.pos[2]-tl.pos[0]));
+        assert(!any(isnan(leaf.bounds.primary_dir)));
         leaf.bounds.power = fabs(tl.power_estimate);
         leaf.bounds.normal_variation_angle = 0;
         leaf.bounds.visibility_angle = M_PI/2;
@@ -206,7 +219,8 @@ void cpu_light_bvh::build_recursive(cpu_light_bvh_node* begin, size_t count, siz
                 axis
             );
             float cost = ascending_cost + descending_cost;
-            if(cost < min_cost)
+            assert(!isnan(cost));
+            if(!isinf(ascending_cost) && !isinf(descending_cost) && cost < min_cost)
             {
                 min_cost = cost;
                 split_axis = axis;
