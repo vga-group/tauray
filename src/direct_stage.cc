@@ -70,15 +70,12 @@ namespace direct
 
     struct push_constant_buffer
     {
-        pvec4 environment_factor;
         uint32_t samples;
         uint32_t previous_samples;
         float min_ray_dist;
         float indirect_clamping;
         float film_radius;
         int antialiasing;
-        // -1 for no environment map
-        int environment_proj;
     };
 
     // The minimum maximum size for push constant buffers is 128 bytes in vulkan.
@@ -122,18 +119,6 @@ void direct_stage::record_command_buffer_pass(
         gfx.bind(cb, frame_index);
 
     direct::push_constant_buffer control;
-
-    environment_map* envmap = ss->get_environment_map();
-    if(envmap)
-    {
-        control.environment_factor = vec4(envmap->get_factor(), 1);
-        control.environment_proj = (int)envmap->get_projection();
-    }
-    else
-    {
-        control.environment_factor = vec4(0);
-        control.environment_proj = -1;
-    }
 
     control.film_radius = opt.film_radius;
     control.min_ray_dist = opt.min_ray_dist;

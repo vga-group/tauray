@@ -155,6 +155,7 @@
         {"dshgi", options::DSHGI}, \
         {"dshgi-server", options::DSHGI_SERVER}, \
         {"dshgi-client", options::DSHGI_CLIENT}, \
+        {"restir", options::RESTIR}, \
         {"albedo", feature_stage::ALBEDO}, \
         {"world-normal", feature_stage::WORLD_NORMAL}, \
         {"view-normal", feature_stage::VIEW_NORMAL}, \
@@ -538,6 +539,17 @@
     TR_STRING_OPT(timing_output, \
         "Sets the timing data output file. Default is stdout.", \
         "" \
+    ) \
+    TR_STRUCT_OPT(restir, \
+        "The implementation is biased if sample_visibility = true and " \
+        "shared_visibility = true. sample_visibility only has an effect when " \
+        "shared_visibility = true.\n", \
+        TR_STRUCT_OPT_INT(spatial_samples, 4, 0, 5000) \
+        TR_STRUCT_OPT_FLOAT(max_confidence, 64, 0, 10000) \
+        TR_STRUCT_OPT_INT(ris_samples, 8, 1, 5000) \
+        TR_STRUCT_OPT_FLOAT(search_radius, 32, 0, 500) \
+        TR_STRUCT_OPT_BOOL(shared_visibility, false) \
+        TR_STRUCT_OPT_BOOL(sample_visibility, false) \
     )
 //==============================================================================
 // END OF OPTIONS
@@ -618,7 +630,8 @@ struct options
         RASTER,
         DSHGI,
         DSHGI_SERVER,
-        DSHGI_CLIENT
+        DSHGI_CLIENT,
+        RESTIR
     };
     using renderer_option_type = std::variant<
         tr::options::basic_pipeline_type, feature_stage::feature>;
@@ -645,6 +658,7 @@ struct options
 #define TR_STRUCT_OPT(name, description, ...) struct { __VA_ARGS__ } name;
 #define TR_STRUCT_OPT_INT(name, default, min, max) int name = default;
 #define TR_STRUCT_OPT_FLOAT(name, default, min, max) float name = default;
+#define TR_STRUCT_OPT_BOOL(name, default) bool name = default;
     TR_OPTIONS
 #undef TR_BOOL_OPT
 #undef TR_BOOL_SOPT
@@ -660,6 +674,7 @@ struct options
 #undef TR_STRUCT_OPT
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT
+#undef TR_STRUCT_OPT_BOOL
 };
 
 void parse_command_line_options(char** argv, options& opt);

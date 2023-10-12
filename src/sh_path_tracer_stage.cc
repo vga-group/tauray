@@ -86,9 +86,6 @@ namespace sh_path_tracer
         float film_radius;
         float russian_roulette_delta;
         int antialiasing;
-        // -1 for no environment map
-        int environment_proj;
-        pvec4 environment_factor;
         float regularization_gamma;
     };
 
@@ -207,18 +204,6 @@ void sh_path_tracer_stage::record_command_buffer_push_constants(
     uint32_t /*pass_index*/
 ){
     sh_path_tracer::push_constant_buffer control;
-
-    environment_map* envmap = ss->get_environment_map();
-    if(envmap)
-    {
-        control.environment_factor = vec4(envmap->get_factor(), 1);
-        control.environment_proj = (int)envmap->get_projection();
-    }
-    else
-    {
-        control.environment_factor = vec4(0);
-        control.environment_proj = -1;
-    }
 
     control.film_radius = opt.film_radius;
     control.russian_roulette_delta = opt.russian_roulette_delta;

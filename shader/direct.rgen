@@ -53,14 +53,12 @@
 
 layout(push_constant, scalar) uniform push_constant_buffer
 {
-    vec4 environment_factor;
     uint samples;
     uint previous_samples;
     float min_ray_dist;
     float indirect_clamping;
     float film_radius;
     int antialiasing;
-    int environment_proj;
 } control;
 
 #include "path_tracer.glsl"

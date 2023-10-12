@@ -1,0 +1,307 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
+
+#define TLAS_BINDING 0
+#define SCENE_DATA_BUFFER_BINDING 1
+#define CAMERA_DATA_BINDING 2
+#define DISTRIBUTION_DATA_BINDING 3
+#define VERTEX_BUFFER_BINDING 4
+#define INDEX_BUFFER_BINDING 5
+#define TEXTURE_ARRAY_BINDING 6
+#define POINT_LIGHT_BUFFER_BINDING 7
+#define SCENE_METADATA_BUFFER_BINDING 8
+#define DIRECTIONAL_LIGHT_BUFFER_BINDING 9
+#define SAMPLING_DATA_BINDING 10
+#define LIGHT_CLUSTER_BUFFER_BINDING 11
+#define ENVIRONMENT_MAP_BINDING  12
+#ifdef NEE_SAMPLE_ENVMAP
+#define ENVIRONMENT_MAP_ALIAS_TABLE_BINDING 13
+#endif
+
+#ifdef IMPORTANCE_SAMPLE_ENVMAP
+#define ENVIRONMENT_MAP_ALIAS_TABLE_BINDING 14
+#endif
+
+#ifdef USE_COLOR_TARGET
+#define COLOR_TARGET_BINDING 15
+#endif
+
+#ifdef USE_ALBEDO_TARGET
+#define ALBEDO_TARGET_BINDING 16
+#endif
+
+#ifdef USE_NORMAL_TARGET
+#define NORMAL_TARGET_BINDING 17
+#endif
+
+#ifdef USE_POS_TARGET
+#define POS_TARGET_BINDING 18
+#endif
+
+#ifdef USE_MATERIAL_TARGET
+#define MATERIAL_TARGET_BINDING 19
+#endif
+
+#ifdef USE_SCREEN_MOTION_TARGET
+#define SCREEN_MOTION_TARGET_BINDING 20
+#endif
+
+#ifdef USE_EMISSION_TARGET
+#define EMISSION_TARGET_BINDING 22
+#endif
+
+#ifdef USE_FLAT_NORMAL_TARGET
+#define FLAT_NORMAL_TARGET_BINDING 23
+#endif
+
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+#define TRI_LIGHT_BUFFER_BINDING 25
+#define TRI_LIGHT_INDEX_BUFFER_BINDING 26
+#endif
+
+layout(push_constant, scalar) uniform push_constant_buffer
+{
+    uint samples;
+    uint previous_samples;
+    float min_ray_dist;
+    float max_confidence;
+    float search_radius;
+} control;
+
+#include "restir.glsl"
+
+void main()
+{
+    local_sampler lsampler = init_local_sampler(
+        uvec4(
+            get_pixel_pos(),
+            gl_LaunchIDEXT.z,
+            distribution.samples_accumulated + control.previous_samples
+        )
+    );
+
+    domain primary_domain = get_domain(ivec3(gl_LaunchIDEXT));
+    const camera_data cam = get_camera();
+    // Handle missed primary rays
+    if(all(isnan(primary_domain.pos)))
+    {
+        vec4 color = scene_metadata.environment_factor;
+        vec3 origin;
+        vec3 view;
+        get_screen_camera_ray(cam, vec2(0), origin, view);
+
+        if(scene_metadata.environment_proj >= 0)
+        {
+            vec2 uv = vec2(0);
+            uv.y = asin(-view.y)/M_PI+0.5f;
+            uv.x = atan(view.z, view.x)/(2*M_PI)+0.5f;
+            color.rgb *= texture(environment_map_tex, uv).rgb;
+        }
+        reservoir r = create_reservoir();
+        ivec3 p = ivec3(get_write_pixel_pos(cam));
+        write_reservoir_buffer(r, p.xy, 0);
+        uint prev_samples = distribution.samples_accumulated + control.previous_samples;
+        accumulate_gbuffer_color(vec4(color.rgb, 1.0f), p, 1, prev_samples);
+        return;
+    }
+
+    reservoir r = create_reservoir();
+
+    //SPATIAL REUSE
+#ifdef SPATIAL_REUSE
+    ivec2 spatial_samples[SPATIAL_SAMPLE_COUNT];
+    [[unroll]] for(int i = 0; i < SPATIAL_SAMPLE_COUNT; ++i)
+        spatial_samples[i] = ivec2(-1);
+
+    int good_neighbors = 0;
+    int bad_neighbors = 0;
+
+    float inv_max_plane_dist = get_inv_max_plane_dist(cam, primary_domain.pos);
+
+    // generate random spatial samples
+    for(int i = 0; i < SPATIAL_SAMPLE_COUNT*2; ++i)
+    {
+        vec4 rand = generate_uniform_random(lsampler.rs);
+        ivec2 rand_sample = get_pixel_pos() + ivec2(
+            round(control.search_radius * sample_blackman_harris_concentric_disk(rand.xy))
+        );
+
+        if(!in_screen(rand_sample)) continue;
+        vec3 neighbor_pos = read_gbuffer_pos(ivec3(rand_sample, 0));
+        vec3 flat_normal = read_gbuffer_flat_normal(ivec3(rand_sample, 0));
+        bool bad =
+            edge_detect(primary_domain.flat_normal, primary_domain.pos, neighbor_pos, inv_max_plane_dist) < 0.99f ||
+            dot(flat_normal, primary_domain.flat_normal) < 0.75;
+
+        if(!bad && good_neighbors < SPATIAL_SAMPLE_COUNT)
+        {
+            spatial_samples[good_neighbors] = rand_sample;
+            ++good_neighbors;
+        }
+#ifndef SHARED_VISIBILITY
+        else if(bad && good_neighbors + bad_neighbors < SPATIAL_SAMPLE_COUNT)
+        {
+            ++bad_neighbors;
+            spatial_samples[SPATIAL_SAMPLE_COUNT-bad_neighbors] = rand_sample;
+        }
+#endif
+    }
+
+    reservoir canonical_reservoir = read_reservoir_buffer(ivec2(gl_LaunchIDEXT.xy), 1);
+    float total_confidence = canonical_reservoir.confidence;
+    [[unroll]] for(int i = 0; i < SPATIAL_SAMPLE_COUNT; ++i)
+    {
+        if(spatial_samples[i].x >= 0 && spatial_samples[i].y >= 0)
+        {
+            float confidence = imageLoad(reservoir_data, ivec3(spatial_samples[i], 1)).w;
+            total_confidence += confidence;
+        }
+    }
+
+    float canonical_m = canonical_reservoir.confidence / total_confidence;
+
+    [[unroll]] for(int i = 0; i < SPATIAL_SAMPLE_COUNT; ++i)
+    {
+        //generate Xi, it's in the reservoir n
+        domain sample_domain = get_domain(ivec3(spatial_samples[i], gl_LaunchIDEXT.z));
+        reservoir n = read_reservoir_buffer(spatial_samples[i], 1);
+
+        if(!is_null_sample(n.ls))
+        {
+            float orig_target_function = n.target_function;
+            //calculate phat_i for Xi
+            vec3 light_dir;
+            float light_dist2;
+            vec3 light_norm;
+            n.contribution = light_contribution(
+                n.ls, primary_domain,
+                light_dir, light_dist2, light_norm
+            );
+#ifndef SHARED_VISIBILITY
+            n.contribution *= shadow_ray(
+                primary_domain.pos,
+                control.min_ray_dist,
+                light_dir,
+                sqrt(light_dist2) - control.min_ray_dist
+            );
+#endif
+            n.target_function = rgb_to_luminance(n.contribution);
+
+            float jacob = n.ls.light_type > 1 ? 1.0f :
+                reconnection_jacobian(
+                    sample_domain.pos,
+                    primary_domain.pos + light_dir * sqrt(light_dist2),
+                    light_norm,
+                    primary_domain.pos,
+                    primary_domain.pos + light_dir * sqrt(light_dist2),
+                    light_norm
+                );
+
+            //calculate m for Xi
+            float m = mis_noncanonical(
+                canonical_reservoir.confidence,
+                n.confidence,
+                total_confidence,
+                orig_target_function,
+                n.target_function,
+                jacob
+            );
+
+            //calculate wi
+            float wi = n.target_function * m * n.uc_weight * jacob;
+
+            //update reservoir
+            if(update_reservoir(
+                r, n.ls, wi, generate_uniform_random(lsampler.rs).x
+            )) r.target_function = n.target_function;
+        }
+        r.confidence += n.confidence;
+
+        if(!is_null_sample(n.ls))
+        { // Calculate effect on MIS weight for canonical sample
+            vec3 light_dir;
+            float light_dist2;
+            vec3 light_norm;
+            vec3 canonical_contribution = light_contribution(
+                canonical_reservoir.ls, sample_domain,
+                light_dir, light_dist2, light_norm
+            );
+#ifndef SHARED_VISIBILITY
+            canonical_contribution *= shadow_ray(
+                sample_domain.pos,
+                control.min_ray_dist,
+                light_dir,
+                sqrt(light_dist2) - control.min_ray_dist
+            );
+#endif
+            float alt_target_function = rgb_to_luminance(canonical_contribution);
+            float jacob = (canonical_reservoir.ls.light_type > 1) ? 1.0f :
+                reconnection_jacobian(
+                    primary_domain.pos,
+                    sample_domain.pos + light_dir * sqrt(light_dist2),
+                    light_norm,
+                    sample_domain.pos,
+                    sample_domain.pos + light_dir * sqrt(light_dist2),
+                    light_norm
+                );
+            canonical_m += mis_canonical(
+                canonical_reservoir.confidence,
+                n.confidence,
+                total_confidence,
+                canonical_reservoir.target_function,
+                alt_target_function,
+                jacob
+            );
+        }
+    }
+
+    float wi = canonical_m * canonical_reservoir.target_function * canonical_reservoir.uc_weight;
+    if(update_reservoir(
+        r, canonical_reservoir.ls,
+        wi, generate_uniform_random(lsampler.rs).x
+    )) r.target_function = canonical_reservoir.target_function;
+    r.confidence += canonical_reservoir.confidence;
+
+    if(r.weight_sum > 0.0f)
+        r.uc_weight = r.weight_sum / r.target_function;
+    else
+        r.uc_weight = 0.0f;
+
+#else
+    reservoir canonical_reservoir = read_reservoir_buffer(ivec2(gl_LaunchIDEXT.xy), 1);
+    r = canonical_reservoir;
+#endif
+    vec3 light_dir;
+    float light_dist2;
+    vec3 light_norm;
+    vec3 contrib = light_contribution(r.ls, primary_domain, light_dir, light_dist2, light_norm);
+    float visibility = shadow_ray(
+        primary_domain.pos,
+        control.min_ray_dist,
+        light_dir,
+        sqrt(light_dist2) - control.min_ray_dist
+    );
+    r.contribution = contrib * visibility;
+#if defined(SHARED_VISIBILITY) && defined(SAMPLE_VISIBILITY)
+    r.uc_weight *= visibility;
+#endif
+
+    write_reservoir_buffer(r, get_pixel_pos(), 0);
+
+    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+#if DISTRIBUTION_STRATEGY != 0
+    if(p == ivec3(-1))
+        return;
+#endif
+
+    uint prev_samples = distribution.samples_accumulated + control.previous_samples;
+
+    accumulate_gbuffer_color(vec4(r.contribution *
+                    r.uc_weight + primary_domain.mat.emission, 1.0f), p, 1, prev_samples);
+}
+

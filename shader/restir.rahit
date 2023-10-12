@@ -1,0 +1,26 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+
+hitAttributeEXT vec2 attribs;
+
+#define SCENE_DATA_BUFFER_BINDING 1
+#define VERTEX_BUFFER_BINDING 4
+#define INDEX_BUFFER_BINDING 5
+#define TEXTURE_ARRAY_BINDING 6
+#include "restir.glsl"
+
+layout(location = 0) rayPayloadInEXT hit_payload payload;
+
+void main()
+{
+    vec3 view = gl_WorldRayDirectionEXT;
+    vec2 uv;
+    int instance_id = gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT;
+    get_interpolated_vertex_light(view, attribs, instance_id, gl_PrimitiveID, uv);
+    float alpha_cutoff = generate_single_uniform_random(payload.random_seed);
+    if(is_material_skippable(instance_id, uv, alpha_cutoff))
+        ignoreIntersectionEXT;
+}

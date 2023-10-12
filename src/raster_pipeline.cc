@@ -255,7 +255,7 @@ void raster_pipeline::init_pipeline()
 
     vk::PipelineMultisampleStateCreateInfo multisampling(
         {}, msaa, state.sample_shading, 1.0f, nullptr,
-        state.alpha_to_coverage, true
+        state.alpha_to_coverage, false
     );
 
     vk::GraphicsPipelineCreateInfo pipeline_info(

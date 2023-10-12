@@ -643,6 +643,24 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.scene_options.alloc_sh_grids = true;
                 return new dshgi_renderer(ctx, dr_opt);
             }
+        case options::RESTIR:
+            {
+                restir_renderer::options re_opt;
+                (rt_camera_stage::options&)re_opt = rc_opt;
+                re_opt.search_radius = opt.restir.search_radius;
+                re_opt.ris_sample_count = opt.restir.ris_samples;
+                re_opt.spatial_sample_count = opt.restir.spatial_samples;
+                re_opt.max_confidence = opt.restir.max_confidence;
+                re_opt.temporal_reuse = opt.restir.max_confidence >= 0;
+                re_opt.spatial_reuse = opt.restir.spatial_samples >= 0;
+                re_opt.shared_visibility = opt.restir.shared_visibility;
+                re_opt.sample_visibility = opt.restir.sample_visibility;
+                re_opt.scene_options = scene_options;
+                re_opt.tri_light_mode = opt.tri_light_mode;
+                re_opt.post_process.tonemap = tonemap;
+
+                return new restir_renderer(ctx, re_opt);
+            }
         };
     }
     return nullptr;

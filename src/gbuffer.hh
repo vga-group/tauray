@@ -24,8 +24,8 @@
     TR_GBUFFER_ENTRY(diffuse, vk::Format::eR16G16B16A16Sfloat)\
     /* RGB: Material albedo in linear color space. */\
     TR_GBUFFER_ENTRY(albedo, vk::Format::eR16G16B16A16Sfloat)\
-    /* R: Metallicness, G: Roughness */\
-    TR_GBUFFER_ENTRY(material, vk::Format::eR16G16Unorm)\
+    /* R: Metallicness, G: Roughness, B: IOR, A: transmittance */\
+    TR_GBUFFER_ENTRY(material, vk::Format::eR8G8B8A8Unorm)\
     /* RG: Packed world-space normal (octahedral mapping) */\
     TR_GBUFFER_ENTRY(normal, vk::Format::eR16G16Snorm)\
     /* R: X-coordinate, G: Y-coordinate, B: Z-coordinate (in world-space)*/\
@@ -37,8 +37,12 @@
     TR_GBUFFER_ENTRY(instance_id, vk::Format::eR32Sint)\
     /* R: View-space linear depth, G: Derivative of linear depth B: pos fwidth length A: normal fwidth length*/\
     TR_GBUFFER_ENTRY(linear_depth, vk::Format::eR32G32B32A32Sfloat)\
+    /* RG: Packed world-space flat normal (octahedral mapping) */\
+    TR_GBUFFER_ENTRY(flat_normal, vk::Format::eR16G16Snorm)\
+    /* RGB: emission */\
+    TR_GBUFFER_ENTRY(emission, vk::Format::eR16G16B16A16Sfloat) \
     /* R: View-space Z-coordinate (hyperbolic, depending on projection) */\
-    TR_GBUFFER_ENTRY(depth, vk::Format::eD32Sfloat)\
+    TR_GBUFFER_ENTRY(depth, vk::Format::eD32Sfloat)
 
 
 namespace tr

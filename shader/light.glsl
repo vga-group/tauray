@@ -30,8 +30,7 @@ struct tri_light
 {
     vec3 pos[3];
     vec3 emission_factor;
-
-    vec2 uv[3];
+    uint uv[3];
     int emission_tex_id;
 };
 

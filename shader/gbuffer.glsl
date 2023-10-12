@@ -167,47 +167,95 @@ vec4 read_gbuffer_albedo(ivec3 pos) { return vec4(0); }
 
 #endif
 
+
+
 //==============================================================================
-// Material
+// Emission
 //==============================================================================
 
-vec2 pack_gbuffer_material(sampled_material mat)
+#ifdef EMISSION_TARGET_BINDING
+layout(binding = EMISSION_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray emission_target;
+
+void write_gbuffer_emission(vec3 emission, ivec3 pos) { imageStore(emission_target, pos, vec4(emission, 0)); }
+vec3 read_gbuffer_emission(ivec3 pos) { return imageLoad(emission_target, pos).xyz; }
+
+#elif defined(EMISSION_TARGET_LOCATION)
+
+layout(location = EMISSION_TARGET_LOCATION) out vec4 emission_target;
+
+void write_gbuffer_emission(vec3 emission)
 {
-    return vec2(mat.metallic, mat.roughness);
-}
-
-#ifdef MATERIAL_TARGET_BINDING
-layout(binding = MATERIAL_TARGET_BINDING, set = 0, rg16) uniform image2DArray material_target;
-
-void write_gbuffer_material(vec2 metallic_roughness, ivec3 pos)
-{
-    imageStore(material_target, pos, vec4(metallic_roughness, 0, 0));
-}
-
-vec2 read_gbuffer_material(ivec3 pos)
-{
-    return imageLoad(material_target, pos).xy;
-}
-
-#elif defined(MATERIAL_TARGET_LOCATION)
-
-layout(location = MATERIAL_TARGET_LOCATION) out vec2 material_target;
-
-void write_gbuffer_material(vec2 metallic_roughness)
-{
-    material_target = metallic_roughness;
+    emission_target = vec4(emission, 0.0f);
 }
 
 #else
 
-void write_gbuffer_material(vec2 metallic_roughness, ivec3 pos) {}
-void write_gbuffer_material(vec2 metallic_roughness) {}
-vec2 read_gbuffer_material(ivec3 pos) { return vec2(0); }
+void write_gbuffer_emission(vec3 emission, ivec3 pos) {}
+void write_gbuffer_emission(vec3 emission) {}
+vec3 read_gbuffer_emission(ivec3 pos) { return vec3(0); }
 
 #endif
 
 //==============================================================================
-// Normal
+// Material
+//==============================================================================
+
+vec4 pack_gbuffer_material(sampled_material mat)
+{
+    float ior = mat.ior_out / mat.ior_in;
+    return vec4(mat.metallic, mat.roughness, ior*0.25f, mat.transmittance);
+}
+
+sampled_material unpack_gbuffer_material(vec4 packed_mat, vec4 albedo, vec3 emission)
+{
+    sampled_material ret;
+    ret.albedo = albedo;
+    ret.metallic = packed_mat[0];
+    ret.roughness = packed_mat[1];
+    ret.emission = emission;
+    ret.transmittance = packed_mat[3];
+    ret.ior_in = 1.0f;
+    ret.ior_out = packed_mat[2] * 4.0f;
+    ret.f0 = (ret.ior_out - ret.ior_in)/(ret.ior_out + ret.ior_in);
+    ret.f0 *= ret.f0;
+    ret.double_sided = true;
+    ret.shadow_terminator_mul = 0.0f;
+
+    return ret;
+}
+
+#ifdef MATERIAL_TARGET_BINDING
+layout(binding = MATERIAL_TARGET_BINDING, set = 0, rgba8) uniform image2DArray material_target;
+
+void write_gbuffer_material(sampled_material mat, ivec3 pos)
+{
+    imageStore(material_target, pos, pack_gbuffer_material(mat));
+}
+
+vec4 read_gbuffer_material(ivec3 pos)
+{
+    return imageLoad(material_target, pos);
+}
+
+#elif defined(MATERIAL_TARGET_LOCATION)
+
+layout(location = MATERIAL_TARGET_LOCATION) out vec4 material_target;
+
+void write_gbuffer_material(sampled_material mat)
+{
+    material_target = pack_gbuffer_material(mat);
+}
+
+#else
+
+void write_gbuffer_material(sampled_material mat, ivec3 pos) {}
+void write_gbuffer_material(vec4 packed_mat) {}
+vec4 read_gbuffer_material(ivec3 pos) { return vec4(0); }
+
+#endif
+
+//==============================================================================
+// Normals
 //==============================================================================
 
 vec2 pack_gbuffer_normal(vec3 normal)
@@ -227,6 +275,11 @@ vec3 unpack_gbuffer_normal(vec2 packed_normal)
     normal.xy += clamp(normal.z, -1.0f, 0.0f) * (step(vec2(0), normal.xy) * 2 - 1);
     return normalize(normal);
 }
+
+//==============================================================================
+// Mapped normal
+//==============================================================================
+
 #ifdef NORMAL_TARGET_BINDING
 layout(binding = NORMAL_TARGET_BINDING, set = 0, rg16_snorm) uniform image2DArray normal_target;
 
@@ -257,6 +310,43 @@ void write_gbuffer_normal(vec3 normal)
 void write_gbuffer_normal(vec3 normal, ivec3 pos) {}
 void write_gbuffer_normal(vec3 normal) {}
 vec3 read_gbuffer_normal(ivec3 pos) { return vec3(0,0,1); }
+
+#endif
+
+//==============================================================================
+// Flat normal
+//==============================================================================
+
+#ifdef FLAT_NORMAL_TARGET_BINDING
+layout(binding = FLAT_NORMAL_TARGET_BINDING, set = 0, rg16_snorm) uniform image2DArray flat_normal_target;
+
+void write_gbuffer_flat_normal(vec3 normal, ivec3 pos)
+{
+    imageStore(
+        normal_target, pos,
+        vec4(pack_gbuffer_normal(normal), 0, 0)
+    );
+}
+
+vec3 read_gbuffer_flat_normal(ivec3 pos)
+{
+    return unpack_gbuffer_normal(imageLoad(flat_normal_target, pos).xy);
+}
+
+#elif defined(FLAT_NORMAL_TARGET_LOCATION)
+
+layout(location = FLAT_NORMAL_TARGET_LOCATION) out vec2 flat_normal_target;
+
+void write_gbuffer_flat_normal(vec3 normal)
+{
+    flat_normal_target = pack_gbuffer_normal(normal);
+}
+
+#else
+
+void write_gbuffer_flat_normal(vec3 normal, ivec3 pos) {}
+void write_gbuffer_flat_normal(vec3 normal) {}
+vec3 read_gbuffer_flat_normal(ivec3 pos) { return vec3(0,0,1); }
 
 #endif
 

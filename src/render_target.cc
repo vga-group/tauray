@@ -37,12 +37,12 @@ void render_target::transition_layout_temporary(
 
 vk::ImageSubresourceLayers render_target::get_layers() const
 {
-    return {vk::ImageAspectFlagBits::eColor, 0, base_layer, layer_count};
+    return {deduce_aspect_mask(format), 0, base_layer, layer_count};
 }
 
 vk::ImageSubresourceRange render_target::get_range() const
 {
-    return {vk::ImageAspectFlagBits::eColor, 0, 1, base_layer, layer_count};
+    return {deduce_aspect_mask(format), 0, 1, base_layer, layer_count};
 }
 
 }

@@ -101,13 +101,8 @@ struct tri_light_entry
 {
     pvec3 pos[3];
     pvec3 emission_factor;
-
-    pvec2 uv[3];
+    uint32_t uv[3];
     int emission_tex_id;
-
-    // TODO: Put pre-calculated data here, since we want to pad to a multiple of
-    // 32 anyway. There's 5 ints left.
-    //int padding[5];
 };
 
 struct sh_grid_buffer
@@ -171,6 +166,8 @@ struct scene_metadata_buffer
     uint32_t point_light_count;
     uint32_t directional_light_count;
     uint32_t tri_light_count;
+    int32_t environment_proj;
+    pvec4 environment_factor;
 };
 
 struct skinning_push_constants
@@ -1300,6 +1297,16 @@ void scene_stage::update(uint32_t frame_index)
             data->point_light_count = point_light_count;
             data->directional_light_count = directional_light_count;
             data->tri_light_count = tri_light_count;
+            if(envmap)
+            {
+                data->environment_factor = vec4(envmap->get_factor(), 1);
+                data->environment_proj = (int)envmap->get_projection();
+            }
+            else
+            {
+                data->environment_factor = vec4(0);
+                data->environment_proj = -1;
+            }
         }
     );
 
