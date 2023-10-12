@@ -439,4 +439,22 @@ vec3 get_barycentric_coords(vec3 p, vec3 A, vec3 B, vec3 C)
     return bary;
 }
 
+vec2 octahedral_encode(vec3 normal)
+{
+    normal /= abs(normal.x) + abs(normal.y) + abs(normal.z);
+    return normal.z >= 0.0 ?
+        normal.xy : (1 - abs(normal.yx)) * (step(vec2(0), normal.xy)*2-1);
+}
+
+vec3 octahedral_decode(vec2 packed_normal)
+{
+    vec3 normal = vec3(
+        packed_normal.x,
+        packed_normal.y,
+        1 - abs(packed_normal.x) - abs(packed_normal.y)
+    );
+    normal.xy += clamp(normal.z, -1.0f, 0.0f) * (step(vec2(0), normal.xy) * 2 - 1);
+    return normalize(normal);
+}
+
 #endif

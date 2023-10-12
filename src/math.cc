@@ -326,4 +326,22 @@ size_t hash_combine(size_t a, size_t b)
     return a ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
 }
 
+vec2 octahedral_encode(vec3 normal)
+{
+    normal /= abs(normal.x) + abs(normal.y) + abs(normal.z);
+    return normal.z >= 0.0 ?
+        vec2(normal.x, normal.y) : (1.0f - abs(vec2(normal.y, normal.x))) * (step(vec2(0), vec2(normal.x, normal.y))*2.0f-1.0f);
+}
+
+vec3 octahedral_decode(vec2 packed_normal)
+{
+    vec3 normal = vec3(
+        packed_normal.x,
+        packed_normal.y,
+        1 - abs(packed_normal.x) - abs(packed_normal.y)
+    );
+    normal += vec3(clamp(normal.z, -1.0f, 0.0f) * (step(vec2(0), vec2(normal.x, normal.y)) * 2.0f - 1.0f), 0);
+    return normalize(normal);
+}
+
 }

@@ -8,6 +8,7 @@
 #include "misc.hh"
 #include "texture.hh"
 #include "sampler.hh"
+#include "log.hh"
 
 namespace
 {

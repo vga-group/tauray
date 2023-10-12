@@ -51,6 +51,9 @@
 #define INSTANCE_ID_TARGET_BINDING 19
 #endif
 
+#define LIGHT_BVH_BUFFER_BINDING 23
+#define LIGHT_BIT_TRAIL_BUFFER_BINDING 24
+
 layout(push_constant, scalar) uniform push_constant_buffer
 {
     uint samples;
@@ -80,7 +83,7 @@ void evaluate_direct_ray(
 
     intersection_pdf nee_pdf;
     vec3 light;
-    bool terminal = !get_intersection_info(pos, view, first_hit_vertex, nee_pdf, first_hit_material, light);
+    bool terminal = !get_intersection_info(pos, vec3(0), view, first_hit_vertex, nee_pdf, first_hit_material, light);
 
     color += (light + first_hit_material.emission) * SAMPLES_PER_PASS;
 

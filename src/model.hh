@@ -54,7 +54,7 @@ public:
     const std::vector<joint_data>& get_joints() const;
 
     void init_joints_buffer(device_mask dev);
-    bool has_joints_buffer();
+    bool has_joints_buffer() const;
     const gpu_buffer& get_joint_buffer() const;
 
     void update_joints(uint32_t frame_index);

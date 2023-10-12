@@ -4,6 +4,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
 
 // Flags:
 // USE_NEXT_EVENT_ESTIMATION:
@@ -71,6 +72,9 @@
 #ifdef USE_INSTANCE_ID_TARGET
 #define INSTANCE_ID_TARGET_BINDING 19
 #endif
+
+#define LIGHT_BVH_BUFFER_BINDING 23
+#define LIGHT_BIT_TRAIL_BUFFER_BINDING 24
 
 layout(push_constant, scalar) uniform push_constant_buffer
 {
