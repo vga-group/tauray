@@ -19,6 +19,14 @@ namespace tr
         MIS_BALANCE_HEURISTIC,
         MIS_POWER_HEURISTIC
     };
+
+    enum class bd
+    {
+        OFF = 0,
+        BOUNCE_COUNT,
+        CONTRIBUTION,
+    };
+
     void add_defines(multiple_importance_sampling_mode mode, std::map<std::string, std::string>& defines);
 
     enum class bounce_sampling_mode

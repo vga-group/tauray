@@ -486,6 +486,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rt_opt.tri_light_mode = opt.tri_light_mode;
                 rt_opt.post_process.tonemap = tonemap;
                 rt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
+                rt_opt.boda = opt.bounce_data;
                 if(opt.temporal_reprojection > 0.0f)
                     rt_opt.post_process.temporal_reprojection =
                         temporal_reprojection_stage::options{opt.temporal_reprojection, {}};

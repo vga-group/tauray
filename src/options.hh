@@ -201,6 +201,13 @@
         {"box", film_filter::BOX}, \
         {"blackman-harris", film_filter::BLACKMAN_HARRIS} \
     )\
+    TR_ENUM_OPT(bounce_data, bd, \
+        "shows bounce data", \
+        bd::OFF, \
+        {"off", bd::OFF}, \
+        {"bounce-count", bd::BOUNCE_COUNT}, \
+        {"bounce-contribution", bd::CONTRIBUTION} \
+    )\
     TR_FLOAT_OPT(film_radius, \
         "Sets the sampling radius for the film sampling. This is in pixels " \
         "for most rendering methods.", \

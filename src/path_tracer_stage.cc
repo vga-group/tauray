@@ -67,6 +67,12 @@ path_tracer_stage::path_tracer_stage(
     if(opt.depth_of_field)
         defines["USE_DEPTH_OF_FIELD"];
 
+    if(opt.boda == bd::BOUNCE_COUNT)
+        defines["BD_BOUNCE_COUNT"];
+
+    if(opt.boda == bd::CONTRIBUTION)
+        defines["BD_CONTRIBUTION"];
+
 #define TR_GBUFFER_ENTRY(name, ...)\
     if(output_target.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
     TR_GBUFFER_ENTRIES

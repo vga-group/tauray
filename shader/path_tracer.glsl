@@ -360,12 +360,16 @@ void evaluate_ray(
     out vec4 diffuse,
     out vec4 reflection,
     out pt_vertex_data first_hit_vertex,
-    out sampled_material first_hit_material
+    out sampled_material first_hit_material,
+    out float bounce_data
 ){
     vec3 attenuation = vec3(1);
 
     diffuse = vec4(0,0,0,0);
     reflection = vec4(0,0,0,0);
+    bounce_data = 0.0f;
+
+    float total_luminance = 0.0f;
 
     float regularization = 1.0f;
     float bsdf_pdf = 0.0f;
@@ -459,6 +463,14 @@ void evaluate_ray(
                 diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
         }
 
+#if defined(BD_CONTRIBUTION)
+        float lum = rgb_to_luminance(modulate_color(first_hit_material, diffuse.rgb, reflection.rgb));
+        total_luminance += lum;
+        bounce_data += lum * bounce;
+#elif defined(BD_BOUNCE_COUNT)
+        bounce_data += 1.0f;
+#endif
+
         if(terminal) break;
 
         // Lastly, figure out the next ray and assign proper attenuation for it.
@@ -482,6 +494,11 @@ void evaluate_ray(
 #endif
         if(max(attenuation.x, max(attenuation.y, attenuation.z)) <= 0.0f) break;
     }
+
+#if defined(BD_CONTRIBUTION)
+    if(total_luminance > 0.0f)
+        bounce_data /= total_luminance;
+#endif
 }
 
 #endif
@@ -516,6 +533,26 @@ void get_world_camera_ray(inout local_sampler lsampler, out vec3 origin, out vec
 #endif
         origin, dir
     );
+}
+
+void write_noise_data(vec3 data)
+{
+    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+#if DISTRIBUTION_STRATEGY != 0
+    if(p != ivec3(-1))
+#endif
+    {
+        uint prev_samples = distribution.samples_accumulated + control.previous_samples;
+
+#ifdef USE_TRANSPARENT_BACKGROUND
+        const float alpha = first_hit_material.albedo.a;
+#else
+        const float alpha = 1.0;
+#endif
+    
+    accumulate_gbuffer_color(vec4(data, alpha), p, control.samples, prev_samples);
+
+    }
 }
 
 void write_all_outputs(
