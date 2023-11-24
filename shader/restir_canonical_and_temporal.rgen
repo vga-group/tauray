@@ -180,20 +180,18 @@ void main()
         reservoir prev_r = read_reservoir_buffer(pos, 0);
 
         //evaluate_ phat(X_i)
-        // This update shouldn't be necessary unless the scene is dynamic, in
-        // which case the current implementation has problems anyway.
-        /*
         vec3 dir; float dist2; vec3 norm;
         prev_r.contribution = light_contribution(prev_r.ls, primary_domain, dir, dist2, norm);
+
+        // Assuming unchanged visibility when reusing
+        /*
         prev_r.contribution *= shadow_ray(
-            primary_domain.pos,
-            control.min_ray_dist,
-            dir,
+            primary_domain.pos, control.min_ray_dist, dir,
             sqrt(dist2) - control.min_ray_dist
         );
+        */
 
         prev_r.target_function = rgb_to_luminance(prev_r.contribution);
-        */
 
         //update
         float mis_weight = prev_r.confidence / (r.confidence + prev_r.confidence);
