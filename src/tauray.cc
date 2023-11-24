@@ -651,8 +651,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.ris_sample_count = opt.restir.ris_samples;
                 re_opt.spatial_sample_count = opt.restir.spatial_samples;
                 re_opt.max_confidence = opt.restir.max_confidence;
-                re_opt.temporal_reuse = opt.restir.max_confidence >= 0;
-                re_opt.spatial_reuse = opt.restir.spatial_samples >= 0;
+                re_opt.temporal_reuse = opt.restir.max_confidence > 0;
+                re_opt.spatial_reuse = opt.restir.spatial_samples > 0;
                 re_opt.shared_visibility = opt.restir.shared_visibility;
                 re_opt.sample_visibility = opt.restir.sample_visibility;
                 re_opt.scene_options = scene_options;

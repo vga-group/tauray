@@ -222,7 +222,7 @@ void main()
         }
         r.confidence += n.confidence;
 
-        if(!is_null_sample(n.ls))
+        if(!is_null_sample(canonical_reservoir.ls))
         { // Calculate effect on MIS weight for canonical sample
             vec3 light_dir;
             float light_dist2;
@@ -301,7 +301,6 @@ void main()
 
     uint prev_samples = distribution.samples_accumulated + control.previous_samples;
 
-    accumulate_gbuffer_color(vec4(r.contribution *
-                    r.uc_weight + primary_domain.mat.emission, 1.0f), p, 1, prev_samples);
+    accumulate_gbuffer_color(vec4(r.contribution * r.uc_weight + primary_domain.mat.emission, 1.0f), p, 1, prev_samples);
 }
 
