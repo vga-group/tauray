@@ -81,8 +81,6 @@ layout(push_constant, scalar) uniform push_constant_buffer
     float film_radius;
     float russian_roulette_delta;
     int antialiasing;
-    int environment_proj;
-    vec4 environment_factor;
     float regularization_gamma;
 } control;
 

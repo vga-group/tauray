@@ -31,7 +31,8 @@ rt_renderer<Pipeline>::rt_renderer(context& ctx, const options& opt)
 
     if(
         (opt.projection == camera::PERSPECTIVE ||
-         opt.projection == camera::ORTHOGRAPHIC)
+         opt.projection == camera::ORTHOGRAPHIC) ||
+        std::is_same_v<Pipeline, restir_di_stage>
     ) use_raster_gbuffer = true;
 
     std::vector<device>& devices = ctx.get_devices();
@@ -87,6 +88,8 @@ void rt_renderer<Pipeline>::render()
     uint32_t swapchain_index, frame_index;
     ctx->get_indices(swapchain_index, frame_index);
 
+    const bool raster_before_rt = std::is_same_v<Pipeline, restir_di_stage>;
+
     device& display_device = ctx->get_display_device();
     std::vector<device>& devices = ctx->get_devices();
 
@@ -98,6 +101,10 @@ void rt_renderer<Pipeline>::render()
         dependencies device_deps = common_deps;
         if(i == ctx->get_display_device().id)
             device_deps.concat(post_processing->get_gbuffer_write_dependencies());
+
+        if(gbuffer_rasterizer && raster_before_rt)
+            device_deps = gbuffer_rasterizer->run(device_deps);
+
         device_deps = per_device[i].ray_tracer->run(device_deps);
         last_frame_deps.concat(device_deps);
 
@@ -105,7 +112,7 @@ void rt_renderer<Pipeline>::render()
             display_deps.add(per_device[i].transfer->run(device_deps, frame_index));
         else
         {
-            if(gbuffer_rasterizer)
+            if(gbuffer_rasterizer && !raster_before_rt)
                 device_deps = gbuffer_rasterizer->run(device_deps);
             display_deps.concat(device_deps, i);
         }
@@ -187,6 +194,17 @@ void rt_renderer<Pipeline>::init_resources()
     post_processing.emplace(ctx->get_display_device(), *scene_update, ctx->get_size(), get_pp_opt(opt));
     post_processing->set_gbuffer_spec(spec);
 
+    if constexpr(std::is_same_v<Pipeline, restir_di_stage>)
+    {
+        spec.flat_normal_present = true;
+        spec.albedo_present = true;
+        spec.emission_present = true;
+        spec.material_present = true;
+        spec.normal_present = true;
+        spec.pos_present = true;
+        spec.screen_motion_present = true;
+    }
+
     // Disable raster G-Buffer when nothing rasterizable is needed.
     if(
         spec.present_count()
@@ -255,7 +273,7 @@ void rt_renderer<Pipeline>::init_resources()
         }
 
         gbuffer_target transfer_target = gbuffer.get_array_target(d.id);
-        if(use_raster_gbuffer)
+        if(use_raster_gbuffer && !std::is_same_v<Pipeline, restir_di_stage>)
         {
             gbuffer_target limited_target;
             limited_target.color = transfer_target.color;
@@ -404,5 +422,6 @@ template class rt_renderer<path_tracer_stage>;
 template class rt_renderer<whitted_stage>;
 template class rt_renderer<feature_stage>;
 template class rt_renderer<direct_stage>;
+template class rt_renderer<restir_di_stage>;
 
 }

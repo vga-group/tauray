@@ -39,9 +39,6 @@ namespace whitted
         uint32_t directional_light_count;
         uint32_t point_light_count;
         uint32_t max_depth;
-        // -1 for no environment map
-        int environment_proj;
-        pvec4 environment_factor;
         pvec4 ambient;
         float min_ray_dist;
     };
@@ -99,17 +96,6 @@ void whitted_stage::record_command_buffer_pass(
         cur_scene->count<spotlight>();
     control.max_depth = opt.max_ray_depth;
 
-    environment_map* envmap = ss->get_environment_map();
-    if(envmap)
-    {
-        control.environment_factor = vec4(envmap->get_factor(), 1);
-        control.environment_proj = (int)envmap->get_projection();
-    }
-    else
-    {
-        control.environment_factor = vec4(0);
-        control.environment_proj = -1;
-    }
     control.ambient = pvec4(ss->get_ambient(), 1);
     control.min_ray_dist = opt.min_ray_dist;
 

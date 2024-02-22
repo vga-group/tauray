@@ -127,6 +127,8 @@ layout(binding = SCENE_METADATA_BUFFER_BINDING, set = 0, scalar) uniform scene_m
     uint point_light_count;
     uint directional_light_count;
     uint tri_light_count;
+    int environment_proj;
+    vec4 environment_factor;
 } scene_metadata;
 #endif
 

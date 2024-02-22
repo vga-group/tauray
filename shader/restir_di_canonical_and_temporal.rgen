@@ -1,0 +1,215 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
+
+#define TLAS_BINDING 0
+#define SCENE_DATA_BUFFER_BINDING 1
+#define CAMERA_DATA_BINDING 2
+#define DISTRIBUTION_DATA_BINDING 3
+#define VERTEX_BUFFER_BINDING 4
+#define INDEX_BUFFER_BINDING 5
+#define TEXTURE_ARRAY_BINDING 6
+#define POINT_LIGHT_BUFFER_BINDING 7
+#define SCENE_METADATA_BUFFER_BINDING 8
+#define DIRECTIONAL_LIGHT_BUFFER_BINDING 9
+#define SAMPLING_DATA_BINDING 10
+#define LIGHT_CLUSTER_BUFFER_BINDING 11
+#define ENVIRONMENT_MAP_BINDING  12
+#ifdef NEE_SAMPLE_ENVMAP
+#define ENVIRONMENT_MAP_ALIAS_TABLE_BINDING 13
+#endif
+
+#ifdef IMPORTANCE_SAMPLE_ENVMAP
+#define ENVIRONMENT_MAP_ALIAS_TABLE_BINDING 14
+#endif
+
+#ifdef USE_COLOR_TARGET
+#define COLOR_TARGET_BINDING 15
+#endif
+
+#ifdef USE_ALBEDO_TARGET
+#define ALBEDO_TARGET_BINDING 16
+#endif
+
+#ifdef USE_NORMAL_TARGET
+#define NORMAL_TARGET_BINDING 17
+#endif
+
+#ifdef USE_POS_TARGET
+#define POS_TARGET_BINDING 18
+#endif
+
+#ifdef USE_MATERIAL_TARGET
+#define MATERIAL_TARGET_BINDING 19
+#endif
+
+#ifdef USE_SCREEN_MOTION_TARGET
+#define SCREEN_MOTION_TARGET_BINDING 20
+#endif
+
+#ifdef USE_EMISSION_TARGET
+#define EMISSION_TARGET_BINDING 22
+#endif
+
+#ifdef USE_FLAT_NORMAL_TARGET
+#define FLAT_NORMAL_TARGET_BINDING 23
+#endif
+
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+#define TRI_LIGHT_BUFFER_BINDING 24
+#define TRI_LIGHT_INDEX_BUFFER_BINDING 25
+#define TRI_LIGHT_RANGE_BUFFER_BINDING 27
+#endif
+#define POINT_LIGHT_RANGE_BUFFER_BINDING 28
+
+#define TEMPORAL_WRITE 1
+int debug = 0;
+
+layout(push_constant, scalar) uniform push_constant_buffer
+{
+    uint samples;
+    uint previous_samples;
+    float min_ray_dist;
+    float max_confidence;
+    float search_radius;
+} control;
+
+#include "restir_di.glsl"
+
+reservoir resampled_importance_sampling(
+    inout local_sampler lsampler,
+    domain dom,
+    float prev_confidence
+){
+    reservoir r = create_reservoir();
+
+    vec3 chosen_light_dir; float chosen_light_dist2;
+    for(int i = 0; i < RIS_SAMPLE_COUNT; i++)
+    {
+        // create X_i
+        float light_pdf;
+        light_sample ls;
+        sample_canonical(
+            generate_uniform_random_uint(lsampler.rs),
+            dom,
+            ls.light_type,
+            ls.light_index,
+            ls.light_data,
+            light_pdf
+        );
+
+        // evaluate p_hat(X_i)
+        vec3 light_dir, light_norm; float light_dist2;
+        // visibility
+        vec3 contrib = light_contribution(ls, dom, light_dir, light_dist2, light_norm);
+#ifndef SHARED_VISIBILITY
+        contrib *= shadow_ray(
+            dom.pos,
+            control.min_ray_dist,
+            light_dir,
+            sqrt(light_dist2) - control.min_ray_dist
+        );
+#endif
+        float target_function = rgb_to_luminance(contrib);
+
+        // update
+        float mis_weight = 1.0f / (RIS_SAMPLE_COUNT + prev_confidence);
+        float weight = mis_weight * target_function / light_pdf;
+
+        //why can weight be Nan?
+        if(isnan(weight))
+            weight = 0.0f;
+
+        if(update_reservoir(
+            r, ls, weight,
+            generate_uniform_random(lsampler.rs).x
+        )){
+            r.target_function = target_function;
+            chosen_light_dir = light_dir;
+            chosen_light_dist2 = light_dist2;
+        }
+
+        r.confidence += 1.0f;
+    }
+
+    r.uc_weight = calculate_uc_weight(r);
+#if defined(SHARED_VISIBILITY) && defined(SAMPLE_VISIBILITY)
+    r.uc_weight *= shadow_ray(
+        dom.pos,
+        control.min_ray_dist,
+        chosen_light_dir,
+        sqrt(chosen_light_dist2) - control.min_ray_dist
+    );
+#endif
+
+    return r;
+}
+
+void main()
+{
+    local_sampler lsampler = init_local_sampler(
+        uvec4(
+            get_pixel_pos(),
+            gl_LaunchIDEXT.z,
+            distribution.samples_accumulated + control.previous_samples
+        )
+    );
+
+    ivec3 current_pixel = ivec3(gl_LaunchIDEXT);
+    domain primary_domain = get_domain(current_pixel);
+
+    // RIS
+#ifdef TEMPORAL_REUSE
+    ivec2 pos = get_reprojected_pixel(primary_domain, lsampler);
+    bool reuse = !is_first_frame() && !temporal_edge_detection(primary_domain, pos) && in_screen(pos);
+    float prev_confidence = reuse ? imageLoad(reservoir_data, ivec3(pos, 0)).w : 0;
+#else
+    float prev_confidence = 0;
+#endif
+    reservoir r = resampled_importance_sampling(lsampler, primary_domain, prev_confidence);
+
+    // TEMPORAL REUSE
+#ifdef TEMPORAL_REUSE
+    if(reuse)
+    {
+        reservoir prev_r = read_reservoir_buffer(pos, 0);
+
+        //evaluate_ phat(X_i)
+        vec3 dir; float dist2; vec3 norm;
+        prev_r.contribution = light_contribution(prev_r.ls, primary_domain, dir, dist2, norm);
+
+        // Assuming unchanged visibility when reusing
+        /*
+        prev_r.contribution *= shadow_ray(
+            primary_domain.pos, control.min_ray_dist, dir,
+            sqrt(dist2) - control.min_ray_dist
+        );
+        */
+
+        prev_r.target_function = rgb_to_luminance(prev_r.contribution);
+
+        //update
+        float mis_weight = prev_r.confidence / (r.confidence + prev_r.confidence);
+        float weight = mis_weight * prev_r.target_function * prev_r.uc_weight;
+
+        if(update_reservoir(
+            r, prev_r.ls,
+            weight,
+            generate_uniform_random(lsampler.rs).x
+        )) r.target_function = prev_r.target_function;
+        r.confidence += prev_r.confidence;
+        r.uc_weight = calculate_uc_weight(r);
+    }
+
+    //clamp counter
+    r.confidence = min(r.confidence, control.max_confidence);
+#endif
+
+    write_reservoir_buffer(r, get_pixel_pos(), TEMPORAL_WRITE);
+    write_previous_normal_buffer(primary_domain.tbn[2], get_pixel_pos());
+    write_previous_position_buffer(primary_domain.pos, get_pixel_pos());
+}

@@ -234,5 +234,96 @@ void get_screen_camera_ray(in camera_data cam, vec2 pixel_offset, out vec3 origi
 }
 #endif
 
+#ifdef SCENE_METADATA_BUFFER_BINDING
+#ifdef ENVIRONMENT_MAP_ALIAS_TABLE_BINDING
+// Based on CC0 code from https://gist.github.com/juliusikkala/6c8c186f0150fe877a55cee4d266b1b0
+vec3 sample_environment_map(
+    uvec3 rand,
+    out vec3 shadow_ray_direction,
+    out float shadow_ray_length,
+    out float pdf
+){
+    vec3 color = scene_metadata.environment_factor.rgb;
+    if(scene_metadata.environment_proj >= 0)
+    {
+        uvec2 size = textureSize(environment_map_tex, 0).xy;
+        const uint pixel_count = size.x * size.y;
+        uvec2 ip = clamp(rand.xy / (0xFFFFFFFFu / size), uvec2(0), size-1u);
+        int i = int(ip.x + ip.y * size.x);
+        alias_table_entry at = environment_map_alias_table.entries[i];
+        pdf = at.pdf;
+        if(rand.z > at.probability)
+        {
+            i = int(at.alias_id);
+            pdf = at.alias_pdf;
+        }
+
+        ivec2 p = ivec2(i % size.x, i / size.x);
+        vec2 off = ldexp(vec2(uvec2(rand.xy*pixel_count)), ivec2(-32));
+        vec2 uv = (vec2(p) + off)/vec2(size);
+
+        shadow_ray_direction = uv_to_latlong_direction(uv);
+
+        color *= texture(environment_map_tex, vec2(uv.x, uv.y)).rgb;
+    }
+    else
+    {
+        pdf = 1.0f / (4.0f * M_PI);
+        shadow_ray_direction = sample_sphere(ldexp(vec2(rand.xy), ivec2(-32)));
+    }
+    shadow_ray_length = RAY_MAX_DIST;
+    return color;
+}
+
+float sample_environment_map_pdf(vec3 dir)
+{
+    if(scene_metadata.environment_proj >= 0)
+    {
+        uvec2 size = textureSize(environment_map_tex, 0).xy;
+        const uint pixel_count = size.x * size.y;
+        uint i = latlong_direction_to_pixel_id(dir, ivec2(size));
+        alias_table_entry at = environment_map_alias_table.entries[i];
+        return at.pdf;
+    }
+    else return 1.0f / (4.0f * M_PI);
+}
+#endif
+
+void get_nee_sampling_probabilities(out float point, out float triangle, out float directional, out float envmap)
+{
+#ifdef NEE_SAMPLE_POINT_LIGHTS
+    if(scene_metadata.point_light_count > 0) point = NEE_SAMPLE_POINT_LIGHTS;
+    else
+#endif
+    point = 0.0f;
+
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+    if(scene_metadata.tri_light_count > 0) triangle = NEE_SAMPLE_EMISSIVE_TRIANGLES;
+    else
+#endif
+    triangle = 0.0f;
+
+#ifdef NEE_SAMPLE_DIRECTIONAL_LIGHTS
+    if(scene_metadata.directional_light_count > 0) directional = NEE_SAMPLE_DIRECTIONAL_LIGHTS;
+    else
+#endif
+    directional = 0.0f;
+
+#ifdef NEE_SAMPLE_ENVMAP
+    if(scene_metadata.environment_proj >= 0) envmap = NEE_SAMPLE_ENVMAP;
+    else
+#endif
+    envmap = 0.0f;
+
+    float sum = point + triangle + directional + envmap;
+    float inv_sum = sum <= 0.0f ? 0.0f : (1.0f/sum + 1e-5f);
+
+    point *= inv_sum;
+    triangle *= inv_sum;
+    directional *= inv_sum;
+    envmap *= inv_sum;
+}
+#endif
+
 #endif
 

@@ -16,8 +16,6 @@ layout(push_constant) uniform push_constant_buffer
     uint directional_light_count;
     uint point_light_count;
     uint max_depth;
-    int environment_proj;
-    vec4 environment_factor;
     vec4 ambient;
     float min_ray_dist;
 } control;
