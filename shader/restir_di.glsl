@@ -1,5 +1,5 @@
-#ifndef RESTIR_GLSL
-#define RESTIR_GLSL
+#ifndef RESTIR_DI_GLSL
+#define RESTIR_DI_GLSL
 
 #define CALC_PREV_VERTEX_POS
 

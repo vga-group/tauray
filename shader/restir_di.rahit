@@ -10,7 +10,7 @@ hitAttributeEXT vec2 attribs;
 #define VERTEX_BUFFER_BINDING 4
 #define INDEX_BUFFER_BINDING 5
 #define TEXTURE_ARRAY_BINDING 6
-#include "restir.glsl"
+#include "restir_di.glsl"
 
 layout(location = 0) rayPayloadInEXT hit_payload payload;
 

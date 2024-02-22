@@ -32,7 +32,7 @@ rt_renderer<Pipeline>::rt_renderer(context& ctx, const options& opt)
     if(
         (opt.projection == camera::PERSPECTIVE ||
          opt.projection == camera::ORTHOGRAPHIC) ||
-        std::is_same_v<Pipeline, restir_stage>
+        std::is_same_v<Pipeline, restir_di_stage>
     ) use_raster_gbuffer = true;
 
     std::vector<device>& devices = ctx.get_devices();
@@ -88,7 +88,7 @@ void rt_renderer<Pipeline>::render()
     uint32_t swapchain_index, frame_index;
     ctx->get_indices(swapchain_index, frame_index);
 
-    const bool raster_before_rt = std::is_same_v<Pipeline, restir_stage>;
+    const bool raster_before_rt = std::is_same_v<Pipeline, restir_di_stage>;
 
     device& display_device = ctx->get_display_device();
     std::vector<device>& devices = ctx->get_devices();
@@ -194,7 +194,7 @@ void rt_renderer<Pipeline>::init_resources()
     post_processing.emplace(ctx->get_display_device(), *scene_update, ctx->get_size(), get_pp_opt(opt));
     post_processing->set_gbuffer_spec(spec);
 
-    if constexpr(std::is_same_v<Pipeline, restir_stage>)
+    if constexpr(std::is_same_v<Pipeline, restir_di_stage>)
     {
         spec.flat_normal_present = true;
         spec.albedo_present = true;
@@ -273,7 +273,7 @@ void rt_renderer<Pipeline>::init_resources()
         }
 
         gbuffer_target transfer_target = gbuffer.get_array_target(d.id);
-        if(use_raster_gbuffer && !std::is_same_v<Pipeline, restir_stage>)
+        if(use_raster_gbuffer && !std::is_same_v<Pipeline, restir_di_stage>)
         {
             gbuffer_target limited_target;
             limited_target.color = transfer_target.color;
@@ -422,6 +422,6 @@ template class rt_renderer<path_tracer_stage>;
 template class rt_renderer<whitted_stage>;
 template class rt_renderer<feature_stage>;
 template class rt_renderer<direct_stage>;
-template class rt_renderer<restir_stage>;
+template class rt_renderer<restir_di_stage>;
 
 }

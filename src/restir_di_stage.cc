@@ -1,4 +1,4 @@
-#include "restir_stage.hh"
+#include "restir_di_stage.hh"
 #include "scene.hh"
 #include "misc.hh"
 #include "environment_map.hh"
@@ -8,14 +8,14 @@ namespace
 {
 using namespace tr;
 
-namespace restir
+namespace restir_di
 {
     rt_shader_sources load_sources(
-        restir_stage::options opt,
+        restir_di_stage::options opt,
         const gbuffer_target& gbuf
     ){
-        shader_source pl_rint("shader/restir_point_light.rint");
-        shader_source shadow_chit("shader/restir_shadow.rchit");
+        shader_source pl_rint("shader/restir_di_point_light.rint");
+        shader_source shadow_chit("shader/restir_di_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["RIS_SAMPLE_COUNT"] = std::to_string(opt.ris_sample_count);
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
@@ -40,21 +40,21 @@ namespace restir
         rt_camera_stage::get_common_defines(defines, opt);
 
         return {
-            {"shader/restir_canonical_and_temporal.rgen", defines},
+            {"shader/restir_di_canonical_and_temporal.rgen", defines},
             {
                 { // Regular ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/restir.rchit", defines},
+                    {"shader/restir_di.rchit", defines},
                     {}
                 },
                 { // Shadow ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
                     shadow_chit,
-                    {"shader/restir_shadow.rahit", defines}
+                    {"shader/restir_di_shadow.rahit", defines}
                 },
                 { // Area light ray, sphere intersection
                     vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/path_tracer_point_light.rchit", defines},
+                    {"shader/restir_di_point_light.rchit", defines},
                     {},
                     pl_rint
                 },
@@ -66,17 +66,17 @@ namespace restir
                 }
             },
             {
-                {"shader/restir.rmiss", defines},
+                {"shader/restir_di.rmiss", defines},
             }
         };
     }
 
     rt_shader_sources load_spatial_reuse_resources(
-        restir_stage::options opt,
+        restir_di_stage::options opt,
         const gbuffer_target& gbuf
     ){
-        shader_source pl_rint("shader/restir_point_light.rint");
-        shader_source shadow_chit("shader/restir_shadow.rchit");
+        shader_source pl_rint("shader/restir_di_point_light.rint");
+        shader_source shadow_chit("shader/restir_di_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["SPATIAL_SAMPLE_COUNT"] = std::to_string(opt.spatial_sample_count);
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
@@ -101,21 +101,21 @@ namespace restir
         rt_camera_stage::get_common_defines(defines, opt);
 
         return {
-            {"shader/restir_spatial.rgen", defines},
+            {"shader/restir_di_spatial.rgen", defines},
             {
                 { // Regular ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/restir.rchit", defines},
+                    {"shader/restir_di.rchit", defines},
                     {}
                 },
                 { // Shadow ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
                     shadow_chit,
-                    {"shader/restir_shadow.rahit", defines}
+                    {"shader/restir_di_shadow.rahit", defines}
                 },
                 { // Area light ray, sphere intersection
                     vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/path_tracer_point_light.rchit", defines},
+                    {"shader/restir_di_point_light.rchit", defines},
                     {},
                     pl_rint
                 },
@@ -127,7 +127,7 @@ namespace restir
                 }
             },
             {
-                {"shader/restir.rmiss", defines},
+                {"shader/restir_di.rmiss", defines},
 
             }
         };
@@ -149,18 +149,18 @@ namespace restir
 namespace tr
 {
 
-restir_stage::restir_stage(
+restir_di_stage::restir_di_stage(
     device& dev,
     scene_stage& ss,
     const gbuffer_target& output_target,
     const options& opt
-):  rt_camera_stage(dev, ss, output_target, opt, "restir", 1),
+):  rt_camera_stage(dev, ss, output_target, opt, "restir_di", 1),
     gfx(dev, rt_stage::get_common_options(
-        restir::load_sources(opt, output_target),
+        restir_di::load_sources(opt, output_target),
         opt
     )),
     spatial_reuse(dev, rt_stage::get_common_options(
-        restir::load_spatial_reuse_resources(opt, output_target),
+        restir_di::load_spatial_reuse_resources(opt, output_target),
         opt
     )),
     opt(opt),
@@ -212,7 +212,7 @@ restir_stage::restir_stage(
 {
 }
 
-void restir_stage::update(uint32_t frame_index)
+void restir_di_stage::update(uint32_t frame_index)
 {
     rt_camera_stage::update(frame_index);
 
@@ -222,7 +222,7 @@ void restir_stage::update(uint32_t frame_index)
     param_buffer.update(frame_index, &parity);
 }
 
-void restir_stage::init_scene_resources()
+void restir_di_stage::init_scene_resources()
 {
     rt_camera_stage::init_descriptors(gfx);
     rt_camera_stage::init_descriptors(spatial_reuse);
@@ -255,14 +255,14 @@ void restir_stage::init_scene_resources()
     }
 }
 
-void restir_stage::record_command_buffer_pass(
+void restir_di_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
     uint32_t frame_index,
     uint32_t pass_index,
     uvec3 expected_dispatch_size,
     bool
 ){
-    restir::push_constant_buffer control;
+    restir_di::push_constant_buffer control;
 
     param_buffer.upload(dev->id, frame_index, cb);
 

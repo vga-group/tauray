@@ -1,5 +1,5 @@
-#ifndef TAURAY_RESTIR_STAGE_HH
-#define TAURAY_RESTIR_STAGE_HH
+#ifndef TAURAY_RESTIR_DI_STAGE_HH
+#define TAURAY_RESTIR_DI_STAGE_HH
 
 #include "gpu_buffer.hh"
 #include "rt_camera_stage.hh"
@@ -8,7 +8,7 @@
 namespace tr
 {
 
-class restir_stage: public rt_camera_stage
+class restir_di_stage: public rt_camera_stage
 {
 public:
     struct options: public rt_camera_stage::options
@@ -26,7 +26,7 @@ public:
         tri_light_sampling_mode tri_light_mode = tri_light_sampling_mode::HYBRID;
     };
 
-    restir_stage(
+    restir_di_stage(
         device& dev,
         scene_stage& ss,
         const gbuffer_target& output_target,

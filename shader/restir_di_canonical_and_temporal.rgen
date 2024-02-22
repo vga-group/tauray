@@ -78,7 +78,7 @@ layout(push_constant, scalar) uniform push_constant_buffer
     float search_radius;
 } control;
 
-#include "restir.glsl"
+#include "restir_di.glsl"
 
 reservoir resampled_importance_sampling(
     inout local_sampler lsampler,

@@ -155,7 +155,7 @@
         {"dshgi", options::DSHGI}, \
         {"dshgi-server", options::DSHGI_SERVER}, \
         {"dshgi-client", options::DSHGI_CLIENT}, \
-        {"restir", options::RESTIR}, \
+        {"restir-di", options::RESTIR_DI}, \
         {"albedo", feature_stage::ALBEDO}, \
         {"world-normal", feature_stage::WORLD_NORMAL}, \
         {"view-normal", feature_stage::VIEW_NORMAL}, \
@@ -540,7 +540,7 @@
         "Sets the timing data output file. Default is stdout.", \
         "" \
     ) \
-    TR_STRUCT_OPT(restir, \
+    TR_STRUCT_OPT(restir_di, \
         "The implementation is biased if sample_visibility = true and " \
         "shared_visibility = true. sample_visibility only has an effect when " \
         "shared_visibility = true.\n", \
@@ -631,7 +631,7 @@ struct options
         DSHGI,
         DSHGI_SERVER,
         DSHGI_CLIENT,
-        RESTIR
+        RESTIR_DI
     };
     using renderer_option_type = std::variant<
         tr::options::basic_pipeline_type, feature_stage::feature>;
