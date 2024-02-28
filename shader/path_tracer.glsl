@@ -368,24 +368,38 @@ void evaluate_ray(
     out vec4 diffuse,
     out vec4 reflection,
     out pt_vertex_data first_hit_vertex,
-    out sampled_material first_hit_material,
-    out float bounce_data,
-    out material mat_data,
-    out float bsdf_pdf_sum,
-    out float bsdf_pdf_array[MAX_BOUNCES]
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION) || defined(BD_BMFR_MODE)
+    out material bd_mat_data, //1
+    out float bd_bouce_count, //1 
+    out float bd_weighted_bounce_count, //1
+    out float bd_material_id, //1
+    out float bd_bsdf_sum,
+    out float bd_weighted_bsdf,
+    out float bd_bsdf_weighted_nee,
+#endif
+    out sampled_material first_hit_material
 ){
     vec3 attenuation = vec3(1);
-
     diffuse = vec4(0,0,0,0);
     reflection = vec4(0,0,0,0);
-    bounce_data = 0.0f;
-    bsdf_pdf_sum = 0.0f;
-    float total_bsdf = 1.0f;
     float light_pdf;
 
-    vec3 attenuation_BD = vec3(1.0f);
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION) || defined(BD_BMFR_MODE)
+    bd_bouce_count = 0.0f;
+    bd_weighted_bounce_count = 0.0f;
+    bd_material_id = 0.0f;
+    bd_bsdf_sum = 0.0f;
+    bd_weighted_bsdf = 0.0f;
+    bd_bsdf_weighted_nee = 0.0f;
+
 
     float total_luminance = 0.0f;
+    float total_bsdf = 1.0f;
+    vec3 attenuation_BD = vec3(1.0f);
+#endif
+
 
     float regularization = 1.0f;
     float bsdf_pdf = 0.0f;
@@ -418,8 +432,10 @@ void evaluate_ray(
         vec3 light;
         bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light, sampled_material_data) || bounce == MAX_BOUNCES-1;
 
+#if defined(BD_MATERIAL_ID) || defined(BD_BMFR_MODE)
         if(bounce == 0)
-            mat_data = sampled_material_data;
+            bd_mat_data = sampled_material_data;
+#endif
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
@@ -489,29 +505,27 @@ void evaluate_ray(
                 diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
         }
 
-#if defined(BD_CONTRIBUTION)
-        float lum = rgb_to_luminance(modulate_color(first_hit_material, diffuse.rgb, reflection.rgb));
-        total_luminance += lum;
-        bounce_data += lum * bounce;
-#elif defined(BD_BOUNCE_COUNT)
-        bounce_data += 1.0f;
+#if defined(BD_BOUNCE_COUNT)
+        bd_bouce_count += 1.0f;
+
+#elif defined(BD_CONTRIBUTION)
+        float lum_contribution = attenuation * (diffuse_contrib + specular_contrib);
+        total_luminance += lum_contribution;
+        bd_weighted_bounce_count += lum_contribution * bounce;
+
 #elif defined(BD_BSDF_SUM)
-        bsdf_pdf_sum += bsdf_pdf;
-        bounce_data += 1.0f;
-#elif defined(BD_BSDF_VAR)
-        bsdf_pdf_array[int(bounce_data)] = bsdf_pdf;
-        bounce_data += 1.0f;
-        bsdf_pdf_sum += bsdf_pdf;
+        bd_bsdf_sum += bsdf_pdf;
+        bd_bouce_count += 1.0f;
+
 #elif defined(BD_PDF_CONTRIBUTION)
         float current_luminance = rgb_to_luminance(attenuation_BD * (specular_radiance_BD));
+
         if(bsdf_pdf != 0)
             total_bsdf *= bsdf_pdf;
 
-        bsdf_pdf_sum += current_luminance/total_bsdf;
-
+        bd_weighted_bsdf += current_luminance/total_bsdf;
         total_luminance += current_luminance;
 
-        bounce_data += 1.0f;
 #elif defined(BD_FULL_PDF_CONTRIBUTION)
         float current_luminance = rgb_to_luminance(modulate_color(first_hit_material, diffuse.rgb, reflection.rgb));
 
@@ -519,10 +533,12 @@ void evaluate_ray(
             total_bsdf *= bsdf_pdf;
 
         float nee_luminance = rgb_to_luminance(attenuation_BD * (diffuse_contrib * mat.albedo.rgb + specular_contrib));
+
         if(light_pdf > 0.0f)
             nee_luminance /= total_bsdf*light_pdf;
 
         float bsdf_luminance = rgb_to_luminance(attenuation_BD * (specular_radiance_BD));
+        
         if(total_bsdf > 0.0f)
             bsdf_luminance /= total_bsdf;
 
@@ -532,14 +548,8 @@ void evaluate_ray(
             bsdf_luminance = 0;
         }
 
-//        if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
-//        {
-//            debugPrintfEXT("   nee_luminance %f vs bsdf_luminance %f", nee_luminance, bsdf_luminance);
-//        }
-
         total_luminance += current_luminance;
-        bsdf_pdf_sum += nee_luminance + bsdf_luminance;
-
+        bd_bsdf_weighted_nee += nee_luminance + bsdf_luminance;
 
 #endif
 
@@ -554,7 +564,10 @@ void evaluate_ray(
         if(bounce != 0)
         {
             attenuation *= modulate_bsdf(mat, lobes);
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION) || defined(BD_BMFR_MODE)
             attenuation_BD *= modulate_bsdf(mat, lobes);
+#endif
         }
         else
             primary_lobes = lobes;
@@ -572,20 +585,16 @@ void evaluate_ray(
 
 #if defined(BD_CONTRIBUTION)
     if(total_luminance > 0.0f)
-        bounce_data /= total_luminance;
-    if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
-    {
-            debugPrintfEXT("   total_luminance %f", total_luminance);
-    }
-#elif defined(BD_PDF_CONTRIBUTION)
+        bd_weighted_bounce_count /= total_luminance;
 
-    if(bsdf_pdf_sum > 0.0f)
-        total_luminance /= bsdf_pdf_sum;
+#elif defined(BD_PDF_CONTRIBUTION)
+    if(bd_weighted_bsdf > 0.0f)
+        total_luminance /= bd_weighted_bsdf;
 
 #elif defined(BD_FULL_PDF_CONTRIBUTION)
 
-    if(bsdf_pdf_sum > 0.0f)
-        total_luminance /= bsdf_pdf_sum;
+    if(bd_bsdf_weighted_nee > 0.0f)
+        total_luminance /= bd_bsdf_weighted_nee;
 
 #endif
 }
@@ -649,6 +658,9 @@ void write_all_outputs(
     vec4 diffuse,
     vec4 reflection,
     pt_vertex_data first_hit_vertex,
+#ifdef BD_BMFR_MODE
+    vec3 prob,
+#endif
     sampled_material first_hit_material
 ){
     // Write all outputs
@@ -666,6 +678,11 @@ void write_all_outputs(
             write_gbuffer_material(first_hit_material, p);
             write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
             write_gbuffer_pos(first_hit_vertex.pos, p);
+
+            #ifdef BD_BMFR_MODE
+            write_gbuffer_prob(prob, p);
+            #endif
+
             #ifdef CALC_PREV_VERTEX_POS
             write_gbuffer_screen_motion(
                 get_camera_projection(get_prev_camera(), first_hit_vertex.prev_pos),

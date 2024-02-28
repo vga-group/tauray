@@ -52,7 +52,6 @@ shared float block_min_f, block_max_f, vec_length, u_length_squared, v_dot_a;
 shared float16_t u_vec[BLOCK_SIZE * BLOCK_SIZE];
 shared vec3 r_mat[R_SIZE];
 
-
 int get_linear_id()
 {
     return int(gl_LocalInvocationID.y * gl_WorkGroupSize.x + gl_LocalInvocationID.x);
@@ -204,7 +203,6 @@ void main()
         barrier();
         parallel_reduction_min();
         barrier();
-
 
         if (id == 0)
         {

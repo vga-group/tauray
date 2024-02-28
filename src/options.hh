@@ -213,7 +213,8 @@
         {"bsdf-sum", bd::BSDF_SUM}, \
         {"bsdf-variance", bd::BSDF_VAR}, \
         {"bsdf-contribution", bd::PDF_CONTRIBUTION}, \
-        {"pdf-contribution", bd::FULL_PDF_CONTRIBUTION} \
+        {"pdf-contribution", bd::FULL_PDF_CONTRIBUTION}, \
+        {"bmfr-mode", bd::BMFR_MODE} \
     )\
     TR_FLOAT_OPT(film_radius, \
         "Sets the sampling radius for the film sampling. This is in pixels " \

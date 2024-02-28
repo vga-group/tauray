@@ -60,6 +60,10 @@
 #define REFLECTION_TARGET_BINDING 11
 #endif
 
+#ifdef USE_PROB_TARGET
+#define PROB_TARGET_BINDING 30
+#endif
+
 layout(push_constant, scalar) uniform push_constant_buffer
 {
     uint samples;
@@ -82,10 +86,16 @@ void main()
     vec4 sum_diffuse = vec4(0,0,0,0);
     vec4 sum_reflection = vec4(0,0,0,0);
 
-    float bounce_data = 0.0f;
-    material mat_data;
-    float bsdf_pdf_sum;
-    float bsdf_pdf_array[MAX_BOUNCES];
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION) || defined(BD_BMFR_MODE)
+    material bd_mat_data;
+    float bd_bouce_count;
+    float bd_weighted_bounce_count;
+    float bd_material_id;
+    float bd_bsdf_sum;
+    float bd_weighted_bsdf;
+    float bd_bsdf_weighted_nee;
+#endif
 
 #if SAMPLES_PER_PASS != 1
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
@@ -108,8 +118,13 @@ void main()
         vec4 diffuse, reflection;
         evaluate_ray(
             lsampler, origin, dir,
-            diffuse, reflection,
-            first_hit_vertex, first_hit_material, bounce_data, mat_data, bsdf_pdf_sum, bsdf_pdf_array
+            diffuse, reflection, first_hit_vertex, 
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION) || defined(BD_BMFR_MODE)
+            bd_mat_data, bd_bouce_count, bd_weighted_bounce_count, bd_material_id,
+            bd_bsdf_sum, bd_weighted_bsdf, bd_bsdf_weighted_nee,
+#endif
+            first_hit_material
         );
 #ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
         vec3 old_color = first_hit_material.albedo.rgb;
@@ -123,33 +138,39 @@ void main()
 #endif
     }
 
-#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION)
+#if defined(BD_BOUNCE_COUNT)
     write_noise_data(
-        vec3(bounce_data) / MAX_BOUNCES / SAMPLES_PER_PASS
+        vec3(bd_bouce_count) / MAX_BOUNCES / SAMPLES_PER_PASS
+    );
+#elif defined(BD_CONTRIBUTION)
+    write_noise_data(
+        vec3(bd_weighted_bounce_count) / MAX_BOUNCES / SAMPLES_PER_PASS
     );
 #elif defined(BD_MATERIAL_ID)
     write_noise_data(
-        vec3(mat_data.albedo_tex_id)
+        vec3(bd_mat_data.albedo_tex_id)
     );
 #elif defined(BD_BSDF_SUM)
     write_noise_data(
-        vec3(bsdf_pdf_sum) / bounce_data
+        vec3(bd_bsdf_sum) / bd_bouce_count
     );
-#elif defined(BD_BSDF_VAR)
-    float mean_pdf = bsdf_pdf_sum / bounce_data;
-    float sum = 0.0f;
-    for(int i = 0; i < int(bounce_data); ++i)
-    {
-       sum += (bsdf_pdf_array[i] - mean_pdf)*(bsdf_pdf_array[i] - mean_pdf);
-    }
-
+#elif defined(BD_PDF_CONTRIBUTION)
     write_noise_data(
-        vec3(sum) / bounce_data
+        vec3(bd_weighted_bsdf)
     );
-#elif defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION)
-
+#elif defined(BD_FULL_PDF_CONTRIBUTION)
     write_noise_data(
-        vec3(bsdf_pdf_sum)
+        vec3(bd_bsdf_weighted_nee)
+    );
+
+#elif defined(BD_BMFR_MODE)
+    write_all_outputs(
+        sum_color.rgb / SAMPLES_PER_PASS,
+        sum_diffuse.rgba / SAMPLES_PER_PASS,
+        sum_reflection.rgba / SAMPLES_PER_PASS,
+        first_hit_vertex,
+        vec3(bd_bsdf_sum),
+        first_hit_material
     );
 
 #else

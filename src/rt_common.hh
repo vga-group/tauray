@@ -29,7 +29,8 @@ namespace tr
         BSDF_SUM,
         BSDF_VAR,
         PDF_CONTRIBUTION,
-        FULL_PDF_CONTRIBUTION
+        FULL_PDF_CONTRIBUTION,
+        BMFR_MODE
     };
 
     void add_defines(multiple_importance_sampling_mode mode, std::map<std::string, std::string>& defines);

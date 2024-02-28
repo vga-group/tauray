@@ -192,6 +192,7 @@ void rt_renderer<Pipeline>::init_resources()
     scene_update.emplace(device_mask::all(*ctx), opt.scene_options);
     post_processing.emplace(ctx->get_display_device(), *scene_update, ctx->get_size(), get_pp_opt(opt));
     post_processing->set_gbuffer_spec(spec);
+    spec.prob_present = true;
 
     // Disable raster G-Buffer when nothing rasterizable is needed.
     if(
