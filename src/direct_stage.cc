@@ -96,7 +96,7 @@ direct_stage::direct_stage(
         dev, ss, output_target, opt, "direct light",
         opt.samples_per_pixel / opt.samples_per_pass
     ),
-    gfx(dev, rt_stage::get_common_options(
+    gfx(dev, rt_stage::get_common_options(ss,
         direct::load_sources(opt, output_target), opt
     )),
     opt(opt)
@@ -116,7 +116,10 @@ void direct_stage::record_command_buffer_pass(
     bool first_in_command_buffer
 ){
     if(first_in_command_buffer)
+    {
         gfx.bind(cb, frame_index);
+        gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+    }
 
     direct::push_constant_buffer control;
 

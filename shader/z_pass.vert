@@ -6,7 +6,6 @@
 
 layout(location = 0) in vec3 in_pos;
 
-#define SCENE_DATA_BUFFER_BINDING 0
 #define CAMERA_DATA_BINDING 1
 #include "scene.glsl"
 
@@ -17,7 +16,7 @@ layout(push_constant) uniform push_constant_buffer
 
 void main()
 {
-    instance o = scene.o[control.instance_id];
+    instance o = instances.o[control.instance_id];
     vec3 pos = vec3(o.model * vec4(in_pos, 1.0f));
     gl_Position = camera.pairs[gl_ViewIndex].current.view_proj * vec4(pos, 1.0f);
 }

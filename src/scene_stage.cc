@@ -226,7 +226,7 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     shadow_map_range(0),
     shadow_map_cascade_range(0),
     s_table(dev, true),
-    scene_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    instance_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     scene_metadata(dev, sizeof(scene_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
     directional_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     point_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
@@ -264,8 +264,12 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
         true,
         false
     ),
+    scene_desc(dev),
     skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, {}, 1, true}),
-    extract_tri_lights(dev, compute_pipeline::params{
+    opt(opt), stage_timer(dev, "scene update")
+{
+    init_descriptor_set_layout();
+    extract_tri_lights.emplace(dev, compute_pipeline::params{
         {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
             std::map<std::string, std::string>{{"PRE_TRANSFORMED_VERTICES", ""}} :
             std::map<std::string, std::string>()
@@ -274,13 +278,12 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
             {"vertices", (uint32_t)opt.max_instances},
             {"indices", (uint32_t)opt.max_instances}
         },
-        1
-    }),
-    pre_transform(dev, compute_pipeline::params{
-        {"shader/pre_transform.comp"}, {}, 1, true
-    }),
-    opt(opt), stage_timer(dev, "scene update")
-{
+        1, false, {&scene_desc}
+    });
+    pre_transform.emplace(dev, compute_pipeline::params{
+        {"shader/pre_transform.comp"}, {}, 1, true, {&scene_desc}
+    });
+
     if(opt.shadow_mapping)
     {
         shadow_atlas.reset(new atlas(
@@ -390,6 +393,11 @@ vk::AccelerationStructureKHR scene_stage::get_acceleration_structure(
             "Trying to use TLAS, but ray tracing is not available!"
         );
     return *tlas->get_tlas_handle(id);
+}
+
+descriptor_set& scene_stage::get_descriptors()
+{
+    return scene_desc;
 }
 
 vec2 scene_stage::get_shadow_map_atlas_pixel_margin() const
@@ -901,7 +909,6 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
     std::vector<vk::DescriptorImageInfo> dii = s_table.get_image_infos(id);
 
     std::vector<descriptor_state> descriptors = {
-        {"scene", {scene_data[id], 0, VK_WHOLE_SIZE}},
         {"scene_metadata", {scene_metadata[id], 0, VK_WHOLE_SIZE}},
         {"vertices", dbi_vertex},
         {"indices", dbi_index},
@@ -974,13 +981,6 @@ void scene_stage::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t c
     pipeline.update_descriptor_set(descriptors, frame_index);
 }
 
-void scene_stage::push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_index)
-{
-    device* dev = pipeline.get_device();
-    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->id, camera_index);
-    pipeline.push_descriptors(cmd, descriptors);
-}
-
 void scene_stage::bind_placeholders(
     basic_pipeline& pipeline,
     size_t max_samplers,
@@ -1012,10 +1012,12 @@ void scene_stage::update(uint32_t frame_index)
     if(!cur_scene) return;
 
     environment_map* new_envmap = tr::get_environment_map(*cur_scene);
+    bool envmap_outdated = false;
     if(new_envmap != envmap)
     {
         envmap = new_envmap;
         envmap_change_counter++;
+        envmap_outdated = true;
     }
 
     vec3 new_ambient = tr::get_ambient_light(*cur_scene);
@@ -1045,8 +1047,8 @@ void scene_stage::update(uint32_t frame_index)
         s_table.update_scene(this);
     }
 
-    scene_data.resize(sizeof(instance_buffer) * instances.size());
-    scene_data.foreach<instance_buffer>(
+    instance_data.resize(sizeof(instance_buffer) * instances.size());
+    instance_data.foreach<instance_buffer>(
         frame_index, instances.size(),
         [&](instance_buffer& inst, size_t i){
             if(instances[i].mat->emission_factor != vec3(0))
@@ -1427,6 +1429,9 @@ void scene_stage::update(uint32_t frame_index)
     if(lights_outdated) light_change_counter++;
     if(geometry_outdated) geometry_change_counter++;
 
+    if(lights_outdated || geometry_outdated || envmap_outdated)
+        update_descriptor_set();
+
     if(lights_outdated || geometry_outdated)
     {
         record_command_buffers(light_aabb_count, true);
@@ -1457,7 +1462,7 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
         {
             vk::CommandBuffer cb = begin_graphics(dev.id);
             stage_timer.begin(cb, dev.id, i);
-            scene_data.upload(dev.id, i, cb);
+            instance_data.upload(dev.id, i, cb);
             directional_light_data.upload(dev.id, i, cb);
             point_light_data.upload(dev.id, i, cb);
             sh_grid_data.upload(dev.id, i, cb);
@@ -1602,6 +1607,7 @@ void scene_stage::record_tri_light_extraction(
     vk::CommandBuffer cb
 ){
     extract_tri_lights[id].bind(cb, 0);
+    extract_tri_lights[id].set_descriptors(cb, scene_desc, 0, 1);
     for(size_t i = 0; i < instances.size(); ++i)
     {
         const instance& inst = instances[i];
@@ -1623,6 +1629,8 @@ void scene_stage::record_pre_transform(
 ){
     vk::Buffer ptv_buf = this->pre_transformed_vertices[id].buf;
     pre_transform[id].bind(cb);
+    pre_transform[id].set_descriptors(cb, scene_desc, 0, 1);
+
     size_t offset = 0;
     for(size_t i = 0; i < instances.size(); ++i)
     {
@@ -1636,8 +1644,7 @@ void scene_stage::record_pre_transform(
 
         pre_transform[id].push_descriptors(cb, {
             {"input_verts", {inst.m->get_vertex_buffer(id), 0, bytes}},
-            {"output_verts", {ptv_buf, offset, bytes}},
-            {"scene", {scene_data[id], 0, VK_WHOLE_SIZE}}
+            {"output_verts", {ptv_buf, offset, bytes}}
         });
 
         pre_transform[id].push_constants(cb, pc);
@@ -1656,6 +1663,20 @@ void scene_stage::record_pre_transform(
             },
         }, {}
     );
+}
+
+void scene_stage::init_descriptor_set_layout()
+{
+    scene_desc.add(
+        "instances",
+        vk::DescriptorSetLayoutBinding{0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}
+    );
+}
+
+void scene_stage::update_descriptor_set()
+{
+    scene_desc.reset(scene_desc.get_mask(), 1);
+    scene_desc.set_buffer(0, "instances", instance_data);
 }
 
 }

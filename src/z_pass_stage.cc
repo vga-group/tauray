@@ -56,7 +56,8 @@ z_pass_stage::z_pass_stage(
                     vk::ImageLayout::eDepthStencilAttachmentOptimal
                 }
             },
-            false, false, true
+            false, false, true,
+            {}, false, false, {&ss.get_descriptors()}
         }));
     }
 }

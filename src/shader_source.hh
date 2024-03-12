@@ -62,6 +62,7 @@ struct rt_shader_sources
 };
 
 
+/* REFACTOR: DELETE BEGIN */
 std::map<std::string /* name */, std::pair<uint32_t /*set*/, uint32_t /* binding */>>
     get_binding_names(const rt_shader_sources& src);
 
@@ -86,6 +87,7 @@ std::vector<std::vector<vk::DescriptorSetLayoutBinding>> get_bindings(
     const shader_source& compute_src,
     const std::map<std::string, uint32_t>& count_overrides = {}
 );
+/* REFACTOR: DELETE END */
 
 std::vector<vk::PushConstantRange> get_push_constant_ranges(const rt_shader_sources& src);
 std::vector<vk::PushConstantRange> get_push_constant_ranges(const raster_shader_sources& src);

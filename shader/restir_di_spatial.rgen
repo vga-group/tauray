@@ -7,7 +7,6 @@
 #extension GL_EXT_debug_printf : enable
 
 #define TLAS_BINDING 0
-#define SCENE_DATA_BUFFER_BINDING 1
 #define CAMERA_DATA_BINDING 2
 #define DISTRIBUTION_DATA_BINDING 3
 #define VERTEX_BUFFER_BINDING 4

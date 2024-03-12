@@ -161,7 +161,8 @@ raster_stage::raster_stage(
             mesh::get_attributes(),
             get_color_attachments(opt, target),
             get_depth_attachment(opt, target),
-            opt.sample_shading, (bool)target.color || opt.force_alpha_to_coverage, true
+            opt.sample_shading, (bool)target.color || opt.force_alpha_to_coverage, true,
+            {}, false, false, {&ss.get_descriptors()}
         }));
 
         scene_stage::bind_placeholders(

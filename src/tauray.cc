@@ -545,16 +545,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     rt_opt.distribution.strategy = DISTRIBUTION_DUPLICATE;
                 return new direct_renderer(ctx, rt_opt);
             }
-        case options::WHITTED:
-            {
-                whitted_renderer::options rt_opt;
-                (rt_camera_stage::options&)rt_opt = rc_opt;
-                rt_opt.post_process.tonemap = tonemap;
-                rt_opt.scene_options = scene_options;
-                if(opt.taa.sequence_length != 0)
-                    rt_opt.post_process.taa = taa;
-                return new whitted_renderer(ctx, rt_opt);
-            }
         case options::RASTER:
             {
                 raster_renderer::options rr_opt;

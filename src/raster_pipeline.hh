@@ -59,6 +59,7 @@ public:
         vk::SpecializationInfo specialization = {};
         bool use_push_descriptors = false;
         bool dynamic_viewport = false;
+        std::vector<tr::descriptor_set_layout*> layout = {};
     };
 
     raster_pipeline(device& dev, const pipeline_state& state);

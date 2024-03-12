@@ -3,7 +3,6 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : enable
 
-#define SCENE_DATA_BUFFER_BINDING 0
 #define TEXTURE_ARRAY_BINDING 2
 #include "shadow_map_common.glsl"
 
@@ -11,7 +10,7 @@ layout(location = 0) in vec2 in_uv;
 
 void main()
 {
-    instance o = scene.o[control.instance_id];
+    instance o = instances.o[control.instance_id];
     if(control.alpha_clip < 1.0f)
     {
         float alpha = o.mat.albedo_factor.a;

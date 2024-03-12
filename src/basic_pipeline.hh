@@ -8,6 +8,9 @@ namespace tr
 {
 
 struct shader_sources;
+class descriptor_set_layout;
+class descriptor_set;
+class push_descriptor_set;
 
 // Pipelines are per-device. This is the base class for multiple pipeline types.
 // It exists mostly for code reuse purposes, since all pipelines have some
@@ -15,6 +18,7 @@ struct shader_sources;
 class basic_pipeline
 {
 public:
+    // REFACTOR this away.
     using binding_array_length_info = std::map<
         std::string /* binding name */,
         uint32_t /* array size */
@@ -27,7 +31,10 @@ public:
         std::vector<vk::PushConstantRange>&& push_constant_ranges,
         uint32_t max_descriptor_sets,
         vk::PipelineBindPoint bind_point,
-        bool use_push_descriptors
+        bool use_push_descriptors,
+        // REFACTOR to be the only option, removing max_descriptor_sets
+        // and use_push_descriptors.
+        const std::vector<descriptor_set_layout*>& layout
     );
     basic_pipeline(const basic_pipeline& other) = delete;
     basic_pipeline(basic_pipeline&& other) = delete;
@@ -59,6 +66,8 @@ public:
     device* get_device() const;
 
     void bind(vk::CommandBuffer cmd, uint32_t descriptor_set_index) const;
+    void set_descriptors(vk::CommandBuffer cmd, descriptor_set& set, uint32_t index, uint32_t set_index) const;
+    void push_descriptors(vk::CommandBuffer cmd, push_descriptor_set& set,  uint32_t set_index) const;
     void bind(vk::CommandBuffer cmd) const;
 
 protected:

@@ -44,7 +44,9 @@ public:
         size_t max_passes_per_command_buffer = 0;
     };
 
+    // REFACTOR: Nuke this?
     static rt_pipeline::options get_common_options(
+        scene_stage& ss,
         const rt_shader_sources& s,
         const options& opt,
         vk::SpecializationInfo specialization = {}

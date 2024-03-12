@@ -25,6 +25,7 @@ public:
 
         vk::SpecializationInfo specialization = {};
         bool use_push_descriptors = false;
+        std::vector<tr::descriptor_set_layout*> layout = {};
     };
 
     rt_pipeline(device& dev, const options& state);

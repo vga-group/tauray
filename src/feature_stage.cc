@@ -1,5 +1,5 @@
 #include "feature_stage.hh"
-#include "scene.hh"
+#include "scene_stage.hh"
 #include "environment_map.hh"
 
 namespace
@@ -82,7 +82,7 @@ feature_stage::feature_stage(
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(dev, ss, output_target, opt),
-    gfx(dev, rt_stage::get_common_options(::feature::load_sources(opt), opt)),
+    gfx(dev, rt_stage::get_common_options(ss, ::feature::load_sources(opt), opt)),
     opt(opt)
 {
 }
@@ -100,6 +100,7 @@ void feature_stage::record_command_buffer_pass(
     bool
 ){
     gfx.bind(cb, frame_index);
+    gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
 
     ::feature::push_constant_buffer control;
     control.default_value = opt.default_value;

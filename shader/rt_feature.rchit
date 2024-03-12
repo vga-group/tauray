@@ -7,7 +7,6 @@
 hitAttributeEXT vec2 attribs;
 
 #define TLAS_BINDING 0
-#define SCENE_DATA_BUFFER_BINDING 1
 #define VERTEX_BUFFER_BINDING 2
 #define INDEX_BUFFER_BINDING 3
 #define TEXTURE_ARRAY_BINDING 4

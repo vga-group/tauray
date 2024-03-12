@@ -26,6 +26,7 @@ namespace tr
 {
 
 rt_pipeline::options rt_stage::get_common_options(
+    scene_stage& ss,
     const rt_shader_sources& src,
     const options& opt,
     vk::SpecializationInfo specialization
@@ -37,7 +38,8 @@ rt_pipeline::options rt_stage::get_common_options(
             {"indices", (uint32_t)opt.max_instances},
             {"textures", (uint32_t)opt.max_samplers},
         },
-        1, {}, false
+        1, {}, false,
+        {&ss.get_descriptors()}
     };
     state.specialization = specialization;
     return state;

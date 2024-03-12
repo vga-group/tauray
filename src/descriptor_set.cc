@@ -161,6 +161,11 @@ void descriptor_set_layout::refresh(device_id id) const
     }
 }
 
+device_mask descriptor_set_layout::get_mask() const
+{
+    return layout.get_mask();
+}
+
 descriptor_set::descriptor_set(device_mask dev)
 : descriptor_set_layout(dev, false), data(dev)
 {

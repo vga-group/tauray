@@ -4,7 +4,6 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_multiview : enable
 
-#define SCENE_DATA_BUFFER_BINDING 0
 #define TEXTURE_ARRAY_BINDING 1
 #define DIRECTIONAL_LIGHT_BUFFER_BINDING 2
 #define POINT_LIGHT_BUFFER_BINDING 3
@@ -34,7 +33,7 @@ layout(location = 5) in vec3 in_bitangent;
 
 sampled_material sample_material(inout vertex_data v)
 {
-    material mat = scene.o[control.instance_id].mat;
+    material mat = instances.o[control.instance_id].mat;
     return sample_material(mat, v);
 }
 
@@ -154,7 +153,7 @@ void eval_indirect_light(
     vec3 indirect_diffuse = vec3(0);
     vec3 indirect_specular = vec3(0);
 
-    int sh_grid_index = scene.o[control.instance_id].sh_grid_index;
+    int sh_grid_index = instances.o[control.instance_id].sh_grid_index;
     if(sh_grid_index >= 0)
     {
         sh_grid sg = sh_grids.grids[sh_grid_index];

@@ -419,7 +419,6 @@ void rt_renderer<Pipeline>::prepare_transfers(bool reserve)
 }
 
 template class rt_renderer<path_tracer_stage>;
-template class rt_renderer<whitted_stage>;
 template class rt_renderer<feature_stage>;
 template class rt_renderer<direct_stage>;
 template class rt_renderer<restir_di_stage>;

@@ -116,7 +116,7 @@ path_tracer_stage::path_tracer_stage(
         dev, ss, output_target, opt, "path tracing",
         opt.samples_per_pixel / opt.samples_per_pass
     ),
-    gfx(dev, rt_stage::get_common_options(
+    gfx(dev, rt_stage::get_common_options(ss,
         path_tracer::load_sources(opt, output_target), opt
     )),
     opt(opt)
@@ -136,7 +136,10 @@ void path_tracer_stage::record_command_buffer_pass(
     bool first_in_command_buffer
 ){
     if(first_in_command_buffer)
+    {
         gfx.bind(cb, frame_index);
+        gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+    }
 
     path_tracer::push_constant_buffer control;
 

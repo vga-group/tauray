@@ -1,4 +1,5 @@
 #include "basic_pipeline.hh"
+#include "descriptor_set.hh"
 #include "misc.hh"
 
 namespace tr
@@ -11,7 +12,8 @@ basic_pipeline::basic_pipeline(
     std::vector<vk::PushConstantRange>&& push_constant_ranges,
     uint32_t max_descriptor_sets,
     vk::PipelineBindPoint bind_point,
-    bool use_push_descriptors
+    bool use_push_descriptors,
+    const std::vector<tr::descriptor_set_layout*>& layout
 ):  dev(&dev),
     bind_point(bind_point),
     sets(std::move(sets)),
@@ -35,8 +37,14 @@ basic_pipeline::basic_pipeline(
         reset_descriptor_sets();
     }
 
+    std::vector<vk::DescriptorSetLayout> descriptor_sets;
+
+    descriptor_sets.insert(descriptor_sets.begin(), descriptor_set_layout);
+    for(tr::descriptor_set_layout* layout: layout)
+        descriptor_sets.push_back(layout->get_layout(dev.id));
+
     vk::PipelineLayoutCreateInfo pipeline_layout_info(
-        {}, 1, descriptor_set_layout,
+        {}, descriptor_sets.size(), descriptor_sets.data(),
         this->push_constant_ranges.size(),
         this->push_constant_ranges.data()
     );
@@ -181,6 +189,16 @@ void basic_pipeline::bind(vk::CommandBuffer cmd, uint32_t descriptor_set_index) 
         bind_point, pipeline_layout,
         0, {descriptor_sets[descriptor_set_index]}, {}
     );
+}
+
+void basic_pipeline::set_descriptors(vk::CommandBuffer cmd, descriptor_set& set, uint32_t index, uint32_t set_index) const
+{
+    set.bind(dev->id, cmd, pipeline_layout, bind_point, index, set_index);
+}
+
+void basic_pipeline::push_descriptors(vk::CommandBuffer cmd, push_descriptor_set& set,  uint32_t set_index) const
+{
+    set.push(dev->id, cmd, pipeline_layout, bind_point, set_index);
 }
 
 void basic_pipeline::bind(vk::CommandBuffer cmd) const

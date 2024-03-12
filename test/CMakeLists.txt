@@ -28,7 +28,6 @@ endfunction()
 
 renderer_test("raster" "options::RASTER" 1)
 renderer_test("path-tracer" "options::PATH_TRACER" 10000)
-renderer_test("whitted" "options::WHITTED" 1)
 renderer_test("dshgi" "options::DSHGI" 10)
 renderer_test("albedo" "feature_stage::ALBEDO" 1)
 renderer_test("world-normal" "feature_stage::WORLD_NORMAL" 1)

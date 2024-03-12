@@ -23,14 +23,14 @@ layout(binding = DISTRIBUTION_DATA_BINDING, set = 0) uniform distribution_data_b
 // I would prefer this to be INF, but it's hard to write in glsl.
 #define RAY_MAX_DIST float(1e39)
 
-#if defined(SCENE_DATA_BUFFER_BINDING) && defined(VERTEX_BUFFER_BINDING) && defined(INDEX_BUFFER_BINDING)
+#if defined(VERTEX_BUFFER_BINDING) && defined(INDEX_BUFFER_BINDING)
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
 vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, vec3 pos, out float pdf)
 #else
 vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_id, int primitive_id)
 #endif
 {
-    instance o = scene.o[instance_id];
+    instance o = instances.o[instance_id];
     ivec3 i = ivec3(
         indices[nonuniformEXT(instance_id)].i[3*primitive_id+0],
         indices[nonuniformEXT(instance_id)].i[3*primitive_id+1],
@@ -94,7 +94,7 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
 
 void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, out vec2 uv)
 {
-    instance o = scene.o[instance_id];
+    instance o = instances.o[instance_id];
     ivec3 i = ivec3(
         indices[nonuniformEXT(instance_id)].i[3*primitive_id+0],
         indices[nonuniformEXT(instance_id)].i[3*primitive_id+1],
@@ -110,7 +110,7 @@ void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id
 
 sampled_material sample_material(int instance_id, inout vertex_data v)
 {
-    instance o = scene.o[instance_id];
+    instance o = instances.o[instance_id];
     material mat = o.mat;
     sampled_material res = sample_material(mat, v);
     res.shadow_terminator_mul = o.shadow_terminator_mul;
@@ -119,7 +119,7 @@ sampled_material sample_material(int instance_id, inout vertex_data v)
 
 bool is_material_skippable(int instance_id, vec2 uv, float alpha_cutoff)
 {
-    material mat = scene.o[instance_id].mat;
+    material mat = instances.o[instance_id].mat;
     vec4 albedo = mat.albedo_factor;
     if(mat.albedo_tex_id >= 0)
         albedo *= texture(textures[nonuniformEXT(mat.albedo_tex_id)], uv);

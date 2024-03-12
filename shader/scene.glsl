@@ -5,6 +5,10 @@
 #include "camera.glsl"
 #include "light.glsl"
 
+#ifndef SCENE_SET
+#define SCENE_SET 1
+#endif
+
 struct vertex
 {
     vec3 pos;
@@ -42,12 +46,10 @@ struct instance
     material mat;
 };
 
-#ifdef SCENE_DATA_BUFFER_BINDING
-layout(binding = SCENE_DATA_BUFFER_BINDING, set = 0, scalar) buffer scene_data_buffer
+layout(binding = 0, set = SCENE_SET, scalar) buffer instance_data_buffer
 {
     instance o[];
-} scene;
-#endif
+} instances;
 
 #ifdef DIRECTIONAL_LIGHT_BUFFER_BINDING
 layout(binding = DIRECTIONAL_LIGHT_BUFFER_BINDING, set = 0, scalar) buffer directional_light_buffer

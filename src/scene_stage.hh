@@ -12,6 +12,7 @@
 #include "timer.hh"
 #include "atlas.hh"
 #include "camera.hh"
+#include "descriptor_set.hh"
 
 namespace tr
 {
@@ -29,8 +30,11 @@ class scene_stage: public multi_device_stage
 public:
     struct options
     {
+        // REFACTOR: Delete all max_instances & max_lights from everywhere
+        // other than here.
         uint32_t max_instances = 1024;
         uint32_t max_lights = 128;
+        uint32_t max_samplers = 128;
         bool gather_emissive_triangles = false;
         bool pre_transform_vertices = false;
         bool shadow_mapping = false;
@@ -73,8 +77,8 @@ public:
         device_id id
     ) const;
 
+    descriptor_set& get_descriptors();
     void bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_offset = 0);
-    void push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_offset = 0);
     static void bind_placeholders(
         basic_pipeline& pipeline,
         size_t max_samplers,
@@ -119,6 +123,8 @@ private:
     void record_tri_light_extraction(device_id id, vk::CommandBuffer cb);
     void record_pre_transform(device_id id, vk::CommandBuffer cb);
 
+    void init_descriptor_set_layout();
+    void update_descriptor_set();
     std::vector<descriptor_state> get_descriptor_info(device_id id, int32_t camera_index) const;
 
     bool prev_was_rebuild;
@@ -205,7 +211,7 @@ private:
     std::vector<uint8_t> old_camera_data;
 
     sampler_table s_table;
-    gpu_buffer scene_data;
+    gpu_buffer instance_data;
     gpu_buffer scene_metadata;
     gpu_buffer directional_light_data;
     gpu_buffer point_light_data;
@@ -222,6 +228,8 @@ private:
 
     std::optional<top_level_acceleration_structure> tlas;
     std::optional<event_subscription> events[10];
+
+    descriptor_set scene_desc;
 
     //==========================================================================
     // Pipelines

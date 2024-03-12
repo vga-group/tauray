@@ -45,6 +45,8 @@ public:
     set_binding find_binding(std::string_view name) const;
     vk::DescriptorSetLayout get_layout(device_id id) const;
 
+    device_mask get_mask() const;
+
 protected:
     void refresh(device_id id) const;
 

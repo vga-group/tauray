@@ -15,7 +15,8 @@ rt_pipeline::rt_pipeline(
         get_push_constant_ranges(opt.src),
         MAX_FRAMES_IN_FLIGHT,
         vk::PipelineBindPoint::eRayTracingKHR,
-        opt.use_push_descriptors
+        opt.use_push_descriptors,
+        opt.layout
     ),
     opt(opt)
 {

@@ -19,6 +19,7 @@ public:
         binding_array_length_info binding_array_lengths;
         uint32_t max_descriptor_sets = MAX_FRAMES_IN_FLIGHT;
         bool use_push_descriptors = false;
+        std::vector<tr::descriptor_set_layout*> layout = {};
     };
 
     compute_pipeline(device& dev, const params& p);

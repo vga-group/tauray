@@ -12,7 +12,8 @@ compute_pipeline::compute_pipeline(device& dev, const params& p)
         get_binding_names(p.src),
         get_push_constant_ranges(p.src),
         p.max_descriptor_sets, vk::PipelineBindPoint::eCompute,
-        p.use_push_descriptors
+        p.use_push_descriptors,
+        p.layout
     )
 {
     if(p.src.data.empty())

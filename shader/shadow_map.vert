@@ -3,7 +3,6 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : enable
 
-#define SCENE_DATA_BUFFER_BINDING 0
 #include "shadow_map_common.glsl"
 
 layout(location = 0) in vec3 in_pos;
@@ -12,7 +11,7 @@ layout(location = 0) out vec2 out_uv;
 
 void main()
 {
-    instance o = scene.o[control.instance_id];
+    instance o = instances.o[control.instance_id];
     vec3 pos = vec3(o.model * vec4(in_pos, 1.0f));
     gl_Position = camera.view_proj[control.camera_index] * vec4(pos, 1.0f);
     out_uv = in_uv;

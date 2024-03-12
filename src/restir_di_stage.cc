@@ -1,5 +1,6 @@
 #include "restir_di_stage.hh"
 #include "scene.hh"
+#include "scene_stage.hh"
 #include "misc.hh"
 #include "environment_map.hh"
 #include "log.hh"
@@ -155,11 +156,11 @@ restir_di_stage::restir_di_stage(
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(dev, ss, output_target, opt, "restir_di", 1),
-    gfx(dev, rt_stage::get_common_options(
+    gfx(dev, rt_stage::get_common_options(ss,
         restir_di::load_sources(opt, output_target),
         opt
     )),
-    spatial_reuse(dev, rt_stage::get_common_options(
+    spatial_reuse(dev, rt_stage::get_common_options(ss,
         restir_di::load_spatial_reuse_resources(opt, output_target),
         opt
     )),
@@ -275,6 +276,8 @@ void restir_di_stage::record_command_buffer_pass(
 
     //RIS + temporal reuse
     gfx.bind(cb, frame_index);
+    gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+
     gfx.push_constants(cb, control);
     gfx.trace_rays(cb, expected_dispatch_size);
 
@@ -295,6 +298,7 @@ void restir_di_stage::record_command_buffer_pass(
 
     //Spatial reuse
     spatial_reuse.bind(cb, frame_index);
+    spatial_reuse.set_descriptors(cb, ss->get_descriptors(), 0, 1);
     spatial_reuse.push_constants(cb, control);
     spatial_reuse.trace_rays(cb, expected_dispatch_size);
 

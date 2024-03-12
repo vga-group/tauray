@@ -15,7 +15,8 @@ raster_pipeline::raster_pipeline(
         get_push_constant_ranges(state.src),
         MAX_FRAMES_IN_FLIGHT,
         vk::PipelineBindPoint::eGraphics,
-        state.use_push_descriptors
+        state.use_push_descriptors,
+        state.layout
     ),
     state(state)
 {

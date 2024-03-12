@@ -150,7 +150,8 @@ void shadow_map_stage::update(uint32_t frame_index)
                 }
             },
             false, false, false,
-            {}, false, true
+            {}, false, true,
+            {&ss->get_descriptors()}
         });
         scene_stage::bind_placeholders(*gfx, opt.max_samplers, 0);
     }

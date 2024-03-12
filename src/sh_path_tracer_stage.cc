@@ -105,7 +105,7 @@ sh_path_tracer_stage::sh_path_tracer_stage(
     vk::ImageLayout output_layout,
     const options& opt
 ):  rt_stage(dev, ss, opt, "SH path tracing", 1),
-    gfx(dev, rt_stage::get_common_options(sh_path_tracer::load_sources(opt), opt)),
+    gfx(dev, rt_stage::get_common_options(ss, sh_path_tracer::load_sources(opt), opt)),
     opt(opt),
     output_grid(&output_grid),
     output_layout(output_layout),
