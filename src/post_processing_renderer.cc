@@ -57,6 +57,7 @@ void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
         spec.pos_present = true;
         spec.albedo_present = true;
         spec.diffuse_present = true;
+        spec.prob_present = true;
     }
 
     if(opt.taa.has_value())

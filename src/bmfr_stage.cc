@@ -1,5 +1,6 @@
 #include "bmfr_stage.hh"
 #include "misc.hh"
+#include "log.hh"
 
 namespace tr
 {

@@ -296,7 +296,8 @@ vec3 next_event_estimation(
     mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
     inout bsdf_lobes lobes,
-    out float light_pdf
+    out float light_pdf,
+    out vec3 out_contrib
 ){
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_ENVMAP)
     if(false
@@ -328,12 +329,8 @@ vec3 next_event_estimation(
         if(any(greaterThan(contrib, vec3(0.0001f))))
             contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
-        contrib /= 
-#ifdef BD_FULL_PDF_CONTRIBUTION
-            1;
-#else
-            nee_mis_pdf(light_pdf, bsdf_pdf);
-#endif
+        out_contrib = contrib;
+        contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
         return contrib;
     }
 #endif
@@ -478,13 +475,14 @@ void evaluate_ray(
         vec3 diffuse_contrib = vec3(0.0f);
         vec3 specular_contrib = vec3(0.0f);
 
+        vec3 out_contrib = vec3(0.0f);
         if(!terminal)
         {
             // Do NEE ray
             bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
             vec3 radiance = attenuation * next_event_estimation(
                 generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
-                mat, v, lobes, light_pdf
+                mat, v, lobes, light_pdf, out_contrib
             );
             diffuse_contrib = modulate_diffuse(mat, lobes.diffuse);
             specular_contrib = modulate_reflection(mat, lobes.dielectric_reflection + lobes.metallic_reflection);
@@ -658,7 +656,8 @@ void write_all_outputs(
     vec4 diffuse,
     vec4 reflection,
     pt_vertex_data first_hit_vertex,
-#ifdef BD_BMFR_MODE
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION) || defined(BD_BMFR_MODE)
     vec3 prob,
 #endif
     sampled_material first_hit_material
@@ -679,9 +678,10 @@ void write_all_outputs(
             write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
             write_gbuffer_pos(first_hit_vertex.pos, p);
 
-            #ifdef BD_BMFR_MODE
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION) || defined(BD_BMFR_MODE)
             write_gbuffer_prob(prob, p);
-            #endif
+#endif
 
             #ifdef CALC_PREV_VERTEX_POS
             write_gbuffer_screen_motion(

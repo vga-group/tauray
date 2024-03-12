@@ -29,6 +29,7 @@ public:
         tri_light_sampling_mode tri_light_mode = tri_light_sampling_mode::HYBRID;
 
         bd boda = bd::OFF;
+        denoiser_type dt = denoiser_type::NONE;
     };
 
     path_tracer_stage(

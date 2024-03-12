@@ -137,33 +137,7 @@ void main()
         first_hit_material.albedo.rgb = old_color;
 #endif
     }
-
-#if defined(BD_BOUNCE_COUNT)
-    write_noise_data(
-        vec3(bd_bouce_count) / MAX_BOUNCES / SAMPLES_PER_PASS
-    );
-#elif defined(BD_CONTRIBUTION)
-    write_noise_data(
-        vec3(bd_weighted_bounce_count) / MAX_BOUNCES / SAMPLES_PER_PASS
-    );
-#elif defined(BD_MATERIAL_ID)
-    write_noise_data(
-        vec3(bd_mat_data.albedo_tex_id)
-    );
-#elif defined(BD_BSDF_SUM)
-    write_noise_data(
-        vec3(bd_bsdf_sum) / bd_bouce_count
-    );
-#elif defined(BD_PDF_CONTRIBUTION)
-    write_noise_data(
-        vec3(bd_weighted_bsdf)
-    );
-#elif defined(BD_FULL_PDF_CONTRIBUTION)
-    write_noise_data(
-        vec3(bd_bsdf_weighted_nee)
-    );
-
-#elif defined(BD_BMFR_MODE)
+#if defined(BD_BMFR_MODE)
     write_all_outputs(
         sum_color.rgb / SAMPLES_PER_PASS,
         sum_diffuse.rgba / SAMPLES_PER_PASS,
@@ -172,7 +146,99 @@ void main()
         vec3(bd_bsdf_sum),
         first_hit_material
     );
+#else
+#if defined(BD_BOUNCE_COUNT)
+//    write_noise_data(
+//        vec3(bd_bouce_count) / MAX_BOUNCES / SAMPLES_PER_PASS
+//    );
+#if defined(BD_BMFR)
+    write_all_outputs(
+        sum_color / SAMPLES_PER_PASS,
+        sum_direct / SAMPLES_PER_PASS,
+        sum_diffuse / SAMPLES_PER_PASS,
+        first_hit_vertex,
+        vec3(bd_bouce_count) / MAX_BOUNCES / SAMPLES_PER_PASS,
+        first_hit_material
+    );
+#else
+    write_noise_data(
+        vec3(bd_bouce_count) / MAX_BOUNCES / SAMPLES_PER_PASS
+    );
+#endif
+#elif defined(BD_CONTRIBUTION)
 
+#if defined(BD_BMFR)
+    write_all_outputs(
+        sum_color / SAMPLES_PER_PASS,
+        sum_direct / SAMPLES_PER_PASS,
+        sum_diffuse / SAMPLES_PER_PASS,
+        first_hit_vertex,
+        vec3(bd_weighted_bounce_count) / MAX_BOUNCES / SAMPLES_PER_PASS,
+        first_hit_material
+    );
+#else
+    write_noise_data(
+        vec3(bd_bsdf_weighted_nee)
+    );
+#endif
+//    write_noise_data(
+//        vec3(bd_weighted_bounce_count) / MAX_BOUNCES / SAMPLES_PER_PASS
+//    );
+#elif defined(BD_MATERIAL_ID)
+    write_noise_data(
+        vec3(bd_mat_data.albedo_tex_id)
+    );
+#elif defined(BD_BSDF_SUM)
+//    write_noise_data(
+//        vec3(bd_bsdf_sum) / bd_bouce_count
+//    );
+#if defined(BD_BMFR)
+    write_all_outputs(
+        sum_color / SAMPLES_PER_PASS,
+        sum_direct / SAMPLES_PER_PASS,
+        sum_diffuse / SAMPLES_PER_PASS,
+        first_hit_vertex,
+        vec3(bd_bsdf_sum) / bd_bouce_count,
+        first_hit_material
+    );
+#else
+    write_noise_data(
+        vec3(bd_bsdf_sum) / bd_bouce_count
+    );
+#endif
+#elif defined(BD_PDF_CONTRIBUTION)
+//    write_noise_data(
+//        vec3(bd_weighted_bsdf)
+//    );
+#if defined(BD_BMFR)
+    write_all_outputs(
+        sum_color / SAMPLES_PER_PASS,
+        sum_direct / SAMPLES_PER_PASS,
+        sum_diffuse / SAMPLES_PER_PASS,
+        first_hit_vertex,
+        vec3(bd_weighted_bsdf),
+        first_hit_material
+    );
+#else
+    write_noise_data(
+        vec3(bd_weighted_bsdf)
+    );
+#endif
+#elif defined(BD_FULL_PDF_CONTRIBUTION) 
+#if defined(BD_BMFR)
+    write_all_outputs(
+        sum_color / SAMPLES_PER_PASS,
+        sum_direct / SAMPLES_PER_PASS,
+        sum_diffuse / SAMPLES_PER_PASS,
+        first_hit_vertex,
+        vec3(bd_bsdf_weighted_nee),
+        first_hit_material
+    );
+#else
+    write_noise_data(
+        vec3(bd_bsdf_weighted_nee)
+    );
+#endif
 #else
     write_all_outputs(
         sum_color.rgb / SAMPLES_PER_PASS,
@@ -181,5 +247,6 @@ void main()
         first_hit_vertex,
         first_hit_material
     );
+#endif
 #endif
 }

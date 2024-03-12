@@ -2,6 +2,7 @@
 #include "scene_stage.hh"
 #include "misc.hh"
 #include "environment_map.hh"
+#include "log.hh"
 
 namespace
 {
@@ -90,6 +91,9 @@ path_tracer_stage::path_tracer_stage(
 
     if(opt.boda == bd::BMFR_MODE)
         defines["BD_BMFR_MODE"];
+
+    if(opt.dt == denoiser_type::BMFR)
+        defines["BD_BMFR"];
 
 #define TR_GBUFFER_ENTRY(name, ...)\
     if(output_target.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];

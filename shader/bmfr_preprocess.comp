@@ -30,6 +30,8 @@ layout(binding = 12, set = 0) uniform uniform_buffer_t
     uint frame_counter;
 } uniform_buffer;
 
+layout(binding = 15, set = 0, rgba32f) uniform image2DArray in_prob;
+
 layout(binding = 13, set = 0) buffer tmp_buffer_t
 {
     float16_t data[];
@@ -111,6 +113,7 @@ void main()
     vec4 curr_color = imageLoad(in_color, p);
     vec3 curr_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).xy);
     vec3 curr_pos = imageLoad(in_pos, p).xyz;
+    vec3 probs = imageLoad(in_prob, p).xyz;
     float sum_w = 0.0;
     {
         vec2 motion = vec2(imageLoad(in_screen_motion,p));
@@ -191,9 +194,9 @@ void main()
         curr_normal.x,
         curr_normal.y,
         curr_normal.z,
-        curr_pos.x,
-        curr_pos.y,
-        curr_pos.z,
+        probs.x,
+        probs.y,
+        probs.z,
         curr_pos.x * curr_pos.x,
         curr_pos.y * curr_pos.y,
         curr_pos.z * curr_pos.z,

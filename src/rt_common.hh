@@ -33,6 +33,13 @@ namespace tr
         BMFR_MODE
     };
 
+    enum class denoiser_type
+    {
+        NONE = 0,
+        SVGF,
+        BMFR
+    };
+
     void add_defines(multiple_importance_sampling_mode mode, std::map<std::string, std::string>& defines);
 
     enum class bounce_sampling_mode

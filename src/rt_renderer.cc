@@ -199,7 +199,8 @@ void rt_renderer<Pipeline>::init_resources()
         spec.present_count()
         - spec.color_present
         - spec.diffuse_present
-        - spec.reflection_present == 0
+        - spec.reflection_present
+        - spec.prob_present == 0
     ) use_raster_gbuffer = false;
 
     vk::ImageUsageFlags img_usage = vk::ImageUsageFlagBits::eStorage|vk::ImageUsageFlagBits::eTransferSrc;
@@ -223,6 +224,8 @@ void rt_renderer<Pipeline>::init_resources()
         copy_spec.diffuse_format = spec.diffuse_format;
         copy_spec.reflection_present = spec.reflection_present;
         copy_spec.reflection_format = spec.reflection_format;
+        copy_spec.prob_present = spec.prob_present;
+        copy_spec.prob_format = spec.prob_format;
     }
     else
         copy_spec = spec;
@@ -300,6 +303,7 @@ void rt_renderer<Pipeline>::init_resources()
                 limited_target.color = dimg.color;
                 limited_target.diffuse = dimg.diffuse;
                 limited_target.reflection = dimg.reflection;
+                limited_target.prob = dimg.prob;
                 dimg = limited_target;
             }
             dimgs.push_back(dimg);
@@ -337,6 +341,7 @@ void rt_renderer<Pipeline>::init_resources()
             mv_target.color = render_target();
             mv_target.diffuse = render_target();
             mv_target.reflection = render_target();
+            mv_target.prob = render_target();
             gbuffer_block_targets.push_back(mv_target);
         }
 
