@@ -22,8 +22,8 @@ public:
 
     basic_pipeline(
         device& dev,
-        std::vector<vk::DescriptorSetLayoutBinding>&& bindings,
-        std::map<std::string, uint32_t>&& binding_names,
+        std::vector<std::vector<vk::DescriptorSetLayoutBinding>>&& sets,
+        std::map<std::string, std::pair<uint32_t, uint32_t>>&& binding_names,
         std::vector<vk::PushConstantRange>&& push_constant_ranges,
         uint32_t max_descriptor_sets,
         vk::PipelineBindPoint bind_point,
@@ -81,8 +81,8 @@ private:
         const std::string& binding
     ) const;
 
-    std::vector<vk::DescriptorSetLayoutBinding> bindings;
-    std::map<std::string, uint32_t> binding_names;
+    std::vector<std::vector<vk::DescriptorSetLayoutBinding>> sets;
+    std::map<std::string, std::pair<uint32_t, uint32_t>> binding_names;
     std::vector<vk::PushConstantRange> push_constant_ranges;
 };
 

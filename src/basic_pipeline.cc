@@ -6,20 +6,20 @@ namespace tr
 
 basic_pipeline::basic_pipeline(
     device& dev,
-    std::vector<vk::DescriptorSetLayoutBinding>&& bindings,
-    std::map<std::string, uint32_t>&& binding_names,
+    std::vector<std::vector<vk::DescriptorSetLayoutBinding>>&& sets,
+    std::map<std::string, std::pair<uint32_t, uint32_t>>&& binding_names,
     std::vector<vk::PushConstantRange>&& push_constant_ranges,
     uint32_t max_descriptor_sets,
     vk::PipelineBindPoint bind_point,
     bool use_push_descriptors
 ):  dev(&dev),
     bind_point(bind_point),
-    bindings(std::move(bindings)),
+    sets(std::move(sets)),
     binding_names(std::move(binding_names)),
     push_constant_ranges(std::move(push_constant_ranges))
 {
     vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_info(
-        {}, this->bindings.size(), this->bindings.data()
+        {}, this->sets[0].size(), this->sets[0].data()
     );
 
     if(use_push_descriptors)
@@ -50,7 +50,7 @@ void basic_pipeline::reset_descriptor_sets()
         return;
 
     std::map<vk::DescriptorType, uint32_t> type_count;
-    for(auto& b: bindings) type_count[b.descriptorType] += b.descriptorCount;
+    for(auto& b: sets[0]) type_count[b.descriptorType] += b.descriptorCount;
 
     std::vector<vk::DescriptorPoolSize> pool_sizes;
     for(auto& pair: type_count)
@@ -161,9 +161,9 @@ const vk::DescriptorSetLayoutBinding* basic_pipeline::find_descriptor_binding(
         return nullptr;
     }
 
-    for(const auto& b: bindings)
+    for(const auto& b: sets[0])
     {
-        if(b.binding == it->second)
+        if(b.binding == it->second.second)
             return &b;
     }
     return nullptr;
