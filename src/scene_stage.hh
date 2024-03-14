@@ -75,7 +75,7 @@ public:
     const std::unordered_map<sh_grid*, texture>& get_sh_grid_textures() const;
 
     descriptor_set& get_descriptors();
-    void bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_offset = 0);
+    void bind(basic_pipeline& pipeline, uint32_t frame_index);
     static void bind_placeholders(
         basic_pipeline& pipeline,
         size_t max_samplers,
@@ -122,7 +122,7 @@ private:
 
     void init_descriptor_set_layout();
     void update_descriptor_set();
-    std::vector<descriptor_state> get_descriptor_info(device_id id, int32_t camera_index) const;
+    std::vector<descriptor_state> get_descriptor_info(device_id id) const;
 
     bool prev_was_rebuild;
     size_t as_instance_count;

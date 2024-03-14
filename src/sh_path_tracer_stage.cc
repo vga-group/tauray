@@ -147,7 +147,7 @@ void sh_path_tracer_stage::init_scene_resources()
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        ss->bind(gfx, i, -1);
+        ss->bind(gfx, i);
         gfx.update_descriptor_set({
             {"inout_data", {{}, output_grid->get_image_view(dev->id), vk::ImageLayout::eGeneral}},
             {"grid", {grid_data[dev->id], 0, VK_WHOLE_SIZE}}

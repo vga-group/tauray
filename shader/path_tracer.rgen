@@ -18,7 +18,6 @@
 //   Film is sampled with Blackman-Harris filter.
 
 #define DISTRIBUTION_DATA_BINDING 8
-#define CAMERA_DATA_BINDING 9
 #define SAMPLING_DATA_BINDING 20
 
 #ifdef USE_COLOR_TARGET

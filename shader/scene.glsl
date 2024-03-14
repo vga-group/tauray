@@ -164,13 +164,24 @@ layout(binding = 9, set = SCENE_SET, scalar) uniform scene_metadata_buffer
     for(uint item_index = 0; item_index < scene_metadata.point_light_count; ++item_index) {
 #define POINT_LIGHT_FOR_END }
 
+struct camera_pair
+{
+    camera_data current;
+    camera_data previous;
+};
+
+layout(binding = 10, set = SCENE_SET) readonly buffer camera_data_buffer
+{
+    camera_pair pairs[];
+} camera;
+
 #ifdef RAY_TRACING
-layout(binding = 10, set = SCENE_SET) uniform accelerationStructureEXT tlas;
+layout(binding = 11, set = SCENE_SET) uniform accelerationStructureEXT tlas;
 #endif
 
 // REFACTOR TODO: move these to some raster_scene.glsl with a different set etc?
 // That could also include shadow maps.
-layout(binding = 11, set = SCENE_SET) uniform sampler3D sh_grid_data[];
+layout(binding = 12, set = SCENE_SET) uniform sampler3D sh_grid_data[];
 
 struct sh_grid
 {
@@ -182,7 +193,7 @@ struct sh_grid
     float pad1;
 };
 
-layout(binding = 12, set = 0, scalar) buffer sh_grid_buffer
+layout(binding = 13, set = SCENE_SET, scalar) buffer sh_grid_buffer
 {
     sh_grid grids[];
 } sh_grids;

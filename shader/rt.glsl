@@ -141,7 +141,7 @@ void shadow_terminator_fix(inout vec3 diffuse, inout vec3 specular, float cos_l,
 #endif
 }
 
-#if defined(CAMERA_DATA_BINDING) && defined(DISTRIBUTION_DATA_BINDING)
+#if defined(DISTRIBUTION_DATA_BINDING)
 camera_data get_camera()
 {
     return camera.pairs[gl_LaunchIDEXT.z].current;

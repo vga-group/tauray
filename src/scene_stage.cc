@@ -845,18 +845,9 @@ void scene_stage::clear_pre_transformed_vertices()
     }
 }
 
-std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int32_t camera_index) const
+std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id) const
 {
-
     std::vector<descriptor_state> descriptors = {};
-
-    if(camera_index >= 0)
-    {
-        std::pair<size_t, size_t> camera_offset = camera_data_offsets[camera_index];
-        descriptors.push_back(
-            {"camera", {camera_data[id], camera_offset.first, VK_WHOLE_SIZE}}
-        );
-    }
 
     if(opt.shadow_mapping)
     {
@@ -890,10 +881,10 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
     return descriptors;
 }
 
-void scene_stage::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_index)
+void scene_stage::bind(basic_pipeline& pipeline, uint32_t frame_index)
 {
     device* dev = pipeline.get_device();
-    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->id, camera_index);
+    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->id);
     pipeline.update_descriptor_set(descriptors, frame_index);
 }
 
@@ -1362,7 +1353,7 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
         if(opt.gather_emissive_triangles)
         {
             extract_tri_lights[dev.id].reset_descriptor_sets();
-            bind(extract_tri_lights[dev.id], 0, 0);
+            bind(extract_tri_lights[dev.id], 0);
         }
 
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -1584,13 +1575,14 @@ void scene_stage::init_descriptor_set_layout()
     scene_desc.add("environment_map_tex", {7, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     scene_desc.add("environment_map_alias_table", {8, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     scene_desc.add("scene_metadata", {9, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("camera", {10, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
 
     device_mask dev = get_device_mask();
     if(dev.get_context()->is_ray_tracing_supported())
-        scene_desc.add("tlas", {10, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+        scene_desc.add("tlas", {11, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 
-    scene_desc.add("sh_grid_data", {11, vk::DescriptorType::eCombinedImageSampler, opt.max_3d_samplers, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
-    scene_desc.add("sh_grids", {12, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("sh_grid_data", {12, vk::DescriptorType::eCombinedImageSampler, opt.max_3d_samplers, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_desc.add("sh_grids", {13, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 }
 
 void scene_stage::update_descriptor_set()
@@ -1601,6 +1593,7 @@ void scene_stage::update_descriptor_set()
     scene_desc.set_buffer(0, "point_lights", point_light_data);
     scene_desc.set_buffer(0, "tri_lights", tri_light_data);
     scene_desc.set_buffer(0, "scene_metadata", scene_metadata);
+    scene_desc.set_buffer(0, "camera", camera_data);
     scene_desc.set_buffer(0, "sh_grids", sh_grid_data);
 
     if(envmap)

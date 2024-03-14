@@ -4,7 +4,6 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_multiview : enable
 
-#define CAMERA_DATA_BINDING 4
 #define SHADOW_MAP_BUFFER_BINDING 5
 #define SHADOW_MAP_CASCADE_BUFFER_BINDING 6
 #define SHADOW_MAP_ATLAS_BINDING 7
@@ -179,7 +178,7 @@ void main()
 {
     vertex_data v = get_vertex_data();
     sampled_material mat = sample_material(v);
-    vec3 view = normalize(v.pos - camera.pairs[gl_ViewIndex].current.origin.xyz);
+    vec3 view = normalize(v.pos - camera.pairs[control.base_camera_index + gl_ViewIndex].current.origin.xyz);
     mat3 tbn = create_tangent_space(v.mapped_normal);
     vec3 shading_view = -view * tbn;
     vec3 direct_diffuse;
@@ -203,7 +202,7 @@ void main()
     write_gbuffer_material(mat);
     write_gbuffer_normal(dot(view, v.mapped_normal) > 0 ? -v.mapped_normal : v.mapped_normal);
     write_gbuffer_pos(v.pos);
-    write_gbuffer_screen_motion(get_camera_projection(camera.pairs[gl_ViewIndex].previous, v.prev_pos));
+    write_gbuffer_screen_motion(get_camera_projection(camera.pairs[control.base_camera_index + gl_ViewIndex].previous, v.prev_pos));
     write_gbuffer_instance_id(int(control.instance_id));
     write_gbuffer_linear_depth();
     write_gbuffer_flat_normal(normalize(cross(dFdy(v.pos), dFdx(v.pos))));

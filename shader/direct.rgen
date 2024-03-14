@@ -6,7 +6,6 @@
 #extension GL_EXT_control_flow_attributes : enable
 
 #define DISTRIBUTION_DATA_BINDING 8
-#define CAMERA_DATA_BINDING 9
 #define SAMPLING_DATA_BINDING 20
 #ifdef USE_COLOR_TARGET
 #define COLOR_TARGET_BINDING 11

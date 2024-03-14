@@ -20,6 +20,8 @@ struct push_constant_buffer
     uint32_t pcf_samples;
     uint32_t omni_pcf_samples;
     uint32_t pcss_samples;
+    int32_t base_camera_index;
+    int32_t pad;
     float pcss_minimum_radius;
     float noise_scale;
     pvec2 shadow_map_atlas_pixel_margin;
@@ -198,8 +200,7 @@ void raster_stage::update(uint32_t)
         size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
-            ss->bind(*gfx, i, j);
-            j += gfx->get_multiview_layer_count();
+            ss->bind(*gfx, i);
 
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
@@ -214,6 +215,7 @@ void raster_stage::update(uint32_t)
                 opt.sample_shading ? ceil(sqrt((int)output_targets[0].get_msaa())) : 1.0f;
             control.ambient_color = ss->get_ambient();
             control.shadow_map_atlas_pixel_margin = ss->get_shadow_map_atlas_pixel_margin();
+            control.base_camera_index = j;
 
             for(size_t i = 0; i < instances.size(); ++i)
             {
@@ -233,6 +235,7 @@ void raster_stage::update(uint32_t)
                 cb.drawIndexed(m->get_indices().size(), 1, 0, 0, 0);
             }
             gfx->end_render_pass(cb);
+            j += gfx->get_multiview_layer_count();
         }
         raster_timer.end(cb, dev->id, i);
         end_graphics(cb, i);

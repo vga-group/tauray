@@ -160,7 +160,7 @@ void shadow_map_stage::update(uint32_t frame_index)
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             // Bind descriptors
-            ss->bind(*gfx, i, -1);
+            ss->bind(*gfx, i);
             gfx->update_descriptor_set({
                 {"camera", {camera_data[dev->id], 0, VK_WHOLE_SIZE}}
             }, i);

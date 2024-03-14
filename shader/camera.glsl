@@ -2,8 +2,6 @@
 #define CAMERA_GLSL
 #include "math.glsl"
 
-#ifdef CAMERA_DATA_BINDING
-
 // This is so that basic raster-based things don't have to add the definition
 // separately, since they can only support this camera type anyway.
 #ifndef CAMERA_PROJECTION_TYPE
@@ -107,17 +105,5 @@ vec3 get_camera_projection(in camera_data cam, vec3 world_pos)
 
 #endif
 
-struct camera_pair
-{
-    camera_data current;
-    camera_data previous;
-};
-
-layout(binding = CAMERA_DATA_BINDING, set = 0) buffer camera_data_buffer
-{
-    camera_pair pairs[];
-} camera;
-
-#endif
 #endif
 

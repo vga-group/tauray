@@ -9,6 +9,8 @@ layout(push_constant) uniform push_constant_buffer
     int pcf_samples;
     int omni_pcf_samples;
     int pcss_samples;
+    int base_camera_index;
+    int pad;
     float pcss_minimum_radius;
     float noise_scale;
     vec2 shadow_map_atlas_pixel_margin;

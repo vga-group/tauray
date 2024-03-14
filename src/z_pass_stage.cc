@@ -13,6 +13,7 @@ using namespace tr;
 struct push_constant_buffer
 {
     uint32_t instance_id;
+    int32_t base_camera_index;
 };
 
 }
@@ -78,8 +79,7 @@ void z_pass_stage::update(uint32_t)
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             // Bind descriptors
-            ss->bind(*gfx, i, j);
-            j += gfx->get_multiview_layer_count();
+            ss->bind(*gfx, i);
 
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
@@ -102,12 +102,14 @@ void z_pass_stage::update(uint32_t)
                     0, vk::IndexType::eUint32
                 );
                 control.instance_id = i;
+                control.base_camera_index = j;
 
                 gfx->push_constants(cb, control);
 
                 cb.drawIndexed(m->get_indices().size(), 1, 0, 0, 0);
             }
             gfx->end_render_pass(cb);
+            j += gfx->get_multiview_layer_count();
         }
         z_pass_timer.end(cb, dev->id, i);
         end_graphics(cb, i);

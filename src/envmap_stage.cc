@@ -16,6 +16,7 @@ struct push_constant_buffer
     pvec2 screen_size;
     // -1 for no environment map
     int environment_proj;
+    int base_camera_index;
 };
 
 }
@@ -90,18 +91,19 @@ void envmap_stage::update(uint32_t)
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             // Bind descriptors
-            ss->bind(*gfx, i, j);
-            j += gfx->get_multiview_layer_count();
+            ss->bind(*gfx, i);
 
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
 
             control.screen_size = vec2(gfx->get_state().output_size);
+            control.base_camera_index = j;
             gfx->push_constants(cb, control);
 
             cb.draw(6, 1, 0, 0);
 
             gfx->end_render_pass(cb);
+            j += gfx->get_multiview_layer_count();
         }
         envmap_timer.end(cb, dev->id, i);
         end_graphics(cb, i);

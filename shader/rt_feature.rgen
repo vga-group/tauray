@@ -4,7 +4,6 @@
 
 #define COLOR_TARGET_BINDING 8
 #define DISTRIBUTION_DATA_BINDING 9
-#define CAMERA_DATA_BINDING 10
 #include "rt_feature.glsl"
 
 layout(location = 0) rayPayloadEXT hit_payload payload;

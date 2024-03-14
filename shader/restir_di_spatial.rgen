@@ -6,7 +6,6 @@
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_debug_printf : enable
 
-#define CAMERA_DATA_BINDING 2
 #define DISTRIBUTION_DATA_BINDING 3
 #define SAMPLING_DATA_BINDING 10
 
