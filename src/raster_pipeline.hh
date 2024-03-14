@@ -18,11 +18,6 @@ public:
         uvec4 viewport = uvec4(0);
         raster_shader_sources src;
 
-        // The actual bindings are automatically determined from shader
-        // source, so you can only define array lengths here (those can't
-        // be deduced since they can change).
-        binding_array_length_info binding_array_lengths;
-
         std::vector<vk::VertexInputBindingDescription> vertex_bindings;
         std::vector<vk::VertexInputAttributeDescription> vertex_attributes;
 

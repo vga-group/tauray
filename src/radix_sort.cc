@@ -19,7 +19,7 @@ namespace tr
 {
 
 radix_sort::radix_sort(device& dev)
-: dev(&dev), reorder(dev, {{"shader/array_reorder.comp"}, {}, 1, true})
+: dev(&dev), reorder(dev, {{"shader/array_reorder.comp"}, 1, true})
 {
     radix_sort_vk_target* rs_target =  radix_sort_vk_target_auto_detect(
         (VkPhysicalDeviceProperties*)&dev.props,

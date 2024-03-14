@@ -3,18 +3,9 @@
 #include "math.glsl"
 
 #include "random_sampler.glsl"
-
-#ifdef SAMPLING_DATA_BINDING
-layout(binding = SAMPLING_DATA_BINDING, set = 0) uniform sampling_data_buffer
-{
-    // xyz: size, w: sampling_start_counter
-    uvec4 size_start_counter;
-    uint rng_seed;
-} sampling_data;
-#endif
-
 #include "sobol_z_sampler.glsl"
 #include "sobol_owen_sampler.glsl"
+
 
 struct local_sampler
 {
@@ -26,8 +17,13 @@ struct local_sampler
 #endif
 };
 
-
 #ifdef SAMPLING_DATA_BINDING
+layout(binding = SAMPLING_DATA_BINDING, set = 0) uniform sampling_data_buffer
+{
+    uint frame_counter;
+    uint rng_seed;
+} sampling_data;
+
 // coord.xy = pixel screen coordinate
 // coord.z = viewport index
 // coord.w = time/path index
@@ -36,7 +32,7 @@ struct local_sampler
 local_sampler init_local_sampler(uvec4 coord)
 {
     local_sampler ls;
-    coord.w += sampling_data.size_start_counter.w;
+    coord.w += sampling_data.frame_counter;
     coord.z += sampling_data.rng_seed;
 
 #if defined(USE_SOBOL_Z_ORDER_SAMPLING)
@@ -44,7 +40,7 @@ local_sampler init_local_sampler(uvec4 coord)
 #elif defined(USE_SOBOL_OWEN_SAMPLING)
     ls.ss = init_sobol_owen_sampler(coord);
 #endif
-    ls.rs = init_random_sampler(coord, sampling_data.size_start_counter.xyz);
+    ls.rs = init_random_sampler(coord);
     return ls;
 }
 #endif
@@ -64,8 +60,6 @@ vec3 generate_spatial_sample(inout local_sampler ls)
     return generate_uniform_random(ls.rs).xyz;
 }
 
-#ifdef SAMPLING_DATA_BINDING
-
 // Generates a 2D sample in xy, 1D samples in z and w. This sampler is only
 // called once per bounce, so you can safely employ stratification or some
 // other scheme, as long as you take bounce_index into account.
@@ -84,7 +78,5 @@ vec4 generate_ray_sample(inout local_sampler ls, uint bounce_index)
 {
     return ldexp(vec4(generate_ray_sample_uint(ls, bounce_index)), ivec4(-32));
 }
-
-#endif
 
 #endif

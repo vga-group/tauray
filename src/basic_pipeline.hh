@@ -18,27 +18,21 @@ class push_descriptor_set;
 class basic_pipeline
 {
 public:
-    // REFACTOR this away.
-    using binding_array_length_info = std::map<
-        std::string /* binding name */,
-        uint32_t /* array size */
-    >;
+    basic_pipeline(device& dev, vk::PipelineBindPoint bind_point);
+    basic_pipeline(const basic_pipeline& other) = delete;
+    basic_pipeline(basic_pipeline&& other) = delete;
+    virtual ~basic_pipeline() = default;
 
-    basic_pipeline(
-        device& dev,
+    void init(
         std::vector<std::vector<vk::DescriptorSetLayoutBinding>>&& sets,
         std::map<std::string, std::pair<uint32_t, uint32_t>>&& binding_names,
         std::vector<vk::PushConstantRange>&& push_constant_ranges,
         uint32_t max_descriptor_sets,
-        vk::PipelineBindPoint bind_point,
         bool use_push_descriptors,
         // REFACTOR to be the only option, removing max_descriptor_sets
-        // and use_push_descriptors.
+        // and use_push_descriptors and sets and binding_names.
         const std::vector<descriptor_set_layout*>& layout
     );
-    basic_pipeline(const basic_pipeline& other) = delete;
-    basic_pipeline(basic_pipeline&& other) = delete;
-    virtual ~basic_pipeline() = default;
 
     void reset_descriptor_sets();
     void update_descriptor_set(

@@ -49,8 +49,7 @@ tonemap_stage::tonemap_stage(
     const options& opt
 ):  single_device_stage(dev, single_device_stage::COMMAND_BUFFER_PER_FRAME_AND_SWAPCHAIN_IMAGE),
     comp(dev, compute_pipeline::params{
-        load_shader_source(opt), {},
-        MAX_FRAMES_IN_FLIGHT * (uint32_t)output_frames.size()
+        load_shader_source(opt), MAX_FRAMES_IN_FLIGHT * (uint32_t)output_frames.size()
     }),
     opt(opt),
     input_target(input),

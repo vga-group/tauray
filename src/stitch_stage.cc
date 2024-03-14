@@ -68,13 +68,7 @@ stitch_stage::stitch_stage(
     const std::vector<distribution_params>& params,
     const options& opt
 ):  single_device_stage(dev),
-    comp(dev, compute_pipeline::params{
-    load_source(opt.strategy),
-        {
-            {"input_images", (uint32_t)images[0].entry_count()*(images.size()-1)},
-            {"output_images", (uint32_t)images[0].entry_count()},
-        }
-    }),
+    io_set(dev),
     opt(opt),
     size(size),
     blend_ratio(1),
@@ -96,10 +90,21 @@ stitch_stage::stitch_stage(
         });
     }
 
-    comp.update_descriptor_set({
-        {"input_images", input_images},
-        {"output_images", output_images}
-    });
+    io_set.add("input_images", {
+        0, vk::DescriptorType::eStorageImage,
+        (uint32_t)(images[0].entry_count()*(images.size()-1)),
+        vk::ShaderStageFlagBits::eAll, nullptr}
+    );
+    io_set.add("output_images", {
+        1, vk::DescriptorType::eStorageImage,
+        (uint32_t)(images[0].entry_count()),
+        vk::ShaderStageFlagBits::eAll, nullptr}
+    );
+    comp.emplace(dev, compute_pipeline::params{load_source(opt.strategy), 0, false, {&io_set}});
+
+    io_set.reset(dev.id, 1);
+    io_set.set_image(dev.id, 0, "input_images", std::move(input_images));
+    io_set.set_image(dev.id, 0, "output_images", std::move(output_images));
     record_commands();
 }
 
@@ -132,7 +137,8 @@ void stitch_stage::record_commands()
         vk::CommandBuffer cb = begin_compute();
         stitch_timer.begin(cb, dev->id, i);
 
-        comp.bind(cb, i);
+        comp->bind(cb, i);
+        comp->set_descriptors(cb, io_set, 0, 0);
 
         int subimage_index = 0;
         switch(opt.strategy)
@@ -155,7 +161,7 @@ void stitch_stage::record_commands()
                     if(img_idx != primary_index)
                     {
                         images[img_idx].visit([&](const render_target&){
-                            comp.push_constants(cb, control);
+                            comp->push_constants(cb, control);
                             unsigned int wg = (control.count+255)/256;
                             cb.dispatch(wg, 1, opt.active_viewport_count);
                             control.input_img_id++;
@@ -175,7 +181,7 @@ void stitch_stage::record_commands()
                 control.subimage_index = subimage_index++;
                 control.blend_ratio = blend_ratio;
 
-                comp.push_constants(cb, control);
+                comp->push_constants(cb, control);
 
                 uvec2 wg = (uvec2(size.x, (size.y+1)/images.size())+15u)/16u;
                 cb.dispatch(wg.x, wg.y, (images.size()-1)*opt.active_viewport_count );

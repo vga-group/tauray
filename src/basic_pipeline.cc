@@ -7,19 +7,24 @@ namespace tr
 
 basic_pipeline::basic_pipeline(
     device& dev,
+    vk::PipelineBindPoint bind_point
+):  dev(&dev),
+    bind_point(bind_point)
+{
+}
+
+void basic_pipeline::init(
     std::vector<std::vector<vk::DescriptorSetLayoutBinding>>&& sets,
     std::map<std::string, std::pair<uint32_t, uint32_t>>&& binding_names,
     std::vector<vk::PushConstantRange>&& push_constant_ranges,
     uint32_t max_descriptor_sets,
-    vk::PipelineBindPoint bind_point,
     bool use_push_descriptors,
     const std::vector<tr::descriptor_set_layout*>& layout
-):  dev(&dev),
-    bind_point(bind_point),
-    sets(std::move(sets)),
-    binding_names(std::move(binding_names)),
-    push_constant_ranges(std::move(push_constant_ranges))
-{
+){
+    this->sets = std::move(sets);
+    this->binding_names = std::move(binding_names);
+    this->push_constant_ranges = std::move(push_constant_ranges);
+
     vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_info(
         {}, this->sets[0].size(), this->sets[0].data()
     );
@@ -28,7 +33,7 @@ basic_pipeline::basic_pipeline(
         descriptor_set_layout_info.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR;
 
     descriptor_set_layout = vkm(
-        dev, dev.logical.createDescriptorSetLayout(descriptor_set_layout_info)
+        *dev, dev->logical.createDescriptorSetLayout(descriptor_set_layout_info)
     );
 
     if(!use_push_descriptors && max_descriptor_sets > 0)
@@ -42,7 +47,7 @@ basic_pipeline::basic_pipeline(
     if(max_descriptor_sets > 0)
         descriptor_sets.insert(descriptor_sets.begin(), descriptor_set_layout);
     for(tr::descriptor_set_layout* layout: layout)
-        descriptor_sets.push_back(layout->get_layout(dev.id));
+        descriptor_sets.push_back(layout->get_layout(dev->id));
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info(
         {}, descriptor_sets.size(), descriptor_sets.data(),
@@ -50,7 +55,7 @@ basic_pipeline::basic_pipeline(
         this->push_constant_ranges.data()
     );
 
-    pipeline_layout = vkm(dev, dev.logical.createPipelineLayout(pipeline_layout_info));
+    pipeline_layout = vkm(*dev, dev->logical.createPipelineLayout(pipeline_layout_info));
 }
 
 void basic_pipeline::reset_descriptor_sets()

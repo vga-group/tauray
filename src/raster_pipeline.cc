@@ -8,18 +8,17 @@ namespace tr
 
 raster_pipeline::raster_pipeline(
     device& dev, const pipeline_state& state
-):  basic_pipeline(
-        dev,
-        get_bindings(state.src, state.binding_array_lengths),
+):  basic_pipeline(dev, vk::PipelineBindPoint::eGraphics),
+    state(state)
+{
+    basic_pipeline::init(
+        get_bindings(state.src),
         get_binding_names(state.src),
         get_push_constant_ranges(state.src),
         MAX_FRAMES_IN_FLIGHT,
-        vk::PipelineBindPoint::eGraphics,
         state.use_push_descriptors,
         state.layout
-    ),
-    state(state)
-{
+    );
     init_pipeline();
 }
 

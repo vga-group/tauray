@@ -39,7 +39,6 @@ envmap_stage::envmap_stage(
             target.size,
             uvec4(0, 0, target.size),
             {{"shader/envmap.vert"}, {"shader/envmap.frag"}},
-            {},
             {}, {},
             {{
                 target,

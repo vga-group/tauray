@@ -51,7 +51,7 @@ protected:
     ) override;
     int get_accumulated_samples() const;
 
-    void init_descriptors(basic_pipeline& pp);
+    void get_descriptors(push_descriptor_set& desc);
 
     virtual void record_command_buffer_pass(
         vk::CommandBuffer cb,
@@ -61,9 +61,10 @@ protected:
         bool first_in_command_buffer
     ) = 0;
 
+    gpu_buffer distribution_data;
+
 private:
     options opt;
-    gpu_buffer distribution_data;
     gbuffer_target target;
 
     int accumulated_samples;

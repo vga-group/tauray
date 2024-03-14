@@ -6,7 +6,6 @@
 
 hitAttributeEXT vec2 attribs;
 
-#define DISTRIBUTION_DATA_BINDING 9
 #define CALC_PREV_VERTEX_POS
 #include "rt_feature.glsl"
 

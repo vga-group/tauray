@@ -39,7 +39,6 @@ z_pass_stage::z_pass_stage(
                 {"shader/z_pass.vert"},
                 {"shader/z_pass.frag"}
             },
-            {},
             mesh::get_bindings(),
             {mesh::get_attributes()[0]},
             {},

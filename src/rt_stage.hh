@@ -41,14 +41,6 @@ public:
         size_t max_passes_per_command_buffer = 0;
     };
 
-    // REFACTOR: Nuke this?
-    static rt_pipeline::options get_common_options(
-        scene_stage& ss,
-        const rt_shader_sources& s,
-        const options& opt,
-        vk::SpecializationInfo specialization = {}
-    );
-
     static void get_common_defines(
         std::map<std::string, std::string>& defines,
         const options& opt
@@ -66,11 +58,6 @@ public:
 
     void reset_sample_counter();
 
-    void set_local_sampler_parameters(
-        uvec3 target_size,
-        uint32_t frame_counter_increment
-    );
-
 protected:
     void update(uint32_t frame_index) override;
     virtual void record_command_buffer(
@@ -79,8 +66,7 @@ protected:
         uint32_t pass_index,
         bool first_in_command_buffer
     ) = 0;
-    virtual void init_scene_resources() = 0;
-    void init_descriptors(basic_pipeline& pp);
+    void get_descriptors(push_descriptor_set& desc);
     void record_command_buffers();
     void force_command_buffer_refresh();
 
@@ -94,9 +80,7 @@ private:
     timer rt_timer;
 
     gpu_buffer sampling_data;
-    uvec3 sampling_target_size;
-    uint32_t sampling_frame_counter_increment;
-    uint32_t sample_counter;
+    uint32_t frame_counter;
     uint32_t scene_state_counter;
     bool force_refresh;
 };

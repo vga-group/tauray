@@ -554,6 +554,18 @@ void push_descriptor_set::set_buffer(
     }
 }
 
+void push_descriptor_set::set_buffer(
+    std::string_view name,
+    const gpu_buffer& buffer,
+    uint32_t offset
+){
+    for(device& dev: buffer.get_mask())
+    {
+        if(data.get_mask().contains(dev.id))
+            set_buffer(dev.id, name, {{buffer[dev.id], offset, VK_WHOLE_SIZE}});
+    }
+}
+
 void push_descriptor_set::set_acceleration_structure(
     device_id id,
     std::string_view name,

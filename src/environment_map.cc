@@ -41,7 +41,7 @@ void environment_map::generate_alias_table()
     device& dev = *get_mask().begin();
     compute_pipeline importance_pipeline(
         dev, compute_pipeline::params{
-            {"shader/alias_table_importance.comp", {}}, {}, 0, true
+            {"shader/alias_table_importance.comp", {}}, 0, true
         }
     );
     sampler envmap_sampler(dev);

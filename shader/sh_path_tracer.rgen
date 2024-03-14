@@ -5,7 +5,6 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
 
-#define SAMPLING_DATA_BINDING 9
 #define INDIRECT_CLAMP_FIRST_BOUNCE
 #define HIDE_LIGHTS
 
@@ -21,11 +20,8 @@ layout(push_constant, scalar) uniform push_constant_buffer
     float regularization_gamma;
 } control;
 
-#include "path_tracer.glsl"
-#include "spherical_harmonics.glsl"
-
-layout(binding = 12, set = 0, rgba32f) uniform image3D inout_data;
-layout(binding = 13, set = 0) uniform grid_data_buffer
+layout(binding = 0, set = 0, rgba32f) uniform image3D inout_data;
+layout(binding = 1, set = 0) uniform grid_data_buffer
 {
     mat4 transform;
     mat4 normal_transform;
@@ -35,6 +31,10 @@ layout(binding = 13, set = 0) uniform grid_data_buffer
     float rotation_x;
     float rotation_y;
 } grid;
+
+#define SAMPLING_DATA_BINDING 2
+#include "path_tracer.glsl"
+#include "spherical_harmonics.glsl"
 
 void main()
 {

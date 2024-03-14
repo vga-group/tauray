@@ -96,16 +96,13 @@ direct_stage::direct_stage(
         dev, ss, output_target, opt, "direct light",
         opt.samples_per_pixel / opt.samples_per_pass
     ),
-    gfx(dev, rt_stage::get_common_options(ss,
-        direct::load_sources(opt, output_target), opt
-    )),
+    desc(dev),
+    gfx(dev),
     opt(opt)
 {
-}
-
-void direct_stage::init_scene_resources()
-{
-    rt_camera_stage::init_descriptors(gfx);
+    rt_shader_sources src = direct::load_sources(opt, output_target);
+    desc.add(src);
+    gfx.init(src, {&desc, &ss.get_descriptors()});
 }
 
 void direct_stage::record_command_buffer_pass(
@@ -118,6 +115,8 @@ void direct_stage::record_command_buffer_pass(
     if(first_in_command_buffer)
     {
         gfx.bind(cb, frame_index);
+        get_descriptors(desc);
+        gfx.push_descriptors(cb, desc, 0);
         gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
     }
 

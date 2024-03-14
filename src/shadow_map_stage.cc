@@ -128,7 +128,6 @@ void shadow_map_stage::update(uint32_t frame_index)
             uvec2(shadow_map_atlas->get_size()),
             uvec4(0, 0, shadow_map_atlas->get_size()),
             shadow::load_sources(),
-            {},
             mesh::get_bindings(),
             {mesh::get_attributes()[0], mesh::get_attributes()[2]},
             {},

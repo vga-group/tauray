@@ -295,8 +295,7 @@ std::map<std::string, std::pair<uint32_t, uint32_t>> get_binding_names(const sha
 }
 
 std::vector<std::vector<vk::DescriptorSetLayoutBinding>> get_bindings(
-    const rt_shader_sources& src,
-    const std::map<std::string, uint32_t>& count_overrides
+    const rt_shader_sources& src
 ){
     std::vector<std::vector<vk::DescriptorSetLayoutBinding>> sets;
     append_shader_bindings(sets, src.rgen);
@@ -311,80 +310,24 @@ std::vector<std::vector<vk::DescriptorSetLayoutBinding>> get_bindings(
     for(const shader_source& s: src.rmiss)
         append_shader_bindings(sets, s);
 
-    auto binding_names = get_binding_names(src);
-
-    for(auto pair: count_overrides)
-    {
-        auto it = binding_names.find(pair.first);
-        if(it == binding_names.end())
-            continue;
-
-        for(auto& o: sets[it->second.first])
-        {
-            if(o.binding == it->second.second)
-            {
-                o.descriptorCount = pair.second;
-                break;
-            }
-        }
-    }
-
     return sets;
 }
 
 std::vector<std::vector<vk::DescriptorSetLayoutBinding>> get_bindings(
-    const raster_shader_sources& src,
-    const std::map<std::string, uint32_t>& count_overrides
+    const raster_shader_sources& src
 ){
     std::vector<std::vector<vk::DescriptorSetLayoutBinding>> sets;
     append_shader_bindings(sets, src.vert);
     append_shader_bindings(sets, src.frag);
 
-    auto binding_names = get_binding_names(src);
-
-    for(auto pair: count_overrides)
-    {
-        auto it = binding_names.find(pair.first);
-        if(it == binding_names.end())
-            continue;
-
-        for(auto& o: sets[it->second.first])
-        {
-            if(o.binding == it->second.second)
-            {
-                o.descriptorCount = pair.second;
-                break;
-            }
-        }
-    }
-
     return sets;
 }
 
 std::vector<std::vector<vk::DescriptorSetLayoutBinding>> get_bindings(
-    const shader_source& compute_src,
-    const std::map<std::string, uint32_t>& count_overrides
+    const shader_source& compute_src
 ){
     std::vector<std::vector<vk::DescriptorSetLayoutBinding>> sets;
     append_shader_bindings(sets, compute_src);
-
-    auto binding_names = get_binding_names(compute_src);
-
-    for(auto pair: count_overrides)
-    {
-        auto it = binding_names.find(pair.first);
-        if(it == binding_names.end())
-            continue;
-
-        for(auto& o: sets[it->second.first])
-        {
-            if(o.binding == it->second.second)
-            {
-                o.descriptorCount = pair.second;
-                break;
-            }
-        }
-    }
 
     return sets;
 }

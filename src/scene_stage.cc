@@ -280,7 +280,7 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     noise_vector_3d(dev, get_resource_path("data/noise_vector_3d.exr")),
     scene_desc(dev),
     scene_raster_desc(dev),
-    skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, {}, 1, true}),
+    skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, 1, true}),
     opt(opt), stage_timer(dev, "scene update")
 {
     init_descriptor_set_layout();
@@ -289,11 +289,10 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
             std::map<std::string, std::string>{{"PRE_TRANSFORMED_VERTICES", ""}} :
             std::map<std::string, std::string>()
         },
-        {},
         0, false, {&scene_desc}
     });
     pre_transform.emplace(dev, compute_pipeline::params{
-        {"shader/pre_transform.comp"}, {}, 1, true, {&scene_desc}
+        {"shader/pre_transform.comp"}, 1, true, {&scene_desc}
     });
 
     if(opt.shadow_mapping)

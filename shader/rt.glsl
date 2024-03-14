@@ -141,7 +141,6 @@ void shadow_terminator_fix(inout vec3 diffuse, inout vec3 specular, float cos_l,
 #endif
 }
 
-#if defined(DISTRIBUTION_DATA_BINDING)
 camera_data get_camera()
 {
     return camera.pairs[gl_LaunchIDEXT.z].current;
@@ -152,6 +151,7 @@ camera_data get_prev_camera()
     return camera.pairs[gl_LaunchIDEXT.z].previous;
 }
 
+#ifdef DISTRIBUTION_DATA_BINDING
 #if DISTRIBUTION_STRATEGY == 2
 //Permute region for the pixel i
 uint permute_region_id(uint i)
@@ -165,7 +165,7 @@ uint permute_region_id(uint i)
 
 ivec2 get_pixel_pos()
 {
-#if DISTRIBUTION_STRATEGY == 0
+#if !defined(DISTRIBUTION_STRATEGY) || DISTRIBUTION_STRATEGY == 0
     return ivec2(gl_LaunchIDEXT.xy);
 #elif DISTRIBUTION_STRATEGY == 1
     return ivec2(
@@ -182,7 +182,7 @@ ivec2 get_pixel_pos()
 
 ivec3 get_write_pixel_pos(in camera_data cam)
 {
-#if DISTRIBUTION_STRATEGY == 0
+#if !defined(DISTRIBUTION_STRATEGY) || DISTRIBUTION_STRATEGY == 0
     return ivec3(gl_LaunchIDEXT.xyz);
 #elif DISTRIBUTION_STRATEGY == 1
     uvec3 write_pos = gl_LaunchIDEXT.xyz;
@@ -208,7 +208,7 @@ ivec3 get_write_pixel_pos(in camera_data cam)
 
 uvec2 get_screen_size()
 {
-#if DISTRIBUTION_STRATEGY == 0
+#if !defined(DISTRIBUTION_STRATEGY) || DISTRIBUTION_STRATEGY == 0
     return uvec2(gl_LaunchSizeEXT.xy);
 #else
     return distribution.size;

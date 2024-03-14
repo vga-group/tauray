@@ -34,9 +34,9 @@ svgf_stage::svgf_stage(
     gbuffer_target& prev_features,
     const options& opt
 ):  single_device_stage(dev),
-    atrous_comp(dev, compute_pipeline::params{shader_source("shader/svgf_atrous.comp"), {}, 0, true}),
-    temporal_comp(dev, compute_pipeline::params{shader_source("shader/svgf_temporal.comp"), {}}),
-    estimate_variance_comp(dev, compute_pipeline::params{ shader_source("shader/svgf_estimate_variance.comp"), {} }),
+    atrous_comp(dev, compute_pipeline::params{shader_source("shader/svgf_atrous.comp"), 0, true}),
+    temporal_comp(dev, compute_pipeline::params{shader_source("shader/svgf_temporal.comp")}),
+    estimate_variance_comp(dev, compute_pipeline::params{shader_source("shader/svgf_estimate_variance.comp")}),
     opt(opt),
     input_features(input_features),
     prev_features(prev_features),

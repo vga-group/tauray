@@ -6,21 +6,9 @@
 namespace tr
 {
 
-rt_pipeline::rt_pipeline(
-    device& dev, const options& opt
-):  basic_pipeline(
-        dev,
-        get_bindings(opt.src, opt.binding_array_lengths),
-        get_binding_names(opt.src),
-        get_push_constant_ranges(opt.src),
-        MAX_FRAMES_IN_FLIGHT,
-        vk::PipelineBindPoint::eRayTracingKHR,
-        opt.use_push_descriptors,
-        opt.layout
-    ),
-    opt(opt)
+rt_pipeline::rt_pipeline(device& dev)
+: basic_pipeline(dev, vk::PipelineBindPoint::eRayTracingKHR)
 {
-    init_pipeline();
 }
 
 void rt_pipeline::trace_rays(vk::CommandBuffer buf, uvec3 size)
@@ -31,18 +19,30 @@ void rt_pipeline::trace_rays(vk::CommandBuffer buf, uvec3 size)
     );
 }
 
-void rt_pipeline::init_pipeline()
-{
+void rt_pipeline::init(
+    rt_shader_sources src,
+    std::vector<tr::descriptor_set_layout*> layout,
+    int max_recursion_depth,
+    vk::SpecializationInfo specialization
+){
+    basic_pipeline::init(
+        get_bindings(src),
+        get_binding_names(src),
+        get_push_constant_ranges(src),
+        0,
+        false,
+        layout
+    );
     std::vector<vk::PipelineShaderStageCreateInfo> stages;
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR> rt_shader_groups;
 
-    if(!opt.src.rgen.data.empty())
+    if(!src.rgen.data.empty())
     {
         load_shader_module(
-            opt.src.rgen,
+            src.rgen,
             vk::ShaderStageFlagBits::eRaygenKHR,
             stages,
-            opt.specialization
+            specialization
         );
         rt_shader_groups.push_back({
             vk::RayTracingShaderGroupTypeKHR::eGeneral,
@@ -51,10 +51,10 @@ void rt_pipeline::init_pipeline()
         });
     }
 
-    size_t hit_group_count = opt.src.rhit.size();
+    size_t hit_group_count = src.rhit.size();
     for(size_t i = 0; i < hit_group_count; ++i)
     {
-        auto& hg = opt.src.rhit[i];
+        auto& hg = src.rhit[i];
         uint32_t chit_index = VK_SHADER_UNUSED_KHR;
         uint32_t ahit_index = VK_SHADER_UNUSED_KHR;
         uint32_t rint_index = VK_SHADER_UNUSED_KHR;
@@ -63,7 +63,7 @@ void rt_pipeline::init_pipeline()
         {
             load_shader_module(
                 hg.rchit, vk::ShaderStageFlagBits::eClosestHitKHR, stages,
-                opt.specialization
+                specialization
             );
             chit_index = stages.size()-1;
         }
@@ -72,7 +72,7 @@ void rt_pipeline::init_pipeline()
         {
             load_shader_module(
                 hg.rahit, vk::ShaderStageFlagBits::eAnyHitKHR, stages,
-                opt.specialization
+                specialization
             );
             ahit_index = stages.size()-1;
         }
@@ -81,7 +81,7 @@ void rt_pipeline::init_pipeline()
         {
             load_shader_module(
                 hg.rint, vk::ShaderStageFlagBits::eIntersectionKHR, stages,
-                opt.specialization
+                specialization
             );
             rint_index = stages.size()-1;
         }
@@ -93,10 +93,10 @@ void rt_pipeline::init_pipeline()
         });
     }
 
-    for(shader_source src: opt.src.rmiss)
+    for(shader_source src: src.rmiss)
     {
         load_shader_module(
-            src, vk::ShaderStageFlagBits::eMissKHR, stages, opt.specialization
+            src, vk::ShaderStageFlagBits::eMissKHR, stages, specialization
         );
         rt_shader_groups.push_back({
             vk::RayTracingShaderGroupTypeKHR::eGeneral,
@@ -108,7 +108,7 @@ void rt_pipeline::init_pipeline()
     vk::RayTracingPipelineCreateInfoKHR pipeline_info(
         {}, stages.size(), stages.data(),
         rt_shader_groups.size(), rt_shader_groups.data(),
-        opt.max_recursion_depth,
+        max_recursion_depth,
         {},
         nullptr,
         {},
@@ -165,9 +165,9 @@ void rt_pipeline::init_pipeline()
     offset = align_up_to(offset, dev->rt_props.shaderGroupBaseAlignment);
 
     rmiss_sbt = vk::StridedDeviceAddressRegionKHR{
-        offset, group_handle_size, group_handle_size * opt.src.rmiss.size()
+        offset, group_handle_size, group_handle_size * src.rmiss.size()
     };
-    for(size_t g = 0; g < opt.src.rmiss.size(); ++g, ++group_index)
+    for(size_t g = 0; g < src.rmiss.size(); ++g, ++group_index)
     {
         sbt_mem.resize(offset + group_handle_size);
         memcpy(

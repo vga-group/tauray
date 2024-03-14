@@ -82,14 +82,13 @@ feature_stage::feature_stage(
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(dev, ss, output_target, opt),
-    gfx(dev, rt_stage::get_common_options(ss, ::feature::load_sources(opt), opt)),
+    desc(dev),
+    gfx(dev),
     opt(opt)
 {
-}
-
-void feature_stage::init_scene_resources()
-{
-    rt_camera_stage::init_descriptors(gfx);
+    rt_shader_sources src = ::feature::load_sources(opt);
+    desc.add(src);
+    gfx.init(src, {&desc, &ss.get_descriptors()});
 }
 
 void feature_stage::record_command_buffer_pass(
@@ -100,6 +99,8 @@ void feature_stage::record_command_buffer_pass(
     bool
 ){
     gfx.bind(cb, frame_index);
+    get_descriptors(desc);
+    gfx.push_descriptors(cb, desc, 0);
     gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
 
     ::feature::push_constant_buffer control;

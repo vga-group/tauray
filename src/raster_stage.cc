@@ -139,7 +139,6 @@ raster_stage::raster_stage(
             target.get_size(),
             uvec4(0, 0, target.get_size()),
             load_sources(opt, target),
-            {},
             mesh::get_bindings(),
             mesh::get_attributes(),
             get_color_attachments(opt, target),

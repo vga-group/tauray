@@ -25,7 +25,6 @@ looking_glass_composition_stage::looking_glass_composition_stage(
 ):  single_device_stage(dev, single_device_stage::COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE),
     comp(dev, compute_pipeline::params{
         {"shader/looking_glass_composition.comp"},
-        {},
         (uint32_t)output_frames.size()
     }),
     input_sampler(
