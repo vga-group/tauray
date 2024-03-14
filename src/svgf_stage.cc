@@ -102,7 +102,6 @@ void svgf_stage::init_resources()
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        ss->bind(temporal_comp, i);
         temporal_comp.update_descriptor_set({
             {"in_color", {{}, input_features.color.view, vk::ImageLayout::eGeneral}},
             {"in_diffuse", {{}, input_features.diffuse.view, vk::ImageLayout::eGeneral}},
@@ -157,6 +156,7 @@ void svgf_stage::record_command_buffers()
         control.temporal_alpha_moments = opt.temporal_alpha_moments;
 
         temporal_comp.bind(cb, i);
+        temporal_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
         temporal_comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, input_features.get_layer_count());
 

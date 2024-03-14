@@ -1,7 +1,9 @@
 #ifndef FORWARD_GLSL
 #define FORWARD_GLSL
 #define USE_SHADOW_MAPPING
-#include "scene.glsl"
+#define SCENE_SET 0
+#define SCENE_RASTER_SET 1
+#include "scene_raster.glsl"
 
 layout(push_constant) uniform push_constant_buffer
 {
@@ -18,9 +20,5 @@ layout(push_constant) uniform push_constant_buffer
 } control;
 
 #include "shadow_mapping.glsl"
-
-#ifdef BRDF_INTEGRATION_BINDING
-layout(binding = BRDF_INTEGRATION_BINDING, set = 0) uniform sampler2D brdf_integration;
-#endif
 
 #endif

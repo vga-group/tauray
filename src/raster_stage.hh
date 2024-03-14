@@ -58,11 +58,7 @@ private:
     options opt;
 
     uint32_t scene_state_counter;
-    sampler brdf_integration_sampler;
     scene_stage* ss;
-    texture brdf_integration;
-    texture noise_vector_2d;
-    texture noise_vector_3d;
     timer raster_timer;
 };
 

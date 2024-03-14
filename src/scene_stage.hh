@@ -75,12 +75,7 @@ public:
     const std::unordered_map<sh_grid*, texture>& get_sh_grid_textures() const;
 
     descriptor_set& get_descriptors();
-    void bind(basic_pipeline& pipeline, uint32_t frame_index);
-    static void bind_placeholders(
-        basic_pipeline& pipeline,
-        size_t max_samplers,
-        size_t max_3d_samplers
-    );
+    descriptor_set& get_raster_descriptors();
 
     struct shadow_map_instance
     {
@@ -122,7 +117,6 @@ private:
 
     void init_descriptor_set_layout();
     void update_descriptor_set();
-    std::vector<descriptor_state> get_descriptor_info(device_id id) const;
 
     bool prev_was_rebuild;
     size_t as_instance_count;
@@ -226,7 +220,13 @@ private:
     std::optional<top_level_acceleration_structure> tlas;
     std::optional<event_subscription> events[10];
 
+    sampler brdf_integration_sampler;
+    texture brdf_integration;
+    texture noise_vector_2d;
+    texture noise_vector_3d;
+
     descriptor_set scene_desc;
+    descriptor_set scene_raster_desc;
 
     //==========================================================================
     // Pipelines

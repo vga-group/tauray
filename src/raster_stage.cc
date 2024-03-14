@@ -125,21 +125,7 @@ raster_stage::raster_stage(
     output_targets(output_array_targets),
     opt(opt),
     scene_state_counter(0),
-    brdf_integration_sampler(
-        dev,
-        vk::Filter::eLinear,
-        vk::Filter::eLinear,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerAddressMode::eClampToEdge,
-        vk::SamplerMipmapMode::eNearest,
-        0,
-        true,
-        false
-    ),
     ss(&ss),
-    brdf_integration(dev, get_resource_path("data/brdf_integration.exr")),
-    noise_vector_2d(dev, get_resource_path("data/noise_vector_2d.exr")),
-    noise_vector_3d(dev, get_resource_path("data/noise_vector_3d.exr")),
     raster_timer(
         dev,
         std::string(output_array_targets[0].color ? "forward" : "gbuffer") +
@@ -147,8 +133,6 @@ raster_stage::raster_stage(
         " viewports)"
     )
 {
-    placeholders& pl = dev.ctx->get_placeholders();
-
     for(const gbuffer_target& target: output_array_targets)
     {
         array_pipelines.emplace_back(new raster_pipeline(dev, {
@@ -161,28 +145,8 @@ raster_stage::raster_stage(
             get_color_attachments(opt, target),
             get_depth_attachment(opt, target),
             opt.sample_shading, (bool)target.color || opt.force_alpha_to_coverage, true,
-            {}, false, false, {&ss.get_descriptors()}
+            {}, false, false, {&ss.get_descriptors(), &ss.get_raster_descriptors()}
         }));
-
-        scene_stage::bind_placeholders(*array_pipelines.back(), 0, 0);
-
-        array_pipelines.back()->update_descriptor_set({
-            {"pcf_noise_vector_2d", {
-                pl.default_sampler.get_sampler(dev.id),
-                noise_vector_2d.get_image_view(dev.id),
-                vk::ImageLayout::eShaderReadOnlyOptimal
-            }},
-            {"pcf_noise_vector_3d", {
-                pl.default_sampler.get_sampler(dev.id),
-                noise_vector_3d.get_image_view(dev.id),
-                vk::ImageLayout::eShaderReadOnlyOptimal
-            }},
-            {"brdf_integration", {
-                brdf_integration_sampler.get_sampler(dev.id),
-                brdf_integration.get_image_view(dev.id),
-                vk::ImageLayout::eShaderReadOnlyOptimal
-            }}
-        });
     }
 }
 
@@ -200,10 +164,10 @@ void raster_stage::update(uint32_t)
         size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
-            ss->bind(*gfx, i);
-
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
+            gfx->set_descriptors(cb, ss->get_descriptors(), 0, 0);
+            gfx->set_descriptors(cb, ss->get_raster_descriptors(), 0, 1);
 
             const std::vector<scene_stage::instance>& instances = ss->get_instances();
             push_constant_buffer control;

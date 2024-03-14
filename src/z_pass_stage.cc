@@ -79,10 +79,9 @@ void z_pass_stage::update(uint32_t)
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             // Bind descriptors
-            ss->bind(*gfx, i);
-
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
+            gfx->set_descriptors(cb, ss->get_descriptors(), 0, 0);
 
             const std::vector<scene_stage::instance>& instances = ss->get_instances();
 

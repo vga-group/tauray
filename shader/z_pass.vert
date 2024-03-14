@@ -6,6 +6,7 @@
 
 layout(location = 0) in vec3 in_pos;
 
+#define SCENE_SET 0
 #include "scene.glsl"
 
 layout(push_constant) uniform push_constant_buffer

@@ -179,23 +179,4 @@ layout(binding = 10, set = SCENE_SET) readonly buffer camera_data_buffer
 layout(binding = 11, set = SCENE_SET) uniform accelerationStructureEXT tlas;
 #endif
 
-// REFACTOR TODO: move these to some raster_scene.glsl with a different set etc?
-// That could also include shadow maps.
-layout(binding = 12, set = SCENE_SET) uniform sampler3D sh_grid_data[];
-
-struct sh_grid
-{
-    mat4 pos_from_world;
-    mat4 normal_from_world;
-    vec3 grid_clamp;
-    float pad0;
-    vec3 grid_resolution;
-    float pad1;
-};
-
-layout(binding = 13, set = SCENE_SET, scalar) buffer sh_grid_buffer
-{
-    sh_grid grids[];
-} sh_grids;
-
 #endif

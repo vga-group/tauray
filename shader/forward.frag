@@ -4,13 +4,6 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_multiview : enable
 
-#define SHADOW_MAP_BUFFER_BINDING 5
-#define SHADOW_MAP_CASCADE_BUFFER_BINDING 6
-#define SHADOW_MAP_ATLAS_BINDING 7
-#define SHADOW_MAP_ATLAS_TEST_BINDING 8
-#define PCF_NOISE_VECTOR_2D_BINDING 9
-#define PCF_NOISE_VECTOR_3D_BINDING 10
-#define BRDF_INTEGRATION_BINDING 13
 #define CALC_PREV_VERTEX_POS
 #include "forward.glsl"
 #include "ggx.glsl"

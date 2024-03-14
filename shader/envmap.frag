@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_multiview : enable
 
+#define SCENE_SET 0
 #include "scene.glsl"
 
 layout(location = 0) out vec4 out_color;

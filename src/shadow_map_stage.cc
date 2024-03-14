@@ -150,7 +150,6 @@ void shadow_map_stage::update(uint32_t frame_index)
             {}, false, true,
             {&ss->get_descriptors()}
         });
-        scene_stage::bind_placeholders(*gfx, 0, 0);
     }
 
     if(ss->check_update(scene_stage::GEOMETRY, scene_state_counter))
@@ -160,9 +159,8 @@ void shadow_map_stage::update(uint32_t frame_index)
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             // Bind descriptors
-            ss->bind(*gfx, i);
             gfx->update_descriptor_set({
-                {"camera", {camera_data[dev->id], 0, VK_WHOLE_SIZE}}
+                {"shadow_camera", {camera_data[dev->id], 0, VK_WHOLE_SIZE}}
             }, i);
 
             // Record command buffer
@@ -194,6 +192,7 @@ void shadow_map_stage::update(uint32_t frame_index)
                 cb.setViewport(0, 1, &vp);
                 gfx->begin_render_pass(cb, i, rect);
                 gfx->bind(cb, i);
+                gfx->set_descriptors(cb, ss->get_descriptors(), 0, 1);
 
                 for(size_t i = 0; i < instances.size(); ++i)
                 {

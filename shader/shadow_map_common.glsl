@@ -8,7 +8,7 @@
 layout(binding = 1, set = 0) buffer camera_data_buffer
 {
     mat4 view_proj[];
-} camera;
+} shadow_camera;
 
 layout(push_constant) uniform push_constant_buffer
 {

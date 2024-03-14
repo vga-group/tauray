@@ -35,7 +35,7 @@ envmap_stage::envmap_stage(
 {
     for(const render_target& target: color_arrays)
     {
-        array_pipelines.emplace_back(new raster_pipeline(dev, {
+        array_pipelines.emplace_back(new raster_pipeline(dev, raster_pipeline::pipeline_state{
             target.size,
             uvec4(0, 0, target.size),
             {{"shader/envmap.vert"}, {"shader/envmap.frag"}},
@@ -56,7 +56,8 @@ envmap_stage::envmap_stage(
                 }
             }},
             {},
-            false, false, true
+            false, false, true,
+            {}, false, false, {&ss.get_descriptors()}
         }));
     }
 }
@@ -90,11 +91,9 @@ void envmap_stage::update(uint32_t)
         size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
-            // Bind descriptors
-            ss->bind(*gfx, i);
-
             gfx->begin_render_pass(cb, i);
             gfx->bind(cb, i);
+            gfx->set_descriptors(cb, ss->get_descriptors(), 0, 0);
 
             control.screen_size = vec2(gfx->get_state().output_size);
             control.base_camera_index = j;

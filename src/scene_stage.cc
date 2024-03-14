@@ -264,7 +264,22 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
         true,
         false
     ),
+    brdf_integration_sampler(
+        dev,
+        vk::Filter::eLinear,
+        vk::Filter::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest,
+        0,
+        true,
+        false
+    ),
+    brdf_integration(dev, get_resource_path("data/brdf_integration.exr")),
+    noise_vector_2d(dev, get_resource_path("data/noise_vector_2d.exr")),
+    noise_vector_3d(dev, get_resource_path("data/noise_vector_3d.exr")),
     scene_desc(dev),
+    scene_raster_desc(dev),
     skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, {}, 1, true}),
     opt(opt), stage_timer(dev, "scene update")
 {
@@ -385,6 +400,12 @@ descriptor_set& scene_stage::get_descriptors()
 {
     return scene_desc;
 }
+
+descriptor_set& scene_stage::get_raster_descriptors()
+{
+    return scene_raster_desc;
+}
+
 
 vec2 scene_stage::get_shadow_map_atlas_pixel_margin() const
 {
@@ -845,66 +866,6 @@ void scene_stage::clear_pre_transformed_vertices()
     }
 }
 
-std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id) const
-{
-    std::vector<descriptor_state> descriptors = {};
-
-    if(opt.shadow_mapping)
-    {
-        device_mask dev = get_device_mask();
-        placeholders& pl = dev.get_context()->get_placeholders();
-
-        descriptors.push_back(
-            {"shadow_maps", {shadow_map_data[id], 0, shadow_map_range}}
-        );
-        descriptors.push_back(
-            {"shadow_map_cascades", {
-                shadow_map_data[id], shadow_map_range,
-                shadow_map_cascade_range
-            }}
-        );
-        descriptors.push_back(
-            {"shadow_map_atlas", {
-                pl.default_sampler.get_sampler(id),
-                shadow_atlas->get_image_view(id),
-                vk::ImageLayout::eShaderReadOnlyOptimal
-            }}
-        );
-        descriptors.push_back(
-            {"shadow_map_atlas_test", {
-                shadow_sampler.get_sampler(id),
-                shadow_atlas->get_image_view(id),
-                vk::ImageLayout::eShaderReadOnlyOptimal
-            }}
-        );
-    }
-    return descriptors;
-}
-
-void scene_stage::bind(basic_pipeline& pipeline, uint32_t frame_index)
-{
-    device* dev = pipeline.get_device();
-    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->id);
-    pipeline.update_descriptor_set(descriptors, frame_index);
-}
-
-void scene_stage::bind_placeholders(basic_pipeline& pipeline, size_t, size_t)
-{
-    device* dev = pipeline.get_device();
-    placeholders& pl = dev->ctx->get_placeholders();
-
-    pipeline.update_descriptor_set({
-        {"shadow_maps"},
-        {"shadow_map_cascades"},
-        {"shadow_map_atlas"},
-        {"shadow_map_atlas_test", {
-            pl.default_sampler.get_sampler(dev->id),
-            pl.depth_test_sample.get_image_view(dev->id),
-            vk::ImageLayout::eShaderReadOnlyOptimal
-        }},
-    });
-}
-
 void scene_stage::update(uint32_t frame_index)
 {
     if(!cur_scene) return;
@@ -1350,12 +1311,6 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
 
     for(device& dev: get_device_mask())
     {
-        if(opt.gather_emissive_triangles)
-        {
-            extract_tri_lights[dev.id].reset_descriptor_sets();
-            bind(extract_tri_lights[dev.id], 0);
-        }
-
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             vk::CommandBuffer cb = begin_graphics(dev.id);
@@ -1581,8 +1536,15 @@ void scene_stage::init_descriptor_set_layout()
     if(dev.get_context()->is_ray_tracing_supported())
         scene_desc.add("tlas", {11, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 
-    scene_desc.add("sh_grid_data", {12, vk::DescriptorType::eCombinedImageSampler, opt.max_3d_samplers, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
-    scene_desc.add("sh_grids", {13, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_raster_desc.add("sh_grid_data", {0, vk::DescriptorType::eCombinedImageSampler, opt.max_3d_samplers, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_raster_desc.add("sh_grids", {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_raster_desc.add("shadow_maps", {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_raster_desc.add("shadow_map_cascades", {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_raster_desc.add("shadow_map_atlas", {4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_raster_desc.add("shadow_map_atlas_test", {5, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_raster_desc.add("pcf_noise_vector_2d", {6, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_raster_desc.add("pcf_noise_vector_3d", {7, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_raster_desc.add("brdf_integration", {8, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 }
 
 void scene_stage::update_descriptor_set()
@@ -1594,7 +1556,6 @@ void scene_stage::update_descriptor_set()
     scene_desc.set_buffer(0, "tri_lights", tri_light_data);
     scene_desc.set_buffer(0, "scene_metadata", scene_metadata);
     scene_desc.set_buffer(0, "camera", camera_data);
-    scene_desc.set_buffer(0, "sh_grids", sh_grid_data);
 
     if(envmap)
         scene_desc.set_texture(0, "environment_map_tex", *envmap, envmap_sampler);
@@ -1648,6 +1609,28 @@ void scene_stage::update_descriptor_set()
 
         if(dev.ctx->is_ray_tracing_supported())
             scene_desc.set_acceleration_structure(id, 0, "tlas", *this->tlas->get_tlas_handle(id));
+    }
+
+    placeholders& pl = get_device_mask().get_context()->get_placeholders();
+
+    scene_raster_desc.reset(scene_raster_desc.get_mask(), 1);
+    scene_raster_desc.set_buffer(0, "sh_grids", sh_grid_data);
+
+    if(opt.shadow_mapping)
+    {
+        scene_raster_desc.set_buffer(0, "shadow_maps", shadow_map_data);
+        scene_raster_desc.set_buffer(0, "shadow_map_cascades", shadow_map_data, shadow_map_range);
+        scene_raster_desc.set_texture(0, "shadow_map_atlas", *shadow_atlas, pl.default_sampler);
+        scene_raster_desc.set_texture(0, "shadow_map_atlas_test", *shadow_atlas, shadow_sampler);
+    }
+
+    scene_raster_desc.set_texture(0, "pcf_noise_vector_2d", noise_vector_2d, pl.default_sampler);
+    scene_raster_desc.set_texture(0, "pcf_noise_vector_3d", noise_vector_3d, pl.default_sampler);
+    scene_raster_desc.set_texture(0, "brdf_integration", brdf_integration, brdf_integration_sampler);
+
+    for(device& dev: scene_desc.get_mask())
+    {
+        device_id id = dev.id;
 
         std::vector<vk::DescriptorImageInfo> dii_3d;
         if(opt.alloc_sh_grids)
@@ -1661,7 +1644,7 @@ void scene_stage::update_descriptor_set()
                 });
             });
         }
-        scene_desc.set_image(id, 0, "sh_grid_data", std::move(dii_3d));
+        scene_raster_desc.set_image(id, 0, "sh_grid_data", std::move(dii_3d));
     }
 }
 

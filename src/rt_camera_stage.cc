@@ -111,7 +111,6 @@ void rt_camera_stage::init_descriptors(basic_pipeline& pp)
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        ss->bind(pp, i);
         pp.update_descriptor_set({
 #define TR_GBUFFER_ENTRY(name, ...)\
             {#name "_target", {\
