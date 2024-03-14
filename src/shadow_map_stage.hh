@@ -25,7 +25,8 @@ public:
 private:
     void update(uint32_t frame_index) override;
 
-    std::optional<raster_pipeline> gfx;
+    push_descriptor_set desc;
+    raster_pipeline gfx;
     options opt;
     gpu_buffer camera_data;
     std::vector<scene_stage::shadow_map_instance> shadow_maps;

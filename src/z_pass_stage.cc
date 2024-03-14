@@ -32,13 +32,15 @@ z_pass_stage::z_pass_stage(
 {
     for(const render_target& depth_buffer: depth_buffer_arrays)
     {
-        array_pipelines.emplace_back(new raster_pipeline(dev, {
+        array_pipelines.emplace_back(new raster_pipeline(dev));
+        array_pipelines.back()->init({
             depth_buffer.size,
             uvec4(0,0,depth_buffer.size),
             {
                 {"shader/z_pass.vert"},
                 {"shader/z_pass.frag"}
             },
+            {&ss.get_descriptors()},
             mesh::get_bindings(),
             {mesh::get_attributes()[0]},
             {},
@@ -57,8 +59,8 @@ z_pass_stage::z_pass_stage(
                 }
             },
             false, false, true,
-            {}, false, false, {&ss.get_descriptors()}
-        }));
+            {}, false
+        });
     }
 }
 

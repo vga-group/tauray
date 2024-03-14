@@ -135,17 +135,19 @@ raster_stage::raster_stage(
 {
     for(const gbuffer_target& target: output_array_targets)
     {
-        array_pipelines.emplace_back(new raster_pipeline(dev, {
+        array_pipelines.emplace_back(new raster_pipeline(dev));
+        array_pipelines.back()->init({
             target.get_size(),
             uvec4(0, 0, target.get_size()),
             load_sources(opt, target),
+            {&ss.get_descriptors(), &ss.get_raster_descriptors()},
             mesh::get_bindings(),
             mesh::get_attributes(),
             get_color_attachments(opt, target),
             get_depth_attachment(opt, target),
             opt.sample_shading, (bool)target.color || opt.force_alpha_to_coverage, true,
-            {}, false, false, {&ss.get_descriptors(), &ss.get_raster_descriptors()}
-        }));
+            {}, false
+        });
     }
 }
 

@@ -17,6 +17,7 @@ public:
         uvec2 output_size = uvec2(0);
         uvec4 viewport = uvec4(0);
         raster_shader_sources src;
+        std::vector<tr::descriptor_set_layout*> layout;
 
         std::vector<vk::VertexInputBindingDescription> vertex_bindings;
         std::vector<vk::VertexInputAttributeDescription> vertex_attributes;
@@ -52,12 +53,12 @@ public:
         bool multiview = false;
 
         vk::SpecializationInfo specialization = {};
-        bool use_push_descriptors = false;
         bool dynamic_viewport = false;
-        std::vector<tr::descriptor_set_layout*> layout = {};
     };
 
-    raster_pipeline(device& dev, const pipeline_state& state);
+    raster_pipeline(device& dev);
+
+    void init(const pipeline_state& state);
 
     vk::Framebuffer get_framebuffer(uint32_t frame_index) const;
     const pipeline_state& get_state() const;

@@ -69,6 +69,8 @@ shadow_map_stage::shadow_map_stage(
     scene_stage& ss,
     const options& opt
 ):  single_device_stage(dev),
+    desc(dev),
+    gfx(dev),
     opt(opt),
     camera_data(dev, sizeof(camera_data_buffer), vk::BufferUsageFlagBits::eStorageBuffer),
     prev_atlas_size(0),
@@ -124,10 +126,13 @@ void shadow_map_stage::update(uint32_t frame_index)
         prev_atlas_size = shadow_map_atlas->get_size();
         clear_commands();
         scene_state_counter = 0; // Force refresh
-        gfx.emplace(*dev, raster_pipeline::pipeline_state{
+        raster_shader_sources src = shadow::load_sources();
+        desc.add(src);
+        gfx.init(raster_pipeline::pipeline_state{
             uvec2(shadow_map_atlas->get_size()),
             uvec4(0, 0, shadow_map_atlas->get_size()),
-            shadow::load_sources(),
+            src,
+            {&desc, &ss->get_descriptors()},
             mesh::get_bindings(),
             {mesh::get_attributes()[0], mesh::get_attributes()[2]},
             {},
@@ -146,8 +151,7 @@ void shadow_map_stage::update(uint32_t frame_index)
                 }
             },
             false, false, false,
-            {}, false, true,
-            {&ss->get_descriptors()}
+            {}, false
         });
     }
 
@@ -157,11 +161,6 @@ void shadow_map_stage::update(uint32_t frame_index)
         const std::vector<scene_stage::instance>& instances = ss->get_instances();
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
-            // Bind descriptors
-            gfx->update_descriptor_set({
-                {"shadow_camera", {camera_data[dev->id], 0, VK_WHOLE_SIZE}}
-            }, i);
-
             // Record command buffer
             vk::CommandBuffer cb = begin_graphics();
 
@@ -189,9 +188,13 @@ void shadow_map_stage::update(uint32_t frame_index)
                     0.0f, 1.0f
                 );
                 cb.setViewport(0, 1, &vp);
-                gfx->begin_render_pass(cb, i, rect);
-                gfx->bind(cb, i);
-                gfx->set_descriptors(cb, ss->get_descriptors(), 0, 1);
+                gfx.begin_render_pass(cb, i, rect);
+                gfx.bind(cb, i);
+                // Bind descriptors
+                desc.set_buffer("shadow_camera", camera_data);
+
+                gfx.push_descriptors(cb, desc, 0);
+                gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
 
                 for(size_t i = 0; i < instances.size(); ++i)
                 {
@@ -210,7 +213,7 @@ void shadow_map_stage::update(uint32_t frame_index)
                         inst.mat && inst.mat->potentially_transparent() ? 0.5f : 1.0f;
                     control.cam_index = cam_index;
 
-                    gfx->push_constants(cb, control);
+                    gfx.push_constants(cb, control);
 
                     cb.drawIndexed(m->get_indices().size(), 1, 0, 0, 0);
                 }

@@ -6,17 +6,20 @@
 namespace tr
 {
 
-raster_pipeline::raster_pipeline(
-    device& dev, const pipeline_state& state
-):  basic_pipeline(dev, vk::PipelineBindPoint::eGraphics),
-    state(state)
+raster_pipeline::raster_pipeline(device& dev)
+: basic_pipeline(dev, vk::PipelineBindPoint::eGraphics)
 {
+}
+
+void raster_pipeline::init(const pipeline_state& state)
+{
+    this->state = state;
     basic_pipeline::init(
         get_bindings(state.src),
         get_binding_names(state.src),
         get_push_constant_ranges(state.src),
-        MAX_FRAMES_IN_FLIGHT,
-        state.use_push_descriptors,
+        0,
+        false,
         state.layout
     );
     init_pipeline();
