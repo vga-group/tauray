@@ -39,7 +39,7 @@ private:
     void record_commands();
 
     descriptor_set io_set;
-    std::optional<compute_pipeline> comp;
+    compute_pipeline comp;
     options opt;
     uvec2 size;
     float blend_ratio;

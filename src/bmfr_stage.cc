@@ -253,7 +253,7 @@ void bmfr_stage::record_command_buffers()
         control.workset_size = pivec2(workset_size.x, workset_size.y);
 
 
-        bmfr_preprocess_comp.bind(cb, i);
+        bmfr_preprocess_comp.bind(cb);
         bmfr_preprocess_comp.push_constants(cb, control);
         bmfr_preprocess_timer.begin(cb, dev->id, i);
         cb.dispatch(workset_size.x * 2, workset_size.y * 2, current_features.get_layer_count());
@@ -270,7 +270,7 @@ void bmfr_stage::record_command_buffers()
         );
 
 
-        bmfr_fit_comp.bind(cb, i);
+        bmfr_fit_comp.bind(cb);
         bmfr_fit_comp.push_constants(cb, control);
         bmfr_fit_timer.begin(cb, dev->id, i);
         cb.dispatch(workset_size.x, workset_size.y, current_features.get_layer_count());
@@ -284,7 +284,7 @@ void bmfr_stage::record_command_buffers()
 
         wg = (workset_size*32u+15u)/16u;
         // wg = (current_features.get_size()+15u)/16u;
-        bmfr_weighted_sum_comp.bind(cb, i);
+        bmfr_weighted_sum_comp.bind(cb);
         bmfr_weighted_sum_comp.push_constants(cb, control);
         bmfr_weighted_sum_timer.begin(cb, dev->id, i);
         cb.dispatch(wg.x, wg.y, current_features.get_layer_count());
@@ -297,7 +297,7 @@ void bmfr_stage::record_command_buffers()
         );
 
         wg = (current_features.get_size()+15u)/16u;
-        bmfr_accumulate_output_comp.bind(cb, i);
+        bmfr_accumulate_output_comp.bind(cb);
         bmfr_accumulate_output_comp.push_constants(cb, control);
         bmfr_accumulate_output_timer.begin(cb, dev->id, i);
         cb.dispatch(wg.x, wg.y, current_features.get_layer_count());

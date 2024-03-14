@@ -189,7 +189,7 @@ void shadow_map_stage::update(uint32_t frame_index)
                 );
                 cb.setViewport(0, 1, &vp);
                 gfx.begin_render_pass(cb, i, rect);
-                gfx.bind(cb, i);
+                gfx.bind(cb);
                 // Bind descriptors
                 desc.set_buffer("shadow_camera", camera_data);
 

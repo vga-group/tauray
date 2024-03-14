@@ -1458,7 +1458,7 @@ void scene_stage::record_tri_light_extraction(
     device_id id,
     vk::CommandBuffer cb
 ){
-    extract_tri_lights[id].bind(cb, 0);
+    extract_tri_lights[id].bind(cb);
     extract_tri_lights[id].set_descriptors(cb, scene_desc, 0, 0);
     for(size_t i = 0; i < instances.size(); ++i)
     {

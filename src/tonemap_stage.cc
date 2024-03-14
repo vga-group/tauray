@@ -96,7 +96,7 @@ tonemap_stage::tonemap_stage(
         bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
         tonemap_timer.begin(cb, dev.id, i);
 
-        comp.bind(cb, cb_index);
+        comp.bind(cb);
 
         uvec2 wg = (output.size+15u)/16u;
         cb.dispatch(wg.x, wg.y, input.layer_count);

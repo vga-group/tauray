@@ -93,7 +93,7 @@ void envmap_stage::update(uint32_t)
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             gfx->begin_render_pass(cb, i);
-            gfx->bind(cb, i);
+            gfx->bind(cb);
             gfx->set_descriptors(cb, ss->get_descriptors(), 0, 0);
 
             control.screen_size = vec2(gfx->get_state().output_size);

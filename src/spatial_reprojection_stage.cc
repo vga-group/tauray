@@ -78,7 +78,7 @@ spatial_reprojection_stage::spatial_reprojection_stage(
         );
         camera_data.upload(dev.id, i, cb);
 
-        comp.bind(cb, i);
+        comp.bind(cb);
 
         push_constant_buffer control;
         control.size = target_viewport.get_size();

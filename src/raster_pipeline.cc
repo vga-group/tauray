@@ -1,5 +1,4 @@
 #include "raster_pipeline.hh"
-#include "descriptor_state.hh"
 #include "misc.hh"
 #include <map>
 
@@ -14,14 +13,7 @@ raster_pipeline::raster_pipeline(device& dev)
 void raster_pipeline::init(const pipeline_state& state)
 {
     this->state = state;
-    basic_pipeline::init(
-        get_bindings(state.src),
-        get_binding_names(state.src),
-        get_push_constant_ranges(state.src),
-        0,
-        false,
-        state.layout
-    );
+    basic_pipeline::init(get_push_constant_ranges(state.src), state.layout);
     init_pipeline();
 }
 

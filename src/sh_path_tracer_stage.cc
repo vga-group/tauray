@@ -163,7 +163,7 @@ void sh_path_tracer_stage::record_command_buffer(
         {}, {}, {}, img_barrier
     );
 
-    gfx.bind(cb, frame_index);
+    gfx.bind(cb);
     desc.set_image("inout_data", *output_grid);
     desc.set_buffer("grid", grid_data);
     get_descriptors(desc);

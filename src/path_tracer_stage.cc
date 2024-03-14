@@ -127,14 +127,14 @@ path_tracer_stage::path_tracer_stage(
 
 void path_tracer_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
-    uint32_t frame_index,
+    uint32_t,
     uint32_t pass_index,
     uvec3 expected_dispatch_size,
     bool first_in_command_buffer
 ){
     if(first_in_command_buffer)
     {
-        gfx.bind(cb, frame_index);
+        gfx.bind(cb);
         get_descriptors(desc);
         gfx.push_descriptors(cb, desc, 0);
         gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);

@@ -1,5 +1,4 @@
 #include "rt_pipeline.hh"
-#include "descriptor_state.hh"
 #include "misc.hh"
 #include <map>
 
@@ -25,14 +24,7 @@ void rt_pipeline::init(
     int max_recursion_depth,
     vk::SpecializationInfo specialization
 ){
-    basic_pipeline::init(
-        get_bindings(src),
-        get_binding_names(src),
-        get_push_constant_ranges(src),
-        0,
-        false,
-        layout
-    );
+    basic_pipeline::init(get_push_constant_ranges(src), layout);
     std::vector<vk::PipelineShaderStageCreateInfo> stages;
     std::vector<vk::RayTracingShaderGroupCreateInfoKHR> rt_shader_groups;
 

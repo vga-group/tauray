@@ -66,7 +66,7 @@ void temporal_reprojection_stage::record_command_buffers()
 
         stage_timer.begin(cb, dev->id, i);
 
-        comp.bind(cb, i);
+        comp.bind(cb);
 
         uvec2 wg = (current_features.get_size()+15u)/16u;
         push_constant_buffer control;

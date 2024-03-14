@@ -55,7 +55,7 @@ sh_compact_stage::sh_compact_stage(
             {}, {}, {}, img_barrier
         );
 
-        comp.bind(cb, i);
+        comp.bind(cb);
 
         sh_compact::push_constant_buffer control;
         uvec3 src_dim = inflated_source.get_dimensions();

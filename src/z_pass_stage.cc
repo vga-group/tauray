@@ -81,7 +81,7 @@ void z_pass_stage::update(uint32_t)
         {
             // Bind descriptors
             gfx->begin_render_pass(cb, i);
-            gfx->bind(cb, i);
+            gfx->bind(cb);
             gfx->set_descriptors(cb, ss->get_descriptors(), 0, 0);
 
             const std::vector<scene_stage::instance>& instances = ss->get_instances();

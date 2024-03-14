@@ -155,7 +155,7 @@ void svgf_stage::record_command_buffers()
         control.temporal_alpha_color = opt.temporal_alpha_color;
         control.temporal_alpha_moments = opt.temporal_alpha_moments;
 
-        temporal_comp.bind(cb, i);
+        temporal_comp.bind(cb);
         temporal_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
         temporal_comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, input_features.get_layer_count());
@@ -170,7 +170,7 @@ void svgf_stage::record_command_buffers()
             {}, barrier, {}, {}
         );
 
-        estimate_variance_comp.bind(cb, i);
+        estimate_variance_comp.bind(cb);
         estimate_variance_comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, input_features.get_layer_count());
 

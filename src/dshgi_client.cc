@@ -144,7 +144,7 @@ protected:
                         {"info", {blend_infos[dev->id], j*sizeof(blend_info), sizeof(blend_info)}}
                     }, set_index);
 
-                    comp->bind(cb, set_index);
+                    comp->bind(cb);
 
                     push_constant_buffer control;
                     control.size = dim;

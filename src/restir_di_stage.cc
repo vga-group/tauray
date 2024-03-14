@@ -250,7 +250,7 @@ void restir_di_stage::record_command_buffer_pass(
     control.samples = opt.samples_per_pass;
 
     //RIS + temporal reuse
-    gfx.bind(cb, frame_index);
+    gfx.bind(cb);
     get_descriptors(desc);
     desc.set_buffer("parity_data", param_buffer);
     desc.set_image(dev->id, "reservoir_data", {{
@@ -291,7 +291,7 @@ void restir_di_stage::record_command_buffer_pass(
     );
 
     //Spatial reuse
-    spatial_reuse.bind(cb, frame_index);
+    spatial_reuse.bind(cb);
     get_descriptors(spatial_desc);
     spatial_desc.set_buffer("parity_data", param_buffer);
     spatial_desc.set_image(dev->id, "reservoir_data", {{

@@ -30,8 +30,6 @@ class scene_stage: public multi_device_stage
 public:
     struct options
     {
-        // REFACTOR: Delete all max_instances & max_lights from everywhere
-        // other than here.
         uint32_t max_instances = 1024;
         uint32_t max_lights = 128;
         uint32_t max_samplers = 128;

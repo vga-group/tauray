@@ -24,14 +24,6 @@ post_processing_renderer::~post_processing_renderer()
 
 void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
 {
-    if(opt.example_denoiser.has_value())
-    {
-        spec.normal_present = true;
-        spec.pos_present = true;
-        if(opt.example_denoiser.value().albedo_modulation)
-            spec.albedo_present = true;
-    }
-
     if(opt.temporal_reprojection.has_value())
     {
         spec.normal_present = true;
@@ -94,9 +86,6 @@ dependencies post_processing_renderer::render(dependencies deps)
     if(spatial_reprojection)
         deps = spatial_reprojection->run(deps);
 
-    if(example_denoiser)
-        deps = example_denoiser->run(deps);
-
     if(svgf)
         deps = svgf->run(deps);
 
@@ -158,7 +147,7 @@ void post_processing_renderer::init_pipelines()
     }
 
     bool need_pingpong =
-        opt.example_denoiser.has_value() || opt.svgf_denoiser.has_value() ||
+        opt.svgf_denoiser.has_value() ||
         /* Add your new post processing pipeline check here */need_temporal;
     int pingpong_index = 0;
 
@@ -201,19 +190,6 @@ void post_processing_renderer::init_pipelines()
 
     // Add the new post processing pipelines here, don't forget to set
     // need_pingpong above to true when the stage is present.
-    if(opt.example_denoiser.has_value())
-    {
-        example_denoiser.reset(new example_denoiser_stage(
-            *dev,
-            input_target,
-            in_color,
-            out_color,
-            opt.example_denoiser.value()
-        ));
-        if(example_denoiser->need_pingpong_swap())
-            swap_pingpong();
-    }
-
     if(opt.svgf_denoiser.has_value())
     {
         opt.svgf_denoiser.value().active_viewport_count = opt.active_viewport_count;
@@ -261,7 +237,6 @@ void post_processing_renderer::init_pipelines()
 
 void post_processing_renderer::deinit_pipelines()
 {
-    example_denoiser.reset();
     temporal_reprojection.reset();
     spatial_reprojection.reset();
     svgf.reset();

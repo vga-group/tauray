@@ -61,22 +61,6 @@ struct rt_shader_sources
     std::vector<shader_source> rmiss = {};
 };
 
-
-/* REFACTOR: DELETE BEGIN */
-std::map<std::string /* name */, std::pair<uint32_t /*set*/, uint32_t /* binding */>>
-    get_binding_names(const rt_shader_sources& src);
-
-std::map<std::string /* name */, std::pair<uint32_t /*set*/, uint32_t /* binding */>>
-    get_binding_names(const raster_shader_sources& src);
-
-std::map<std::string /* name */, std::pair<uint32_t /*set*/, uint32_t /* binding */>>
-    get_binding_names(const shader_source& compute_src);
-
-std::vector<std::vector<vk::DescriptorSetLayoutBinding>> get_bindings(const rt_shader_sources& src);
-std::vector<std::vector<vk::DescriptorSetLayoutBinding>> get_bindings(const raster_shader_sources& src);
-std::vector<std::vector<vk::DescriptorSetLayoutBinding>> get_bindings(const shader_source& compute_src);
-/* REFACTOR: DELETE END */
-
 std::vector<vk::PushConstantRange> get_push_constant_ranges(const rt_shader_sources& src);
 std::vector<vk::PushConstantRange> get_push_constant_ranges(const raster_shader_sources& src);
 std::vector<vk::PushConstantRange> get_push_constant_ranges(const shader_source& compute_src);

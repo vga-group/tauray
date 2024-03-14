@@ -53,7 +53,7 @@ looking_glass_composition_stage::looking_glass_composition_stage(
 
         //stage_timer.begin(cb, i);
 
-        comp.bind(cb, i);
+        comp.bind(cb);
 
         push_constant_buffer control;
         control.output_size = output_frames[i].size;

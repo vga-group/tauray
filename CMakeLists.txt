@@ -81,7 +81,6 @@ add_library(tauray-core STATIC
   src/compute_pipeline.cc
   src/context.cc
   src/dependency.cc
-  src/descriptor_state.cc
   src/descriptor_set.cc
   src/device.cc
   src/device_transfer.cc
@@ -92,7 +91,6 @@ add_library(tauray-core STATIC
   src/dshgi_client.cc
   src/environment_map.cc
   src/envmap_stage.cc
-  src/example_denoiser_stage.cc
   src/feature_stage.cc
   src/frame_client.cc
   src/frame_delay_stage.cc
