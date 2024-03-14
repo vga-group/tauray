@@ -74,10 +74,6 @@ public:
 
     const std::unordered_map<sh_grid*, texture>& get_sh_grid_textures() const;
 
-    vk::AccelerationStructureKHR get_acceleration_structure(
-        device_id id
-    ) const;
-
     descriptor_set& get_descriptors();
     void bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_offset = 0);
     static void bind_placeholders(

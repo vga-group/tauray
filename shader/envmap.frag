@@ -2,7 +2,6 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_multiview : enable
 
-#define ENVIRONMENT_MAP_BINDING 0
 #define CAMERA_DATA_BINDING 1
 #include "scene.glsl"
 

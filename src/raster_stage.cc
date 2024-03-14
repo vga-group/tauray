@@ -153,9 +153,7 @@ raster_stage::raster_stage(
             target.get_size(),
             uvec4(0, 0, target.get_size()),
             load_sources(opt, target),
-            {
-                {"textures3d", (uint32_t)opt.max_3d_samplers},
-            },
+            {},
             mesh::get_bindings(),
             mesh::get_attributes(),
             get_color_attachments(opt, target),
@@ -164,11 +162,7 @@ raster_stage::raster_stage(
             {}, false, false, {&ss.get_descriptors()}
         }));
 
-        scene_stage::bind_placeholders(
-            *array_pipelines.back(),
-            0,
-            opt.max_3d_samplers
-        );
+        scene_stage::bind_placeholders(*array_pipelines.back(), 0, 0);
 
         array_pipelines.back()->update_descriptor_set({
             {"pcf_noise_vector_2d", {

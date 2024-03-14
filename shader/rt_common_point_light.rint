@@ -4,7 +4,7 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#include "path_tracer.glsl"
+#include "scene.glsl"
 
 hitAttributeEXT vec3 attribs;
 

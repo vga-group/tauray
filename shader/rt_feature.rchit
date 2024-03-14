@@ -6,7 +6,6 @@
 
 hitAttributeEXT vec2 attribs;
 
-#define TLAS_BINDING 0
 #define DISTRIBUTION_DATA_BINDING 9
 #define CAMERA_DATA_BINDING 10
 #define CALC_PREV_VERTEX_POS

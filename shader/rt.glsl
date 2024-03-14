@@ -1,5 +1,6 @@
 #ifndef RT_GLSL
 #define RT_GLSL
+#define RAY_TRACING
 #include "scene.glsl"
 #include "gbuffer.glsl"
 
@@ -231,8 +232,6 @@ void get_screen_camera_ray(in camera_data cam, vec2 pixel_offset, out vec3 origi
 }
 #endif
 
-#ifdef SCENE_METADATA_BUFFER_BINDING
-#ifdef ENVIRONMENT_MAP_ALIAS_TABLE_BINDING
 // Based on CC0 code from https://gist.github.com/juliusikkala/6c8c186f0150fe877a55cee4d266b1b0
 vec3 sample_environment_map(
     uvec3 rand,
@@ -284,7 +283,6 @@ float sample_environment_map_pdf(vec3 dir)
     }
     else return 1.0f / (4.0f * M_PI);
 }
-#endif
 
 void get_nee_sampling_probabilities(out float point, out float triangle, out float directional, out float envmap)
 {
@@ -320,7 +318,6 @@ void get_nee_sampling_probabilities(out float point, out float triangle, out flo
     directional *= inv_sum;
     envmap *= inv_sum;
 }
-#endif
 
 #endif
 

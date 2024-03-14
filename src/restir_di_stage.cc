@@ -15,8 +15,8 @@ namespace restir_di
         restir_di_stage::options opt,
         const gbuffer_target& gbuf
     ){
-        shader_source pl_rint("shader/restir_di_point_light.rint");
-        shader_source shadow_chit("shader/restir_di_shadow.rchit");
+        shader_source pl_rint("shader/rt_common_point_light.rint");
+        shader_source shadow_chit("shader/rt_common_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["RIS_SAMPLE_COUNT"] = std::to_string(opt.ris_sample_count);
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
@@ -45,17 +45,17 @@ namespace restir_di
             {
                 { // Regular ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/restir_di.rchit", defines},
-                    {}
+                    {"shader/rt_common.rchit", defines},
+                    {"shader/rt_common.rahit", defines}
                 },
                 { // Shadow ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
                     shadow_chit,
-                    {"shader/restir_di_shadow.rahit", defines}
+                    {"shader/rt_common_shadow.rahit", defines}
                 },
                 { // Area light ray, sphere intersection
                     vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/restir_di_point_light.rchit", defines},
+                    {"shader/rt_common_point_light.rchit", defines},
                     {},
                     pl_rint
                 },
@@ -67,7 +67,8 @@ namespace restir_di
                 }
             },
             {
-                {"shader/restir_di.rmiss", defines},
+                {"shader/rt_common.rmiss", defines},
+                {"shader/rt_common_shadow.rmiss", defines}
             }
         };
     }
@@ -76,8 +77,8 @@ namespace restir_di
         restir_di_stage::options opt,
         const gbuffer_target& gbuf
     ){
-        shader_source pl_rint("shader/restir_di_point_light.rint");
-        shader_source shadow_chit("shader/restir_di_shadow.rchit");
+        shader_source pl_rint("shader/rt_common_point_light.rint");
+        shader_source shadow_chit("shader/rt_common_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["SPATIAL_SAMPLE_COUNT"] = std::to_string(opt.spatial_sample_count);
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
@@ -106,17 +107,17 @@ namespace restir_di
             {
                 { // Regular ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/restir_di.rchit", defines},
-                    {}
+                    {"shader/rt_common.rchit", defines},
+                    {"shader/rt_common.rahit", defines}
                 },
                 { // Shadow ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
                     shadow_chit,
-                    {"shader/restir_di_shadow.rahit", defines}
+                    {"shader/rt_cmomon_shadow.rahit", defines}
                 },
                 { // Area light ray, sphere intersection
                     vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/restir_di_point_light.rchit", defines},
+                    {"shader/rt_common_point_light.rchit", defines},
                     {},
                     pl_rint
                 },
@@ -128,8 +129,8 @@ namespace restir_di
                 }
             },
             {
-                {"shader/restir_di.rmiss", defines},
-
+                {"shader/rt_common.rmiss", defines},
+                {"shader/rt_common_shadow.rmiss", defines}
             }
         };
     }

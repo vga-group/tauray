@@ -6,9 +6,11 @@
 
 hitAttributeEXT vec2 attribs;
 
-#include "restir_di.glsl"
+#include "rt.glsl"
+#include "random_sampler.glsl"
 
-layout(location = 0) rayPayloadInEXT hit_payload payload;
+#define PAYLOAD_IN
+#include "rt_common_payload.glsl"
 
 void main()
 {
@@ -20,3 +22,4 @@ void main()
     if(is_material_skippable(instance_id, uv, alpha_cutoff))
         ignoreIntersectionEXT;
 }
+

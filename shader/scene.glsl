@@ -143,11 +143,35 @@ sampled_material sample_material(material mat, inout vertex_data v)
     return res;
 }
 
-#ifdef TEXTURE_3D_ARRAY_BINDING
-layout(binding = TEXTURE_3D_ARRAY_BINDING, set = 0) uniform sampler3D textures3d[];
+layout(binding = 7, set = SCENE_SET) uniform sampler2D environment_map_tex;
+
+#include "alias_table.glsl"
+layout(binding = 8, set = SCENE_SET) readonly buffer environment_map_alias_table_buffer
+{
+    alias_table_entry entries[];
+} environment_map_alias_table;
+
+layout(binding = 9, set = SCENE_SET, scalar) uniform scene_metadata_buffer
+{
+    uint point_light_count;
+    uint directional_light_count;
+    uint tri_light_count;
+    int environment_proj;
+    vec4 environment_factor;
+} scene_metadata;
+
+#define POINT_LIGHT_FOR_BEGIN(world_pos) \
+    for(uint item_index = 0; item_index < scene_metadata.point_light_count; ++item_index) {
+#define POINT_LIGHT_FOR_END }
+
+#ifdef RAY_TRACING
+layout(binding = 10, set = SCENE_SET) uniform accelerationStructureEXT tlas;
 #endif
 
-#ifdef SH_GRID_BUFFER_BINDING
+// REFACTOR TODO: move these to some raster_scene.glsl with a different set etc?
+// That could also include shadow maps.
+layout(binding = 11, set = SCENE_SET) uniform sampler3D sh_grid_data[];
+
 struct sh_grid
 {
     mat4 pos_from_world;
@@ -158,41 +182,9 @@ struct sh_grid
     float pad1;
 };
 
-layout(binding = SH_GRID_BUFFER_BINDING, set = 0, scalar) buffer sh_grid_buffer
+layout(binding = 12, set = 0, scalar) buffer sh_grid_buffer
 {
     sh_grid grids[];
 } sh_grids;
-#endif
-
-#ifdef ENVIRONMENT_MAP_BINDING
-layout(binding = ENVIRONMENT_MAP_BINDING, set = 0) uniform sampler2D environment_map_tex;
-#endif
-
-#ifdef ENVIRONMENT_MAP_ALIAS_TABLE_BINDING
-#include "alias_table.glsl"
-layout(binding = ENVIRONMENT_MAP_ALIAS_TABLE_BINDING, set = 0) readonly buffer environment_map_alias_table_buffer
-{
-    alias_table_entry entries[];
-} environment_map_alias_table;
-#endif
-
-#ifdef SCENE_METADATA_BUFFER_BINDING
-layout(binding = SCENE_METADATA_BUFFER_BINDING, set = 0, scalar) uniform scene_metadata_buffer
-{
-    uint point_light_count;
-    uint directional_light_count;
-    uint tri_light_count;
-    int environment_proj;
-    vec4 environment_factor;
-} scene_metadata;
-#endif
-
-#define POINT_LIGHT_FOR_BEGIN(world_pos) \
-    for(uint item_index = 0; item_index < scene_metadata.point_light_count; ++item_index) {
-#define POINT_LIGHT_FOR_END }
-
-#ifdef TLAS_BINDING
-layout(binding = TLAS_BINDING, set = 0) uniform accelerationStructureEXT tlas;
-#endif
 
 #endif

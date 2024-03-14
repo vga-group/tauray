@@ -5,15 +5,9 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
 
-#define TLAS_BINDING 0
-#define ENVIRONMENT_MAP_BINDING 7
 #define DISTRIBUTION_DATA_BINDING 8
 #define CAMERA_DATA_BINDING 9
-#define SCENE_METADATA_BUFFER_BINDING 10
 #define SAMPLING_DATA_BINDING 20
-#ifdef NEE_SAMPLE_ENVMAP
-#define ENVIRONMENT_MAP_ALIAS_TABLE_BINDING 21
-#endif
 #ifdef USE_COLOR_TARGET
 #define COLOR_TARGET_BINDING 11
 #endif

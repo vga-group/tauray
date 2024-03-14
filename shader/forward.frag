@@ -11,10 +11,7 @@
 #define SHADOW_MAP_ATLAS_TEST_BINDING 8
 #define PCF_NOISE_VECTOR_2D_BINDING 9
 #define PCF_NOISE_VECTOR_3D_BINDING 10
-#define TEXTURE_3D_ARRAY_BINDING 11
-#define SH_GRID_BUFFER_BINDING 12
 #define BRDF_INTEGRATION_BINDING 13
-#define SCENE_METADATA_BUFFER_BINDING 14
 #define CALC_PREV_VERTEX_POS
 #include "forward.glsl"
 #include "ggx.glsl"
@@ -158,7 +155,7 @@ void eval_indirect_light(
         vec3 sample_normal = normalize((sg.normal_from_world * vec4(v.smooth_normal, 0)).xyz);
 
         sh_probe sh = sample_sh_grid(
-            textures3d[nonuniformEXT(sh_grid_index)], sg.grid_clamp,
+            sh_grid_data[nonuniformEXT(sh_grid_index)], sg.grid_clamp,
             sample_pos, sample_normal
         );
 

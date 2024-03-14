@@ -13,8 +13,8 @@ namespace path_tracer
         path_tracer_stage::options opt,
         const gbuffer_target& gbuf
     ){
-        shader_source pl_rint("shader/path_tracer_point_light.rint");
-        shader_source shadow_chit("shader/path_tracer_shadow.rchit");
+        shader_source pl_rint("shader/rt_common_point_light.rint");
+        shader_source shadow_chit("shader/rt_common_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
         defines["SAMPLES_PER_PASS"] = std::to_string(opt.samples_per_pass);
@@ -58,17 +58,17 @@ namespace path_tracer
             {
                 {
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/path_tracer.rchit", defines},
-                    {"shader/path_tracer.rahit", defines}
+                    {"shader/rt_common.rchit", defines},
+                    {"shader/rt_common.rahit", defines}
                 },
                 {
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
                     shadow_chit,
-                    {"shader/path_tracer_shadow.rahit", defines}
+                    {"shader/rt_common_shadow.rahit", defines}
                 },
                 {
                     vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/path_tracer_point_light.rchit", defines},
+                    {"shader/rt_common_point_light.rchit", defines},
                     {},
                     pl_rint
                 },
@@ -80,8 +80,8 @@ namespace path_tracer
                 }
             },
             {
-                {"shader/path_tracer.rmiss", defines},
-                {"shader/path_tracer_shadow.rmiss", defines}
+                {"shader/rt_common.rmiss", defines},
+                {"shader/rt_common_shadow.rmiss", defines}
             }
         };
     }
