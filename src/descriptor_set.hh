@@ -51,10 +51,14 @@ protected:
     void refresh(device_id id) const;
 
     bool push_descriptor_set;
-    mutable bool dirty = true;
     mutable std::vector<vk::DescriptorSetLayoutBinding> bindings;
-    mutable per_device<vkm<vk::DescriptorSetLayout>> layout;
-    mutable uint32_t descriptor_pool_capacity = 0;
+    struct layout_data
+    {
+        bool dirty = true;
+        uint32_t descriptor_pool_capacity = 0;
+        vkm<vk::DescriptorSetLayout> layout;
+    };
+    mutable per_device<layout_data> layout;
 
     std::set<std::string> descriptor_names;
     std::unordered_map<std::string_view, set_binding> named_bindings;

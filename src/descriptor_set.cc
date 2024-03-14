@@ -65,7 +65,8 @@ void descriptor_set_layout::add(
         );
 
     named_bindings[*name_it] = {binding, flags};
-    dirty = true;
+    for(const auto&[dev, data]: layout)
+        data.dirty = true;
 }
 
 void descriptor_set_layout::add(const shader_source& in_data, uint32_t target_set_index)
@@ -108,7 +109,8 @@ void descriptor_set_layout::set_binding_params(
     {
         it->second.descriptorCount = count;
         it->second.flags = flags;
-        dirty = true;
+        for(const auto&[dev, data]: layout)
+            data.dirty = true;
     }
 }
 
@@ -125,12 +127,13 @@ descriptor_set_layout::find_binding(std::string_view name) const
 vk::DescriptorSetLayout descriptor_set_layout::get_layout(device_id id) const
 {
     refresh(id);
-    return layout[id];
+    return layout[id].layout;
 }
 
 void descriptor_set_layout::refresh(device_id id) const
 {
-    if(dirty)
+    layout_data& ld = layout[id];
+    if(ld.dirty)
     {
         bindings.clear();
         std::vector<vk::DescriptorBindingFlags> binding_flags;
@@ -152,12 +155,12 @@ void descriptor_set_layout::refresh(device_id id) const
             descriptor_set_layout_info.flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR;
 
         device& dev = layout.get_device(id);
-        layout[id] = vkm(
+        ld.layout = vkm(
             dev, dev.logical.createDescriptorSetLayout(descriptor_set_layout_info)
         );
-        descriptor_pool_capacity = 0;
+        ld.descriptor_pool_capacity = 0;
 
-        dirty = false;
+        ld.dirty = false;
     }
 }
 
@@ -190,6 +193,7 @@ void descriptor_set::reset(device_id id, uint32_t count)
         return;
 
     set_data& sd = data[id];
+    layout_data& ld = layout[id];
     device& dev = data.get_device(id);
     for(vk::DescriptorSet set: sd.alternatives)
     {
@@ -203,7 +207,7 @@ void descriptor_set::reset(device_id id, uint32_t count)
     }
     sd.alternatives.clear();
 
-    if(descriptor_pool_capacity < count)
+    if(ld.descriptor_pool_capacity < count)
     {
         uint32_t safe_count = count * (MAX_FRAMES_IN_FLIGHT + 2);
         std::vector<vk::DescriptorPoolSize> pool_sizes(bindings.size());
@@ -219,14 +223,14 @@ void descriptor_set::reset(device_id id, uint32_t count)
         };
         vk::DescriptorPool tmp_pool = dev.logical.createDescriptorPool(pool_create_info);
         sd.pool = vkm(dev, tmp_pool);
-        descriptor_pool_capacity = count;
+        ld.descriptor_pool_capacity = count;
     }
 
     // Create descriptor sets
     if(count > 0)
     {
         std::vector<vk::DescriptorSetLayout> layouts(count);
-        std::fill(layouts.begin(), layouts.end(), layout[id]);
+        std::fill(layouts.begin(), layouts.end(), layout[id].layout);
         vk::DescriptorSetAllocateInfo descriptor_alloc_info = {
             sd.pool,
             (uint32_t)count,
