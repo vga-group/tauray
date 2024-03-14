@@ -4,9 +4,6 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_multiview : enable
 
-#define TEXTURE_ARRAY_BINDING 1
-#define DIRECTIONAL_LIGHT_BUFFER_BINDING 2
-#define POINT_LIGHT_BUFFER_BINDING 3
 #define CAMERA_DATA_BINDING 4
 #define SHADOW_MAP_BUFFER_BINDING 5
 #define SHADOW_MAP_CASCADE_BUFFER_BINDING 6

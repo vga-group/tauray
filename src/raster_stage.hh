@@ -21,7 +21,6 @@ public:
     struct options
     {
         // Must be a power of two.
-        size_t max_samplers = 128;
         size_t max_3d_samplers = 128;
         bool clear_color = true;
         bool clear_depth = true;

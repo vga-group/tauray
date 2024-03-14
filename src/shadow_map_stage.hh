@@ -18,7 +18,6 @@ class shadow_map_stage: public single_device_stage
 public:
     struct options
     {
-        size_t max_samplers = 128;
     };
 
     shadow_map_stage(device& dev, scene_stage& ss, const options& opt);

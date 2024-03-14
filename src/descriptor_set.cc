@@ -247,22 +247,20 @@ void descriptor_set::set_image(
     device_id id,
     uint32_t index,
     std::string_view name,
-    const std::vector<vk::ImageView>& views,
-    const std::vector<vk::Sampler>& samplers
+    std::vector<vk::DescriptorImageInfo>&& image_infos
 ){
-    if(named_bindings.count(name) == 0 || views.size() == 0) return;
+    if(named_bindings.count(name) == 0 || image_infos.size() == 0) return;
 
     set_binding bind = find_binding(name);
-    std::vector<vk::DescriptorImageInfo> image_infos(views.size());
 
     set_data& sd = data[id];
-    if(!(bind.flags&vk::DescriptorBindingFlagBits::ePartiallyBound) && views.size() != bind.descriptorCount)
+    if(!(bind.flags&vk::DescriptorBindingFlagBits::ePartiallyBound) && image_infos.size() != bind.descriptorCount)
         throw std::runtime_error(
             "Image view count does not match descriptor count, and "
             "VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT isn't set."
         );
 
-    if(views.size() > bind.descriptorCount)
+    if(image_infos.size() > bind.descriptorCount)
         throw std::runtime_error("More images than descriptor allows!");
 
     if(
@@ -271,27 +269,16 @@ void descriptor_set::set_image(
         bind.descriptorType != vk::DescriptorType::eStorageImage
     ) throw std::runtime_error("Cannot set non-image descriptor as an image!");
 
-    for(size_t i = 0; i < views.size(); ++i)
+    for(size_t i = 0; i < image_infos.size(); ++i)
     {
-        vk::Sampler sampler = {};
-        if(samplers.size() == 1)
-            sampler = samplers[0];
-        else if(samplers.size() > 1)
-        {
-            assert(samplers.size() == views.size());
-            sampler = samplers[i];
-        }
-        image_infos[i] = vk::DescriptorImageInfo{
-            sampler,
-            views[i],
-            bind.descriptorType == vk::DescriptorType::eStorageImage ?
+        if(image_infos[i].imageLayout == vk::ImageLayout::eUndefined)
+            image_infos[i].imageLayout = bind.descriptorType == vk::DescriptorType::eStorageImage ?
                 vk::ImageLayout::eGeneral :
-                vk::ImageLayout::eShaderReadOnlyOptimal
-        };
+                vk::ImageLayout::eShaderReadOnlyOptimal;
     }
     vk::WriteDescriptorSet write = {
         sd.alternatives[index], (uint32_t)bind.binding, 0,
-        (uint32_t)views.size(), bind.descriptorType,
+        (uint32_t)image_infos.size(), bind.descriptorType,
         image_infos.data(), nullptr, nullptr
     };
     data.get_device(id).logical.updateDescriptorSets(
@@ -307,8 +294,12 @@ void descriptor_set::set_texture(
 ){
     for(device& dev: tex.get_mask())
     {
+        vk::DescriptorImageInfo info;
+        info.sampler = s.get_sampler(dev.id);
+        info.imageView = tex.get_image_view(dev.id);
+        info.imageLayout = vk::ImageLayout::eUndefined;
         if(data.get_mask().contains(dev.id))
-            set_image(dev.id, index, name, {tex.get_image_view(dev.id)}, {s.get_sampler(dev.id)});
+            set_image(dev.id, index, name, {{info}});
     }
 }
 
@@ -319,8 +310,12 @@ void descriptor_set::set_image(
 ){
     for(device& dev: tex.get_mask())
     {
+        vk::DescriptorImageInfo info;
+        info.sampler = VK_NULL_HANDLE;
+        info.imageView = tex.get_image_view(dev.id);
+        info.imageLayout = vk::ImageLayout::eUndefined;
         if(data.get_mask().contains(dev.id))
-            set_image(dev.id, index, name, {tex.get_image_view(dev.id)});
+            set_image(dev.id, index, name, {{info}});
     }
 }
 
@@ -328,33 +323,24 @@ void descriptor_set::set_buffer(
     device_id id,
     uint32_t index,
     std::string_view name,
-    const std::vector<vk::Buffer>& buffers,
-    const std::vector<uint32_t>& offsets
+    std::vector<vk::DescriptorBufferInfo>&& infos
 ){
-    if(named_bindings.count(name) == 0 || buffers.size() == 0) return;
+    if(named_bindings.count(name) == 0 || infos.size() == 0) return;
 
     set_binding bind = find_binding(name);
 
     set_data& sd = data[id];
-    if(buffers.size() > bind.descriptorCount)
+    if(infos.size() > bind.descriptorCount)
         throw std::runtime_error("More buffers than descriptor allows!");
-
-    std::vector<vk::DescriptorBufferInfo> infos(buffers.size());
-    for(size_t i = 0; i < buffers.size(); ++i)
-    {
-        infos[i] = vk::DescriptorBufferInfo{buffers[i], 0, VK_WHOLE_SIZE};
-        if(i < offsets.size())
-            infos[i].offset = offsets[i];
-    }
 
     if(bind.descriptorType != vk::DescriptorType::eStorageBuffer && bind.descriptorType != vk::DescriptorType::eUniformBuffer)
         throw std::runtime_error("Cannot set non-buffer descriptor as a buffer!");
 
     for(size_t i = 0;;)
     {
-        while(!buffers[i] && i < buffers.size()) ++i;
+        while(!infos[i].buffer && i < infos.size()) ++i;
         uint32_t begin = i;
-        while(buffers[i] && i < buffers.size()) ++i;
+        while(infos[i].buffer && i < infos.size()) ++i;
         uint32_t end = i;
 
         if(end == begin)
@@ -380,7 +366,7 @@ void descriptor_set::set_buffer(
     for(device& dev: buffer.get_mask())
     {
         if(data.get_mask().contains(dev.id))
-            set_buffer(dev.id, index, name, {buffer[dev.id]}, {offset});
+            set_buffer(dev.id, index, name, {{buffer[dev.id], offset, VK_WHOLE_SIZE}});
     }
 }
 
@@ -451,10 +437,9 @@ push_descriptor_set::~push_descriptor_set()
 void push_descriptor_set::set_image(
     device_id id,
     std::string_view name,
-    const std::vector<vk::ImageView>& views,
-    const std::vector<vk::Sampler>& samplers
+    std::vector<vk::DescriptorImageInfo>&& infos
 ){
-    if(named_bindings.count(name) == 0 || views.size() == 0) return;
+    if(named_bindings.count(name) == 0 || infos.size() == 0) return;
 
     set_data& sd = data[id];
 
@@ -462,18 +447,18 @@ void push_descriptor_set::set_image(
     auto& image_infos = sd.image_info_index < sd.tmp_image_infos.size() ?
         sd.tmp_image_infos[sd.image_info_index] :
         sd.tmp_image_infos.emplace_back(std::vector<vk::DescriptorImageInfo>());
+    image_infos = std::move(infos);
     sd.image_info_index++;
-    image_infos.resize(views.size());
 
     if(
         !(bind.flags&vk::DescriptorBindingFlagBits::ePartiallyBound) &&
-        views.size() != bind.descriptorCount
+        image_infos.size() != bind.descriptorCount
     ) throw std::runtime_error(
         "Image view count does not match descriptor count, and "
         "VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT isn't set."
     );
 
-    if(views.size() > bind.descriptorCount)
+    if(image_infos.size() > bind.descriptorCount)
         throw std::runtime_error("More images than descriptor allows!");
 
     if(
@@ -482,27 +467,16 @@ void push_descriptor_set::set_image(
         bind.descriptorType != vk::DescriptorType::eStorageImage
     ) throw std::runtime_error("Cannot set non-image descriptor as an image!");
 
-    for(size_t i = 0; i < views.size(); ++i)
+    for(size_t i = 0; i < image_infos.size(); ++i)
     {
-        vk::Sampler sampler = {};
-        if(samplers.size() == 1)
-            sampler = samplers[0];
-        else if(samplers.size() > 1)
-        {
-            assert(samplers.size() == views.size());
-            sampler = samplers[i];
-        }
-        image_infos[i] = vk::DescriptorImageInfo{
-            sampler,
-            views[i],
-            bind.descriptorType == vk::DescriptorType::eStorageImage ?
+        if(image_infos[i].imageLayout == vk::ImageLayout::eUndefined)
+            image_infos[i].imageLayout = bind.descriptorType == vk::DescriptorType::eStorageImage ?
                 vk::ImageLayout::eGeneral :
-                vk::ImageLayout::eShaderReadOnlyOptimal
-        };
+                vk::ImageLayout::eShaderReadOnlyOptimal;
     }
     vk::WriteDescriptorSet write = {
         VK_NULL_HANDLE, (uint32_t)bind.binding, 0,
-        (uint32_t)views.size(), bind.descriptorType,
+        (uint32_t)image_infos.size(), bind.descriptorType,
         image_infos.data(), nullptr, nullptr
     };
     sd.writes.push_back(write);
@@ -515,8 +489,12 @@ void push_descriptor_set::set_texture(
 ){
     for(device& dev: tex.get_mask())
     {
+        vk::DescriptorImageInfo info;
+        info.sampler = s.get_sampler(dev.id);
+        info.imageView = tex.get_image_view(dev.id);
+        info.imageLayout = vk::ImageLayout::eUndefined;
         if(data.get_mask().contains(dev.id))
-            set_image(dev.id, name, {tex.get_image_view(dev.id)}, {s.get_sampler(dev.id)});
+            set_image(dev.id, name, {{info}});
     }
 }
 
@@ -526,16 +504,19 @@ void push_descriptor_set::set_image(
 ){
     for(device& dev: tex.get_mask())
     {
+        vk::DescriptorImageInfo info;
+        info.sampler = VK_NULL_HANDLE;
+        info.imageView = tex.get_image_view(dev.id);
+        info.imageLayout = vk::ImageLayout::eUndefined;
         if(data.get_mask().contains(dev.id))
-            set_image(dev.id, name, {tex.get_image_view(dev.id)});
+            set_image(dev.id, name, {{info}});
     }
 }
 
 void push_descriptor_set::set_buffer(
     device_id id,
     std::string_view name,
-    const std::vector<vk::Buffer>& buffers,
-    const std::vector<uint32_t>& offsets
+    std::vector<vk::DescriptorBufferInfo>&& buffers
 ){
     if(named_bindings.count(name) == 0 || buffers.size() == 0) return;
 
@@ -549,23 +530,16 @@ void push_descriptor_set::set_buffer(
         sd.tmp_buffer_infos[sd.buffer_info_index] :
         sd.tmp_buffer_infos.emplace_back(std::vector<vk::DescriptorBufferInfo>());
     sd.buffer_info_index++;
-    infos.resize(buffers.size());
-
-    for(size_t i = 0; i < buffers.size(); ++i)
-    {
-        infos[i] = vk::DescriptorBufferInfo{buffers[i], 0, VK_WHOLE_SIZE};
-        if(i < offsets.size())
-            infos[i].offset = offsets[i];
-    }
+    infos = std::move(buffers);
 
     if(bind.descriptorType != vk::DescriptorType::eStorageBuffer && bind.descriptorType != vk::DescriptorType::eUniformBuffer)
         throw std::runtime_error("Cannot set non-buffer descriptor as a buffer!");
 
     for(size_t i = 0;;)
     {
-        while(!buffers[i] && i < buffers.size()) ++i;
+        while(!infos[i].buffer && i < infos.size()) ++i;
         uint32_t begin = i;
-        while(buffers[i] && i < buffers.size()) ++i;
+        while(infos[i].buffer && i < infos.size()) ++i;
         uint32_t end = i;
 
         if(end == begin)

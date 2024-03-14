@@ -31,7 +31,7 @@ basic_pipeline::basic_pipeline(
         dev, dev.logical.createDescriptorSetLayout(descriptor_set_layout_info)
     );
 
-    if(!use_push_descriptors)
+    if(!use_push_descriptors && max_descriptor_sets > 0)
     {
         descriptor_sets.resize(max_descriptor_sets);
         reset_descriptor_sets();
@@ -39,7 +39,8 @@ basic_pipeline::basic_pipeline(
 
     std::vector<vk::DescriptorSetLayout> descriptor_sets;
 
-    descriptor_sets.insert(descriptor_sets.begin(), descriptor_set_layout);
+    if(max_descriptor_sets > 0)
+        descriptor_sets.insert(descriptor_sets.begin(), descriptor_set_layout);
     for(tr::descriptor_set_layout* layout: layout)
         descriptor_sets.push_back(layout->get_layout(dev.id));
 
@@ -92,6 +93,7 @@ void basic_pipeline::update_descriptor_set(
     const std::vector<descriptor_state>& descriptor_states,
     int32_t index
 ){
+    if(descriptor_sets.size() == 0) return;
     if(index < 0)
     {
         for(index = 0; index < (int32_t)descriptor_sets.size(); ++index)
@@ -185,10 +187,13 @@ device* basic_pipeline::get_device() const
 void basic_pipeline::bind(vk::CommandBuffer cmd, uint32_t descriptor_set_index) const
 {
     bind(cmd);
-    cmd.bindDescriptorSets(
-        bind_point, pipeline_layout,
-        0, {descriptor_sets[descriptor_set_index]}, {}
-    );
+    if(descriptor_sets.size() > 0)
+    {
+        cmd.bindDescriptorSets(
+            bind_point, pipeline_layout,
+            0, {descriptor_sets[descriptor_set_index]}, {}
+        );
+    }
 }
 
 void basic_pipeline::set_descriptors(vk::CommandBuffer cmd, descriptor_set& set, uint32_t index, uint32_t set_index) const

@@ -23,7 +23,6 @@ layout(binding = DISTRIBUTION_DATA_BINDING, set = 0) uniform distribution_data_b
 // I would prefer this to be INF, but it's hard to write in glsl.
 #define RAY_MAX_DIST float(1e39)
 
-#if defined(VERTEX_BUFFER_BINDING) && defined(INDEX_BUFFER_BINDING)
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
 vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, vec3 pos, out float pdf)
 #else
@@ -126,8 +125,6 @@ bool is_material_skippable(int instance_id, vec2 uv, float alpha_cutoff)
 
     return (albedo.a <= alpha_cutoff);
 }
-
-#endif
 
 // A workaround for the shadow terminator problem, the idea is from
 // the Appleseed renderer. This is not physically based, so it's easy to

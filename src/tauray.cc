@@ -376,6 +376,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     scene_stage::options scene_options;
     scene_options.max_instances = get_instance_count(s);
+    scene_options.max_samplers = get_sampler_count(s);
+    scene_options.max_3d_samplers = get_sampler_count(s);
     scene_options.max_lights = s.count<point_light>() + s.count<spotlight>();
     scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles > 0;
     scene_options.pre_transform_vertices = opt.pre_transform_vertices;
@@ -386,8 +388,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     rt_camera_stage::options rc_opt;
     s.foreach([&](camera& cam){ rc_opt.projection = cam.get_projection_type(); });
-    rc_opt.max_instances = scene_options.max_instances;
-    rc_opt.max_samplers = get_sampler_count(s);
     rc_opt.min_ray_dist = opt.min_ray_dist;
     rc_opt.max_ray_depth = opt.max_ray_depth;
     rc_opt.samples_per_pass = min(opt.samples_per_pass, opt.samples_per_pixel);
@@ -548,7 +548,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         case options::RASTER:
             {
                 raster_renderer::options rr_opt;
-                rr_opt.max_samplers = get_sampler_count(s);
                 rr_opt.msaa_samples = opt.samples_per_pixel;
                 rr_opt.sample_shading = opt.sample_shading;
                 if(opt.taa.sequence_length != 0)
@@ -582,7 +581,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if(opt.taa.sequence_length != 0)
                     dr_opt.post_process.taa = taa;
                 dr_opt.post_process.tonemap = tonemap;
-                dr_opt.max_samplers = get_sampler_count(s);
                 dr_opt.msaa_samples = opt.samples_per_pixel;
                 dr_opt.sample_shading = opt.sample_shading;
                 dr_opt.pcf_samples = min(opt.pcf, 64);
@@ -621,7 +619,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.post_process.tonemap = tonemap;
                 if(opt.taa.sequence_length != 0)
                     dr_opt.post_process.taa = taa;
-                dr_opt.max_samplers = get_sampler_count(s);
                 dr_opt.msaa_samples = opt.samples_per_pixel;
                 dr_opt.sample_shading = opt.sample_shading;
                 dr_opt.pcf_samples = min(opt.pcf, 64);

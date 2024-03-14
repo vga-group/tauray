@@ -154,7 +154,6 @@ raster_stage::raster_stage(
             uvec4(0, 0, target.get_size()),
             load_sources(opt, target),
             {
-                {"textures", (uint32_t)opt.max_samplers},
                 {"textures3d", (uint32_t)opt.max_3d_samplers},
             },
             mesh::get_bindings(),
@@ -167,7 +166,7 @@ raster_stage::raster_stage(
 
         scene_stage::bind_placeholders(
             *array_pipelines.back(),
-            opt.max_samplers,
+            0,
             opt.max_3d_samplers
         );
 

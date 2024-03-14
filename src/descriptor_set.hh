@@ -78,8 +78,7 @@ public:
         device_id id,
         uint32_t index,
         std::string_view name,
-        const std::vector<vk::ImageView>& views,
-        const std::vector<vk::Sampler>& samplers = {}
+        std::vector<vk::DescriptorImageInfo>&& infos
     );
 
     void set_texture(
@@ -99,8 +98,7 @@ public:
         device_id id,
         uint32_t index,
         std::string_view name,
-        const std::vector<vk::Buffer>& buffer,
-        const std::vector<uint32_t>& offsets = {}
+        std::vector<vk::DescriptorBufferInfo>&& buffers
     );
 
     void set_buffer(
@@ -145,8 +143,7 @@ public:
     void set_image(
         device_id id,
         std::string_view name,
-        const std::vector<vk::ImageView>& views,
-        const std::vector<vk::Sampler>& samplers = {}
+        std::vector<vk::DescriptorImageInfo>&& infos
     );
 
     void set_texture(
@@ -163,8 +160,7 @@ public:
     void set_buffer(
         device_id id,
         std::string_view name,
-        const std::vector<vk::Buffer>& buffer,
-        const std::vector<uint32_t>& offsets = {}
+        std::vector<vk::DescriptorBufferInfo>&& buffers
     );
 
     void set_buffer(

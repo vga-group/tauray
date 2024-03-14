@@ -274,11 +274,8 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
             std::map<std::string, std::string>{{"PRE_TRANSFORMED_VERTICES", ""}} :
             std::map<std::string, std::string>()
         },
-        {
-            {"vertices", (uint32_t)opt.max_instances},
-            {"indices", (uint32_t)opt.max_instances}
-        },
-        1, false, {&scene_desc}
+        {},
+        0, false, {&scene_desc}
     });
     pre_transform.emplace(dev, compute_pipeline::params{
         {"shader/pre_transform.comp"}, {}, 1, true, {&scene_desc}
@@ -695,6 +692,10 @@ bool scene_stage::refresh_instance_cache()
     }
     if(scene_changed)
         ensure_blas();
+
+    if(instances.size() > opt.max_instances)
+        throw std::runtime_error("The scene has more meshes than max_instances allows!");
+
     return scene_changed;
 }
 
@@ -875,49 +876,8 @@ std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int
     if(dev.get_context()->is_ray_tracing_supported())
         tlas = get_acceleration_structure(id);
 
-    std::vector<vk::DescriptorBufferInfo> dbi_vertex;
-    std::vector<vk::DescriptorBufferInfo> dbi_index;
-    bool got_pre_transformed_vertices = false;
-    if(get_context()->is_ray_tracing_supported())
-    {
-        auto& ptv = pre_transformed_vertices[id];
-        if(ptv.count != 0)
-        {
-            size_t offset = 0;
-            for(size_t i = 0; i < instances.size(); ++i)
-            {
-                const mesh* m = instances[i].m;
-                size_t bytes = m->get_vertices().size() * sizeof(mesh::vertex);
-                dbi_vertex.push_back({ptv.buf, offset, bytes});
-                offset += bytes;
-            }
-            got_pre_transformed_vertices = true;
-        }
-    }
-    for(size_t i = 0; i < instances.size(); ++i)
-    {
-        const mesh* m = instances[i].m;
-        if(!got_pre_transformed_vertices)
-        {
-            vk::Buffer vertex_buffer = m->get_vertex_buffer(id);
-            dbi_vertex.push_back({vertex_buffer, 0, VK_WHOLE_SIZE});
-        }
-        vk::Buffer index_buffer = m->get_index_buffer(id);
-        dbi_index.push_back({index_buffer, 0, VK_WHOLE_SIZE});
-    }
-
-    std::vector<vk::DescriptorImageInfo> dii = s_table.get_image_infos(id);
-
     std::vector<descriptor_state> descriptors = {
         {"scene_metadata", {scene_metadata[id], 0, VK_WHOLE_SIZE}},
-        {"vertices", dbi_vertex},
-        {"indices", dbi_index},
-        {"textures", dii},
-        {"directional_lights", {
-            directional_light_data[id], 0, VK_WHOLE_SIZE
-        }},
-        {"point_lights", {point_light_data[id], 0, VK_WHOLE_SIZE}},
-        {"tri_lights", {tri_light_data[id], 0, VK_WHOLE_SIZE}},
         {"environment_map_tex", {
             envmap_sampler.get_sampler(id),
             envmap ? envmap->get_image_view(id) : vk::ImageView{},
@@ -983,14 +943,13 @@ void scene_stage::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t c
 
 void scene_stage::bind_placeholders(
     basic_pipeline& pipeline,
-    size_t max_samplers,
+    size_t,
     size_t max_3d_samplers
 ){
     device* dev = pipeline.get_device();
     placeholders& pl = dev->ctx->get_placeholders();
 
     pipeline.update_descriptor_set({
-        {"textures", max_samplers},
         {"shadow_maps"},
         {"shadow_map_cascades"},
         {"shadow_map_atlas"},
@@ -1607,7 +1566,7 @@ void scene_stage::record_tri_light_extraction(
     vk::CommandBuffer cb
 ){
     extract_tri_lights[id].bind(cb, 0);
-    extract_tri_lights[id].set_descriptors(cb, scene_desc, 0, 1);
+    extract_tri_lights[id].set_descriptors(cb, scene_desc, 0, 0);
     for(size_t i = 0; i < instances.size(); ++i)
     {
         const instance& inst = instances[i];
@@ -1667,16 +1626,63 @@ void scene_stage::record_pre_transform(
 
 void scene_stage::init_descriptor_set_layout()
 {
-    scene_desc.add(
-        "instances",
-        vk::DescriptorSetLayoutBinding{0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}
-    );
+    scene_desc.add("instances", {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("directional_lights", {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("point_lights", {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("tri_lights", {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("vertices", {4, vk::DescriptorType::eStorageBuffer, opt.max_instances, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_desc.add("indices", {5, vk::DescriptorType::eStorageBuffer, opt.max_instances, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_desc.add("textures", {6, vk::DescriptorType::eCombinedImageSampler, opt.max_samplers, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
 }
 
 void scene_stage::update_descriptor_set()
 {
     scene_desc.reset(scene_desc.get_mask(), 1);
     scene_desc.set_buffer(0, "instances", instance_data);
+    scene_desc.set_buffer(0, "directional_lights", directional_light_data);
+    scene_desc.set_buffer(0, "point_lights", point_light_data);
+    scene_desc.set_buffer(0, "tri_lights", tri_light_data);
+
+    for(device& dev: scene_desc.get_mask())
+    {
+        device_id id = dev.id;
+        std::vector<vk::DescriptorBufferInfo> dbi_vertex;
+        std::vector<vk::DescriptorBufferInfo> dbi_index;
+        bool got_pre_transformed_vertices = false;
+        if(get_context()->is_ray_tracing_supported())
+        {
+            auto& ptv = pre_transformed_vertices[id];
+            if(ptv.count != 0)
+            {
+                size_t offset = 0;
+                for(size_t i = 0; i < instances.size(); ++i)
+                {
+                    const mesh* m = instances[i].m;
+                    size_t bytes = m->get_vertices().size() * sizeof(mesh::vertex);
+                    dbi_vertex.push_back({ptv.buf, offset, bytes});
+                    offset += bytes;
+                }
+                got_pre_transformed_vertices = true;
+            }
+        }
+        for(size_t i = 0; i < instances.size(); ++i)
+        {
+            const mesh* m = instances[i].m;
+            if(!got_pre_transformed_vertices)
+            {
+                vk::Buffer vertex_buffer = m->get_vertex_buffer(id);
+                dbi_vertex.push_back({vertex_buffer, 0, VK_WHOLE_SIZE});
+            }
+            vk::Buffer index_buffer = m->get_index_buffer(id);
+            dbi_index.push_back({index_buffer, 0, VK_WHOLE_SIZE});
+        }
+
+        scene_desc.set_buffer(id, 0, "vertices", std::move(dbi_vertex));
+        scene_desc.set_buffer(id, 0, "indices", std::move(dbi_index));
+
+        std::vector<vk::DescriptorImageInfo> dii = s_table.get_image_infos(id);
+        scene_desc.set_image(id, 0, "textures", std::move(dii));
+    }
 }
 
 }

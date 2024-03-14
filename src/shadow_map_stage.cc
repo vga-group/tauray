@@ -128,10 +128,7 @@ void shadow_map_stage::update(uint32_t frame_index)
             uvec2(shadow_map_atlas->get_size()),
             uvec4(0, 0, shadow_map_atlas->get_size()),
             shadow::load_sources(),
-            {
-                // Texture samplers are binding 1.
-                {"textures", (uint32_t)opt.max_samplers},
-            },
+            {},
             mesh::get_bindings(),
             {mesh::get_attributes()[0], mesh::get_attributes()[2]},
             {},
@@ -153,7 +150,7 @@ void shadow_map_stage::update(uint32_t frame_index)
             {}, false, true,
             {&ss->get_descriptors()}
         });
-        scene_stage::bind_placeholders(*gfx, opt.max_samplers, 0);
+        scene_stage::bind_placeholders(*gfx, 0, 0);
     }
 
     if(ss->check_update(scene_stage::GEOMETRY, scene_state_counter))

@@ -6,11 +6,7 @@
 
 hitAttributeEXT vec2 attribs;
 
-#define VERTEX_BUFFER_BINDING 2
-#define INDEX_BUFFER_BINDING 3
-#define TEXTURE_ARRAY_BINDING 4
 #include "rt.glsl"
-
 #include "ggx.glsl"
 
 layout(location = 1) rayPayloadInEXT float shadow_visibility;

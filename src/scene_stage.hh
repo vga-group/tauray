@@ -35,6 +35,7 @@ public:
         uint32_t max_instances = 1024;
         uint32_t max_lights = 128;
         uint32_t max_samplers = 128;
+        uint32_t max_3d_samplers = 128;
         bool gather_emissive_triangles = false;
         bool pre_transform_vertices = false;
         bool shadow_mapping = false;
