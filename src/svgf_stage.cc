@@ -34,9 +34,9 @@ svgf_stage::svgf_stage(
     gbuffer_target& prev_features,
     const options& opt
 ):  single_device_stage(dev),
-    atrous_comp(dev, compute_pipeline::params{shader_source("shader/svgf_atrous.comp"), 0, true}),
-    temporal_comp(dev, compute_pipeline::params{shader_source("shader/svgf_temporal.comp")}),
-    estimate_variance_comp(dev, compute_pipeline::params{shader_source("shader/svgf_estimate_variance.comp")}),
+    atrous_desc(dev), atrous_comp(dev),
+    temporal_desc(dev), temporal_comp(dev),
+    estimate_variance_desc(dev), estimate_variance_comp(dev),
     opt(opt),
     input_features(input_features),
     prev_features(prev_features),
@@ -45,6 +45,21 @@ svgf_stage::svgf_stage(
     ss(&ss),
     scene_state_counter(0)
 {
+    {
+        shader_source src("shader/svgf_atrous.comp");
+        atrous_desc.add(src);
+        estimate_variance_comp.init(src, {&estimate_variance_desc});
+    }
+    {
+        shader_source src("shader/svgf_temporal.comp");
+        temporal_desc.add(src);
+        temporal_comp.init(src, {&temporal_desc, &ss.get_descriptors()});
+    }
+    {
+        shader_source src("shader/svgf_estimate_variance.comp");
+        estimate_variance_desc.add(src);
+        estimate_variance_comp.init(src, {&estimate_variance_desc});
+    }
 }
 
 void svgf_stage::update(uint32_t frame_index)
@@ -99,37 +114,6 @@ void svgf_stage::init_resources()
     svgf_spec_hist              = render_target_texture[rt_index++]->get_array_render_target(dev->id);
     atrous_diffuse_pingpong[0]  = render_target_texture[rt_index++]->get_array_render_target(dev->id);
     atrous_diffuse_pingpong[1]  = render_target_texture[rt_index++]->get_array_render_target(dev->id);
-
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        temporal_comp.update_descriptor_set({
-            {"in_color", {{}, input_features.color.view, vk::ImageLayout::eGeneral}},
-            {"in_diffuse", {{}, input_features.diffuse.view, vk::ImageLayout::eGeneral}},
-            {"previous_color", {{}, svgf_color_hist.view, vk::ImageLayout::eGeneral}},
-            {"in_normal", {{}, input_features.normal.view, vk::ImageLayout::eGeneral}},
-            {"in_screen_motion", {{}, input_features.screen_motion.view, vk::ImageLayout::eGeneral}},
-            {"previous_normal", {{}, prev_features.normal.view, vk::ImageLayout::eGeneral}},
-            {"in_albedo", {{}, input_features.albedo.view, vk::ImageLayout::eGeneral}},
-            {"previous_moments", {{}, moments_history[0].view, vk::ImageLayout::eGeneral}},
-            {"out_moments", {{}, moments_history[1].view, vk::ImageLayout::eGeneral}},
-            {"out_color", {{}, atrous_diffuse_pingpong[0].view, vk::ImageLayout::eGeneral}},
-            {"out_specular", {{}, atrous_specular_pingpong[0].view, vk::ImageLayout::eGeneral} },
-            {"in_linear_depth", {{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral}},
-            {"previous_linear_depth", {{}, prev_features.linear_depth.view, vk::ImageLayout::eGeneral}},
-            {"jitter_info", {jitter_buffer[dev->id], 0, VK_WHOLE_SIZE}},
-            {"previous_specular", {{}, svgf_spec_hist.view, vk::ImageLayout::eGeneral}},
-        }, i);
-        estimate_variance_comp.update_descriptor_set({
-            {"in_diffuse", {{}, atrous_diffuse_pingpong[0].view, vk::ImageLayout::eGeneral}},
-            {"out_diffuse", {{}, atrous_diffuse_pingpong[1].view, vk::ImageLayout::eGeneral}},
-            {"in_specular", {{}, atrous_specular_pingpong[0].view, vk::ImageLayout::eGeneral} },
-            {"out_specular", {{}, atrous_specular_pingpong[1].view, vk::ImageLayout::eGeneral} },
-            {"in_linear_depth", {{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral}},
-            {"current_moments", {{}, moments_history[1].view, vk::ImageLayout::eGeneral}},
-            {"moments_hist", {{}, moments_history[0].view, vk::ImageLayout::eGeneral}},
-            {"in_normal", {{}, input_features.normal.view, vk::ImageLayout::eGeneral}},
-        }, i);
-    }
 }
 
 void svgf_stage::record_command_buffers()
@@ -156,6 +140,22 @@ void svgf_stage::record_command_buffers()
         control.temporal_alpha_moments = opt.temporal_alpha_moments;
 
         temporal_comp.bind(cb);
+        temporal_desc.set_image(dev->id, "in_color", {{{}, input_features.color.view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "in_diffuse", {{{}, input_features.diffuse.view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "previous_color", {{{}, svgf_color_hist.view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "in_normal", {{{}, input_features.normal.view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "in_screen_motion", {{{}, input_features.screen_motion.view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "previous_normal", {{{}, prev_features.normal.view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "in_albedo", {{{}, input_features.albedo.view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "previous_moments", {{{}, moments_history[0].view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "out_moments", {{{}, moments_history[1].view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "out_color", {{{}, atrous_diffuse_pingpong[0].view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "out_specular", {{{}, atrous_specular_pingpong[0].view, vk::ImageLayout::eGeneral} });
+        temporal_desc.set_image(dev->id, "in_linear_depth", {{{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "previous_linear_depth", {{{}, prev_features.linear_depth.view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_buffer("jitter_info", jitter_buffer);
+        temporal_desc.set_image(dev->id, "previous_specular", {{{}, svgf_spec_hist.view, vk::ImageLayout::eGeneral}});
+        temporal_comp.push_descriptors(cb, temporal_desc, 0);
         temporal_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
         temporal_comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, input_features.get_layer_count());
@@ -171,6 +171,15 @@ void svgf_stage::record_command_buffers()
         );
 
         estimate_variance_comp.bind(cb);
+        estimate_variance_desc.set_image(dev->id, "in_diffuse", {{{}, atrous_diffuse_pingpong[0].view, vk::ImageLayout::eGeneral}});
+        estimate_variance_desc.set_image(dev->id, "out_diffuse", {{{}, atrous_diffuse_pingpong[1].view, vk::ImageLayout::eGeneral}});
+        estimate_variance_desc.set_image(dev->id, "in_specular", {{{}, atrous_specular_pingpong[0].view, vk::ImageLayout::eGeneral} });
+        estimate_variance_desc.set_image(dev->id, "out_specular", {{{}, atrous_specular_pingpong[1].view, vk::ImageLayout::eGeneral} });
+        estimate_variance_desc.set_image(dev->id, "in_linear_depth", {{{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral}});
+        estimate_variance_desc.set_image(dev->id, "current_moments", {{{}, moments_history[1].view, vk::ImageLayout::eGeneral}});
+        estimate_variance_desc.set_image(dev->id, "moments_hist", {{{}, moments_history[0].view, vk::ImageLayout::eGeneral}});
+        estimate_variance_desc.set_image(dev->id, "in_normal", {{{}, input_features.normal.view, vk::ImageLayout::eGeneral}});
+        estimate_variance_comp.push_descriptors(cb, estimate_variance_desc, 0);
         estimate_variance_comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, input_features.get_layer_count());
 
@@ -181,18 +190,7 @@ void svgf_stage::record_command_buffers()
         );
 
         atrous_comp.bind(cb);
-        atrous_comp.push_descriptors(cb,
-            {
-                {"final_output", {{}, input_features.color.view, vk::ImageLayout::eGeneral}},
-                {"diffuse_hist", {{}, svgf_color_hist.view, vk::ImageLayout::eGeneral}},
-                {"spec_hist", {{}, svgf_spec_hist.view, vk::ImageLayout::eGeneral}},
-                {"in_linear_depth", {{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral}},
-                {"in_normal", {{}, input_features.normal.view, vk::ImageLayout::eGeneral}},
-                {"in_albedo", {{}, input_features.albedo.view, vk::ImageLayout::eGeneral}},
-                {"in_material", {{}, input_features.material.view, vk::ImageLayout::eGeneral}},
-                {"in_moments", {{}, moments_history[1].view, vk::ImageLayout::eGeneral}}
-            }
-        );
+
         const int iteration_count = opt.atrous_diffuse_iters;
         for (int j = 0; j < iteration_count; ++j)
         {
@@ -206,14 +204,21 @@ void svgf_stage::record_command_buffers()
             }
             int out_index = j & 1;
             int in_index = (j + 1) & 1;
-            atrous_comp.push_descriptors(cb,
-                {
-                    {"diffuse_in", {{}, atrous_diffuse_pingpong[in_index].view, vk::ImageLayout::eGeneral}},
-                    {"diffuse_out", {{}, atrous_diffuse_pingpong[out_index].view, vk::ImageLayout::eGeneral}},
-                    {"specular_in", {{}, atrous_specular_pingpong[in_index].view, vk::ImageLayout::eGeneral}},
-                    {"specular_out", {{}, atrous_specular_pingpong[out_index].view, vk::ImageLayout::eGeneral}}
-                }
-            );
+
+            atrous_desc.set_image(dev->id, "final_output", {{{}, input_features.color.view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "diffuse_hist", {{{}, svgf_color_hist.view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "spec_hist", {{{}, svgf_spec_hist.view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "in_linear_depth", {{{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "in_normal", {{{}, input_features.normal.view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "in_albedo", {{{}, input_features.albedo.view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "in_material", {{{}, input_features.material.view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "in_moments", {{{}, moments_history[1].view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "diffuse_in", {{{}, atrous_diffuse_pingpong[in_index].view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "diffuse_out", {{{}, atrous_diffuse_pingpong[out_index].view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "specular_in", {{{}, atrous_specular_pingpong[in_index].view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "specular_out", {{{}, atrous_specular_pingpong[out_index].view, vk::ImageLayout::eGeneral}});
+
+            atrous_comp.push_descriptors(cb, atrous_desc, 0);
 
             control.iteration = j;
             atrous_comp.push_constants(cb, control);

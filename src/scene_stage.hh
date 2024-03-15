@@ -229,8 +229,10 @@ private:
     //==========================================================================
     // Pipelines
     //==========================================================================
+    push_descriptor_set skinning_desc;
     per_device<compute_pipeline> skinning;
     per_device<compute_pipeline> extract_tri_lights;
+    push_descriptor_set pre_transform_desc;
     per_device<compute_pipeline> pre_transform;
 
     options opt;

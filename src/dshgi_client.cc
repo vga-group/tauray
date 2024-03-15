@@ -30,9 +30,12 @@ public:
         scene_stage& ss,
         dshgi_client& client
     ):  single_device_stage(dev),
-        client(&client), ss(&ss),
+        desc(dev), comp(dev), client(&client), ss(&ss),
         stage_timer(dev, "sh_grids_from_server")
     {
+        shader_source src("shader/sh_grid_blend.comp");
+        desc.add(src);
+        comp.init(src, {&desc});
     }
 
     ~dshgi_client_stage()
@@ -64,14 +67,6 @@ protected:
             size_t grid_count = cur_scene->count<sh_grid>();
             if(grid_count > 0)
             {
-                comp.reset(new compute_pipeline(
-                    *dev,
-                    compute_pipeline::params{
-                        {"shader/sh_grid_blend.comp"}, {},
-                        (uint32_t)(grid_count*MAX_FRAMES_IN_FLIGHT)
-                    }
-                ));
-
                 blend_infos = gpu_buffer(
                     *dev, sizeof(blend_info) * grid_count,
                     vk::BufferUsageFlagBits::eUniformBuffer
@@ -136,21 +131,19 @@ protected:
                         0, 1
                     );
 
+                    comp.bind(cb);
+
                     // Blend with temporary texture
-                    comp->update_descriptor_set({
-                        {"input_sh", {{}, new_tex.get_image_view(dev->id), vk::ImageLayout::eGeneral}},
-                        {"inout_sh", {{}, tmp_tex.get_image_view(dev->id), vk::ImageLayout::eGeneral}},
-                        {"output_sh", {{}, out_tex.get_image_view(dev->id), vk::ImageLayout::eGeneral}},
-                        {"info", {blend_infos[dev->id], j*sizeof(blend_info), sizeof(blend_info)}}
-                    }, set_index);
-
-                    comp->bind(cb);
-
+                    desc.set_image(dev->id, "input_sh", {{{}, new_tex.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+                    desc.set_image(dev->id, "inout_sh", {{{}, tmp_tex.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+                    desc.set_image(dev->id, "output_sh", {{{}, out_tex.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+                    desc.set_buffer(dev->id, "info", {{blend_infos[dev->id], j*sizeof(blend_info), sizeof(blend_info)}});
+                    comp.push_descriptors(cb, desc, 0);
                     push_constant_buffer control;
                     control.size = dim;
                     control.index = j;
 
-                    comp->push_constants(cb, control);
+                    comp.push_constants(cb, control);
 
                     uvec3 wg = (dim+3u)/4u;
                     cb.dispatch(wg.x, wg.y, wg.z);
@@ -231,7 +224,8 @@ private:
         }
         data.clear();
     }
-    std::unique_ptr<compute_pipeline> comp;
+    push_descriptor_set desc;
+    compute_pipeline comp;
     dshgi_client* client;
     scene_stage* ss;
     uint32_t scene_state_counter = 0;

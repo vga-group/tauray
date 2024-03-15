@@ -174,6 +174,7 @@ void post_processing_renderer::init_pipelines()
         pingpong_index = 0;
     }
 
+    /*
     auto swap_pingpong = [&](){
         if(!need_pingpong)
             throw std::runtime_error("You did need pingpong...");
@@ -186,7 +187,7 @@ void post_processing_renderer::init_pipelines()
         }
         pingpong_index++;
     };
-
+    */
 
     // Add the new post processing pipelines here, don't forget to set
     // need_pingpong above to true when the stage is present.

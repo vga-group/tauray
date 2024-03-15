@@ -280,20 +280,38 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     noise_vector_3d(dev, get_resource_path("data/noise_vector_3d.exr")),
     scene_desc(dev),
     scene_raster_desc(dev),
-    skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, 1, true}),
+    skinning_desc(dev),
+    pre_transform_desc(dev),
     opt(opt), stage_timer(dev, "scene update")
 {
+    skinning.emplace(dev);
+    extract_tri_lights.emplace(dev);
+    pre_transform.emplace(dev);
+
     init_descriptor_set_layout();
-    extract_tri_lights.emplace(dev, compute_pipeline::params{
-        {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
-            std::map<std::string, std::string>{{"PRE_TRANSFORMED_VERTICES", ""}} :
-            std::map<std::string, std::string>()
-        },
-        0, false, {&scene_desc}
-    });
-    pre_transform.emplace(dev, compute_pipeline::params{
-        {"shader/pre_transform.comp"}, 1, true, {&scene_desc}
-    });
+    {
+        shader_source src("shader/skinning.comp");
+        skinning_desc.add(src);
+        for(const auto&[dev, p]: skinning)
+            p.init(src, {&skinning_desc});
+    }
+
+    for(const auto&[dev, p]: extract_tri_lights)
+    {
+        p.init(
+            {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
+                std::map<std::string, std::string>{{"PRE_TRANSFORMED_VERTICES", ""}} :
+                std::map<std::string, std::string>()
+            }, {&scene_desc}
+        );
+    }
+
+    {
+        shader_source src("shader/pre_transform.comp");
+        pre_transform_desc.add(src);
+        for(const auto&[dev, p]: pre_transform)
+            p.init(src, {&pre_transform_desc, &scene_desc});
+    }
 
     if(opt.shadow_mapping)
     {
@@ -1357,12 +1375,11 @@ void scene_stage::record_skinning(device_id id, uint32_t frame_index, vk::Comman
             uint32_t vertex_count = vg.m->get_vertices().size();
 
             skinning[id].push_constants(cb, skinning_push_constants{vertex_count});
-            skinning[id].push_descriptors(cb, {
-                {"source_data", {src->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}},
-                {"destination_data", {dst->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}},
-                {"skin_data", {src->get_skin_buffer(id), 0, VK_WHOLE_SIZE}},
-                {"joint_data", {mod.get_joint_buffer()[id], 0, VK_WHOLE_SIZE}}
-            });
+            skinning_desc.set_buffer(id, "source_data", {{src->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}});
+            skinning_desc.set_buffer(id, "destination_data", {{dst->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}});
+            skinning_desc.set_buffer(id, "skin_data", {{src->get_skin_buffer(id), 0, VK_WHOLE_SIZE}});
+            skinning_desc.set_buffer(id, "joint_data", {{mod.get_joint_buffer()[id], 0, VK_WHOLE_SIZE}});
+            skinning[id].push_descriptors(cb, skinning_desc, 0);
             cb.dispatch((vertex_count+31u)/32u, 1, 1);
         }
     });
@@ -1494,11 +1511,9 @@ void scene_stage::record_pre_transform(
 
         size_t bytes = pc.vertex_count * sizeof(mesh::vertex);
 
-        pre_transform[id].push_descriptors(cb, {
-            {"input_verts", {inst.m->get_vertex_buffer(id), 0, bytes}},
-            {"output_verts", {ptv_buf, offset, bytes}}
-        });
-
+        pre_transform_desc.set_buffer(id, "input_verts", {{inst.m->get_vertex_buffer(id), 0, bytes}});
+        pre_transform_desc.set_buffer(id, "output_verts", {{ptv_buf, offset, bytes}});
+        pre_transform[id].push_descriptors(cb, pre_transform_desc, 0);
         pre_transform[id].push_constants(cb, pc);
         cb.dispatch((pc.vertex_count+255u)/256u, 1, 1);
 

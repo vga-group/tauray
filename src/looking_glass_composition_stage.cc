@@ -23,10 +23,8 @@ looking_glass_composition_stage::looking_glass_composition_stage(
     std::vector<render_target>& output_frames,
     const options& opt
 ):  single_device_stage(dev, single_device_stage::COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE),
-    comp(dev, compute_pipeline::params{
-        {"shader/looking_glass_composition.comp"},
-        (uint32_t)output_frames.size()
-    }),
+    desc(dev),
+    comp(dev),
     input_sampler(
         dev, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerAddressMode::eClampToEdge,
@@ -36,14 +34,12 @@ looking_glass_composition_stage::looking_glass_composition_stage(
     ),
     stage_timer(dev, "looking glass composition")
 {
+    shader_source src("shader/looking_glass_composition.comp");
+    desc.add(src);
+    comp.init(src, {&desc});
+
     for(uint32_t i = 0; i < output_frames.size(); ++i)
     {
-        // Bind descriptors
-        comp.update_descriptor_set({
-            {"in_color", {input_sampler.get_sampler(dev.id), input.view, vk::ImageLayout::eShaderReadOnlyOptimal}},
-            {"out_color", {{}, output_frames[i].view, vk::ImageLayout::eGeneral}}
-        }, i);
-
         // Record command buffer
         vk::CommandBuffer cb = begin_graphics();
 
@@ -54,6 +50,9 @@ looking_glass_composition_stage::looking_glass_composition_stage(
         //stage_timer.begin(cb, i);
 
         comp.bind(cb);
+        desc.set_image(dev.id, "in_color", {{input_sampler.get_sampler(dev.id), input.view, vk::ImageLayout::eShaderReadOnlyOptimal}});
+        desc.set_image(dev.id, "out_color", {{{}, output_frames[i].view, vk::ImageLayout::eGeneral}});
+        comp.push_descriptors(cb, desc, 0);
 
         push_constant_buffer control;
         control.output_size = output_frames[i].size;

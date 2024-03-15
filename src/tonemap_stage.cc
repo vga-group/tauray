@@ -48,14 +48,17 @@ tonemap_stage::tonemap_stage(
     std::vector<render_target>& output_frames,
     const options& opt
 ):  single_device_stage(dev, single_device_stage::COMMAND_BUFFER_PER_FRAME_AND_SWAPCHAIN_IMAGE),
-    comp(dev, compute_pipeline::params{
-        load_shader_source(opt), MAX_FRAMES_IN_FLIGHT * (uint32_t)output_frames.size()
-    }),
+    desc(dev),
+    comp(dev),
     opt(opt),
     input_target(input),
     index_data(dev, sizeof(tonemap_info_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
     tonemap_timer(dev, "tonemap (" + std::to_string(input.layer_count) + " viewports)")
 {
+    shader_source src = load_shader_source(opt);
+    desc.add(src);
+    desc.reset(dev.id, MAX_FRAMES_IN_FLIGHT * (uint32_t)output_frames.size());
+    comp.init(src, {&desc});
     input.layout = vk::ImageLayout::eGeneral;
 
     if(this->opt.reorder.size() != input.layer_count)
@@ -77,17 +80,14 @@ tonemap_stage::tonemap_stage(
         render_target input = input_target;
         render_target output = output_frames[j];
 
-        comp.update_descriptor_set({
-            {"info", {index_data[dev.id], 0, sizeof(tonemap_info_buffer)}},
-            {"in_color", {{}, input_target.view, vk::ImageLayout::eGeneral}},
-            {"out_color", {{}, output.view, vk::ImageLayout::eGeneral}},
-            {"output_reorder", {output_reorder_buf, 0, VK_WHOLE_SIZE}}
-        }, get_command_buffer_index(i, j));
+        uint32_t cb_index = get_command_buffer_index(i, j);
+        desc.set_buffer(cb_index, "info", index_data);
+        desc.set_image(dev.id, cb_index, "in_color", {{{}, input_target.view, vk::ImageLayout::eGeneral}});
+        desc.set_image(dev.id, cb_index, "out_color", {{{}, output.view, vk::ImageLayout::eGeneral}});
+        desc.set_buffer(dev.id, cb_index, "output_reorder", {{output_reorder_buf, 0, VK_WHOLE_SIZE}});
 
         // Record command buffer
         vk::CommandBuffer cb = begin_compute();
-
-        uint32_t cb_index = get_command_buffer_index(i, j);
 
         input.transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true);
         output.transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true);
@@ -97,6 +97,7 @@ tonemap_stage::tonemap_stage(
         tonemap_timer.begin(cb, dev.id, i);
 
         comp.bind(cb);
+        comp.set_descriptors(cb, desc, cb_index, 0);
 
         uvec2 wg = (output.size+15u)/16u;
         cb.dispatch(wg.x, wg.y, input.layer_count);

@@ -4,6 +4,7 @@
 #include "texture.hh"
 #include "stage.hh"
 #include "compute_pipeline.hh"
+#include "descriptor_set.hh"
 #include "timer.hh"
 #include "gbuffer.hh"
 
@@ -29,13 +30,9 @@ public:
     temporal_reprojection_stage(temporal_reprojection_stage&& other) = delete;
 
 private:
-    void init_resources();
-    void record_command_buffers();
-
+    push_descriptor_set desc;
     compute_pipeline comp;
     options opt;
-    gbuffer_target current_features;
-    gbuffer_target previous_features;
     timer stage_timer;
 };
 

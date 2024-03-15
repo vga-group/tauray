@@ -7,12 +7,6 @@ namespace
 {
 using namespace tr;
 
-shader_source load_source(const tr::spatial_reprojection_stage::options&)
-{
-    std::map<std::string, std::string> defines;
-    return {"shader/spatial_reprojection.comp", defines};
-}
-
 struct camera_data_buffer
 {
     pmat4 view_proj;
@@ -40,9 +34,8 @@ spatial_reprojection_stage::spatial_reprojection_stage(
 ):  single_device_stage(dev),
     ss(&ss),
     target_viewport(target),
-    comp(dev, compute_pipeline::params{
-        load_source(opt), {}
-    }),
+    desc(dev),
+    comp(dev),
     opt(opt),
     camera_data(
         dev,
@@ -57,18 +50,16 @@ spatial_reprojection_stage::spatial_reprojection_stage(
         " viewports)"
     )
 {
+    shader_source src("shader/spatial_reprojection.comp");
+    desc.add(src);
+    comp.init(src, {&desc});
+
     target_viewport.set_layout(vk::ImageLayout::eGeneral);
     this->target_viewport.color.layout = vk::ImageLayout::eUndefined;
 
     clear_commands();
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        comp.update_descriptor_set({
-            {"camera_data", {camera_data[dev.id], 0, VK_WHOLE_SIZE}},
-            {"color_tex", {{}, target_viewport.color.view, vk::ImageLayout::eGeneral}},
-            {"normal_tex", {{}, target_viewport.normal.view, vk::ImageLayout::eGeneral}},
-            {"position_tex", {{}, target_viewport.pos.view, vk::ImageLayout::eGeneral}}
-        }, i);
         vk::CommandBuffer cb = begin_compute();
 
         stage_timer.begin(cb, dev.id, i);
@@ -79,6 +70,11 @@ spatial_reprojection_stage::spatial_reprojection_stage(
         camera_data.upload(dev.id, i, cb);
 
         comp.bind(cb);
+        desc.set_buffer("camera_data", camera_data);
+        desc.set_image(dev.id, "color_tex", {{{}, target_viewport.color.view, vk::ImageLayout::eGeneral}});
+        desc.set_image(dev.id, "normal_tex", {{{}, target_viewport.normal.view, vk::ImageLayout::eGeneral}});
+        desc.set_image(dev.id, "position_tex", {{{}, target_viewport.pos.view, vk::ImageLayout::eGeneral}});
+        comp.push_descriptors(cb, desc, 0);
 
         push_constant_buffer control;
         control.size = target_viewport.get_size();
