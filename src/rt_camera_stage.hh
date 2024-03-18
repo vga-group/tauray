@@ -24,11 +24,6 @@ public:
         bool transparent_background = false;
     };
 
-    static void get_common_defines(
-        std::map<std::string, std::string>& defines,
-        const options& opt
-    );
-
     rt_camera_stage(
         device& dev,
         scene_stage& ss,
@@ -42,6 +37,9 @@ public:
 
     // You can change everything except the distribution strategy.
     void reset_distribution_params(distribution_params distribution);
+
+    void get_common_defines(std::map<std::string, std::string>& defines);
+
 
 protected:
     void update(uint32_t frame_index) override;
