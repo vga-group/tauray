@@ -423,6 +423,11 @@ descriptor_set& scene_stage::get_raster_descriptors()
     return scene_raster_desc;
 }
 
+void scene_stage::get_defines(std::map<std::string, std::string>& defines)
+{
+    if(opt.pre_transform_vertices)
+        defines["PRE_TRANSFORMED_VERTICES"];
+}
 
 vec2 scene_stage::get_shadow_map_atlas_pixel_margin() const
 {

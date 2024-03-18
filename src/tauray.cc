@@ -397,7 +397,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.rng_seed = opt.rng_seed;
     rc_opt.local_sampler = opt.sampler;
     rc_opt.transparent_background = opt.transparent_background;
-    rc_opt.pre_transformed_vertices = opt.pre_transform_vertices;
     rc_opt.active_viewport_count =
         opt.spatial_reprojection.size() == 0 ?
         ctx.get_display_count() :

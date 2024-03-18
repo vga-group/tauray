@@ -75,6 +75,8 @@ public:
     descriptor_set& get_descriptors();
     descriptor_set& get_raster_descriptors();
 
+    void get_defines(std::map<std::string, std::string>& defines);
+
     struct shadow_map_instance
     {
         unsigned atlas_index;

@@ -28,11 +28,9 @@ struct distribution_data_buffer
 namespace tr
 {
 
-void rt_camera_stage::get_common_defines(
-    std::map<std::string, std::string>& defines,
-    const options& opt
-){
-    rt_stage::get_common_defines(defines, opt);
+void rt_camera_stage::get_common_defines(std::map<std::string, std::string>& defines)
+{
+    rt_stage::get_common_defines(defines);
     defines["CAMERA_PROJECTION_TYPE"] = std::to_string((int)opt.projection);
     defines["DISTRIBUTION_STRATEGY"] = std::to_string((int)opt.distribution.strategy);
 }
