@@ -284,6 +284,12 @@ uint32_t pcg(uint32_t seed)
     return (seed >> 22) ^ seed;
 }
 
+float generate_uniform_random(uint32_t& seed)
+{
+    seed = pcg(seed);
+    return ldexp(float(seed), -32);
+}
+
 float halton(int index, int base)
 {
     float f = 1.0f;

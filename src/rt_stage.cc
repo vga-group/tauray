@@ -25,8 +25,7 @@ namespace tr
 {
 
 void rt_stage::get_common_defines(
-    std::map<std::string, std::string>& defines,
-    const options& opt
+    std::map<std::string, std::string>& defines
 ){
     switch(opt.local_sampler)
     {
@@ -44,9 +43,7 @@ void rt_stage::get_common_defines(
     default:
         break;
     }
-
-    if(opt.pre_transformed_vertices)
-        defines["PRE_TRANSFORMED_VERTICES"];
+    ss->get_defines(defines);
 }
 
 rt_stage::rt_stage(
