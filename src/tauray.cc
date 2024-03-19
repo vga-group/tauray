@@ -9,6 +9,7 @@
 #include "server_context.hh"
 #include "raster_renderer.hh"
 #include "dshgi_renderer.hh"
+#include "restir_renderer.hh"
 #include "dshgi_server.hh"
 #include "frame_client.hh"
 #include "rt_renderer.hh"
@@ -645,6 +646,13 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.post_process.tonemap = tonemap;
 
                 return new restir_di_renderer(ctx, re_opt);
+            }
+        case options::RESTIR:
+            {
+                restir_renderer::options re_opt;
+                re_opt.scene_options = scene_options;
+                re_opt.tonemap_options = tonemap;
+                return new restir_renderer(ctx, re_opt);
             }
         };
     }
