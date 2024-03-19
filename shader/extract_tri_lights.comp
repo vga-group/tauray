@@ -3,10 +3,7 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#define TRI_LIGHT_BUFFER_BINDING 0
-#define VERTEX_BUFFER_BINDING 1
-#define INDEX_BUFFER_BINDING 2
-#define SCENE_DATA_BUFFER_BINDING 3
+#define SCENE_SET 0
 #include "scene.glsl"
 
 layout(local_size_x = 256) in;
@@ -22,7 +19,7 @@ void main()
     uint input_index = gl_GlobalInvocationID.x;
     if(input_index < control.triangle_count)
     {
-        instance o = scene.o[control.instance_id];
+        instance o = instances.o[control.instance_id];
 
         uint output_index = o.light_base_id + gl_GlobalInvocationID.x;
         tri_light light;

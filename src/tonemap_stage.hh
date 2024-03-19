@@ -3,6 +3,7 @@
 #include "context.hh"
 #include "texture.hh"
 #include "compute_pipeline.hh"
+#include "descriptor_set.hh"
 #include "timer.hh"
 #include "gpu_buffer.hh"
 #include "stage.hh"
@@ -44,6 +45,7 @@ public:
 private:
     void update(uint32_t frame_index) override;
 
+    descriptor_set desc;
     compute_pipeline comp;
     options opt;
     render_target input_target;

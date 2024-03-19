@@ -1,9 +1,15 @@
 #ifndef SCENE_GLSL
 #define SCENE_GLSL
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 #include "material.glsl"
 #include "color.glsl"
 #include "camera.glsl"
 #include "light.glsl"
+
+#ifndef SCENE_SET
+#define SCENE_SET 1
+#endif
 
 struct vertex
 {
@@ -42,102 +48,37 @@ struct instance
     material mat;
 };
 
-#ifdef SCENE_DATA_BUFFER_BINDING
-layout(binding = SCENE_DATA_BUFFER_BINDING, set = 0, scalar) buffer scene_data_buffer
+layout(binding = 0, set = SCENE_SET, scalar) buffer instance_data_buffer
 {
     instance o[];
-} scene;
-#endif
+} instances;
 
-#ifdef DIRECTIONAL_LIGHT_BUFFER_BINDING
-layout(binding = DIRECTIONAL_LIGHT_BUFFER_BINDING, set = 0, scalar) buffer directional_light_buffer
+layout(binding = 1, set = SCENE_SET, scalar) buffer directional_light_buffer
 {
     directional_light lights[];
 } directional_lights;
-#endif
 
-#ifdef POINT_LIGHT_BUFFER_BINDING
-layout(binding = POINT_LIGHT_BUFFER_BINDING, set = 0, scalar) buffer point_light_buffer
+layout(binding = 2, set = SCENE_SET, scalar) buffer point_light_buffer
 {
     point_light lights[];
 } point_lights;
-#endif
 
-#ifdef TRI_LIGHT_BUFFER_BINDING
-layout(binding = TRI_LIGHT_BUFFER_BINDING, set = 0, scalar) buffer tri_light_buffer
+layout(binding = 3, set = SCENE_SET, scalar) buffer tri_light_buffer
 {
     tri_light lights[];
 } tri_lights;
-#endif
 
-#ifdef TEXTURE_3D_ARRAY_BINDING
-layout(binding = TEXTURE_3D_ARRAY_BINDING, set = 0) uniform sampler3D textures3d[];
-#endif
-
-#ifdef SH_GRID_BUFFER_BINDING
-struct sh_grid
-{
-    mat4 pos_from_world;
-    mat4 normal_from_world;
-    vec3 grid_clamp;
-    float pad0;
-    vec3 grid_resolution;
-    float pad1;
-};
-
-layout(binding = SH_GRID_BUFFER_BINDING, set = 0, scalar) buffer sh_grid_buffer
-{
-    sh_grid grids[];
-} sh_grids;
-#endif
-
-#ifdef VERTEX_BUFFER_BINDING
-layout(binding = VERTEX_BUFFER_BINDING, set = 0, scalar) buffer vertex_buffer
+layout(binding = 4, set = SCENE_SET, scalar) buffer vertex_buffer
 {
     vertex v[];
 } vertices[];
-#endif
 
-#ifdef INDEX_BUFFER_BINDING
-layout(binding = INDEX_BUFFER_BINDING, set = 0) buffer index_buffer
+layout(binding = 5, set = SCENE_SET) buffer index_buffer
 {
     uint i[];
 } indices[];
-#endif
 
-#ifdef TLAS_BINDING
-layout(binding = TLAS_BINDING, set = 0) uniform accelerationStructureEXT tlas;
-#endif
-
-#ifdef ENVIRONMENT_MAP_BINDING
-layout(binding = ENVIRONMENT_MAP_BINDING, set = 0) uniform sampler2D environment_map_tex;
-#endif
-
-#ifdef ENVIRONMENT_MAP_ALIAS_TABLE_BINDING
-#include "alias_table.glsl"
-layout(binding = ENVIRONMENT_MAP_ALIAS_TABLE_BINDING, set = 0) readonly buffer environment_map_alias_table_buffer
-{
-    alias_table_entry entries[];
-} environment_map_alias_table;
-#endif
-
-#ifdef SCENE_METADATA_BUFFER_BINDING
-layout(binding = SCENE_METADATA_BUFFER_BINDING, set = 0, scalar) uniform scene_metadata_buffer
-{
-    uint point_light_count;
-    uint directional_light_count;
-    uint tri_light_count;
-    int environment_proj;
-    vec4 environment_factor;
-} scene_metadata;
-#endif
-
-#define POINT_LIGHT_FOR_BEGIN(world_pos) \
-    for(uint item_index = 0; item_index < scene_metadata.point_light_count; ++item_index) {
-#define POINT_LIGHT_FOR_END }
-
-#ifdef TEXTURE_ARRAY_BINDING
-layout(binding = TEXTURE_ARRAY_BINDING, set = 0) uniform sampler2D textures[];
+layout(binding = 6, set = SCENE_SET) uniform sampler2D textures[];
 
 sampled_material sample_material(material mat, inout vertex_data v)
 {
@@ -203,6 +144,41 @@ sampled_material sample_material(material mat, inout vertex_data v)
     res.shadow_terminator_mul = 1.0f;
     return res;
 }
+
+layout(binding = 7, set = SCENE_SET) uniform sampler2D environment_map_tex;
+
+#include "alias_table.glsl"
+layout(binding = 8, set = SCENE_SET) readonly buffer environment_map_alias_table_buffer
+{
+    alias_table_entry entries[];
+} environment_map_alias_table;
+
+layout(binding = 9, set = SCENE_SET, scalar) uniform scene_metadata_buffer
+{
+    uint point_light_count;
+    uint directional_light_count;
+    uint tri_light_count;
+    int environment_proj;
+    vec4 environment_factor;
+} scene_metadata;
+
+#define POINT_LIGHT_FOR_BEGIN(world_pos) \
+    for(uint item_index = 0; item_index < scene_metadata.point_light_count; ++item_index) {
+#define POINT_LIGHT_FOR_END }
+
+struct camera_pair
+{
+    camera_data current;
+    camera_data previous;
+};
+
+layout(binding = 10, set = SCENE_SET) readonly buffer camera_data_buffer
+{
+    camera_pair pairs[];
+} camera;
+
+#ifdef RAY_TRACING
+layout(binding = 11, set = SCENE_SET) uniform accelerationStructureEXT tlas;
 #endif
 
 #endif

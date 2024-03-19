@@ -13,15 +13,11 @@ struct shader_sources;
 class compute_pipeline: public basic_pipeline
 {
 public:
-    struct params
-    {
-        shader_source src = {};
-        binding_array_length_info binding_array_lengths;
-        uint32_t max_descriptor_sets = MAX_FRAMES_IN_FLIGHT;
-        bool use_push_descriptors = false;
-    };
-
-    compute_pipeline(device& dev, const params& p);
+    compute_pipeline(device& dev);
+    void init(
+        shader_source src,
+        std::vector<tr::descriptor_set_layout*> layout
+    );
 };
 
 }

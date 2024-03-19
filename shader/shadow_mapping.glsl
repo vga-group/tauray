@@ -1,57 +1,9 @@
 #ifndef SHADOW_MAPPING_GLSL
 #define SHADOW_MAPPING_GLSL
+#include "scene_raster.glsl"
 #include "projection.glsl"
 #include "poisson_samples_2d.glsl"
 
-struct shadow_map
-{
-    int type;
-    float min_bias;
-    float max_bias;
-    int cascade_index;
-    vec4 rect;
-    vec4 clip_info;
-    vec4 projection_info_radius;
-    mat4 world_to_shadow;
-};
-
-struct shadow_map_cascade
-{
-    vec4 offset_scale;
-    vec4 rect;
-};
-
-#ifdef SHADOW_MAP_BUFFER_BINDING
-layout(binding = SHADOW_MAP_BUFFER_BINDING, set = 0, std430) readonly buffer shadow_map_buffer
-{
-    shadow_map maps[];
-} shadow_maps;
-#endif
-
-#ifdef SHADOW_MAP_CASCADE_BUFFER_BINDING
-layout(binding = SHADOW_MAP_CASCADE_BUFFER_BINDING, set = 0, std430) readonly buffer shadow_map_cascade_buffer
-{
-    shadow_map_cascade cascades[];
-} shadow_map_cascades;
-#endif
-
-#ifdef SHADOW_MAP_ATLAS_BINDING
-layout(binding = SHADOW_MAP_ATLAS_BINDING, set = 0) uniform sampler2D shadow_map_atlas;
-#endif
-
-#ifdef SHADOW_MAP_ATLAS_TEST_BINDING
-layout(binding = SHADOW_MAP_ATLAS_TEST_BINDING, set = 0) uniform sampler2DShadow shadow_map_atlas_test;
-#endif
-
-#ifdef PCF_NOISE_VECTOR_2D_BINDING
-layout(binding = PCF_NOISE_VECTOR_2D_BINDING, set = 0) uniform sampler2D pcf_noise_vector_2d;
-#endif
-
-#ifdef PCF_NOISE_VECTOR_3D_BINDING
-layout(binding = PCF_NOISE_VECTOR_3D_BINDING, set = 0) uniform sampler2D pcf_noise_vector_3d;
-#endif
-
-#ifdef SHADOW_MAP_ATLAS_BINDING
 // Does bilinear interpolation, handling the atlas and clamping edges properly.
 float shadow_map_bilinear_sample(vec4 rect, vec2 uv, float depth)
 {
@@ -395,6 +347,5 @@ float calc_point_shadow(
         }
     }
 }
-#endif
 
 #endif

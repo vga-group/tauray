@@ -32,7 +32,8 @@ taa_stage::taa_stage(
     const options& opt
 ):  single_device_stage(dev),
     ss(&ss),
-    comp(dev, compute_pipeline::params{load_source(opt), {}}),
+    desc(dev),
+    comp(dev),
     opt(opt),
     current_features(current_features),
     previous_color(
@@ -55,7 +56,16 @@ taa_stage::taa_stage(
     ),
     stage_timer(dev, "temporal antialiasing (" + std::to_string(opt.active_viewport_count) + " viewports)")
 {
-    init_resources();
+    shader_source src = load_source(opt);
+    desc.add(src);
+    comp.init(src, {&desc});
+
+    desc.reset(dev.id, 1);
+    desc.set_image(dev.id, 0, "current_color", {{{}, current_features.color.view, vk::ImageLayout::eGeneral}});
+    desc.set_image(dev.id, 0, "current_screen_motion", {{{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}});
+    desc.set_image(dev.id, 0, "previous_color", {{history_sampler.get_sampler(dev.id), previous_color.get_array_image_view(dev.id), vk::ImageLayout::eShaderReadOnlyOptimal}});
+    desc.set_buffer(0, "jitter_info", jitter_buffer);
+
     record_command_buffers();
 }
 
@@ -78,19 +88,6 @@ void taa_stage::update(uint32_t frame_index)
     jitter_buffer.update(frame_index, jitter_history.data());
 }
 
-void taa_stage::init_resources()
-{
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        comp.update_descriptor_set({
-            {"current_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
-            {"current_screen_motion", {{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}},
-            {"previous_color", {history_sampler.get_sampler(dev->id), previous_color.get_array_image_view(dev->id), vk::ImageLayout::eShaderReadOnlyOptimal}},
-            {"jitter_info", {jitter_buffer[dev->id], 0, VK_WHOLE_SIZE}}
-        }, i);
-    }
-}
-
 void taa_stage::record_command_buffers()
 {
     render_target previous_color_rt = previous_color.get_array_render_target(dev->id);
@@ -104,7 +101,8 @@ void taa_stage::record_command_buffers()
         // Run the actual TAA code
         jitter_buffer.upload(dev->id, i, cb);
 
-        comp.bind(cb, i);
+        comp.bind(cb);
+        comp.set_descriptors(cb, desc, 0, 0);
 
         uvec2 wg = (current_features.get_size()+15u)/16u;
         push_constant_buffer control;

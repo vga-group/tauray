@@ -249,7 +249,7 @@ void write_gbuffer_material(sampled_material mat)
 #else
 
 void write_gbuffer_material(sampled_material mat, ivec3 pos) {}
-void write_gbuffer_material(vec4 packed_mat) {}
+void write_gbuffer_material(sampled_material packed_mat) {}
 vec4 read_gbuffer_material(ivec3 pos) { return vec4(0); }
 
 #endif
