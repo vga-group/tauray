@@ -19,7 +19,9 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     gs.emission_present = true;
 
     current_gbuffer.reset(device_mask::all(ctx), ctx.get_size(), ctx.get_display_count());
+    current_gbuffer.add(gs);
     prev_gbuffer.reset(device_mask::all(ctx), ctx.get_size(), ctx.get_display_count());
+    prev_gbuffer.add(gs);
 
     scene_update.emplace(device_mask::all(ctx), opt.scene_options);
 

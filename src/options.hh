@@ -155,6 +155,7 @@
         {"dshgi-server", options::DSHGI_SERVER}, \
         {"dshgi-client", options::DSHGI_CLIENT}, \
         {"restir-di", options::RESTIR_DI}, \
+        {"restir", options::RESTIR}, \
         {"albedo", feature_stage::ALBEDO}, \
         {"world-normal", feature_stage::WORLD_NORMAL}, \
         {"view-normal", feature_stage::VIEW_NORMAL}, \
@@ -629,7 +630,8 @@ struct options
         DSHGI,
         DSHGI_SERVER,
         DSHGI_CLIENT,
-        RESTIR_DI
+        RESTIR_DI,
+        RESTIR
     };
     using renderer_option_type = std::variant<
         tr::options::basic_pipeline_type, feature_stage::feature>;

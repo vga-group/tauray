@@ -18,9 +18,9 @@ class restir_renderer: public renderer
 public:
     struct options
     {
-        scene_stage::options scene_options = {};
-        restir_stage::options restir_options = {};
-        tonemap_stage::options tonemap_options = {};
+        scene_stage::options scene_options;
+        restir_stage::options restir_options;
+        tonemap_stage::options tonemap_options;
     };
 
     restir_renderer(context& ctx, const options& opt);
