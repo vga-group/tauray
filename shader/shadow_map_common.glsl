@@ -5,7 +5,7 @@
 
 #include "scene.glsl"
 
-layout(binding = 1, set = 0) buffer camera_data_buffer
+layout(binding = 0, set = 0) buffer shadow_camera_data_buffer
 {
     mat4 view_proj[];
 } shadow_camera;

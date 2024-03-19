@@ -3,6 +3,7 @@
 #include "camera.hh"
 #include "placeholders.hh"
 #include "misc.hh"
+#include "log.hh"
 
 namespace
 {
@@ -187,7 +188,6 @@ void shadow_map_stage::update(uint32_t frame_index)
                     rect.z, -int(rect.w),
                     0.0f, 1.0f
                 );
-                cb.setViewport(0, 1, &vp);
                 gfx.begin_render_pass(cb, i, rect);
                 gfx.bind(cb);
                 // Bind descriptors
@@ -195,6 +195,8 @@ void shadow_map_stage::update(uint32_t frame_index)
 
                 gfx.push_descriptors(cb, desc, 0);
                 gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+
+                cb.setViewport(0, 1, &vp);
 
                 for(size_t i = 0; i < instances.size(); ++i)
                 {

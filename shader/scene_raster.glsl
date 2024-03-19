@@ -6,7 +6,7 @@
 #define SCENE_RASTER_SET 2
 #endif
 
-layout(binding = 0, set = RASTER_SCENE_SET) uniform sampler3D sh_grid_data[];
+layout(binding = 0, set = SCENE_RASTER_SET) uniform sampler3D sh_grid_data[];
 
 struct sh_grid
 {
@@ -18,7 +18,7 @@ struct sh_grid
     float pad1;
 };
 
-layout(binding = 1, set = RASTER_SCENE_SET, scalar) buffer sh_grid_buffer
+layout(binding = 1, set = SCENE_RASTER_SET, scalar) buffer sh_grid_buffer
 {
     sh_grid grids[];
 } sh_grids;
@@ -41,21 +41,21 @@ struct shadow_map_cascade
     vec4 rect;
 };
 
-layout(binding = 2, set = RASTER_SCENE_SET, std430) readonly buffer shadow_map_buffer
+layout(binding = 2, set = SCENE_RASTER_SET, std430) readonly buffer shadow_map_buffer
 {
     shadow_map maps[];
 } shadow_maps;
 
-layout(binding = 3, set = RASTER_SCENE_SET, std430) readonly buffer shadow_map_cascade_buffer
+layout(binding = 3, set = SCENE_RASTER_SET, std430) readonly buffer shadow_map_cascade_buffer
 {
     shadow_map_cascade cascades[];
 } shadow_map_cascades;
 
-layout(binding = 4, set = RASTER_SCENE_SET) uniform sampler2D shadow_map_atlas;
-layout(binding = 5, set = RASTER_SCENE_SET) uniform sampler2DShadow shadow_map_atlas_test;
-layout(binding = 6, set = RASTER_SCENE_SET) uniform sampler2D pcf_noise_vector_2d;
-layout(binding = 7, set = RASTER_SCENE_SET) uniform sampler2D pcf_noise_vector_3d;
-layout(binding = 8, set = RASTER_SCENE_SET) uniform sampler2D brdf_integration;
+layout(binding = 4, set = SCENE_RASTER_SET) uniform sampler2D shadow_map_atlas;
+layout(binding = 5, set = SCENE_RASTER_SET) uniform sampler2DShadow shadow_map_atlas_test;
+layout(binding = 6, set = SCENE_RASTER_SET) uniform sampler2D pcf_noise_vector_2d;
+layout(binding = 7, set = SCENE_RASTER_SET) uniform sampler2D pcf_noise_vector_3d;
+layout(binding = 8, set = SCENE_RASTER_SET) uniform sampler2D brdf_integration;
 
 
 #endif

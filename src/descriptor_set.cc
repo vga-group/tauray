@@ -64,7 +64,13 @@ void descriptor_set_layout::add(
             std::to_string(it->second.binding) + " and " + std::to_string(binding.binding) + "."
         );
 
-    named_bindings[*name_it] = {binding, flags};
+    if(it == named_bindings.end())
+        named_bindings[*name_it] = {binding, flags};
+    else
+    {
+        it->second.stageFlags |= binding.stageFlags;
+        it->second.descriptorCount = max(binding.descriptorCount, it->second.descriptorCount);
+    }
     for(const auto&[dev, data]: layout)
         data.dirty = true;
 }

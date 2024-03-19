@@ -12,13 +12,11 @@ layout(push_constant) uniform push_constant_buffer
     int omni_pcf_samples;
     int pcss_samples;
     int base_camera_index;
-    int pad;
     float pcss_minimum_radius;
     float noise_scale;
+    int pad[3];
     vec2 shadow_map_atlas_pixel_margin;
     vec3 ambient_color;
 } control;
-
-#include "shadow_mapping.glsl"
 
 #endif

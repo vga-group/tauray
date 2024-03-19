@@ -21,9 +21,9 @@ struct push_constant_buffer
     uint32_t omni_pcf_samples;
     uint32_t pcss_samples;
     int32_t base_camera_index;
-    int32_t pad;
     float pcss_minimum_radius;
     float noise_scale;
+    int32_t pad[3];
     pvec2 shadow_map_atlas_pixel_margin;
     pvec3 ambient_color;
 };

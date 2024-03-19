@@ -1,5 +1,7 @@
 #ifndef SCENE_GLSL
 #define SCENE_GLSL
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 #include "material.glsl"
 #include "color.glsl"
 #include "camera.glsl"
