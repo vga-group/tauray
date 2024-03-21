@@ -58,10 +58,8 @@ public:
     mat4 get_view_projection(transformable& self) const;
     mat4 get_view_projection(const mat4& global_transform) const;
 
-    // These two should only be used in rasterization-related things and as
-    // such, they expect the projection type to be matrix-based.
-    vec3 get_clip_info() const;
-    vec2 get_projection_info() const;
+    // This expects the projection type to be matrix-based.
+    vec4 get_projection_info() const;
 
     static size_t get_projection_type_uniform_buffer_size(projection_type type);
     void write_uniform_buffer(transformable& self, void* data) const;

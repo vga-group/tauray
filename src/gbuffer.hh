@@ -55,7 +55,7 @@ namespace tr
 #define TR_GBUFFER_ENTRY(name, format) \
         bool name##_present = false; \
         vk::Format name##_format = format; \
-        vk::ImageUsageFlags name##_usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
+        vk::ImageUsageFlags name##_usage = vk::ImageUsageFlagBits::eStorage;
 
         TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY

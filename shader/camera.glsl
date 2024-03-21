@@ -18,6 +18,8 @@ struct camera_data
     mat4 proj_inverse;
     vec4 origin;
     vec4 dof_params;
+    vec4 projection_info;
+    vec4 pad;
 };
 
 void get_camera_ray(

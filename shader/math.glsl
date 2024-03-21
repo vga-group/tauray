@@ -227,6 +227,23 @@ vec2 sample_blackman_harris_concentric_disk(vec2 u)
     return (2.0f * sample_blackman_harris(rt.x) - 1.0f) * vec2(cos(rt.y), sin(rt.y));
 }
 
+vec2 sample_ring(vec2 u, float min_dist, float width)
+{
+    vec2 uo = 2.0f * u - 1.0f;
+    vec2 abs_uo = abs(uo);
+
+    if(all(lessThan(abs_uo, vec2(0.0001f))))
+        return vec2(0);
+
+    vec2 rt = (abs_uo.x > abs_uo.y) ?
+        vec2(uo.x, M_PI/4 * (uo.y / uo.x)) :
+        vec2(uo.y, M_PI/2 - M_PI/4 * (uo.x / uo.y));
+    // TODO: May not have a uniform distribution! Should be fixed!
+    rt.x = (2.0f * rt.x - 1.0f) * width;
+    rt.x += sign(rt.x) * min_dist;
+    return rt.x * vec2(cos(rt.y), sin(rt.y));
+}
+
 uint morton_2d(uvec2 x)
 {
     x &= 0x0000ffff;
@@ -437,6 +454,120 @@ vec3 get_barycentric_coords(vec3 p, vec3 A, vec3 B, vec3 C)
     bary.z = (bb * pc - bc * pb) * denom;
     bary.x = 1.0f - bary.y - bary.z;
     return bary;
+}
+
+vec3 view_to_tangent_space(vec3 view, mat3 tbn)
+{
+    vec3 tview = -view * tbn;
+    if(tview.z < 1e-5f)
+        tview = vec3(tview.xy, max(tview.z, 1e-5f));
+    return normalize(tview);
+}
+
+vec2 octahedral_pack(vec3 normal)
+{
+    normal /= abs(normal.x) + abs(normal.y) + abs(normal.z);
+    return normal.z >= 0.0 ?
+        normal.xy : (1 - abs(normal.yx)) * (step(vec2(0), normal.xy)*2-1);
+}
+
+vec3 octahedral_unpack(vec2 packed_normal)
+{
+    vec3 normal = vec3(
+        packed_normal.x,
+        packed_normal.y,
+        1 - abs(packed_normal.x) - abs(packed_normal.y)
+    );
+    normal.xy += clamp(normal.z, -1.0f, 0.0f) * (step(vec2(0), normal.xy) * 2 - 1);
+    return normalize(normal);
+}
+
+// A low-discrepancy sequence.
+vec2 weyl(vec2 u, int i)
+{
+    return fract(u + vec2(i * ivec2(12664745, 9560333))/exp2(24));
+}
+
+float reconnection_shift_jacobian(
+    vec3 orig_pos,
+    vec3 orig_vertex_pos,
+    vec3 orig_vertex_normal,
+    vec3 new_pos,
+    vec3 new_vertex_pos,
+    vec3 new_vertex_normal
+){
+    vec3 orig_to_vertex = orig_vertex_pos - orig_pos;
+    vec3 new_to_vertex = new_vertex_pos - new_pos;
+    float orig_to_vertex_len2 = dot(orig_to_vertex, orig_to_vertex);
+    float new_to_vertex_len2 = dot(new_to_vertex, new_to_vertex);
+    float orig_to_vertex_len = sqrt(orig_to_vertex_len2);
+    float new_to_vertex_len = sqrt(new_to_vertex_len2);
+
+    float jacobian = abs(dot(new_vertex_normal, new_to_vertex)) * orig_to_vertex_len2 * orig_to_vertex_len /
+        (abs(dot(orig_vertex_normal, orig_to_vertex)) * new_to_vertex_len2 * new_to_vertex_len);
+
+    // Extreme angles can break the jacobian. Those angles also should
+    // not reflect light, so we should be able to just skip them.
+    return isinf(jacobian) || isnan(jacobian) ? 0.0f : jacobian;
+}
+
+float reconnection_shift_half_jacobian(
+    vec3 pos,
+    vec4 vertex_pos,
+    vec3 vertex_normal
+){
+    if(vertex_pos.w != 0)
+    {
+        vec3 to_vertex = vertex_pos.xyz - pos;
+        float to_vertex_len2 = dot(to_vertex, to_vertex);
+        if(all(equal(vertex_normal, vec3(0))))
+            return 1.0f;
+        // max() prevents precision issues near grazing angles. Normals may be
+        // packed into snorm2x16 at a couple of spots, which is why this is
+        // necessary.
+        // TODO: 1e-2f is very extreme. 1e-4f would otherwise be OK, but it
+        // seems to cause weird fireflies still.
+        return max(abs(dot(vertex_normal, normalize(to_vertex))), 1e-2f) / to_vertex_len2;
+    }
+    return 1.0f;
+}
+
+float hybrid_shift_half_jacobian(
+    float v0_pdf,
+    float v1_pdf,
+    vec3 pos,
+    vec4 vertex_pos,
+    vec3 vertex_normal
+){
+    return v0_pdf * v1_pdf * reconnection_shift_half_jacobian(pos, vertex_pos, vertex_normal);
+}
+
+float mirror_wrap(float x, float low, float high)
+{
+    float range = high - low;
+    x -= low;
+    return low + abs(x - 2 * range * round(x/(2*range)));
+}
+
+vec2 mirror_wrap(vec2 x, vec2 low, vec2 high)
+{
+    vec2 range = high - low;
+    x -= low;
+    return low + abs(x - 2 * range * round(x/(2*range)));
+}
+
+int mirror_wrap(int x, int low, int high)
+{
+    int range = high - low;
+    x -= low;
+    return low + abs(x - 2 * range * ((x + sign(x) * range)/(2*range)));
+}
+
+ivec2 mirror_wrap(ivec2 x, ivec2 low, ivec2 high)
+{
+    ivec2 range = high - low;
+    x -= low;
+    return low + abs(x - 2 * range * ((x + sign(x) * range)/(2*range)));
 }
 
 #endif

@@ -30,8 +30,8 @@ struct shadow_map
     float max_bias;
     int cascade_index;
     vec4 rect;
-    vec4 clip_info;
-    vec4 projection_info_radius;
+    vec4 projection_info;
+    vec4 range_radius;
     mat4 world_to_shadow;
 };
 

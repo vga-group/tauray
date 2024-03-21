@@ -353,13 +353,9 @@ restir_stage::restir_stage(
     set.add(shader); \
     set.set_binding_params("envmap_alias_table", 1, vk::DescriptorBindingFlagBits::ePartiallyBound);\
     set.set_binding_params("emission_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
-    set.set_binding_params("transmission_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
-    set.set_binding_params("material_extra_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
-    set.set_binding_params("tangent_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
+    set.set_binding_params("flat_normal_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("prev_emission_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
-    set.set_binding_params("prev_transmission_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
-    set.set_binding_params("prev_material_extra_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
-    set.set_binding_params("prev_tangent_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
+    set.set_binding_params("prev_flat_normal_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("in_reservoir_ris_data_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("in_reservoir_reconnection_data_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("in_reservoir_reconnection_radiance_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \

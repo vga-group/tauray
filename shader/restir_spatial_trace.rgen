@@ -1,0 +1,106 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+//#extension GL_EXT_debug_printf : enable
+
+#define RAYBASE_RAY_TRACING
+#include "restir.glsl"
+
+layout(push_constant) uniform push_constant_buffer
+{
+    restir_config config;
+    uint sample_index;
+    uint camera_index;
+} pc;
+
+layout(binding = 18, rg32ui) readonly uniform uimage2D spatial_selection;
+layout(binding = 19, rgba32f) writeonly uniform image2DArray spatial_candidates;
+layout(binding = 20, rgba32f) writeonly uniform image2DArray mis_data;
+
+#include "restir_core.glsl"
+
+void main()
+{
+    camera cam = cameras.array[pc.camera_index];
+    const ivec2 p = ivec2(gl_LaunchIDEXT.xy);
+
+    domain canonical_domain;
+    bool canonical_miss = read_domain(cam, p, canonical_domain);
+
+    const uint neighbor_index = gl_LaunchIDEXT.z;
+
+    uvec4 seed = uvec4(p, pc.camera_index, pc.sample_index);
+    pcg4d(seed);
+
+    uvec2 selection = imageLoad(spatial_selection, p).rg;
+    const uint candidate_key = selection.r;
+    const float total_confidence = uintBitsToFloat(selection).g;
+
+    const float max_plane_dist = get_frustum_size(cam, canonical_domain.pos);
+    mat3 flat_tbn = create_tangent_space(canonical_domain.flat_normal);
+
+    const float canonical_reconnection_scale = max_plane_dist;
+
+    spatial_candidate_sampler scs = init_spatial_candidate_sampler(
+        cam, canonical_domain.pos, flat_tbn, max_plane_dist
+    );
+    ivec2 neighbor_p = spatial_candidate_pos(
+        candidate_key, p, ivec2(gl_LaunchSizeEXT.xy), scs,
+        pc.camera_index, pc.sample_index, neighbor_index
+    );
+
+    // Shift selected neighbor to own pixel and write the data we need later on.
+    reservoir candidate = read_reservoir(neighbor_p, gl_LaunchSizeEXT.xy); // X_i
+    vec3 candidate_pos_unused;
+    bool candidate_miss = get_pos(neighbor_p, cam, candidate_pos_unused);
+
+    if(candidate_miss || canonical_miss || candidate.confidence == 0)
+    {
+        // No candidate found, so write a failed shift.
+        imageStore(spatial_candidates, ivec3(p, gl_LaunchIDEXT.z), vec4(0,0,0,-1.0f));
+        imageStore(mis_data, ivec3(p, gl_LaunchIDEXT.z), vec4(0));
+        return;
+    }
+
+    vec3 value = vec3(0);
+    float jacobian_candidate_to_canonical = 0;
+    vec4 primary_bsdf = vec4(0);
+
+    shift_map(
+        seed.x, candidate.output_sample, canonical_domain,
+        true, true, canonical_reconnection_scale,
+        jacobian_candidate_to_canonical, value, primary_bsdf
+    );
+
+    float target_function_value = target_function(primary_bsdf, value);
+    imageStore(spatial_candidates, ivec3(p, gl_LaunchIDEXT.z), output_color_function(primary_bsdf, value));
+
+    reservoir canonical_pixel = read_reservoir(p, gl_LaunchSizeEXT.xy);
+    domain candidate_domain;
+    read_domain(cam, neighbor_p, candidate_domain);
+
+    float jacobian_canonical_to_candidate = 0;
+    vec3 canonical_in_other_value;
+
+    float candidate_reconnection_scale = get_frustum_size(cam, candidate_domain.pos);
+    shift_map(
+        seed.x, canonical_pixel.output_sample,  candidate_domain,
+        true, false, candidate_reconnection_scale,
+        jacobian_canonical_to_candidate, canonical_in_other_value, primary_bsdf
+    );
+
+    float canonical_in_other_target_function_value = target_function(primary_bsdf, canonical_in_other_value); // p^_i(X_1)
+    float canonical_resampling_mis_weight = mis_canonical(
+        canonical_pixel.confidence,
+        candidate.confidence,
+        total_confidence,
+        canonical_pixel.target_function_value, // p^_1(X_1)
+        canonical_in_other_target_function_value,
+        jacobian_canonical_to_candidate
+    );
+    imageStore(mis_data, ivec3(p, gl_LaunchIDEXT.z), vec4(canonical_resampling_mis_weight, candidate.output_sample.base_path_jacobian_part, target_function_value, 0));
+}
+

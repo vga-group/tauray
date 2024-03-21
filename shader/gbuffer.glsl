@@ -47,6 +47,11 @@ vec4 read_gbuffer_color(ivec3 pos) { return vec4(0); }
 
 #endif
 
+vec4 sample_gbuffer_color(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0);
+}
+
 //==============================================================================
 // Diffuse lighting
 //==============================================================================
@@ -91,6 +96,11 @@ void accumulate_gbuffer_diffuse(
 vec4 read_gbuffer_diffuse(ivec3 pos) { return vec4(0); }
 
 #endif
+
+vec4 sample_gbuffer_diffuse(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0);
+}
 
 //==============================================================================
 // Reflection
@@ -168,7 +178,10 @@ vec4 read_gbuffer_albedo(ivec3 pos) { return vec4(0); }
 
 #endif
 
-
+vec4 sample_gbuffer_albedo(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0);
+}
 
 //==============================================================================
 // Emission
@@ -196,6 +209,11 @@ void write_gbuffer_emission(vec3 emission) {}
 vec3 read_gbuffer_emission(ivec3 pos) { return vec3(0); }
 
 #endif
+
+vec3 sample_gbuffer_emission(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0).rgb;
+}
 
 //==============================================================================
 // Material
@@ -255,26 +273,31 @@ vec4 read_gbuffer_material(ivec3 pos) { return vec4(0); }
 
 #endif
 
+sampled_material sample_gbuffer_material(
+    sampler2D albedo,
+    sampler2D material,
+    sampler2D emission,
+    ivec2 p
+){
+    return unpack_gbuffer_material(
+        texelFetch(material, p, 0),
+        sample_gbuffer_albedo(albedo, p),
+        sample_gbuffer_emission(emission, p)
+    );
+}
+
 //==============================================================================
 // Normals
 //==============================================================================
 
 vec2 pack_gbuffer_normal(vec3 normal)
 {
-    normal /= abs(normal.x) + abs(normal.y) + abs(normal.z);
-    return normal.z >= 0.0 ?
-        normal.xy : (1 - abs(normal.yx)) * (step(vec2(0), normal.xy)*2-1);
+    return octahedral_pack(normal);
 }
 
 vec3 unpack_gbuffer_normal(vec2 packed_normal)
 {
-    vec3 normal = vec3(
-        packed_normal.x,
-        packed_normal.y,
-        1 - abs(packed_normal.x) - abs(packed_normal.y)
-    );
-    normal.xy += clamp(normal.z, -1.0f, 0.0f) * (step(vec2(0), normal.xy) * 2 - 1);
-    return normalize(normal);
+    return octahedral_unpack(packed_normal);
 }
 
 //==============================================================================
@@ -313,6 +336,11 @@ void write_gbuffer_normal(vec3 normal) {}
 vec3 read_gbuffer_normal(ivec3 pos) { return vec3(0,0,1); }
 
 #endif
+
+vec3 sample_gbuffer_normal(sampler2D tex, ivec2 p)
+{
+    return unpack_gbuffer_normal(texelFetch(tex, p, 0).rg);
+}
 
 //==============================================================================
 // Flat normal
@@ -385,6 +413,11 @@ vec3 read_gbuffer_pos(ivec3 pos) { return vec3(0); }
 
 #endif
 
+vec3 sample_gbuffer_position(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0).rgb;
+}
+
 //==============================================================================
 // Screen-space motion
 //==============================================================================
@@ -418,6 +451,11 @@ void write_gbuffer_screen_motion(vec3 prev_frag_uv) {}
 vec2 read_gbuffer_screen_motion(ivec3 pos) { return vec2(0); }
 
 #endif
+
+vec2 sample_gbuffer_screen_motion(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0).rg;
+}
 
 //==============================================================================
 // Instance ID
