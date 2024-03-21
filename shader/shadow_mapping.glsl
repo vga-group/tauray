@@ -52,10 +52,7 @@ void calc_omni_shadow_map_pos(
     // Projection is simple due to forced 90 degree FOV and 1:1 aspect ratio
     uv = 0.5f + 0.5f * face_pos.xy / face_pos.z;
 
-    depth = hyperbolic_depth(
-        min(-face_pos.z, 0.0f),
-        sm.clip_info.xyz
-    )*0.5f+0.5f;
+    depth = hyperbolic_depth(min(-face_pos.z, 0.0f), sm.projection_info);
     rect = vec4(sm.rect.xy+face_offset, sm.rect.zw);
 }
 
@@ -67,7 +64,7 @@ bool find_cascade(
     float bias
 ){
     rect = sm.rect;
-    radius = control.pcf_samples <= 0 ? vec2(0) : sm.projection_info_radius.zw;
+    radius = control.pcf_samples <= 0 ? vec2(0) : sm.range_radius.zw;
 
     vec3 q = p.xyz;
     q.z -= bias;
@@ -113,10 +110,8 @@ void calc_perspective_shadow_map_pos(
     // We do the projection manually so that bias can easily be applied to
     // linear depth.
     float bias = max(sm.max_bias * (1.0f - ndotl), sm.min_bias);
-    uv = project_position(p, sm.projection_info_radius.xy);
-    depth = hyperbolic_depth(
-        (1-bias)*p.z, sm.clip_info.xyz
-    )*0.5f+0.5f;
+    uv = project_position(p, sm.projection_info);
+    depth = hyperbolic_depth((1-bias)*p.z, sm.projection_info);
 }
 
 bool calc_perspective_pcss_radius(
@@ -126,8 +121,8 @@ bool calc_perspective_pcss_radius(
     mat2 rotation,
     inout vec2 radius
 ){
-    float near = -sm.clip_info.w;
-    float linear_depth = linearize_depth(depth*2.0f-1.0f, sm.clip_info.xyz);
+    float near = -sm.range_radius.x;
+    float linear_depth = linearize_depth(depth, sm.projection_info);
     float occluders = 0.0f;
     float avg_z = 0.0f;
     vec2 search_radius = -radius/linear_depth;
@@ -142,8 +137,8 @@ bool calc_perspective_pcss_radius(
             (uv + o) * sm.rect.zw + sm.rect.xy, min_uv, max_uv
         );
         vec4 v = linearize_depth(
-            textureGather(shadow_map_atlas, vec2(read_uv.x, 1.0f-read_uv.y))*2.0f-1.0f,
-            sm.clip_info.xyz
+            textureGather(shadow_map_atlas, vec2(read_uv.x, 1.0f-read_uv.y)),
+            sm.projection_info
         );
         vec4 mask = vec4(greaterThan(v, vec4(linear_depth)));
 
@@ -170,7 +165,7 @@ bool calc_directional_pcss_radius(
     float avg_z = 0.0f;
     vec2 min_uv = rect.xy+control.shadow_map_atlas_pixel_margin;
     vec2 max_uv = rect.xy+rect.zw-control.shadow_map_atlas_pixel_margin;
-    float z_range = abs(sm.clip_info.z - sm.clip_info.w);
+    float z_range = abs(sm.range_radius.y - sm.range_radius.x);
     vec2 search_radius = radius * z_range * (1.0f/20.0f);
 
     for(int i = 0; i < control.pcss_samples; ++i)
@@ -257,7 +252,7 @@ float pcf_3d(shadow_map sm, vec3 p, float radius, float bias)
     vec3 ndir = normalize(p);
     vec3 tangent = normalize(random_vec - ndir * dot(random_vec, ndir));
     mat2x3 tangent_space = mat2x3(tangent, cross(ndir, tangent));
-    float len = max(length(p)*(1.0f-bias), sm.clip_info.w);
+    float len = max(length(p)*(1.0f-bias), sm.range_radius.x);
 
     float shadow = 0.0f;
 
@@ -320,7 +315,7 @@ float calc_point_shadow(
         if(control.pcf_samples <= 0)
             return shadow_map_bilinear_sample(sm.rect, uv, depth);
         else return pcf_2d_perspective(
-            sm, uv, sm.projection_info_radius.zw, depth
+            sm, uv, sm.range_radius.zw, depth
         );
     }
     // Omni shadow map.
@@ -338,7 +333,7 @@ float calc_point_shadow(
         // Hervantafactors.
         else
         {
-            float soft_radius = sm.projection_info_radius.z*0.2f;
+            float soft_radius = sm.range_radius.z*0.2f;
             float bias = max(
                 sm.max_bias * (1.0f + 2e3 * soft_radius * soft_radius) * (1.0f - ndotl),
                 sm.min_bias

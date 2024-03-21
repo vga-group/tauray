@@ -134,12 +134,11 @@ struct shadow_map_entry
     // So -Z would be found at rect.xy + ivec2(rect.z*2, rect.w).
     // xy = origin, zw = width and height
     pvec4 rect;
-    // Used for linearizing depth for omni shadows.
-    // w = near plane.
-    pvec4 clip_info;
-    // xy = projection info, used to do projection for perspective shadows.
+    pvec4 projection_info;
+    // x = near plane
+    // z = far plane
     // zw = PCF radius, adjusted for aspect ratio.
-    pvec4 projection_info_radius;
+    pvec4 range_radius;
     // Takes a world space point to the light's space.
     pmat4 world_to_shadow;
 };
@@ -1062,12 +1061,11 @@ void scene_stage::update(uint32_t frame_index)
                 shadow_map_entry& map = shadow_map_data[sm.map_index];
                 const auto& first_cam = sm.faces[0];
 
-                map.clip_info = vec4(
-                    first_cam.cam.get_clip_info(),
-                    first_cam.cam.get_near()
-                );
-                map.projection_info_radius = vec4(
-                    first_cam.cam.get_projection_info(), sm.radius
+                map.projection_info = first_cam.cam.get_projection_info();
+                map.range_radius = vec4(
+                    first_cam.cam.get_near(),
+                    first_cam.cam.get_far(),
+                    sm.radius
                 );
 
                 // Determine shadow map type from projection
@@ -1091,7 +1089,6 @@ void scene_stage::update(uint32_t frame_index)
                     break;
                 case camera::ORTHOGRAPHIC:
                     { // Directional
-                        map.clip_info.z = first_cam.cam.get_far();
                         map.type = sm.cascades.size();
                         map.cascade_index = cascade_index;
                         map.world_to_shadow = first_cam.cam.get_view_projection(first_cam.transform);

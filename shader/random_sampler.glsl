@@ -37,6 +37,11 @@ float generate_single_uniform_random(inout uint seed)
     return ldexp(float(pcg(seed)), -32);
 }
 
+vec4 generate_single_uniform_random(inout uvec4 seed)
+{
+    return ldexp(vec4(pcg4d(seed)), ivec4(-32));
+}
+
 // Gives a random color, useful for debugging.
 vec3 debug_color(uvec4 param)
 {

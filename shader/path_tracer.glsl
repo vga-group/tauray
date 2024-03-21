@@ -428,15 +428,7 @@ void evaluate_ray(
 #endif
 
         mat3 tbn = create_tangent_space(v.mapped_normal);
-        vec3 shading_view = -view * tbn;
-
-        // A lot of the stuff below assumes that the view direction is on the same
-        // side as the normal. If not, everything breaks. Which is why this check
-        // exists. Normal maps can cause these degenerate cases.
-        if(shading_view.z < 0.00001f)
-            shading_view = vec3(shading_view.xy, max(shading_view.z, 0.00001f));
-
-        shading_view = normalize(shading_view);
+        vec3 shading_view = view_to_tangent_space(view, tbn);
 
         if(!terminal)
         {

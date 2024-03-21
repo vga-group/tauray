@@ -18,6 +18,20 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     gs.flat_normal_present = true;
     gs.emission_present = true;
 
+    vk::ImageUsageFlags img_usage =
+        vk::ImageUsageFlagBits::eStorage|
+        vk::ImageUsageFlagBits::eTransferSrc|
+        vk::ImageUsageFlagBits::eTransferDst|
+        vk::ImageUsageFlagBits::eSampled|
+        vk::ImageUsageFlagBits::eColorAttachment;
+
+    gs.set_all_usage(img_usage);
+    gs.depth_usage =
+        vk::ImageUsageFlagBits::eDepthStencilAttachment |
+        vk::ImageUsageFlagBits::eTransferSrc |
+        vk::ImageUsageFlagBits::eTransferDst |
+        vk::ImageUsageFlagBits::eSampled;
+
     current_gbuffer.reset(device_mask::all(ctx), ctx.get_size(), ctx.get_display_count());
     current_gbuffer.add(gs);
     prev_gbuffer.reset(device_mask::all(ctx), ctx.get_size(), ctx.get_display_count());
