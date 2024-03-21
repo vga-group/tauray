@@ -507,7 +507,7 @@ void evaluate_ray(
         bd_bouce_count += 1.0f;
 
 #elif defined(BD_CONTRIBUTION)
-        float lum_contribution = attenuation * (diffuse_contrib + specular_contrib);
+        float lum_contribution = rgb_to_luminance(attenuation * (diffuse_contrib + specular_contrib));
         total_luminance += lum_contribution;
         bd_weighted_bounce_count += lum_contribution * bounce;
 

@@ -203,8 +203,8 @@
         {"box", film_filter::BOX}, \
         {"blackman-harris", film_filter::BLACKMAN_HARRIS} \
     )\
-    TR_ENUM_OPT(bounce_data, bd, \
-        "shows bounce data", \
+    TR_ENUM_OPT(noise_data, bd, \
+        "shows noise data", \
         bd::OFF, \
         {"off", bd::OFF}, \
         {"bounce-count", bd::BOUNCE_COUNT}, \
@@ -213,8 +213,7 @@
         {"bsdf-sum", bd::BSDF_SUM}, \
         {"bsdf-variance", bd::BSDF_VAR}, \
         {"bsdf-contribution", bd::PDF_CONTRIBUTION}, \
-        {"pdf-contribution", bd::FULL_PDF_CONTRIBUTION}, \
-        {"bmfr-mode", bd::BMFR_MODE} \
+        {"bsdf-nee-contribution", bd::FULL_PDF_CONTRIBUTION} \
     )\
     TR_FLOAT_OPT(film_radius, \
         "Sets the sampling radius for the film sampling. This is in pixels " \

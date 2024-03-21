@@ -30,7 +30,6 @@ namespace tr
         BSDF_VAR,
         PDF_CONTRIBUTION,
         FULL_PDF_CONTRIBUTION,
-        BMFR_MODE
     };
 
     enum class denoiser_type

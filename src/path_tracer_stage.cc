@@ -89,9 +89,6 @@ path_tracer_stage::path_tracer_stage(
     if(opt.boda == bd::FULL_PDF_CONTRIBUTION)
         defines["BD_FULL_PDF_CONTRIBUTION"];
 
-    if(opt.boda == bd::BMFR_MODE)
-        defines["BD_BMFR_MODE"];
-
     if(opt.dt == denoiser_type::BMFR)
         defines["BD_BMFR"];
 
