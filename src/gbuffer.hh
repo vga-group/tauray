@@ -18,10 +18,10 @@
 #define TR_GBUFFER_ENTRIES \
     /* RGB: total color in linear color space. */\
     TR_GBUFFER_ENTRY(color, vk::Format::eR16G16B16A16Sfloat)\
-    /* RGB: direct light in linear color space. */\
-    TR_GBUFFER_ENTRY(direct, vk::Format::eR16G16B16A16Sfloat)\
-    /* RGB:diffusedirect light in linear color space. */\
+    /* RGB: diffuse and transmissive light in linear color space. */\
     TR_GBUFFER_ENTRY(diffuse, vk::Format::eR16G16B16A16Sfloat)\
+    /* RGB: reflected light in linear color space. */\
+    TR_GBUFFER_ENTRY(reflection, vk::Format::eR16G16B16A16Sfloat)\
     /* RGB: Material albedo in linear color space. */\
     TR_GBUFFER_ENTRY(albedo, vk::Format::eR16G16B16A16Sfloat)\
     /* R: Metallicness, G: Roughness, B: IOR, A: transmittance */\

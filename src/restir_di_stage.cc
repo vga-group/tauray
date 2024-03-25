@@ -1,5 +1,6 @@
 #include "restir_di_stage.hh"
 #include "scene.hh"
+#include "scene_stage.hh"
 #include "misc.hh"
 #include "environment_map.hh"
 #include "log.hh"
@@ -14,8 +15,8 @@ namespace restir_di
         restir_di_stage::options opt,
         const gbuffer_target& gbuf
     ){
-        shader_source pl_rint("shader/restir_di_point_light.rint");
-        shader_source shadow_chit("shader/restir_di_shadow.rchit");
+        shader_source pl_rint("shader/rt_common_point_light.rint");
+        shader_source shadow_chit("shader/rt_common_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["RIS_SAMPLE_COUNT"] = std::to_string(opt.ris_sample_count);
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
@@ -44,17 +45,17 @@ namespace restir_di
             {
                 { // Regular ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/restir_di.rchit", defines},
-                    {}
+                    {"shader/rt_common.rchit", defines},
+                    {"shader/rt_common.rahit", defines}
                 },
                 { // Shadow ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
                     shadow_chit,
-                    {"shader/restir_di_shadow.rahit", defines}
+                    {"shader/rt_common_shadow.rahit", defines}
                 },
                 { // Area light ray, sphere intersection
                     vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/restir_di_point_light.rchit", defines},
+                    {"shader/rt_common_point_light.rchit", defines},
                     {},
                     pl_rint
                 },
@@ -66,7 +67,8 @@ namespace restir_di
                 }
             },
             {
-                {"shader/restir_di.rmiss", defines},
+                {"shader/rt_common.rmiss", defines},
+                {"shader/rt_common_shadow.rmiss", defines}
             }
         };
     }
@@ -75,8 +77,8 @@ namespace restir_di
         restir_di_stage::options opt,
         const gbuffer_target& gbuf
     ){
-        shader_source pl_rint("shader/restir_di_point_light.rint");
-        shader_source shadow_chit("shader/restir_di_shadow.rchit");
+        shader_source pl_rint("shader/rt_common_point_light.rint");
+        shader_source shadow_chit("shader/rt_common_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["SPATIAL_SAMPLE_COUNT"] = std::to_string(opt.spatial_sample_count);
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
@@ -105,17 +107,17 @@ namespace restir_di
             {
                 { // Regular ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/restir_di.rchit", defines},
-                    {}
+                    {"shader/rt_common.rchit", defines},
+                    {"shader/rt_common.rahit", defines}
                 },
                 { // Shadow ray, triangle meshes
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
                     shadow_chit,
-                    {"shader/restir_di_shadow.rahit", defines}
+                    {"shader/rt_cmomon_shadow.rahit", defines}
                 },
                 { // Area light ray, sphere intersection
                     vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/restir_di_point_light.rchit", defines},
+                    {"shader/rt_common_point_light.rchit", defines},
                     {},
                     pl_rint
                 },
@@ -127,8 +129,8 @@ namespace restir_di
                 }
             },
             {
-                {"shader/restir_di.rmiss", defines},
-
+                {"shader/rt_common.rmiss", defines},
+                {"shader/rt_common_shadow.rmiss", defines}
             }
         };
     }
@@ -155,14 +157,10 @@ restir_di_stage::restir_di_stage(
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(dev, ss, output_target, opt, "restir_di", 1),
-    gfx(dev, rt_stage::get_common_options(
-        restir_di::load_sources(opt, output_target),
-        opt
-    )),
-    spatial_reuse(dev, rt_stage::get_common_options(
-        restir_di::load_spatial_reuse_resources(opt, output_target),
-        opt
-    )),
+    desc(dev),
+    gfx(dev),
+    spatial_desc(dev),
+    spatial_reuse(dev),
     opt(opt),
     param_buffer(
         dev,
@@ -210,6 +208,17 @@ restir_di_stage::restir_di_stage(
         vk::ImageUsageFlagBits::eStorage
     )
 {
+    {
+        rt_shader_sources src = restir_di::load_sources(opt, output_target);
+        desc.add(src);
+        gfx.init(src, {&desc, &ss.get_descriptors()});
+    }
+
+    {
+        rt_shader_sources src = restir_di::load_spatial_reuse_resources(opt, output_target);
+        spatial_desc.add(src);
+        spatial_reuse.init(src, {&spatial_desc, &ss.get_descriptors()});
+    }
 }
 
 void restir_di_stage::update(uint32_t frame_index)
@@ -220,39 +229,6 @@ void restir_di_stage::update(uint32_t frame_index)
         dev->ctx->get_frame_counter() & 1 : -1;
 
     param_buffer.update(frame_index, &parity);
-}
-
-void restir_di_stage::init_scene_resources()
-{
-    rt_camera_stage::init_descriptors(gfx);
-    rt_camera_stage::init_descriptors(spatial_reuse);
-
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        gfx.update_descriptor_set({
-            {"parity_data", {param_buffer[dev->id], 0, VK_WHOLE_SIZE}},
-            {"reservoir_data", {VK_NULL_HANDLE, reservoir_data.get_array_image_view(dev->id),
-                vk::ImageLayout::eGeneral}},
-            {"light_data_uni",{VK_NULL_HANDLE, light_data.get_array_image_view(dev->id),
-                vk::ImageLayout::eGeneral}},
-            {"previous_normal_data",{VK_NULL_HANDLE, previous_normal_data.get_array_image_view(dev->id),
-                vk::ImageLayout::eGeneral}},
-            {"previous_pos_data",{VK_NULL_HANDLE, previous_pos_data.get_array_image_view(dev->id),
-                vk::ImageLayout::eGeneral}}
-        }, i);
-
-        spatial_reuse.update_descriptor_set({
-            {"parity_data", {param_buffer[dev->id], 0, VK_WHOLE_SIZE}},
-            {"reservoir_data", {VK_NULL_HANDLE, reservoir_data.get_array_image_view(dev->id),
-                vk::ImageLayout::eGeneral}},
-            {"light_data_uni",{VK_NULL_HANDLE, light_data.get_array_image_view(dev->id),
-                vk::ImageLayout::eGeneral}},
-            {"previous_normal_data",{VK_NULL_HANDLE, previous_normal_data.get_array_image_view(dev->id),
-                vk::ImageLayout::eGeneral}},
-            {"previous_pos_data",{VK_NULL_HANDLE, previous_pos_data.get_array_image_view(dev->id),
-                vk::ImageLayout::eGeneral}}
-        }, i);
-    }
 }
 
 void restir_di_stage::record_command_buffer_pass(
@@ -274,7 +250,28 @@ void restir_di_stage::record_command_buffer_pass(
     control.samples = opt.samples_per_pass;
 
     //RIS + temporal reuse
-    gfx.bind(cb, frame_index);
+    gfx.bind(cb);
+    get_descriptors(desc);
+    desc.set_buffer("parity_data", param_buffer);
+    desc.set_image(dev->id, "reservoir_data", {{
+        VK_NULL_HANDLE, reservoir_data.get_array_image_view(dev->id),
+        vk::ImageLayout::eGeneral
+    }});
+    desc.set_image(dev->id, "light_data_uni", {{
+        VK_NULL_HANDLE, light_data.get_array_image_view(dev->id),
+        vk::ImageLayout::eGeneral
+    }});
+    desc.set_image(dev->id, "previous_normal_data", {{
+        VK_NULL_HANDLE, previous_normal_data.get_array_image_view(dev->id),
+        vk::ImageLayout::eGeneral
+    }});
+    desc.set_image(dev->id, "previous_pos_data", {{
+        VK_NULL_HANDLE, previous_pos_data.get_array_image_view(dev->id),
+        vk::ImageLayout::eGeneral
+    }});
+    gfx.push_descriptors(cb, desc, 0);
+    gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+
     gfx.push_constants(cb, control);
     gfx.trace_rays(cb, expected_dispatch_size);
 
@@ -294,7 +291,27 @@ void restir_di_stage::record_command_buffer_pass(
     );
 
     //Spatial reuse
-    spatial_reuse.bind(cb, frame_index);
+    spatial_reuse.bind(cb);
+    get_descriptors(spatial_desc);
+    spatial_desc.set_buffer("parity_data", param_buffer);
+    spatial_desc.set_image(dev->id, "reservoir_data", {{
+        VK_NULL_HANDLE, reservoir_data.get_array_image_view(dev->id),
+        vk::ImageLayout::eGeneral
+    }});
+    spatial_desc.set_image(dev->id, "light_data_uni", {{
+        VK_NULL_HANDLE, light_data.get_array_image_view(dev->id),
+        vk::ImageLayout::eGeneral
+    }});
+    spatial_desc.set_image(dev->id, "previous_normal_data", {{
+        VK_NULL_HANDLE, previous_normal_data.get_array_image_view(dev->id),
+        vk::ImageLayout::eGeneral
+    }});
+    spatial_desc.set_image(dev->id, "previous_pos_data", {{
+        VK_NULL_HANDLE, previous_pos_data.get_array_image_view(dev->id),
+        vk::ImageLayout::eGeneral
+    }});
+    spatial_reuse.push_descriptors(cb, spatial_desc, 0);
+    spatial_reuse.set_descriptors(cb, ss->get_descriptors(), 0, 1);
     spatial_reuse.push_constants(cb, control);
     spatial_reuse.trace_rays(cb, expected_dispatch_size);
 

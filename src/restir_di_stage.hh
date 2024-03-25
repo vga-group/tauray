@@ -4,6 +4,7 @@
 #include "gpu_buffer.hh"
 #include "rt_camera_stage.hh"
 #include "rt_common.hh"
+#include "descriptor_set.hh"
 
 namespace tr
 {
@@ -35,7 +36,6 @@ public:
 
 protected:
     void update(uint32_t frame_index) override;
-    void init_scene_resources() override;
     void record_command_buffer_pass(
         vk::CommandBuffer cb,
         uint32_t frame_index,
@@ -45,7 +45,9 @@ protected:
     ) override;
 
 private:
+    push_descriptor_set desc;
     rt_pipeline gfx;
+    push_descriptor_set spatial_desc;
     rt_pipeline spatial_reuse;
     options opt;
 

@@ -3,6 +3,7 @@
 
 #include "stage.hh"
 #include "compute_pipeline.hh"
+#include "descriptor_set.hh"
 #include "gbuffer.hh"
 #include "timer.hh"
 #include "gpu_buffer.hh"
@@ -41,9 +42,13 @@ private:
 
     void copy_image(vk::CommandBuffer& cb, render_target& src, render_target& dst);
 
+    descriptor_set bmfr_preprocess_desc;
     compute_pipeline bmfr_preprocess_comp;
+    descriptor_set bmfr_fit_desc;
     compute_pipeline bmfr_fit_comp;
+    descriptor_set bmfr_weighted_sum_desc;
     compute_pipeline bmfr_weighted_sum_comp;
+    descriptor_set bmfr_accumulate_output_desc;
     compute_pipeline bmfr_accumulate_output_comp;
     gbuffer_target current_features;
     gbuffer_target prev_features;

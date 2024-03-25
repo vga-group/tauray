@@ -12,6 +12,7 @@
 #include "timer.hh"
 #include "atlas.hh"
 #include "camera.hh"
+#include "descriptor_set.hh"
 
 namespace tr
 {
@@ -31,6 +32,8 @@ public:
     {
         uint32_t max_instances = 1024;
         uint32_t max_lights = 128;
+        uint32_t max_samplers = 128;
+        uint32_t max_3d_samplers = 128;
         bool gather_emissive_triangles = false;
         bool pre_transform_vertices = false;
         bool shadow_mapping = false;
@@ -69,17 +72,8 @@ public:
 
     const std::unordered_map<sh_grid*, texture>& get_sh_grid_textures() const;
 
-    vk::AccelerationStructureKHR get_acceleration_structure(
-        device_id id
-    ) const;
-
-    void bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_offset = 0);
-    void push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_offset = 0);
-    static void bind_placeholders(
-        basic_pipeline& pipeline,
-        size_t max_samplers,
-        size_t max_3d_samplers
-    );
+    descriptor_set& get_descriptors();
+    descriptor_set& get_raster_descriptors();
 
     struct shadow_map_instance
     {
@@ -119,7 +113,8 @@ private:
     void record_tri_light_extraction(device_id id, vk::CommandBuffer cb);
     void record_pre_transform(device_id id, vk::CommandBuffer cb);
 
-    std::vector<descriptor_state> get_descriptor_info(device_id id, int32_t camera_index) const;
+    void init_descriptor_set_layout();
+    void update_descriptor_set();
 
     bool prev_was_rebuild;
     size_t as_instance_count;
@@ -205,7 +200,7 @@ private:
     std::vector<uint8_t> old_camera_data;
 
     sampler_table s_table;
-    gpu_buffer scene_data;
+    gpu_buffer instance_data;
     gpu_buffer scene_metadata;
     gpu_buffer directional_light_data;
     gpu_buffer point_light_data;
@@ -223,11 +218,21 @@ private:
     std::optional<top_level_acceleration_structure> tlas;
     std::optional<event_subscription> events[10];
 
+    sampler brdf_integration_sampler;
+    texture brdf_integration;
+    texture noise_vector_2d;
+    texture noise_vector_3d;
+
+    descriptor_set scene_desc;
+    descriptor_set scene_raster_desc;
+
     //==========================================================================
     // Pipelines
     //==========================================================================
+    push_descriptor_set skinning_desc;
     per_device<compute_pipeline> skinning;
     per_device<compute_pipeline> extract_tri_lights;
+    push_descriptor_set pre_transform_desc;
     per_device<compute_pipeline> pre_transform;
 
     options opt;

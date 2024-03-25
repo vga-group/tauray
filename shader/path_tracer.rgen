@@ -17,59 +17,43 @@
 // USE_BLACKMAN_HARRIS_FILTER:
 //   Film is sampled with Blackman-Harris filter.
 
-#define TLAS_BINDING 0
-#define SCENE_DATA_BUFFER_BINDING 1
-#define VERTEX_BUFFER_BINDING 2
-#define INDEX_BUFFER_BINDING 3
-#define TEXTURE_ARRAY_BINDING 4
-#define DIRECTIONAL_LIGHT_BUFFER_BINDING 5
-#define POINT_LIGHT_BUFFER_BINDING 6
-#define ENVIRONMENT_MAP_BINDING 7
-#define DISTRIBUTION_DATA_BINDING 8
-#define CAMERA_DATA_BINDING 9
-#define SCENE_METADATA_BUFFER_BINDING 10
-#define SAMPLING_DATA_BINDING 20
-#ifdef NEE_SAMPLE_ENVMAP
-#define ENVIRONMENT_MAP_ALIAS_TABLE_BINDING 21
-#endif
-#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-#define TRI_LIGHT_BUFFER_BINDING 22
-#endif
+#define DISTRIBUTION_DATA_BINDING 0
+#define SAMPLING_DATA_BINDING 1
 
 #ifdef USE_COLOR_TARGET
-#define COLOR_TARGET_BINDING 11
+#define COLOR_TARGET_BINDING 2
 #endif
 
 #ifdef USE_DIRECT_TARGET
-#define DIRECT_TARGET_BINDING 12
+#define DIRECT_TARGET_BINDING 3
 #endif
 
 #ifdef USE_DIFFUSE_TARGET
-#define DIFFUSE_TARGET_BINDING 13
+#define DIFFUSE_TARGET_BINDING 4
 #endif
 
 #ifdef USE_ALBEDO_TARGET
-#define ALBEDO_TARGET_BINDING 14
+#define ALBEDO_TARGET_BINDING 5
 #endif
 
 #ifdef USE_MATERIAL_TARGET
-#define MATERIAL_TARGET_BINDING 15
+#define MATERIAL_TARGET_BINDING 6
 #endif
 
 #ifdef USE_NORMAL_TARGET
-#define NORMAL_TARGET_BINDING 16
+#define NORMAL_TARGET_BINDING 7
 #endif
 
 #ifdef USE_POS_TARGET
-#define POS_TARGET_BINDING 17
+#define POS_TARGET_BINDING 8
 #endif
 
 #ifdef USE_SCREEN_MOTION_TARGET
-#define SCREEN_MOTION_TARGET_BINDING 18
+#define SCREEN_MOTION_TARGET_BINDING 9
 #endif
 
 #ifdef USE_INSTANCE_ID_TARGET
-#define INSTANCE_ID_TARGET_BINDING 19
+#define INSTANCE_ID_TARGET_BINDING 10
 #endif
 
 layout(push_constant, scalar) uniform push_constant_buffer
@@ -90,9 +74,9 @@ void main()
 {
     pt_vertex_data first_hit_vertex;
     sampled_material first_hit_material;
-    vec3 sum_color = vec3(0);
-    vec3 sum_direct = vec3(0);
-    vec3 sum_diffuse = vec3(0);
+    vec3 sum_color = vec3(0,0,0);
+    vec4 sum_diffuse = vec4(0,0,0,-1);
+    vec4 sum_reflection = vec4(0,0,0,-1);
 #if SAMPLES_PER_PASS != 1
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
 #else
@@ -111,21 +95,28 @@ void main()
         vec3 dir;
         get_world_camera_ray(lsampler, origin, dir);
 
-        vec3 color, direct, diffuse;
+        vec4 diffuse, reflection;
         evaluate_ray(
             lsampler, origin, dir,
-            color, direct, diffuse, first_hit_vertex, first_hit_material
+            diffuse, reflection,
+            first_hit_vertex, first_hit_material
         );
-
-        sum_color += color;
-        sum_direct += direct;
+#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
+        vec3 old_color = first_hit_material.albedo.rgb;
+        first_hit_material.albedo.rgb = vec3(1);
+#endif
+        sum_color += first_hit_material.emission + modulate_color(first_hit_material, diffuse.rgb, reflection.rgb);
         sum_diffuse += diffuse;
+        sum_reflection += reflection;
+#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
+        first_hit_material.albedo.rgb = old_color;
+#endif
     }
 
     write_all_outputs(
-        sum_color / SAMPLES_PER_PASS,
-        sum_direct / SAMPLES_PER_PASS,
-        sum_diffuse / SAMPLES_PER_PASS,
+        sum_color.rgb / SAMPLES_PER_PASS,
+        sum_diffuse.rgb / SAMPLES_PER_PASS,
+        sum_reflection.rgb / SAMPLES_PER_PASS,
         first_hit_vertex,
         first_hit_material
     );

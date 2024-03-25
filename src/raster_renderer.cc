@@ -18,7 +18,7 @@ raster_renderer::raster_renderer(context& ctx, const options& opt)
         ctx.get_size(),
         opt.post_process
     );
-    sms.emplace(ctx.get_display_device(), *scene_update, shadow_map_stage::options{opt.max_samplers});
+    sms.emplace(ctx.get_display_device(), *scene_update, shadow_map_stage::options{});
     init_common_resources();
 }
 

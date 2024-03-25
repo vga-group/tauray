@@ -4,8 +4,6 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_multiview : enable
 
-#define SCENE_DATA_BUFFER_BINDING 0
-#define CAMERA_DATA_BINDING 4
 #define CALC_PREV_VERTEX_POS
 #include "forward.glsl"
 
@@ -23,10 +21,10 @@ layout(location = 5) out vec3 out_bitangent;
 
 void main()
 {
-    instance o = scene.o[control.instance_id];
+    instance o = instances.o[control.instance_id];
     out_pos = vec3(o.model * vec4(in_pos, 1.0f));
     out_prev_pos = vec3(o.model_prev * vec4(in_pos, 1.0f));
-    gl_Position = camera.pairs[gl_ViewIndex].current.view_proj * vec4(out_pos, 1.0f);
+    gl_Position = camera.pairs[control.base_camera_index + gl_ViewIndex].current.view_proj * vec4(out_pos, 1.0f);
     out_normal = normalize(mat3(o.model_normal) * in_normal);
     out_tangent = normalize(mat3(o.model_normal) * in_tangent.xyz);
     out_bitangent = (cross(out_normal, out_tangent) * in_tangent.w);

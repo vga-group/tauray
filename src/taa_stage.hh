@@ -35,11 +35,11 @@ protected:
     void update(uint32_t frame_index) override;
 
 private:
-    void init_resources();
     void record_command_buffers();
 
     std::vector<vec4> jitter_history;
     scene_stage* ss;
+    descriptor_set desc;
     compute_pipeline comp;
     options opt;
     gbuffer_target current_features;
