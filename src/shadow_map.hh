@@ -38,6 +38,31 @@ struct point_shadow_map
     float max_bias = 0.02;
 };
 
+struct shadow_map_filter
+{
+    // Shadow filtering options.
+    int pcf_samples = 64; // 0 => bilinear interpolation
+    int omni_pcf_samples = 16; // 0 => bilinear interpolation
+    int pcss_samples = 32; // 0 => disable PCSS
+    // The minimum radius prevents PCSS from degrading to bilinear filtering
+    // near shadow caster.
+    float pcss_minimum_radius = 0.0f;
+};
+
+struct gpu_shadow_mapping_parameters
+{
+    pvec2 shadow_map_atlas_pixel_margin;
+    float pcss_minimum_radius;
+    float noise_scale;
+    int pcf_samples;
+    int omni_pcf_samples;
+    int pcss_samples;
+    int pad[1];
+};
+
+class scene_stage;
+gpu_shadow_mapping_parameters create_shadow_mapping_parameters(shadow_map_filter filter, scene_stage& ss);
+
 }
 
 #endif

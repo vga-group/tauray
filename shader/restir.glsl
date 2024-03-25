@@ -13,9 +13,11 @@
 #endif
 
 #define SCENE_SET 1
+#define SCENE_RASTER_SET 2
 #ifdef RAY_TRACING
 #include "rt.glsl"
 #include "rt_common_payload.glsl"
+#include "scene_raster.glsl"
 #else
 #include "scene.glsl"
 #endif
@@ -40,6 +42,7 @@
 
 struct restir_config
 {
+    shadow_mapping_parameters sm_params;
     float min_ray_dist;
     float max_ray_dist;
     //float regularization_gamma;
@@ -163,7 +166,7 @@ vec4 output_color_function(vec4 primary_bsdf, vec3 radiance)
 struct intersection_info
 {
     vertex_data vd;
-    material mat;
+    sampled_material mat;
     // Light sources are separated due to sampling concerns. This is needed for
     // implementing next event estimation.
     vec3 light;

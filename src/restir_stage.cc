@@ -10,6 +10,8 @@ using namespace tr;
 
 struct restir_config
 {
+    gpu_shadow_mapping_parameters sm_params;
+
     float min_ray_dist;
     float max_ray_dist;
     //float regularization_gamma;
@@ -94,10 +96,11 @@ struct spatial_canonical_mis_data
     float mis_part;
 };
 
-restir_config get_restir_config(restir_stage::options& opt, gbuffer_target& output)
+restir_config get_restir_config(restir_stage::options& opt, gbuffer_target& output, scene_stage& ss)
 {
     uvec2 size = output.albedo.size;
     restir_config config;
+    config.sm_params = create_shadow_mapping_parameters(opt.sm_filter, ss);
     config.max_ray_dist = opt.max_ray_dist;
     config.min_ray_dist = opt.min_ray_dist;
     config.reconnection_scale = opt.reconnection_scale * opt.max_spatial_search_radius / size.x;
@@ -379,7 +382,8 @@ restir_stage::restir_stage(
             shader,
             {
                 &canonical_set,
-                &ss.get_descriptors()
+                &ss.get_descriptors(),
+                &ss.get_raster_descriptors()
             }
         );
     }
@@ -443,7 +447,8 @@ restir_stage::restir_stage(
             shader,
             {
                 &selection_set,
-                &ss.get_descriptors()
+                &ss.get_descriptors(),
+                &ss.get_raster_descriptors()
             }
         );
     }
@@ -456,7 +461,8 @@ restir_stage::restir_stage(
             shader,
             {
                 &spatial_trace_set,
-                &ss.get_descriptors()
+                &ss.get_descriptors(),
+                &ss.get_raster_descriptors()
             }
         );
     }
@@ -469,6 +475,7 @@ restir_stage::restir_stage(
             {
                 &spatial_gather_set,
                 &ss.get_descriptors(),
+                &ss.get_raster_descriptors()
             }
         );
     }
@@ -799,7 +806,7 @@ void restir_stage::update(uint32_t frame_index)
 
 void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame_index*/, int pass_index)
 {
-    restir_config config = get_restir_config(opt, current_buffers);
+    restir_config config = get_restir_config(opt, current_buffers, *scene_data);
     reservoir_textures& in_reservoir_data = reservoir_data[reservoir_data_parity];
     reservoir_textures& out_reservoir_data = reservoir_data[1-reservoir_data_parity];
 
@@ -884,7 +891,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
 
 void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_index*/, bool /*final_pass*/, int pass_index)
 {
-    restir_config config = get_restir_config(opt, current_buffers);
+    restir_config config = get_restir_config(opt, current_buffers, *scene_data);
     reservoir_textures& in_reservoir_data = reservoir_data[reservoir_data_parity];
     reservoir_textures& out_reservoir_data = reservoir_data[1-reservoir_data_parity];
 

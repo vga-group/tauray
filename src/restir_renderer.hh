@@ -21,6 +21,7 @@ public:
         scene_stage::options scene_options;
         restir_stage::options restir_options;
         tonemap_stage::options tonemap_options;
+        shadow_map_filter sm_filter;
     };
 
     restir_renderer(context& ctx, const options& opt);

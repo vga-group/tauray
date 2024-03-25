@@ -53,7 +53,7 @@ void sample_path_nee_leaf(
         r.confidence += 1.0f;
         return;
     }
-    
+
     rand32.w += 7u;
     bsdf_lobes lobes;
     vec3 tdir = candidate_dir * src.tbn;
