@@ -48,51 +48,6 @@ vec4 read_gbuffer_color(ivec3 pos) { return vec4(0); }
 #endif
 
 //==============================================================================
-// Direct lighting
-//==============================================================================
-#ifdef DIRECT_TARGET_BINDING
-layout(binding = DIRECT_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray direct_target;
-
-void write_gbuffer_direct(vec4 light, ivec3 pos)
-{
-    imageStore(direct_target, pos, light);
-}
-
-void accumulate_gbuffer_direct(
-    vec4 light, ivec3 pos, uint samples, uint previous_samples
-){
-    if(previous_samples != 0)
-    {
-        vec4 prev_light = imageLoad(direct_target, pos);
-        uint total = samples + previous_samples;
-        light = mix(light, prev_light, float(previous_samples)/float(total));
-    }
-    imageStore(direct_target, pos, light);
-}
-
-vec4 read_gbuffer_direct(ivec3 pos) { return imageLoad(direct_target, pos); }
-
-#elif defined(DIRECT_TARGET_LOCATION)
-
-layout(location = DIRECT_TARGET_LOCATION) out vec4 direct_target;
-
-void write_gbuffer_direct(vec4 color)
-{
-    direct_target = color;
-}
-
-#else
-
-void write_gbuffer_direct(vec4 color, ivec3 pos) {}
-void write_gbuffer_direct(vec4 color) {}
-void accumulate_gbuffer_direct(
-    vec4 direct, ivec3 pos, uint samples, uint previous_samples
-) {}
-vec4 read_gbuffer_direct(ivec3 pos) { return vec4(0); }
-
-#endif
-
-//==============================================================================
 // Diffuse lighting
 //==============================================================================
 #ifdef DIFFUSE_TARGET_BINDING
@@ -131,11 +86,57 @@ void write_gbuffer_diffuse(vec4 color)
 void write_gbuffer_diffuse(vec4 color, ivec3 pos) {}
 void write_gbuffer_diffuse(vec4 color) {}
 void accumulate_gbuffer_diffuse(
-    vec4 direct, ivec3 pos, uint samples, uint previous_samples
+    vec4 diffuse, ivec3 pos, uint samples, uint previous_samples
 ) {}
 vec4 read_gbuffer_diffuse(ivec3 pos) { return vec4(0); }
 
 #endif
+
+//==============================================================================
+// Reflection
+//==============================================================================
+#ifdef REFLECTION_TARGET_BINDING
+layout(binding = REFLECTION_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray reflection_target;
+
+void write_gbuffer_reflection(vec4 light, ivec3 pos)
+{
+    imageStore(reflection_target, pos, light);
+}
+
+void accumulate_gbuffer_reflection(
+    vec4 light, ivec3 pos, uint samples, uint previous_samples
+){
+    if(previous_samples != 0)
+    {
+        vec4 prev_light = imageLoad(reflection_target, pos);
+        uint total = samples + previous_samples;
+        light = mix(light, prev_light, float(previous_samples)/float(total));
+    }
+    imageStore(reflection_target, pos, light);
+}
+
+vec4 read_gbuffer_reflection(ivec3 pos) { return imageLoad(reflection_target, pos); }
+
+#elif defined(REFLECTION_TARGET_LOCATION)
+
+layout(location = REFLECTION_TARGET_LOCATION) out vec4 reflection_target;
+
+void write_gbuffer_reflection(vec4 color)
+{
+    reflection_target = color;
+}
+
+#else
+
+void write_gbuffer_reflection(vec4 color, ivec3 pos) {}
+void write_gbuffer_reflection(vec4 color) {}
+void accumulate_gbuffer_reflection(
+    vec4 reflection, ivec3 pos, uint samples, uint previous_samples
+) {}
+vec4 read_gbuffer_reflection(ivec3 pos) { return vec4(0); }
+
+#endif
+
 
 //==============================================================================
 // Albedo
