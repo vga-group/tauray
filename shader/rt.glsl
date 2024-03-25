@@ -131,13 +131,12 @@ bool is_material_skippable(int instance_id, vec2 uv, float alpha_cutoff)
 // the Appleseed renderer. This is not physically based, so it's easy to
 // disable. It shouldn't do anything if mul == 1, which should be the default
 // for all objects.
-void shadow_terminator_fix(inout vec3 diffuse, inout vec3 specular, float cos_l, in sampled_material mat)
+void shadow_terminator_fix(inout vec3 contrib, float cos_l, in sampled_material mat)
 {
 #ifdef USE_SHADOW_TERMINATOR_FIX
     float s = (cos_l <= 0 || mat.shadow_terminator_mul == 1) ?
         1.0f : max(cos(acos(cos_l) * mat.shadow_terminator_mul)/cos_l, 0.0f);
-    diffuse *= s;
-    specular *= s;
+    contrib *= s;
 #endif
 }
 

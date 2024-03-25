@@ -74,9 +74,9 @@ void main()
 {
     pt_vertex_data first_hit_vertex;
     sampled_material first_hit_material;
-    vec3 sum_color = vec3(0);
-    vec3 sum_direct = vec3(0);
-    vec3 sum_diffuse = vec3(0);
+    vec3 sum_color = vec3(0,0,0);
+    vec4 sum_diffuse = vec4(0,0,0,-1);
+    vec4 sum_reflection = vec4(0,0,0,-1);
 #if SAMPLES_PER_PASS != 1
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
 #else
@@ -95,21 +95,28 @@ void main()
         vec3 dir;
         get_world_camera_ray(lsampler, origin, dir);
 
-        vec3 color, direct, diffuse;
+        vec4 diffuse, reflection;
         evaluate_ray(
             lsampler, origin, dir,
-            color, direct, diffuse, first_hit_vertex, first_hit_material
+            diffuse, reflection,
+            first_hit_vertex, first_hit_material
         );
-
-        sum_color += color;
-        sum_direct += direct;
+#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
+        vec3 old_color = first_hit_material.albedo.rgb;
+        first_hit_material.albedo.rgb = vec3(1);
+#endif
+        sum_color += first_hit_material.emission + modulate_color(first_hit_material, diffuse.rgb, reflection.rgb);
         sum_diffuse += diffuse;
+        sum_reflection += reflection;
+#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
+        first_hit_material.albedo.rgb = old_color;
+#endif
     }
 
     write_all_outputs(
-        sum_color / SAMPLES_PER_PASS,
-        sum_direct / SAMPLES_PER_PASS,
-        sum_diffuse / SAMPLES_PER_PASS,
+        sum_color.rgb / SAMPLES_PER_PASS,
+        sum_diffuse.rgb / SAMPLES_PER_PASS,
+        sum_reflection.rgb / SAMPLES_PER_PASS,
         first_hit_vertex,
         first_hit_material
     );
