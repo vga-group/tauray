@@ -417,6 +417,12 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     sampling_weights.envmap = get_environment_map(s) ? opt.sample_envmap : 0.0f;
     sampling_weights.emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
 
+    shadow_map_filter sm_filter;
+    sm_filter.pcf_samples = min(opt.pcf, 64);
+    sm_filter.omni_pcf_samples = min(opt.pcf, 64);
+    sm_filter.pcss_samples = min(opt.pcss, 64);
+    sm_filter.pcss_minimum_radius = opt.pcss_minimum_radius;
+
     auto_assign_shadow_maps(
         s,
         opt.shadow_map_resolution,
@@ -552,10 +558,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if(opt.taa.sequence_length != 0)
                     rr_opt.post_process.taa = taa;
                 rr_opt.post_process.tonemap = tonemap;
-                rr_opt.pcf_samples = min(opt.pcf, 64);
-                rr_opt.omni_pcf_samples = min(opt.pcf, 64);
-                rr_opt.pcss_samples = min(opt.pcss, 64);
-                rr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
+                rr_opt.filter = sm_filter;
                 rr_opt.z_pre_pass = opt.use_z_pre_pass;
                 rr_opt.scene_options = scene_options;
                 return new raster_renderer(ctx, rr_opt);
@@ -582,10 +585,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.post_process.tonemap = tonemap;
                 dr_opt.msaa_samples = opt.samples_per_pixel;
                 dr_opt.sample_shading = opt.sample_shading;
-                dr_opt.pcf_samples = min(opt.pcf, 64);
-                dr_opt.omni_pcf_samples = min(opt.pcf, 64);
-                dr_opt.pcss_samples = min(opt.pcss, 64);
-                dr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
+                dr_opt.filter = sm_filter;
                 dr_opt.z_pre_pass = opt.use_z_pre_pass;
                 dr_opt.scene_options = scene_options;
                 dr_opt.scene_options.alloc_sh_grids = true;
@@ -620,10 +620,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     dr_opt.post_process.taa = taa;
                 dr_opt.msaa_samples = opt.samples_per_pixel;
                 dr_opt.sample_shading = opt.sample_shading;
-                dr_opt.pcf_samples = min(opt.pcf, 64);
-                dr_opt.omni_pcf_samples = min(opt.pcf/2, 64);
-                dr_opt.pcss_samples = min(opt.pcss, 64);
-                dr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
+                dr_opt.filter = sm_filter;
                 dr_opt.z_pre_pass = opt.use_z_pre_pass;
                 dr_opt.scene_options = scene_options;
                 dr_opt.scene_options.alloc_sh_grids = true;
@@ -652,6 +649,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 restir_renderer::options re_opt;
                 re_opt.scene_options = scene_options;
                 re_opt.tonemap_options = tonemap;
+                re_opt.sm_filter = sm_filter;
                 return new restir_renderer(ctx, re_opt);
             }
         };

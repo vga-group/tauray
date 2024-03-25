@@ -43,9 +43,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     raster_opt.clear_color = true;
     raster_opt.clear_depth = true;
     raster_opt.sample_shading = false;
-    raster_opt.pcf_samples = 0;
-    raster_opt.omni_pcf_samples = 0;
-    raster_opt.pcss_samples = 0;
+    raster_opt.filter = opt.sm_filter;
     raster_opt.use_probe_visibility = false;
     raster_opt.sh_order = 0;
     raster_opt.force_alpha_to_coverage = true;

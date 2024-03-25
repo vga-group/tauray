@@ -8,14 +8,9 @@
 layout(push_constant) uniform push_constant_buffer
 {
     uint instance_id;
-    int pcf_samples;
-    int omni_pcf_samples;
-    int pcss_samples;
     int base_camera_index;
-    float pcss_minimum_radius;
-    float noise_scale;
-    int pad[3];
-    vec2 shadow_map_atlas_pixel_margin;
+    int pad[2];
+    shadow_mapping_parameters sm_params;
     vec3 ambient_color;
 } control;
 

@@ -106,6 +106,14 @@ uvec4 pcg4d(inout uvec4 seed)
     return seed;
 }
 
+uvec4 pcg1to4(inout uint seed)
+{
+    uvec4 seed4 = seed+uvec4(0,1,2,3);
+    pcg4d(seed4);
+    seed = seed4.x;
+    return seed4;
+}
+
 #include "sobol_lookup_table.glsl"
 
 // Returns in groups of 4 dimensions. 'bounce' defines the bounce.

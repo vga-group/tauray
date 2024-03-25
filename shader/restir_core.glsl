@@ -5,6 +5,8 @@
 #define TR_RESTIR pc.config
 #endif
 
+#define SHADOW_MAPPING_PARAMS pc.config.sm_params
+
 layout(binding = 0) uniform sampler2D depth_or_position_tex;
 layout(binding = 1) uniform sampler2D normal_tex;
 layout(binding = 2) uniform sampler2D flat_normal_tex;
@@ -26,6 +28,7 @@ layout(binding = 13, rg32ui) uniform uimage2D out_reservoir_rng_seeds_tex;
 #include "alias_table.glsl"
 #include "math.glsl"
 #include "random_sampler.glsl"
+#include "ggx.glsl"
 
 #ifdef RESTIR_TEMPORAL
 layout(binding = 14) uniform sampler2D prev_depth_or_position_tex;
@@ -187,9 +190,9 @@ reservoir read_reservoir(ivec2 p, uvec2 size)
 {
     return unpack_reservoir(
         imageLoad(in_reservoir_ris_data_tex, p),
-        RESTIR_HAS_RECONNECTION_DATA ? 
+        RESTIR_HAS_RECONNECTION_DATA ?
             imageLoad(in_reservoir_reconnection_data_tex, p) : uvec4(0),
-        RESTIR_HAS_RECONNECTION_DATA ? 
+        RESTIR_HAS_RECONNECTION_DATA ?
             imageLoad(in_reservoir_reconnection_radiance_tex, p) : uvec4(0),
         RESTIR_HAS_SEEDS ? imageLoad(in_reservoir_rng_seeds_tex, p).rg : uvec2(0)
     );
@@ -205,9 +208,9 @@ reservoir read_out_reservoir(ivec2 p, uvec2 size)
 {
     return unpack_reservoir(
         imageLoad(out_reservoir_ris_data_tex, p),
-        RESTIR_HAS_RECONNECTION_DATA ? 
+        RESTIR_HAS_RECONNECTION_DATA ?
             imageLoad(out_reservoir_reconnection_data_tex, p) : uvec4(0),
-        RESTIR_HAS_RECONNECTION_DATA ? 
+        RESTIR_HAS_RECONNECTION_DATA ?
             imageLoad(out_reservoir_reconnection_radiance_tex, p) : uvec4(0),
         RESTIR_HAS_SEEDS ? imageLoad(out_reservoir_rng_seeds_tex, p).rg : uvec2(0)
     );
@@ -359,60 +362,66 @@ void add_canonical_contribution(inout sum_contribution sc, reservoir r, vec4 con
 }
 #endif
 
-#ifdef RAYBASE_RAY_TRACING
+#ifdef RAY_TRACING
+#ifdef SHADE_ALL_EXPLICIT_LIGHTS
+#define SHADOW_MAPPING_SCREEN_COORD vec2(gl_LaunchIDEXT.xy)
+#include "shadow_mapping.glsl"
 vec3 shade_explicit_lights(
-    ivec4 environment,
     vec3 view,
     vertex_data vd,
-    material mat
+    sampled_material mat
 ){
-    vec3 normal = vd.tangent_space[2];
-    vec3 tview = view_to_tangent_space(view, vd.tangent_space);
+    vec3 normal = vd.mapped_normal;
+    mat3 tbn = mat3(vd.tangent, vd.bitangent, vd.mapped_normal);
+    vec3 tview = view_to_tangent_space(view, tbn);
 
     vec3 contrib = vec3(0);
 #ifdef SHADE_FAKE_INDIRECT
-    contrib += get_indirect_light(
-        vd.pos, environment, vd.tangent_space, vd.smooth_normal,
-        tview, mat, vd.uv.zw
-    );
+    TODO
 #endif
 
-    FOR_CULLED_POINT_LIGHTS(light, vd.pos)
-        vec3 dir;
-        vec3 color;
-        if(get_point_light_info(light, vd.pos, dir, color))
-        {
-            vec3 tdir = dir * vd.tangent_space;
-            bsdf_lobes lobes;
-            full_bsdf(mat, tdir, tview, lobes);
-            float shadow = calc_point_shadow(
-                0, 0, 0, 0, 0, light, vd.pos, vd.smooth_normal, vec2(0), 0
-            );
-            contrib += shadow * color * modulate_bsdf(mat, lobes);
-        }
-    END_CULLED_POINT_LIGHTS
-
-    for(uint i = 0; i < scene_params.directional_light_count; ++i)
+    for(uint i = 0; i < scene_metadata.point_light_count; ++i)
     {
-        directional_light light = directional_lights.array[i];
-        vec3 dir;
-        vec3 color;
-        get_directional_light_info(light, dir, color);
-        color *= light.solid_angle == 0 ? 1.0f : 2.0f * M_PI * light.solid_angle;
-        float shadow = calc_directional_shadow(
-            0, 0, 0, 0, 0, light, vd.pos, vd.smooth_normal, vec2(0), 0
-        );
-        vec3 tdir = dir * vd.tangent_space;
-        bsdf_lobes lobes;
-        full_bsdf(mat, tdir, tview, lobes);
-        contrib += shadow * color * modulate_bsdf(mat, lobes);
+        vec3 d, s;
+        point_light pl = point_lights.lights[i];
+        vec3 light_dir;
+        float light_dist;
+        vec3 light_color;
+        get_point_light_info(pl, vd.pos, light_dir, light_dist, light_color);
+        ggx_brdf(light_dir * tbn, tview, mat, d, s);
+        d *= light_color;
+        s *= light_color;
+        float shadow = 1.0f;
+        if(pl.shadow_map_index >= 0 && dot(vd.mapped_normal, light_dir) > 0)
+            shadow = calc_point_shadow(
+                pl.shadow_map_index, vd.pos, vd.hard_normal, light_dir
+            );
+        shadow = dot(vd.hard_normal, light_dir) < 0 ? 0 : shadow;
+        contrib += (d + s) * shadow;
+    }
+
+    for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+    {
+        vec3 d, s;
+        directional_light dl = directional_lights.lights[i];
+        ggx_brdf(-dl.dir * tbn, tview, mat, d, s);
+        d *= dl.color;
+        s *= dl.color;
+        float shadow = 1.0f;
+        if(dl.shadow_map_index >= 0 && dot(vd.mapped_normal, -dl.dir) > 0)
+            shadow = calc_directional_shadow(
+                dl.shadow_map_index, vd.pos, vd.hard_normal, -dl.dir
+            );
+        shadow = dot(vd.hard_normal, dl.dir) > 0 ? 0 : shadow;
+        contrib += (d + s) * shadow;
     }
     return contrib;
 }
+#endif
 
 int test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
 {
-    payload.seed = seed;
+    payload.random_seed = seed;
     float s = sign(dot(dir, flat_normal));
 
     vec3 origin = pos + s * flat_normal * TR_RESTIR.min_ray_dist;
@@ -423,7 +432,7 @@ int test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
     new_dir /= new_dist;
 
     traceRayEXT(
-        scene_tlas,
+        tlas,
 #ifdef STOCHASTIC_ALPHA_BLENDING
         gl_RayFlagsTerminateOnFirstHitEXT,
 #else
@@ -437,7 +446,7 @@ int test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
         new_dist-TR_RESTIR.min_ray_dist*2,
         0
     );
-    return payload.instance_index < 0 ? 1 : 0;
+    return payload.instance_id < 0 ? 1 : 0;
 }
 
 #ifdef RESTIR_TEMPORAL
@@ -455,7 +464,7 @@ int test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_no
 
 #ifdef ASSUME_UNCHANGED_ACCELERATION_STRUCTURES
     traceRayEXT(
-        scene_tlas,
+        tlas,
         gl_RayFlagsCullNoOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
         VISIBILITY_RAY_MASK,
         0, 0, 0,
@@ -478,7 +487,7 @@ int test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_no
         0
     );
 #endif
-    return payload.instance_index < 0 ? 1 : 0;
+    return payload.instance_id < 0 ? 1 : 0;
 }
 #endif
 
@@ -495,29 +504,28 @@ resolved_vertex resolve_point_light_vertex(reconnection_vertex rv, bool prev, ve
     resolved_vertex v;
 #ifdef RESTIR_TEMPORAL
     point_light pl;
-    if(prev) pl = prev_point_lights.array[rv.primitive_id];
-    else pl = point_lights.array[rv.primitive_id];
+    if(prev) pl = prev_point_lights.lights[rv.primitive_id];
+    else pl = point_lights.lights[rv.primitive_id];
 #else
-    point_light pl = point_lights.array[rv.primitive_id];
+    point_light pl = point_lights.lights[rv.primitive_id];
 #endif
-    v.pos = vec4(pl.pos_x, pl.pos_y, pl.pos_z, 1);
+    v.pos = vec4(pl.pos, 1);
 
     vec3 center_dir = v.pos.xyz - domain_pos;
     float dist2 = dot(center_dir, center_dir);
 
-    vec2 rc = unpackHalf2x16(pl.radius_and_cutoff_radius).xy;
-    float radius = rc.r;
+    float radius = pl.radius;
 
     if(radius != 0)
     {
-        v.normal = octahedral_decode(rv.hit_info * 2.0f - 1.0f);
+        v.normal = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
         v.pos.xyz += radius * v.normal;
     }
     else v.normal = vec3(0);
 
-    v.emission = rgbe_to_rgb(pl.color);
+    v.emission = pl.color;
     if(radius != 0.0f) v.emission /= M_PI * radius * radius;
-    v.emission *= get_spotlight_cutoff(pl, normalize(center_dir));
+    v.emission *= get_spotlight_intensity(pl, normalize(center_dir));
     if(radius == 0) v.emission /= dist2;
 
     return v;
@@ -526,7 +534,7 @@ resolved_vertex resolve_point_light_vertex(reconnection_vertex rv, bool prev, ve
 resolved_vertex resolve_directional_light_vertex(reconnection_vertex rv)
 {
     resolved_vertex v;
-    vec3 dir = octahedral_decode(rv.hit_info * 2.0f - 1.0f); 
+    vec3 dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
     v.pos = vec4(dir, 0);
     v.normal = -dir;
 
@@ -564,28 +572,20 @@ void resolve_mesh_triangle_vertex(
 ){
 #if !defined(SHADE_ALL_EXPLICIT_LIGHTS) || defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
     // Normal operation: just find the emissiveness of the vertex.
+
+    vertex_data vd;
+    vd = get_interpolated_vertex(
+        vec3(0),
+        rv.hit_info,
+        int(rv.instance_id),
+        int(rv.primitive_id)
+    );
+    to.pos.xyz = vd.pos;
 #ifdef RESTIR_TEMPORAL
     if(!rv_is_in_past)
-    {
-        get_vertex_prev_position(
-            rv.instance_id,
-            rv.primitive_id,
-            rv.hit_info,
-            to.pos.xyz,
-            to.normal
-        );
-    }
-    else
+        to.pos.xyz = vd.prev_pos;
 #endif
-    {
-        get_vertex_position(
-            rv.instance_id,
-            rv.primitive_id,
-            rv.hit_info,
-            to.pos.xyz,
-            to.normal
-        );
-    }
+    to.normal = vd.mapped_normal;
     to.pos.w = 1;
     // TODO: Allow mesh triangle material changes?
     to.emission = rv.radiance_estimate;
@@ -624,7 +624,7 @@ bool resolve_reconnection_vertex(
     {
         to.pos = vec4(0);
         to.normal = vec3(0);
-        to.emission = vec3(0); 
+        to.emission = vec3(0);
         return false;
     }
     else if(rv.instance_id == POINT_LIGHT_INSTANCE_ID)
@@ -719,11 +719,11 @@ bool allow_reconnection(
 #endif
 }
 
-#ifdef RAYBASE_RAY_TRACING
+#ifdef RAY_TRACING
 bool get_intersection_info(
     vec3 ray_origin,
     vec3 ray_direction,
-    bounce_payload payload,
+    hit_payload payload,
     bool in_past,
     out intersection_info info,
     out reconnection_vertex candidate
@@ -736,13 +736,13 @@ bool get_intersection_info(
     info.envmap_pdf = 0.0f;
     info.local_pdf = 0.0f;
 
-    if(payload.instance_index >= 0)
+    if(payload.instance_id >= 0)
     { // Mesh
 #ifdef RESTIR_TEMPORAL
         if(in_past)
         {
             // Translate previous mesh to current frame
-            uint new_id = instance_map_forward.array[payload.instance_index];
+            uint new_id = instance_map_forward.array[payload.instance_id];
             if(new_id == 0xFFFFFFFFu)
             {
                 candidate.instance_id = NULL_INSTANCE_ID;
@@ -751,46 +751,39 @@ bool get_intersection_info(
                 candidate.radiance_estimate = vec3(0);
                 return false;
             }
-            payload.instance_index = int(new_id);
+            payload.instance_id = int(new_id);
         }
 #endif
 
-        instance i = instances.array[nonuniformEXT(payload.instance_index)];
-        bool has_light = (i.attribute_mask_flags & INSTANCE_FLAG_HAS_TRI_LIGHTS) != 0;
-        info.vd = get_vertex_data(
-            payload.instance_index,
-            payload.primitive_index,
-            payload.hit_attribs,
-            has_light
+        float pdf = 0.0f;
+        info.vd = get_interpolated_vertex(
+            ray_direction, payload.barycentrics,
+            payload.instance_id,
+            payload.primitive_id
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+            , origin, pdf
+#endif
         );
 #ifdef RESTIR_TEMPORAL
         if(in_past) info.vd.pos = info.vd.prev_pos;
 #endif
 
-        bool front_facing = dot(ray_direction, info.vd.flat_normal) < 0;
-        info.mat = sample_material(i.material, front_facing, info.vd.uv.xy, vec2(0.0), vec2(0.0f));
+        bool front_facing = dot(ray_direction, info.vd.hard_normal) < 0;
+        info.mat = sample_material(payload.instance_id, info.vd);
 #ifdef USE_RECONNECTION_SHIFT
         // See read_domain() for context.
         info.mat.roughness = max(info.mat.roughness, ZERO_ROUGHNESS_LIMIT);
 #endif
 
-        info.vd.tangent_space = apply_normal_map(info.vd.tangent_space, info.mat);
-        info.local_pdf = has_light ?
-            1.0f / triangle_solid_angle(
-                ray_origin,
-                info.vd.triangle_pos[0],
-                info.vd.triangle_pos[1],
-                info.vd.triangle_pos[2]
-            ) : 0.0f;
+        info.local_pdf = any(greaterThan(info.mat.emission, vec3(0))) ? pdf : 0;
 
-        candidate.instance_id = payload.instance_index;
-        candidate.primitive_id = payload.primitive_index;
-        candidate.hit_info = payload.hit_attribs;
+        candidate.instance_id = payload.instance_id;
+        candidate.primitive_id = payload.primitive_id;
+        candidate.hit_info = payload.barycentrics;
         candidate.radiance_estimate = info.mat.emission;
 
 #ifdef SHADE_ALL_EXPLICIT_LIGHTS
         candidate.radiance_estimate += shade_explicit_lights(
-            i.environment,
             ray_direction,
             info.vd,
             info.mat
@@ -800,7 +793,7 @@ bool get_intersection_info(
         return true;
     }
 #ifndef SHADE_ALL_EXPLICIT_LIGHTS
-    else if(payload.primitive_index >= 0)
+    else if(payload.primitive_id >= 0)
     { // Point light
         // Point lights are unhittable with SHADE_ALL_EXPLICIT_LIGHTS, as ray
         // flags cull them.
@@ -808,8 +801,8 @@ bool get_intersection_info(
 #ifdef RESTIR_TEMPORAL
         if(in_past)
         {
-            pl = prev_point_lights.array[payload.primitive_index];
-            uint new_id = point_light_map_forward.array[payload.primitive_index];
+            pl = prev_point_lights.lights[payload.primitive_id];
+            uint new_id = point_light_map_forward.array[payload.primitive_id];
             if(new_id == 0xFFFFFFFFu)
             {
                 candidate.instance_id = NULL_INSTANCE_ID;
@@ -822,50 +815,49 @@ bool get_intersection_info(
         }
         else
 #endif
-        pl = point_lights.array[payload.primitive_index];
+        pl = point_lights.lights[payload.primitive_id];
 
-        vec2 radius_and_cutoff_radius = unpackHalf2x16(pl.radius_and_cutoff_radius);
         // No worries, radius cannot be zero -- we couldn't hit the light here
         // if it was!
-        float radius = radius_and_cutoff_radius.x;
+        float radius = pl.radius;
 
-        vec3 pos = vec3(pl.pos_x, pl.pos_y, pl.pos_z);
-        vec3 hit_pos = ray_origin + ray_direction * payload.hit_attribs.x;
+        vec3 hit_pos = ray_origin + ray_direction * payload.barycentrics.x;
 
-        info.light = rgbe_to_rgb(pl.color) / (M_PI * radius * radius);
+        info.light = pl.color / (M_PI * radius * radius);
         info.local_pdf = sample_point_light_pdf(pl, ray_origin);
-        info.vd.flat_normal = normalize(hit_pos-pos);
+        info.vd.hard_normal = normalize(hit_pos-pl.pos);
         info.vd.pos = hit_pos;
 
         candidate.instance_id = POINT_LIGHT_INSTANCE_ID;
-        candidate.primitive_id = payload.primitive_index;
-        candidate.hit_info = octahedral_encode(info.vd.flat_normal) * 0.5f + 0.5f;
+        candidate.primitive_id = payload.primitive_id;
+        candidate.hit_info = octahedral_pack(info.vd.hard_normal) * 0.5f + 0.5f;
         candidate.radiance_estimate = info.light;
         return false;
     }
 #endif
     else
     { // Miss
-        vec3 sample_dir = quat_rotate(scene_params.envmap_orientation, ray_direction);
-        info.light = scene_params.envmap_index >= 0 ?
-            textureLod(cube_textures[scene_params.envmap_index], sample_dir, 0.0f).rgb :
-            vec3(0);
+        vec4 color = scene_metadata.environment_factor;
+        if(scene_metadata.environment_proj >= 0)
+        {
+            vec2 uv = vec2(0);
+            uv.y = asin(-ray_direction.y)/M_PI+0.5f;
+            uv.x = atan(ray_direction.z, ray_direction.x)/(2*M_PI)+0.5f;
+            color.rgb *= texture(environment_map_tex, uv).rgb;
+        }
 
-        info.envmap_pdf = scene_params.envmap_index >= 0 ? sample_environment_map_pdf(sample_dir) : 0.0f;
-
+        info.envmap_pdf = scene_metadata.environment_proj >= 0 ? sample_environment_map_pdf(ray_direction) : 0.0f;
         info.local_pdf = 0;
 #ifndef SHADE_ALL_EXPLICIT_LIGHTS
-        // Directional lights don't generate vertices when they're rasterized.
-        for(uint i = 0; i < scene_params.directional_light_count; ++i)
+        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
         {
-            directional_light light = directional_lights.array[i];
-            vec3 dir;
-            vec3 color;
-            get_directional_light_info(light, dir, color);
-            float visible = step(1-dot(ray_direction, dir), light.solid_angle);
-            float pdf = sample_directional_light_pdf(light);
-            info.light += visible * color * (pdf == 0.0f ? 1.0f : pdf);
-            info.local_pdf += visible * pdf;
+            directional_light dl = directional_lights.lights[i];
+            if(dl.dir_cutoff >= 1.0f)
+                continue;
+            float visible = step(dl.dir_cutoff, dot(ray_direction, -dl.dir));
+            vec3 color = visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
+            info.light += color;
+            info.local_pdf += visible * sample_directional_light_pdf(dl);
         }
 #endif
 
@@ -873,7 +865,7 @@ bool get_intersection_info(
         // lights, which can and do overlap with the envmap.
         candidate.instance_id = ENVMAP_INSTANCE_ID;
         candidate.primitive_id = 0;
-        candidate.hit_info = octahedral_encode(ray_direction) * 0.5f + 0.5f;
+        candidate.hit_info = octahedral_pack(ray_direction) * 0.5f + 0.5f;
         candidate.radiance_estimate = info.light;
         info.vd.pos = ray_origin + TR_RESTIR.max_ray_dist * ray_direction;
         return false;
@@ -887,9 +879,9 @@ bool trace_ray(
     out intersection_info info,
     out reconnection_vertex candidate
 ){
-    payload.seed = seed;
+    payload.random_seed = seed;
     traceRayEXT(
-        scene_tlas,
+        tlas,
 #ifdef STOCHASTIC_ALPHA_BLENDING
         gl_RayFlagsNoneEXT,
 #else
@@ -917,10 +909,10 @@ bool trace_prev_ray(
     out intersection_info info,
     out reconnection_vertex candidate
 ){
-    payload.seed = seed;
+    payload.random_seed = seed;
 #ifdef ASSUME_UNCHANGED_ACCELERATION_STRUCTURES
     traceRayEXT(
-        scene_tlas,
+        tlas,
 #ifdef STOCHASTIC_ALPHA_BLENDING
         gl_RayFlagsNoneEXT,
 #else
@@ -939,7 +931,7 @@ bool trace_prev_ray(
     return get_intersection_info(origin, dir, payload, false, info, candidate);
 #else
     traceRayEXT(
-        scene_prev_tlas,
+        prev_tlas,
         gl_RayFlagsOpaqueEXT,
         RAY_MASK,
         0,
@@ -956,6 +948,163 @@ bool trace_prev_ray(
 }
 #endif
 
+struct light_sample
+{
+    bool infinitesimal;
+    vec3 color;
+    vec3 dir;
+    float dist;
+    float pdf;
+    uint instance_id;
+    uint primitive_id;
+    vec2 hit_info;
+    vec3 normal;
+};
+
+// Warning: does NOT update the seed! You need to do that yourself.
+light_sample sample_light(
+    uvec4 rand32,
+    vec3 pos,
+    float min_dist,
+    float max_dist
+){
+    float point_prob, triangle_prob, dir_prob, envmap_prob;
+    get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
+
+    light_sample ls;
+    ls.color = vec3(0);
+
+    vec4 u = ldexp(vec4(rand32), ivec4(-32));
+
+    ls.instance_id = NULL_INSTANCE_ID;
+    ls.normal = vec3(0);
+    ls.dist = max_dist;
+
+    float local_pdf = 0.0f;
+    if((u.x -= point_prob) < 0)
+    { // Point light
+        ls.instance_id = POINT_LIGHT_INSTANCE_ID;
+        float weight = 0;
+        random_sample_point_light(pos, u.y, int(scene_metadata.point_light_count), weight, ls.primitive_id);
+
+        ls.pdf = point_prob / weight;
+
+        point_light pl = point_lights.lights[ls.primitive_id];
+        sample_point_light(pl, u.zw, pos, ls.dir, ls.dist, ls.color, local_pdf);
+
+        vec3 p = pos + ls.dir * ls.dist;
+        ls.normal = normalize(p - pl.pos);
+        ls.hit_info = octahedral_pack(ls.normal) * 0.5f + 0.5f;
+        if(local_pdf == 0.0f) ls.normal = vec3(0);
+    }
+    else if((u.x -= triangle_prob) < 0)
+    { // triangle light
+        int selected_index = clamp(int(u.y*scene_metadata.tri_light_count), 0, int(scene_metadata.tri_light_count-1));
+
+        ls.pdf = triangle_prob / max(scene_metadata.tri_light_count, 1);
+
+        tri_light tl = tri_lights.lights[selected_index];
+
+        ls.instance_id = tl.instance_id;
+        ls.primitive_id = tl.primitive_id;
+
+        vec3 A = tl.pos[0]-pos;
+        vec3 B = tl.pos[1]-pos;
+        vec3 C = tl.pos[2]-pos;
+
+        ls.dir = sample_triangle_light(u.zw, A, B, C, local_pdf);
+        ls.dist = ray_plane_intersection_dist(ls.dir, A, B, C);
+        vec3 bary = get_barycentric_coords(ls.dir*ls.dist, A, B, C);
+        ls.hit_info = bary.yz;
+        ls.dist -= min_dist;
+
+        ls.color = r9g9b9e5_to_rgb(tl.emission_factor);
+        if(tl.emission_tex_id >= 0)
+        { // Textured emissive triangle, so read texture.
+            vec2 uv =
+                bary.x * unpackHalf2x16(tl.uv[0]) +
+                bary.y * unpackHalf2x16(tl.uv[1]) +
+                bary.z * unpackHalf2x16(tl.uv[2]);
+            ls.color *= texture(textures[nonuniformEXT(tl.emission_tex_id)], uv).rgb;
+        }
+
+        ls.normal = normalize(cross(
+            tl.pos[2] - tl.pos[0],
+            tl.pos[1] - tl.pos[0]
+        ));
+
+        // TODO: Check this condition if ReSTIR is doing NaNs with triangle
+        // lights! May still need the flat normal check or something else
+        // that is equivalent! ls.normal?
+        if(
+            isinf(local_pdf) || local_pdf <= 0 || any(isnan(ls.dir)) ||
+            ls.dist < min_dist // || abs(dot(ls.dir, d.flat_normal)) < 1e-4f
+        ){
+            ls.instance_id = NULL_INSTANCE_ID;
+        }
+    }
+    else if((u.x -= dir_prob) < 0)
+    { // Directional light
+        int selected_index = clamp(
+            int(u.y * scene_metadata.directional_light_count),
+            0, int(scene_metadata.directional_light_count)-1
+        );
+        directional_light dl = directional_lights.lights[selected_index];
+
+        sample_directional_light(dl, u.zw, ls.dir, ls.color, local_pdf);
+        ls.instance_id = DIRECTIONAL_LIGHT_INSTANCE_ID;
+        ls.primitive_id = selected_index;
+        ls.hit_info = octahedral_pack(ls.dir) * 0.5f + 0.5f;
+
+        ls.pdf = dir_prob / scene_metadata.directional_light_count;
+    }
+    else if((u.x -= envmap_prob) < 0)
+    { // Envmap
+        rand32 += uvec4(12); // Make 'values' not correlate with future RNG samples
+        pcg4d(rand32);
+        ls.color = sample_environment_map(rand32.xyz, ls.dir, ls.dist, local_pdf);
+
+        ls.instance_id = ENVMAP_INSTANCE_ID;
+        ls.primitive_id = 0;
+        ls.hit_info = octahedral_pack(ls.dir) * 0.5f + 0.5f;
+
+        ls.pdf = envmap_prob;
+    }
+
+    ls.infinitesimal = local_pdf == 0;
+    if(!ls.infinitesimal) ls.pdf *= local_pdf;
+
+    return ls;
+}
+
+float calculate_light_pdf(
+    uint instance_id,
+    uint primitive_id,
+    float local_pdf,
+    float envmap_pdf
+){
+    float point_prob, triangle_prob, dir_prob, envmap_prob;
+    get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
+
+    if(
+        instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID ||
+        instance_id == ENVMAP_INSTANCE_ID
+    ){
+        return local_pdf * dir_prob / max(scene_metadata.directional_light_count, 1u) + envmap_pdf * envmap_prob;
+    }
+    else if(instance_id == NULL_INSTANCE_ID || local_pdf == 0)
+        return 0;
+    else if(instance_id == POINT_LIGHT_INSTANCE_ID)
+    {
+        return local_pdf * point_prob / max(scene_metadata.point_light_count, 1u);
+    }
+    else
+    { // Tri light
+        return local_pdf * triangle_prob / max(scene_metadata.tri_light_count, 1u);
+    }
+    return 0;
+}
+
 bool generate_nee_vertex(
     uvec4 rand32,
     domain d,
@@ -968,17 +1117,15 @@ bool generate_nee_vertex(
     light_sample ls = sample_light(
         rand32,
         d.pos,
-        d.tbn[2],
-        d.mat.transmission,
         TR_RESTIR.min_ray_dist,
         TR_RESTIR.max_ray_dist
     );
 
-    if(ls.link.instance_id == POINT_LIGHT_INSTANCE_ID && ls.infinitesimal)
+    if(ls.instance_id == POINT_LIGHT_INSTANCE_ID && ls.infinitesimal)
         ls.color /= ls.dist * ls.dist;
 
-    vertex.instance_id = ls.link.instance_id;
-    vertex.primitive_id = ls.link.primitive_id;
+    vertex.instance_id = ls.instance_id;
+    vertex.primitive_id = ls.primitive_id;
     vertex.hit_info = ls.hit_info;
     vertex.radiance_estimate = ls.color;
     // Incident direction is not reported from here, it's filled by the caller
@@ -1007,20 +1154,15 @@ bool generate_bsdf_vertex(
         in_past ? trace_prev_ray(rand32.w, cur_domain.pos, dir, info, vertex) :
 #endif
         trace_ray(rand32.w, cur_domain.pos, dir, info, vertex);
-    light_link link;
-    link.instance_id = vertex.instance_id;
-    link.primitive_id = vertex.primitive_id;
     nee_pdf = calculate_light_pdf(
-        link, info.local_pdf, info.envmap_pdf,
-        cur_domain.pos, cur_domain.tbn[2],
-        cur_domain.mat.transmission
+        vertex.instance_id, vertex.primitive_id, info.local_pdf, info.envmap_pdf
     );
 
     next_domain.mat = info.mat;
     next_domain.mat.emission = vertex.radiance_estimate;
     next_domain.pos = info.vd.pos;
-    next_domain.tbn = info.vd.tangent_space;
-    next_domain.flat_normal = info.vd.flat_normal;
+    next_domain.tbn = mat3(info.vd.tangent, info.vd.bitangent, info.vd.mapped_normal);
+    next_domain.flat_normal = info.vd.hard_normal;
     next_domain.view = dir;
     next_domain.tview = view_to_tangent_space(next_domain.view, next_domain.tbn);
 
@@ -1050,11 +1192,11 @@ bool replay_path_nee_leaf(
         return false;
 
     reconnected = allow_reconnection(reconnect_scale, candidate_dist, src.mat, false, head_allows_reconnection);
-    
+
     rand32.w += 7u;
     vec3 tdir = candidate_dir * src.tbn;
-    bsdf_lobes lobes;
-    float bsdf_pdf = full_bsdf_pdf(src.mat, tdir, src.tview, lobes);
+    vec3 d, s;
+    float bsdf_pdf = material_bsdf_pdf(rdir, src.tview, src.mat, d, s);
 
     path_throughput *= get_bounce_throughput(
         bounce_index, src, candidate_dir, lobes, primary_bsdf
@@ -1219,7 +1361,7 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
             return;
 
         rand32.w += 7u;
-        float visibility = 
+        float visibility =
             self_shadow(-tail_domain.view, tail_domain.flat_normal, candidate_dir, tail_domain.mat) *
             test_visibility(rand32.w, tail_domain.pos, candidate_dir, candidate_dist, tail_domain.flat_normal);
 
@@ -1236,7 +1378,7 @@ bool reconnection_shift_map(
 #ifdef RESTIR_TEMPORAL
     // If true, rs is defined in the current frame and is shifted into the
     // previous frame.
-    // If false, rs is defined in the previous frame and is shifted into the 
+    // If false, rs is defined in the previous frame and is shifted into the
     // current frame.
     bool cur_to_prev,
 #endif
@@ -1320,7 +1462,7 @@ bool reconnection_shift_map(
     bsdf_lobes lobes;
     full_bsdf(to_domain.mat, tdir, to_domain.tview, lobes);
 
-    contribution = 
+    contribution =
         get_bounce_throughput(0, to_domain, reconnect_ray_dir, lobes, primary_bsdf) * emission;
 
     if(do_visibility_test)
@@ -1349,7 +1491,7 @@ bool random_replay_shift_map(
 #ifdef RESTIR_TEMPORAL
     // If true, rs is defined in the current frame and is shifted into the
     // previous frame.
-    // If false, rs is defined in the previous frame and is shifted into the 
+    // If false, rs is defined in the previous frame and is shifted into the
     // current frame.
     bool cur_to_prev,
 #endif
@@ -1399,7 +1541,7 @@ bool hybrid_shift_map(
 #ifdef RESTIR_TEMPORAL
     // If true, rs is defined in the current frame and is shifted into the
     // previous frame.
-    // If false, rs is defined in the previous frame and is shifted into the 
+    // If false, rs is defined in the previous frame and is shifted into the
     // current frame.
     bool cur_to_prev,
 #endif
@@ -1565,7 +1707,7 @@ bool shift_map(
 #ifdef RESTIR_TEMPORAL
     // If true, rs is defined in the current frame and is shifted into the
     // previous frame.
-    // If false, rs is defined in the previous frame and is shifted into the 
+    // If false, rs is defined in the previous frame and is shifted into the
     // current frame.
     bool cur_to_prev,
 #endif
@@ -1672,6 +1814,38 @@ ivec2 spatial_candidate_pos(
     return spatial_candidate_pos(
         p, size, scs, camera_index, sample_index, candidate_index, (key >> (candidate_index*2u))&3
     );
+}
+
+float mis_canonical(
+    float canonical_confidence,
+    float other_confidence,
+    float total_confidence,
+    float canonical_target_function_value,
+    float canonical_in_other_target_function_value,
+    float jacobian_canonical_to_other
+){
+    if(canonical_target_function_value == 0)
+        return 0.0f;
+
+    float w = canonical_confidence * canonical_target_function_value;
+    return (other_confidence / total_confidence) * w /
+        (w + (total_confidence - canonical_confidence) * canonical_in_other_target_function_value * jacobian_canonical_to_other);
+}
+
+float mis_noncanonical(
+    float canonical_confidence,
+    float other_confidence,
+    float total_confidence,
+    float other_target_function_value,
+    float other_in_canonical_target_function_value,
+    float jacobian_other_to_canonical
+){
+    if(other_target_function_value == 0)
+        return 0.0f;
+
+    float w = (total_confidence - canonical_confidence) * other_target_function_value;
+    return (other_confidence / total_confidence) * w /
+        (w + canonical_confidence * other_in_canonical_target_function_value * jacobian_other_to_canonical);
 }
 
 #endif

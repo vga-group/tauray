@@ -41,6 +41,17 @@ struct shadow_map_cascade
     vec4 rect;
 };
 
+struct shadow_mapping_parameters
+{
+    vec2 shadow_map_atlas_pixel_margin;
+    float pcss_minimum_radius;
+    float noise_scale;
+    int pcf_samples;
+    int omni_pcf_samples;
+    int pcss_samples;
+    int pad[1];
+};
+
 layout(binding = 2, set = SCENE_RASTER_SET, std430) readonly buffer shadow_map_buffer
 {
     shadow_map maps[];

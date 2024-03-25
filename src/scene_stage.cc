@@ -100,7 +100,9 @@ struct point_light_entry
 struct tri_light_entry
 {
     pvec3 pos[3];
-    pvec3 emission_factor;
+    uint32_t emission_factor; // R9G9B9E5
+    uint32_t instance_id;
+    uint32_t primitive_id;
     uint32_t uv[3];
     int emission_tex_id;
 };
