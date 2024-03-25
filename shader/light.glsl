@@ -29,7 +29,9 @@ struct point_light
 struct tri_light
 {
     vec3 pos[3];
-    vec3 emission_factor;
+    uint emission_factor; // R9G9B9E5
+    uint instance_id;
+    uint primitive_id;
     uint uv[3];
     int emission_tex_id;
 };
@@ -37,7 +39,7 @@ struct tri_light
 void random_sample_point_light(vec3 world_pos, float u, int item_count, out float selected_weight, out int selected_index)
 {
     selected_index = clamp(int(u * item_count), 0, item_count-1);
-    selected_weight = item_count;
+    selected_weight = max(item_count, 1);
 }
 
 float get_spotlight_intensity(point_light l, vec3 dir)

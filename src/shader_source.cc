@@ -68,27 +68,6 @@ std::string generate_definition_src(
     return ss.str();
 }
 
-void append_shader_bindings(
-    std::vector<vk::DescriptorSetLayoutBinding>& bindings,
-    const shader_source& src
-){
-    for(const auto& i: src.bindings)
-    {
-        bool found = false;
-        for(auto& o: bindings)
-        {
-            if(o.binding == i.binding)
-            {
-                o.stageFlags |= i.stageFlags;
-                o.descriptorCount = max(i.descriptorCount, o.descriptorCount);
-                found = true;
-                break;
-            }
-        }
-        if(!found) bindings.push_back(i);
-    }
-}
-
 void append_shader_pc_ranges(
     std::vector<vk::PushConstantRange>& ranges,
     const shader_source& src
@@ -102,24 +81,6 @@ void append_shader_pc_ranges(
     for(; i < src.push_constant_ranges.size(); ++i)
         ranges.push_back(src.push_constant_ranges[i]);
 }
-
-void append_shader_names(
-    std::map<std::string, uint32_t>& names,
-    const shader_source& src
-){
-    for(const auto& pair: src.binding_names)
-    {
-        auto it = names.find(pair.first);
-        if(it == names.end())
-            names.insert(pair);
-        else if(it->second != pair.second)
-            throw std::runtime_error(
-                "Same variable name has two different bindings: "
-                + it->first + " != " + pair.first
-            );
-    }
-}
-
 
 }
 
@@ -220,13 +181,14 @@ shader_source::shader_source(
         spvReflectEnumerateDescriptorBindings(&mod, &count, bindings.data());
         for(auto* binding: bindings)
         {
-            this->bindings.push_back({
-                binding->binding,
-                vk::DescriptorType(binding->descriptor_type),
-                binding->count,
-                stage
-            });
-            this->binding_names[binding->name] = binding->binding;
+            this->bindings[binding->name] = binding_info{binding->set,
+                vk::DescriptorSetLayoutBinding{
+                    binding->binding,
+                    vk::DescriptorType(binding->descriptor_type),
+                    binding->count,
+                    stage
+                }
+            };
         }
 
         // Determine push constant range
@@ -253,134 +215,6 @@ shader_source::shader_source(
 void shader_source::clear_binary_cache()
 {
     binaries.clear();
-}
-
-std::map<std::string, uint32_t> get_binding_names(const rt_shader_sources& src)
-{
-    std::map<std::string, uint32_t> names;
-    append_shader_names(names, src.rgen);
-
-    for(const rt_shader_sources::hit_group& hg: src.rhit)
-    {
-        append_shader_names(names, hg.rchit);
-        append_shader_names(names, hg.rahit);
-        append_shader_names(names, hg.rint);
-    }
-
-    for(const shader_source& src: src.rmiss)
-        append_shader_names(names, src);
-
-    return names;
-}
-
-std::map<std::string, uint32_t> get_binding_names(const raster_shader_sources& src)
-{
-    std::map<std::string, uint32_t> names;
-    append_shader_names(names, src.vert);
-    append_shader_names(names, src.frag);
-    return names;
-}
-
-std::map<std::string, uint32_t> get_binding_names(const shader_source& compute_src)
-{
-    std::map<std::string, uint32_t> names;
-    append_shader_names(names, compute_src);
-    return names;
-}
-
-std::vector<vk::DescriptorSetLayoutBinding> get_bindings(
-    const rt_shader_sources& src,
-    const std::map<std::string, uint32_t>& count_overrides
-){
-    std::vector<vk::DescriptorSetLayoutBinding> bindings;
-    append_shader_bindings(bindings, src.rgen);
-
-    for(const rt_shader_sources::hit_group& hg: src.rhit)
-    {
-        append_shader_bindings(bindings, hg.rchit);
-        append_shader_bindings(bindings, hg.rahit);
-        append_shader_bindings(bindings, hg.rint);
-    }
-
-    for(const shader_source& s: src.rmiss)
-        append_shader_bindings(bindings, s);
-
-    auto binding_names = get_binding_names(src);
-
-    for(auto pair: count_overrides)
-    {
-        auto it = binding_names.find(pair.first);
-        if(it == binding_names.end())
-            continue;
-
-        for(auto& o: bindings)
-        {
-            if(o.binding == it->second)
-            {
-                o.descriptorCount = pair.second;
-                break;
-            }
-        }
-    }
-
-    return bindings;
-}
-
-std::vector<vk::DescriptorSetLayoutBinding> get_bindings(
-    const raster_shader_sources& src,
-    const std::map<std::string, uint32_t>& count_overrides
-){
-    std::vector<vk::DescriptorSetLayoutBinding> bindings;
-    append_shader_bindings(bindings, src.vert);
-    append_shader_bindings(bindings, src.frag);
-
-    auto binding_names = get_binding_names(src);
-
-    for(auto pair: count_overrides)
-    {
-        auto it = binding_names.find(pair.first);
-        if(it == binding_names.end())
-            continue;
-
-        for(auto& o: bindings)
-        {
-            if(o.binding == it->second)
-            {
-                o.descriptorCount = pair.second;
-                break;
-            }
-        }
-    }
-
-    return bindings;
-}
-
-std::vector<vk::DescriptorSetLayoutBinding> get_bindings(
-    const shader_source& compute_src,
-    const std::map<std::string, uint32_t>& count_overrides
-){
-    std::vector<vk::DescriptorSetLayoutBinding> bindings;
-    append_shader_bindings(bindings, compute_src);
-
-    auto binding_names = get_binding_names(compute_src);
-
-    for(auto pair: count_overrides)
-    {
-        auto it = binding_names.find(pair.first);
-        if(it == binding_names.end())
-            continue;
-
-        for(auto& o: bindings)
-        {
-            if(o.binding == it->second)
-            {
-                o.descriptorCount = pair.second;
-                break;
-            }
-        }
-    }
-
-    return bindings;
 }
 
 std::vector<vk::PushConstantRange>

@@ -20,25 +20,6 @@ struct pt_vertex_data
     int instance_id;
 };
 
-struct hit_payload
-{
-    // Needed by anyhit alpha handling.
-    uint random_seed;
-
-    // Negative if the ray escaped the scene or otherwise died. Otherwise, it's
-    // the index of the mesh instance, and primitive_id and barycentrics are
-    // valid as well.
-    int instance_id;
-    // If instance_id is non-negative, this is the triangle index. Otherwise,
-    // if primitive_id is non-negative, it is the light index. If it is negative,
-    // that means that the ray escaped the scene and hit the environment map
-    // instead.
-    int primitive_id;
-
-    // Barycentric coordinates to the triangle that was hit.
-    vec2 barycentrics;
-};
-
 struct intersection_pdf
 {
     float point_light_pdf;
@@ -47,11 +28,9 @@ struct intersection_pdf
     float envmap_pdf;
 };
 
-#ifdef TLAS_BINDING
 #include "ggx.glsl"
 
-layout(location = 0) rayPayloadEXT hit_payload payload;
-layout(location = 1) rayPayloadEXT float shadow_visibility;
+#include "rt_common_payload.glsl"
 
 float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
 {
@@ -251,7 +230,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
         vec3 B = tl.pos[1]-pos;
         vec3 C = tl.pos[2]-pos;
 
-        vec3 color = tl.emission_factor;
+        vec3 color = r9g9b9e5_to_rgb(tl.emission_factor);
 
         float tri_pdf = 0.0f;
         out_dir = sample_triangle_light(u.xy, A, B, C, tri_pdf);
@@ -350,7 +329,6 @@ void next_event_estimation(
         diffuse_radiance += d * contrib;
         specular_radiance += s * contrib;
     }
-#endif
 }
 
 // This is used to remove invalid ray directions, which are caused by normal
@@ -437,15 +415,7 @@ void evaluate_ray(
 #endif
 
         mat3 tbn = create_tangent_space(v.mapped_normal);
-        vec3 shading_view = -view * tbn;
-
-        // A lot of the stuff below assumes that the view direction is on the same
-        // side as the normal. If not, everything breaks. Which is why this check
-        // exists. Normal maps can cause these degenerate cases.
-        if(shading_view.z < 0.00001f)
-            shading_view = vec3(shading_view.xy, max(shading_view.z, 0.00001f));
-
-        shading_view = normalize(shading_view);
+        vec3 shading_view = view_to_tangent_space(view, tbn);
 
         if(!terminal)
         {
@@ -510,7 +480,6 @@ void evaluate_ray(
 
 #endif
 
-#ifdef CAMERA_DATA_BINDING
 void get_world_camera_ray(inout local_sampler lsampler, out vec3 origin, out vec3 dir)
 {
     vec2 cam_offset = vec2(0.0);
@@ -584,7 +553,5 @@ void write_all_outputs(
         }
     }
 }
-#endif
 
 #endif
-

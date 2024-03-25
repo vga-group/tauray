@@ -30,4 +30,22 @@ struct sampled_material
     float shadow_terminator_mul;
 };
 
+#define MATERIAL_LOBE_REFLECTION 2
+#define MATERIAL_LOBE_TRANSMISSION 1
+#define MATERIAL_LOBE_DIFFUSE 0
+#define MATERIAL_LOBE_ALL -1
+
+struct bsdf_lobes
+{
+    float transmission;
+    float diffuse;
+    float dielectric_reflection;
+    float metallic_reflection;
+};
+
+vec3 modulate_bsdf(sampled_material mat, bsdf_lobes bsdf)
+{
+    return mat.albedo.rgb * (bsdf.metallic_reflection + bsdf.transmission + bsdf.diffuse) + bsdf.dielectric_reflection;
+}
+
 #endif

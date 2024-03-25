@@ -9,6 +9,7 @@
 #include "server_context.hh"
 #include "raster_renderer.hh"
 #include "dshgi_renderer.hh"
+#include "restir_renderer.hh"
 #include "dshgi_server.hh"
 #include "frame_client.hh"
 #include "rt_renderer.hh"
@@ -376,6 +377,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     scene_stage::options scene_options;
     scene_options.max_instances = get_instance_count(s);
+    scene_options.max_samplers = get_sampler_count(s);
     scene_options.max_lights = s.count<point_light>() + s.count<spotlight>();
     scene_options.gather_emissive_triangles = has_tri_lights && opt.sample_emissive_triangles > 0;
     scene_options.pre_transform_vertices = opt.pre_transform_vertices;
@@ -386,8 +388,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     rt_camera_stage::options rc_opt;
     s.foreach([&](camera& cam){ rc_opt.projection = cam.get_projection_type(); });
-    rc_opt.max_instances = scene_options.max_instances;
-    rc_opt.max_samplers = get_sampler_count(s);
     rc_opt.min_ray_dist = opt.min_ray_dist;
     rc_opt.max_ray_depth = opt.max_ray_depth;
     rc_opt.samples_per_pass = min(opt.samples_per_pass, opt.samples_per_pixel);
@@ -398,7 +398,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.rng_seed = opt.rng_seed;
     rc_opt.local_sampler = opt.sampler;
     rc_opt.transparent_background = opt.transparent_background;
-    rc_opt.pre_transformed_vertices = opt.pre_transform_vertices;
     rc_opt.active_viewport_count =
         opt.spatial_reprojection.size() == 0 ?
         ctx.get_display_count() :
@@ -417,6 +416,12 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     sampling_weights.directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
     sampling_weights.envmap = get_environment_map(s) ? opt.sample_envmap : 0.0f;
     sampling_weights.emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
+
+    shadow_map_filter sm_filter;
+    sm_filter.pcf_samples = min(opt.pcf, 64);
+    sm_filter.omni_pcf_samples = min(opt.pcf, 64);
+    sm_filter.pcss_samples = min(opt.pcss, 64);
+    sm_filter.pcss_minimum_radius = opt.pcss_minimum_radius;
 
     auto_assign_shadow_maps(
         s,
@@ -545,29 +550,15 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     rt_opt.distribution.strategy = DISTRIBUTION_DUPLICATE;
                 return new direct_renderer(ctx, rt_opt);
             }
-        case options::WHITTED:
-            {
-                whitted_renderer::options rt_opt;
-                (rt_camera_stage::options&)rt_opt = rc_opt;
-                rt_opt.post_process.tonemap = tonemap;
-                rt_opt.scene_options = scene_options;
-                if(opt.taa.sequence_length != 0)
-                    rt_opt.post_process.taa = taa;
-                return new whitted_renderer(ctx, rt_opt);
-            }
         case options::RASTER:
             {
                 raster_renderer::options rr_opt;
-                rr_opt.max_samplers = get_sampler_count(s);
                 rr_opt.msaa_samples = opt.samples_per_pixel;
                 rr_opt.sample_shading = opt.sample_shading;
                 if(opt.taa.sequence_length != 0)
                     rr_opt.post_process.taa = taa;
                 rr_opt.post_process.tonemap = tonemap;
-                rr_opt.pcf_samples = min(opt.pcf, 64);
-                rr_opt.omni_pcf_samples = min(opt.pcf, 64);
-                rr_opt.pcss_samples = min(opt.pcss, 64);
-                rr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
+                rr_opt.filter = sm_filter;
                 rr_opt.z_pre_pass = opt.use_z_pre_pass;
                 rr_opt.scene_options = scene_options;
                 return new raster_renderer(ctx, rr_opt);
@@ -592,13 +583,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if(opt.taa.sequence_length != 0)
                     dr_opt.post_process.taa = taa;
                 dr_opt.post_process.tonemap = tonemap;
-                dr_opt.max_samplers = get_sampler_count(s);
                 dr_opt.msaa_samples = opt.samples_per_pixel;
                 dr_opt.sample_shading = opt.sample_shading;
-                dr_opt.pcf_samples = min(opt.pcf, 64);
-                dr_opt.omni_pcf_samples = min(opt.pcf, 64);
-                dr_opt.pcss_samples = min(opt.pcss, 64);
-                dr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
+                dr_opt.filter = sm_filter;
                 dr_opt.z_pre_pass = opt.use_z_pre_pass;
                 dr_opt.scene_options = scene_options;
                 dr_opt.scene_options.alloc_sh_grids = true;
@@ -631,13 +618,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.post_process.tonemap = tonemap;
                 if(opt.taa.sequence_length != 0)
                     dr_opt.post_process.taa = taa;
-                dr_opt.max_samplers = get_sampler_count(s);
                 dr_opt.msaa_samples = opt.samples_per_pixel;
                 dr_opt.sample_shading = opt.sample_shading;
-                dr_opt.pcf_samples = min(opt.pcf, 64);
-                dr_opt.omni_pcf_samples = min(opt.pcf/2, 64);
-                dr_opt.pcss_samples = min(opt.pcss, 64);
-                dr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
+                dr_opt.filter = sm_filter;
                 dr_opt.z_pre_pass = opt.use_z_pre_pass;
                 dr_opt.scene_options = scene_options;
                 dr_opt.scene_options.alloc_sh_grids = true;
@@ -660,6 +643,14 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.post_process.tonemap = tonemap;
 
                 return new restir_di_renderer(ctx, re_opt);
+            }
+        case options::RESTIR:
+            {
+                restir_renderer::options re_opt;
+                re_opt.scene_options = scene_options;
+                re_opt.tonemap_options = tonemap;
+                re_opt.sm_filter = sm_filter;
+                return new restir_renderer(ctx, re_opt);
             }
         };
     }

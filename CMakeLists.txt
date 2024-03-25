@@ -81,7 +81,7 @@ add_library(tauray-core STATIC
   src/compute_pipeline.cc
   src/context.cc
   src/dependency.cc
-  src/descriptor_state.cc
+  src/descriptor_set.cc
   src/device.cc
   src/device_transfer.cc
   src/direct_stage.cc
@@ -91,12 +91,12 @@ add_library(tauray-core STATIC
   src/dshgi_client.cc
   src/environment_map.cc
   src/envmap_stage.cc
-  src/example_denoiser_stage.cc
   src/feature_stage.cc
   src/frame_client.cc
   src/frame_delay_stage.cc
   src/frame_server.cc
   src/gbuffer.cc
+  src/gbuffer_copy_stage.cc
   src/gltf.cc
   src/gpu_buffer.cc
   src/headless.cc
@@ -123,7 +123,9 @@ add_library(tauray-core STATIC
   src/raster_renderer.cc
   src/rectangle_packer.cc
   src/render_target.cc
+  src/restir_stage.cc
   src/restir_di_stage.cc
+  src/restir_renderer.cc
   src/rt_camera_stage.cc
   src/rt_common.cc
   src/rt_pipeline.cc
@@ -154,7 +156,6 @@ add_library(tauray-core STATIC
   src/tracing.cc
   src/transformable.cc
   src/vkm.cc
-  src/whitted_stage.cc
   src/window.cc
   src/z_pass_stage.cc
 )

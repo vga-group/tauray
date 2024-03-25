@@ -3,6 +3,7 @@
 #include "stage.hh"
 #include "gbuffer.hh"
 #include "compute_pipeline.hh"
+#include "descriptor_set.hh"
 #include "timer.hh"
 #include "scene_stage.hh"
 
@@ -41,8 +42,11 @@ public:
     void record_command_buffers();
 
 private:
+    push_descriptor_set atrous_desc;
     compute_pipeline atrous_comp;
+    push_descriptor_set temporal_desc;
     compute_pipeline temporal_comp;
+    push_descriptor_set estimate_variance_desc;
     compute_pipeline estimate_variance_comp;
     options opt;
     gbuffer_target input_features;

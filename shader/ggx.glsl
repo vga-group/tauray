@@ -1,7 +1,6 @@
 #ifndef GGX_GLSL
 #define GGX_GLSL
 #include "material.glsl"
-#include "sampling.glsl"
 
 // All terms except the Fresnel term are directly from the GGX paper:
 // http://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf

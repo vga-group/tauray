@@ -55,20 +55,8 @@ layout(binding = 31, set = 0, rg16) uniform image2DArray light_data_uni;
 layout(binding = 32, set = 0, rg16_snorm) uniform image2DArray previous_normal_data;
 layout(binding = 33, set = 0, rgba32f) uniform image2DArray previous_pos_data;
 
-struct hit_payload
-{
-    uint random_seed;
-    int instance_id;
-    int primitive_id;
-    vec2 barycentrics;
-};
-
-
-#ifdef TLAS_BINDING
 #include "ggx.glsl"
-
-layout(location = 0) rayPayloadEXT hit_payload payload;
-layout(location = 1) rayPayloadEXT float shadow_visibility;
+#include "rt_common_payload.glsl"
 
 float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
 {
@@ -206,7 +194,7 @@ vec3 light_contribution(
         dist2 = dot(pos, pos);
         normal = normalize(cross(tl.pos[2]-tl.pos[0], tl.pos[1]-tl.pos[0]));
 
-        vec3 color = tl.emission_factor;
+        vec3 color = r9g9b9e5_to_rgb(tl.emission_factor);
 
         if(abs(dot(dir, normal)) < 0.001)
             color = vec3(0);
@@ -544,5 +532,4 @@ float mis_noncanonical(
         (w + canonical_confidence * other_in_canonical_target_function_value * jacobian_other_to_canonical);
 }
 
-#endif
 #endif

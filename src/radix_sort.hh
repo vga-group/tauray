@@ -2,6 +2,7 @@
 #define TAURAY_RADIX_SORT_HH
 #include "vkm.hh"
 #include "compute_pipeline.hh"
+#include "descriptor_set.hh"
 
 namespace tr
 {
@@ -31,6 +32,7 @@ public:
 private:
     device* dev;
     void* rs_instance;
+    push_descriptor_set desc;
     compute_pipeline reorder;
 };
 

@@ -1,5 +1,6 @@
 #ifndef RT_GLSL
 #define RT_GLSL
+#define RAY_TRACING
 #include "scene.glsl"
 #include "gbuffer.glsl"
 
@@ -23,14 +24,13 @@ layout(binding = DISTRIBUTION_DATA_BINDING, set = 0) uniform distribution_data_b
 // I would prefer this to be INF, but it's hard to write in glsl.
 #define RAY_MAX_DIST float(1e39)
 
-#if defined(SCENE_DATA_BUFFER_BINDING) && defined(VERTEX_BUFFER_BINDING) && defined(INDEX_BUFFER_BINDING)
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
 vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, vec3 pos, out float pdf)
 #else
 vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_id, int primitive_id)
 #endif
 {
-    instance o = scene.o[instance_id];
+    instance o = instances.o[instance_id];
     ivec3 i = ivec3(
         indices[nonuniformEXT(instance_id)].i[3*primitive_id+0],
         indices[nonuniformEXT(instance_id)].i[3*primitive_id+1],
@@ -94,7 +94,7 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
 
 void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id, int primitive_id, out vec2 uv)
 {
-    instance o = scene.o[instance_id];
+    instance o = instances.o[instance_id];
     ivec3 i = ivec3(
         indices[nonuniformEXT(instance_id)].i[3*primitive_id+0],
         indices[nonuniformEXT(instance_id)].i[3*primitive_id+1],
@@ -110,7 +110,7 @@ void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id
 
 sampled_material sample_material(int instance_id, inout vertex_data v)
 {
-    instance o = scene.o[instance_id];
+    instance o = instances.o[instance_id];
     material mat = o.mat;
     sampled_material res = sample_material(mat, v);
     res.shadow_terminator_mul = o.shadow_terminator_mul;
@@ -119,15 +119,13 @@ sampled_material sample_material(int instance_id, inout vertex_data v)
 
 bool is_material_skippable(int instance_id, vec2 uv, float alpha_cutoff)
 {
-    material mat = scene.o[instance_id].mat;
+    material mat = instances.o[instance_id].mat;
     vec4 albedo = mat.albedo_factor;
     if(mat.albedo_tex_id >= 0)
         albedo *= texture(textures[nonuniformEXT(mat.albedo_tex_id)], uv);
 
     return (albedo.a <= alpha_cutoff);
 }
-
-#endif
 
 // A workaround for the shadow terminator problem, the idea is from
 // the Appleseed renderer. This is not physically based, so it's easy to
@@ -143,7 +141,6 @@ void shadow_terminator_fix(inout vec3 diffuse, inout vec3 specular, float cos_l,
 #endif
 }
 
-#if defined(CAMERA_DATA_BINDING) && defined(DISTRIBUTION_DATA_BINDING)
 camera_data get_camera()
 {
     return camera.pairs[gl_LaunchIDEXT.z].current;
@@ -154,6 +151,7 @@ camera_data get_prev_camera()
     return camera.pairs[gl_LaunchIDEXT.z].previous;
 }
 
+#ifdef DISTRIBUTION_DATA_BINDING
 #if DISTRIBUTION_STRATEGY == 2
 //Permute region for the pixel i
 uint permute_region_id(uint i)
@@ -167,7 +165,7 @@ uint permute_region_id(uint i)
 
 ivec2 get_pixel_pos()
 {
-#if DISTRIBUTION_STRATEGY == 0
+#if !defined(DISTRIBUTION_STRATEGY) || DISTRIBUTION_STRATEGY == 0
     return ivec2(gl_LaunchIDEXT.xy);
 #elif DISTRIBUTION_STRATEGY == 1
     return ivec2(
@@ -184,7 +182,7 @@ ivec2 get_pixel_pos()
 
 ivec3 get_write_pixel_pos(in camera_data cam)
 {
-#if DISTRIBUTION_STRATEGY == 0
+#if !defined(DISTRIBUTION_STRATEGY) || DISTRIBUTION_STRATEGY == 0
     return ivec3(gl_LaunchIDEXT.xyz);
 #elif DISTRIBUTION_STRATEGY == 1
     uvec3 write_pos = gl_LaunchIDEXT.xyz;
@@ -210,7 +208,7 @@ ivec3 get_write_pixel_pos(in camera_data cam)
 
 uvec2 get_screen_size()
 {
-#if DISTRIBUTION_STRATEGY == 0
+#if !defined(DISTRIBUTION_STRATEGY) || DISTRIBUTION_STRATEGY == 0
     return uvec2(gl_LaunchSizeEXT.xy);
 #else
     return distribution.size;
@@ -234,8 +232,6 @@ void get_screen_camera_ray(in camera_data cam, vec2 pixel_offset, out vec3 origi
 }
 #endif
 
-#ifdef SCENE_METADATA_BUFFER_BINDING
-#ifdef ENVIRONMENT_MAP_ALIAS_TABLE_BINDING
 // Based on CC0 code from https://gist.github.com/juliusikkala/6c8c186f0150fe877a55cee4d266b1b0
 vec3 sample_environment_map(
     uvec3 rand,
@@ -287,7 +283,6 @@ float sample_environment_map_pdf(vec3 dir)
     }
     else return 1.0f / (4.0f * M_PI);
 }
-#endif
 
 void get_nee_sampling_probabilities(out float point, out float triangle, out float directional, out float envmap)
 {
@@ -323,7 +318,6 @@ void get_nee_sampling_probabilities(out float point, out float triangle, out flo
     directional *= inv_sum;
     envmap *= inv_sum;
 }
-#endif
 
 #endif
 

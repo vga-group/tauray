@@ -8,9 +8,8 @@ struct random_sampler
     uvec4 seed;
 };
 
-random_sampler init_random_sampler(
-    uvec4 coord, uvec3 size
-){
+random_sampler init_random_sampler(uvec4 coord)
+{
     random_sampler rsampler;
     rsampler.seed = coord;
     rsampler.seed.y ^= pcg(rsampler.seed.x);
@@ -36,6 +35,11 @@ vec4 generate_uniform_random(inout random_sampler rsampler)
 float generate_single_uniform_random(inout uint seed)
 {
     return ldexp(float(pcg(seed)), -32);
+}
+
+vec4 generate_single_uniform_random(inout uvec4 seed)
+{
+    return ldexp(vec4(pcg4d(seed)), ivec4(-32));
 }
 
 // Gives a random color, useful for debugging.
