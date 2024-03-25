@@ -17,14 +17,9 @@ using namespace tr;
 struct push_constant_buffer
 {
     uint32_t instance_id;
-    uint32_t pcf_samples;
-    uint32_t omni_pcf_samples;
-    uint32_t pcss_samples;
     int32_t base_camera_index;
-    float pcss_minimum_radius;
-    float noise_scale;
-    int32_t pad[3];
-    pvec2 shadow_map_atlas_pixel_margin;
+    int32_t pad[2];
+    gpu_shadow_mapping_parameters sm_params;
     pvec3 ambient_color;
 };
 
@@ -172,14 +167,8 @@ void raster_stage::update(uint32_t)
 
             const std::vector<scene_stage::instance>& instances = ss->get_instances();
             push_constant_buffer control;
-            control.pcf_samples = opt.pcf_samples;
-            control.omni_pcf_samples = opt.omni_pcf_samples;
-            control.pcss_samples = opt.pcss_samples;
-            control.pcss_minimum_radius = opt.pcss_minimum_radius;
-            control.noise_scale =
-                opt.sample_shading ? ceil(sqrt((int)output_targets[0].get_msaa())) : 1.0f;
+            control.sm_params = create_shadow_mapping_parameters(opt.filter, *ss);
             control.ambient_color = ss->get_ambient();
-            control.shadow_map_atlas_pixel_margin = ss->get_shadow_map_atlas_pixel_margin();
             control.base_camera_index = j;
 
             for(size_t i = 0; i < instances.size(); ++i)

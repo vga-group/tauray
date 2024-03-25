@@ -230,7 +230,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
         vec3 B = tl.pos[1]-pos;
         vec3 C = tl.pos[2]-pos;
 
-        vec3 color = tl.emission_factor;
+        vec3 color = r9g9b9e5_to_rgb(tl.emission_factor);
 
         float tri_pdf = 0.0f;
         out_dir = sample_triangle_light(u.xy, A, B, C, tri_pdf);

@@ -4,11 +4,19 @@
 #include "projection.glsl"
 #include "poisson_samples_2d.glsl"
 
+#ifndef SHADOW_MAPPING_PARAMS
+#define SHADOW_MAPPING_PARAMS control.sm_params
+#endif
+
+#ifndef SHADOW_MAPPING_SCREEN_COORD
+#define SHADOW_MAPPING_SCREEN_COORD gl_FragCoord.xy
+#endif
+
 // Does bilinear interpolation, handling the atlas and clamping edges properly.
 float shadow_map_bilinear_sample(vec4 rect, vec2 uv, float depth)
 {
-    vec2 min_uv = rect.xy + control.shadow_map_atlas_pixel_margin;
-    vec2 max_uv = rect.xy + rect.zw - control.shadow_map_atlas_pixel_margin;
+    vec2 min_uv = rect.xy + SHADOW_MAPPING_PARAMS.shadow_map_atlas_pixel_margin;
+    vec2 max_uv = rect.xy + rect.zw - SHADOW_MAPPING_PARAMS.shadow_map_atlas_pixel_margin;
     vec2 read_uv = clamp(uv * rect.zw + rect.xy, min_uv, max_uv);
     return texture(shadow_map_atlas_test, vec3(read_uv.x, 1.0f-read_uv.y, depth));
 }
@@ -64,7 +72,7 @@ bool find_cascade(
     float bias
 ){
     rect = sm.rect;
-    radius = control.pcf_samples <= 0 ? vec2(0) : sm.range_radius.zw;
+    radius = SHADOW_MAPPING_PARAMS.pcf_samples <= 0 ? vec2(0) : sm.range_radius.zw;
 
     vec3 q = p.xyz;
     q.z -= bias;
@@ -127,10 +135,10 @@ bool calc_perspective_pcss_radius(
     float avg_z = 0.0f;
     vec2 search_radius = -radius/linear_depth;
 
-    vec2 min_uv = sm.rect.xy+control.shadow_map_atlas_pixel_margin;
-    vec2 max_uv = sm.rect.xy+sm.rect.zw-control.shadow_map_atlas_pixel_margin;
+    vec2 min_uv = sm.rect.xy+SHADOW_MAPPING_PARAMS.shadow_map_atlas_pixel_margin;
+    vec2 max_uv = sm.rect.xy+sm.rect.zw-SHADOW_MAPPING_PARAMS.shadow_map_atlas_pixel_margin;
 
-    for(int i = 0; i < control.pcss_samples; ++i)
+    for(int i = 0; i < SHADOW_MAPPING_PARAMS.pcss_samples; ++i)
     {
         vec2 o = rotation * poisson_disk_samples[i] * search_radius;
         vec2 read_uv = clamp(
@@ -147,7 +155,7 @@ bool calc_perspective_pcss_radius(
     }
 
     float penumbra = (linear_depth * max(occluders, 1.0f) - avg_z)/avg_z;
-    radius = search_radius * (penumbra + control.pcss_minimum_radius);
+    radius = search_radius * (penumbra + SHADOW_MAPPING_PARAMS.pcss_minimum_radius);
 
     // Signal caller that we can give up if there were no blockers.
     return occluders >= 1.0f;
@@ -163,12 +171,12 @@ bool calc_directional_pcss_radius(
 ){
     float occluders = 0.0f;
     float avg_z = 0.0f;
-    vec2 min_uv = rect.xy+control.shadow_map_atlas_pixel_margin;
-    vec2 max_uv = rect.xy+rect.zw-control.shadow_map_atlas_pixel_margin;
+    vec2 min_uv = rect.xy+SHADOW_MAPPING_PARAMS.shadow_map_atlas_pixel_margin;
+    vec2 max_uv = rect.xy+rect.zw-SHADOW_MAPPING_PARAMS.shadow_map_atlas_pixel_margin;
     float z_range = abs(sm.range_radius.y - sm.range_radius.x);
     vec2 search_radius = radius * z_range * (1.0f/20.0f);
 
-    for(int i = 0; i < control.pcss_samples; ++i)
+    for(int i = 0; i < SHADOW_MAPPING_PARAMS.pcss_samples; ++i)
     {
         vec2 o = rotation * poisson_disk_samples[i] * search_radius;
         vec2 read_uv = clamp(
@@ -185,7 +193,7 @@ bool calc_directional_pcss_radius(
     // Instead of dividing avg_z like we should, we can just multiply depth to
     // achieve the same effect.
     float penumbra = (depth * max(occluders, 1.0f) - avg_z)/avg_z;
-    radius = 5.0f * search_radius * penumbra + control.pcss_minimum_radius;
+    radius = 5.0f * search_radius * penumbra + SHADOW_MAPPING_PARAMS.pcss_minimum_radius;
     // Signal caller that we can give up if there were no blockers.
     return occluders >= 1.0f;
 }
@@ -193,13 +201,13 @@ bool calc_directional_pcss_radius(
 float pcf_2d_perspective(shadow_map sm, vec2 uv, vec2 radius, float depth)
 {
     ivec2 noise_pos = ivec2(mod(
-        gl_FragCoord.xy * control.noise_scale,
+        SHADOW_MAPPING_SCREEN_COORD * SHADOW_MAPPING_PARAMS.noise_scale,
         vec2(textureSize(pcf_noise_vector_2d, 0))
     ));
     vec2 cs = texelFetch(pcf_noise_vector_2d, noise_pos, 0).xy;
     mat2 rotation = mat2(cs.x, cs.y, -cs.y, cs.x);
 
-    if(control.pcss_samples > 0)
+    if(SHADOW_MAPPING_PARAMS.pcss_samples > 0)
     {
         if(!calc_perspective_pcss_radius(sm, uv, depth, rotation, radius))
             return 1.0f;
@@ -207,25 +215,25 @@ float pcf_2d_perspective(shadow_map sm, vec2 uv, vec2 radius, float depth)
 
     float shadow = 0.0f;
 
-    for(int i = 0; i < control.pcf_samples; ++i)
+    for(int i = 0; i < SHADOW_MAPPING_PARAMS.pcf_samples; ++i)
     {
         vec2 o = rotation * poisson_disk_samples[i] * radius;
         shadow += shadow_map_bilinear_sample(sm.rect, uv + o, depth);
     }
-    return shadow/control.pcf_samples;
+    return shadow/SHADOW_MAPPING_PARAMS.pcf_samples;
 }
 
 float pcf_2d_directional(
     shadow_map sm, vec4 rect, vec2 uv, vec2 radius, float depth
 ){
     ivec2 noise_pos = ivec2(mod(
-        gl_FragCoord.xy * control.noise_scale,
+        SHADOW_MAPPING_SCREEN_COORD * SHADOW_MAPPING_PARAMS.noise_scale,
         vec2(textureSize(pcf_noise_vector_2d, 0))
     ));
     vec2 cs = texelFetch(pcf_noise_vector_2d, noise_pos, 0).xy;
     mat2 rotation = mat2(cs.x, cs.y, -cs.y, cs.x);
 
-    if(control.pcss_samples > 0)
+    if(SHADOW_MAPPING_PARAMS.pcss_samples > 0)
     {
         if(!calc_directional_pcss_radius(sm, rect, uv, depth, rotation, radius))
             return 1.0f;
@@ -233,18 +241,18 @@ float pcf_2d_directional(
 
     float shadow = 0.0f;
 
-    for(int i = 0; i < control.pcf_samples; ++i)
+    for(int i = 0; i < SHADOW_MAPPING_PARAMS.pcf_samples; ++i)
     {
         vec2 o = rotation * poisson_disk_samples[i] * radius;
         shadow += shadow_map_bilinear_sample(rect, uv + o, depth);
     }
-    return shadow/control.pcf_samples;
+    return shadow/SHADOW_MAPPING_PARAMS.pcf_samples;
 }
 
 float pcf_3d(shadow_map sm, vec3 p, float radius, float bias)
 {
     ivec2 noise_pos = ivec2(mod(
-        gl_FragCoord.xy * control.noise_scale,
+        SHADOW_MAPPING_SCREEN_COORD * SHADOW_MAPPING_PARAMS.noise_scale,
         vec2(textureSize(pcf_noise_vector_3d, 0))
     ));
     vec3 random_vec = texelFetch(pcf_noise_vector_3d, noise_pos, 0).xyz;
@@ -256,7 +264,7 @@ float pcf_3d(shadow_map sm, vec3 p, float radius, float bias)
 
     float shadow = 0.0f;
 
-    for(int i = 0; i < control.omni_pcf_samples; ++i)
+    for(int i = 0; i < SHADOW_MAPPING_PARAMS.omni_pcf_samples; ++i)
     {
         vec3 sample_offset = tangent_space * poisson_disk_samples[i] * radius;
         vec2 uv; float depth; vec4 rect;
@@ -265,7 +273,7 @@ float pcf_3d(shadow_map sm, vec3 p, float radius, float bias)
         );
         shadow += shadow_map_bilinear_sample(rect, uv, depth);
     }
-    return shadow/control.omni_pcf_samples;
+    return shadow/SHADOW_MAPPING_PARAMS.omni_pcf_samples;
 }
 
 float calc_directional_shadow(
@@ -287,7 +295,7 @@ float calc_directional_shadow(
     {
         p.xyz = p.xyz * 0.5f + 0.5f;
 
-        if(control.pcf_samples <= 0)
+        if(SHADOW_MAPPING_PARAMS.pcf_samples <= 0)
             return shadow_map_bilinear_sample(rect, p.xy, p.z);
         else return pcf_2d_directional(sm, rect, p.xy, radius, p.z);
     }
@@ -312,7 +320,7 @@ float calc_point_shadow(
         vec2 uv;
         float depth;
         calc_perspective_shadow_map_pos(sm, p.xyz, bias, uv, depth);
-        if(control.pcf_samples <= 0)
+        if(SHADOW_MAPPING_PARAMS.pcf_samples <= 0)
             return shadow_map_bilinear_sample(sm.rect, uv, depth);
         else return pcf_2d_perspective(
             sm, uv, sm.range_radius.zw, depth
@@ -321,7 +329,7 @@ float calc_point_shadow(
     // Omni shadow map.
     else
     {
-        if(control.omni_pcf_samples <= 0)
+        if(SHADOW_MAPPING_PARAMS.omni_pcf_samples <= 0)
         {
             vec2 uv; float depth; vec4 rect;
             calc_omni_shadow_map_pos(

@@ -7,6 +7,7 @@
 #include "sampler.hh"
 #include "gbuffer.hh"
 #include "gpu_buffer.hh"
+#include "shadow_map.hh"
 #include "stage.hh"
 
 namespace tr
@@ -24,13 +25,7 @@ public:
         bool clear_depth = true;
         bool sample_shading = false;
 
-        // Shadow filtering options.
-        int pcf_samples = 64; // 0 => bilinear interpolation
-        int omni_pcf_samples = 16; // 0 => bilinear interpolation
-        int pcss_samples = 32; // 0 => disable PCSS
-        // The minimum radius prevents PCSS from degrading to bilinear filtering
-        // near shadow caster.
-        float pcss_minimum_radius = 0.0f;
+        shadow_map_filter filter = {};
 
         // Spherical harmonics options
         bool use_probe_visibility = false;

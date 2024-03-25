@@ -9,6 +9,7 @@
 #include "sampler.hh"
 #include "descriptor_set.hh"
 #include "environment_map.hh"
+#include "shadow_map.hh"
 #include "timer.hh"
 
 namespace tr
@@ -155,6 +156,9 @@ public:
         //
         // Requires that binning_stage does not bin explicit lights.
         bool shade_all_explicit_lights = false;
+
+        // Filter for shade_all_explicit_lights.
+        shadow_map_filter sm_filter = {0, 0, 0, 0};
 
         // Enables using ambient light and light probes in indirect bounces.
         // Should be used in conjunction with shade_all_explicit_lights.

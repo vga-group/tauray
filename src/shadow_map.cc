@@ -1,5 +1,6 @@
 #include "shadow_map.hh"
 #include "camera.hh"
+#include "scene_stage.hh"
 
 namespace
 {
@@ -169,6 +170,18 @@ void directional_shadow_map::track_cameras(
             scale *= 2.0f;
         }
     }
+}
+
+gpu_shadow_mapping_parameters create_shadow_mapping_parameters(shadow_map_filter filter, scene_stage& ss)
+{
+    gpu_shadow_mapping_parameters params;
+    params.shadow_map_atlas_pixel_margin = ss.get_shadow_map_atlas_pixel_margin();
+    params.noise_scale = 1.0f;
+    params.pcss_minimum_radius = filter.pcss_minimum_radius;
+    params.pcf_samples = filter.pcf_samples;
+    params.omni_pcf_samples = filter.omni_pcf_samples;
+    params.pcss_samples = filter.pcss_samples;
+    return params;
 }
 
 }
