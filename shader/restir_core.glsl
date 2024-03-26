@@ -67,7 +67,7 @@ sampled_material get_material(ivec2 p)
     // This should not be an issue with hybrid shift, as it would only use
     // reconnection shift in cases where the reconnection lobes are rough.
 #ifdef USE_RECONNECTION_SHIFT
-    mat.roughness = max(mat.roughness, ZERO_ROUGHNESS_LIMIT);
+    mat.roughness = max(mat.roughness, 0.001f);
 #endif
     return mat;
 }
@@ -113,7 +113,7 @@ sampled_material get_prev_material(ivec2 p)
         prev_albedo_tex, prev_material_tex, prev_emission_tex, p
     );
 #ifdef USE_RECONNECTION_SHIFT
-    mat.roughness = max(mat.roughness, ZERO_ROUGHNESS_LIMIT);
+    mat.roughness = max(mat.roughness, 0.001f);
 #endif
     return mat;
 }
@@ -772,7 +772,7 @@ bool get_intersection_info(
         info.mat = sample_material(payload.instance_id, info.vd);
 #ifdef USE_RECONNECTION_SHIFT
         // See read_domain() for context.
-        info.mat.roughness = max(info.mat.roughness, ZERO_ROUGHNESS_LIMIT);
+        info.mat.roughness = max(info.mat.roughness, 0.001f);
 #endif
 
         info.local_pdf = any(greaterThan(info.mat.emission, vec3(0))) ? pdf : 0;
@@ -1195,8 +1195,8 @@ bool replay_path_nee_leaf(
 
     rand32.w += 7u;
     vec3 tdir = candidate_dir * src.tbn;
-    vec3 d, s;
-    float bsdf_pdf = material_bsdf_pdf(rdir, src.tview, src.mat, d, s);
+    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+    float bsdf_pdf = ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
 
     path_throughput *= get_bounce_throughput(
         bounce_index, src, candidate_dir, lobes, primary_bsdf
@@ -1224,11 +1224,11 @@ bool replay_path_bsdf_bounce(
 ){
     uvec4 rand32 = pcg1to4(path_seed);
 
-    vec3 u = ldexp(vec3(rand32), ivec3(-32));
+    vec4 u = ldexp(vec4(rand32), ivec4(-32));
     vec3 tdir = vec3(0,0,1);
-    int lobe_index;
-    bsdf_lobes lobes;
-    float bsdf_pdf = full_bsdf_sample(u, src.mat, src.tview, tdir, lobes, lobe_index);
+    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+    float bsdf_pdf = 0;
+    ggx_bsdf_sample(u, src.tview, src.mat, tdir, lobes, bsdf_pdf);
     if(bsdf_pdf == 0) bsdf_pdf = 1;
     vec3 dir = src.tbn * tdir;
 
@@ -1274,10 +1274,10 @@ int replay_path(
 
     bool head_allows_reconnection = allow_initial_reconnection(src.mat);
     primary_bsdf = vec4(0);
-    for(int bounce = 0; bounce < min(end_nee ? path_length-1 : path_length, TR_MAX_BOUNCES); ++bounce)
+    for(int bounce = 0; bounce < min(end_nee ? path_length-1 : path_length, MAX_BOUNCES); ++bounce)
     {
         // Eat NEE sample
-        if(!TR_RESTIR_DI)
+        if(!RESTIR_DI)
             pcg1to4(seed);
 
         bool reconnected = false;
@@ -1314,7 +1314,7 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
 {
     vec3 path_throughput = vec3(1.0f);
 
-    for(int bounce = 0; bounce < min(end_nee ? tail_length-1 : tail_length, TR_MAX_BOUNCES); ++bounce)
+    for(int bounce = 0; bounce < min(end_nee ? tail_length-1 : tail_length, MAX_BOUNCES); ++bounce)
     {
         // Eat NEE sample
         pcg1to4(tail_rng_seed);
@@ -1322,11 +1322,11 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
         vec3 throughput;
         uvec4 rand32 = pcg1to4(tail_rng_seed);
 
-        vec3 u = ldexp(vec3(rand32), ivec3(-32));
+        vec4 u = ldexp(vec4(rand32), ivec4(-32));
         vec3 tdir = vec3(0,0,1);
-        int lobe_index;
-        bsdf_lobes lobes;
-        float bsdf_pdf = full_bsdf_sample(u, tail_domain.mat, tail_domain.tview, tdir, lobes, lobe_index);
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        float bsdf_pdf = 0.0f;
+        ggx_bsdf_sample(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf);
         vec3 dir = tail_domain.tbn * tdir;
 
         if(bsdf_pdf == 0) bsdf_pdf = 1;
@@ -1417,20 +1417,18 @@ bool reconnection_shift_map(
     {
         // The reconnection vertex wasn't the last path vertex, so we need the
         // full material data too now.
-        instance i = instances.array[nonuniformEXT(rs.vertex.instance_id)];
-        vertex_data vd = get_vertex_data(
-            rs.vertex.instance_id,
-            rs.vertex.primitive_id,
+        vertex_data vd = get_interpolated_vertex(
+            vec3(0),
             rs.vertex.hit_info,
-            false
+            int(rs.vertex.instance_id),
+            int(rs.vertex.primitive_id)
         );
 
-        bool front_facing = dot(reconnect_ray_dir, vd.flat_normal) < 0;
-        material mat = sample_material(i.material, front_facing, vd.uv.xy, vec2(0.0), vec2(0.0f));
-        mat.roughness = max(mat.roughness, ZERO_ROUGHNESS_LIMIT);
-        vd.tangent_space = apply_normal_map(vd.tangent_space, mat);
+        sampled_material mat = sample_material(int(rs.vertex.instance_id), vd);
+        mat.roughness = max(mat.roughness, 0.001f);
 
-        vec3 tview = -reconnect_ray_dir * vd.tangent_space;
+        mat3 tbn = mat3(vd.tangent, vd.bitangent, vd.mapped_normal);
+        vec3 tview = -reconnect_ray_dir * tbn;
 
         // Optionally, update radiance based on tail path in the timeframe of
         // to_domain. This is only needed for temporal reuse.
@@ -1448,19 +1446,19 @@ bool reconnection_shift_map(
         }
 #endif
 
-        vec3 incident_dir = rs.vertex.incident_direction * vd.tangent_space;
+        vec3 incident_dir = rs.vertex.incident_direction * tbn;
 
         // Turn radiance into emission
-        bsdf_lobes lobes;
-        full_bsdf(mat, incident_dir, tview, lobes);
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        ggx_bsdf(incident_dir, tview, mat, lobes);
         vec3 bsdf = modulate_bsdf(mat, lobes);
 
         emission = bsdf * rs.vertex.radiance_estimate;
     }
 
     vec3 tdir = reconnect_ray_dir * to_domain.tbn;
-    bsdf_lobes lobes;
-    full_bsdf(to_domain.mat, tdir, to_domain.tview, lobes);
+    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+    ggx_bsdf(tdir, to_domain.tview, to_domain.mat, lobes);
 
     contribution =
         get_bounce_throughput(0, to_domain, reconnect_ray_dir, lobes, primary_bsdf) * emission;
@@ -1614,23 +1612,21 @@ bool hybrid_shift_map(
     {
         // The reconnection vertex wasn't the last path vertex, so we need the
         // full material data too now.
-        instance i = instances.array[nonuniformEXT(rs.vertex.instance_id)];
-        vertex_data vd = get_vertex_data(
-            rs.vertex.instance_id,
-            rs.vertex.primitive_id,
+        vertex_data vd = get_interpolated_vertex(
+            vec3(0),
             rs.vertex.hit_info,
-            false
+            int(rs.vertex.instance_id),
+            int(rs.vertex.primitive_id)
         );
 
-        bool front_facing = dot(reconnect_ray_dir, vd.flat_normal) < 0;
-        material mat = sample_material(i.material, front_facing, vd.uv.xy, vec2(0.0), vec2(0.0f));
-        vd.tangent_space = apply_normal_map(vd.tangent_space, mat);
+        sampled_material mat = sample_material(int(rs.vertex.instance_id), vd);
+        mat3 tbn = mat3(vd.tangent, vd.bitangent, vd.mapped_normal);
 
         bool allowed = true;
         if(!allow_reconnection(reconnect_scale, reconnect_ray_dist, mat, true, allowed))
             return false;
 
-        vec3 tview = -reconnect_ray_dir * vd.tangent_space;
+        vec3 tview = -reconnect_ray_dir * tbn;
 
         // Optionally, update radiance based on tail path in the timeframe of
         // to_domain. This is only needed for temporal reuse.
@@ -1648,11 +1644,11 @@ bool hybrid_shift_map(
         }
 #endif
 
-        vec3 incident_dir = rs.vertex.incident_direction * vd.tangent_space;
+        vec3 incident_dir = rs.vertex.incident_direction * tbn;
 
         // Turn radiance into to.emission
-        bsdf_lobes lobes;
-        v1_pdf = full_bsdf_pdf(mat, incident_dir, tview, lobes);
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        v1_pdf = ggx_bsdf_pdf(incident_dir, tview, mat, lobes);
         vec3 bsdf = modulate_bsdf(mat, lobes);
 
         emission = bsdf * rs.vertex.radiance_estimate;
@@ -1670,9 +1666,9 @@ bool hybrid_shift_map(
             return false;
     }
 
-    bsdf_lobes lobes;
+    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     vec3 tdir = reconnect_ray_dir * to_domain.tbn;
-    v0_pdf = full_bsdf_pdf(to_domain.mat, tdir, to_domain.tview, lobes);
+    v0_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, lobes);
     contribution = throughput * get_bounce_throughput(rs.head_length, to_domain, reconnect_ray_dir, lobes, primary_bsdf) * emission;
 
     if(isnan(v0_pdf) || isinf(v0_pdf) || v0_pdf == 0)
