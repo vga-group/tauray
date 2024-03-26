@@ -152,7 +152,7 @@ void shadow_map_stage::update(uint32_t frame_index)
                 }
             },
             false, false, false,
-            {}, false
+            {}, true
         });
     }
 
