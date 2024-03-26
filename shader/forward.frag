@@ -1,6 +1,4 @@
 #version 450
-#extension GL_EXT_scalar_block_layout : enable
-#extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_multiview : enable
 
@@ -48,49 +46,43 @@ vertex_data get_vertex_data()
 
 void eval_punctual_lights(
     mat3 tbn, vec3 shading_view, sampled_material mat, vertex_data v,
-    out vec3 diffuse_contrib,
-    out vec3 specular_contrib
+    inout vec3 diffuse,
+    inout vec3 reflection
 ){
-    diffuse_contrib = vec3(0);
-    specular_contrib = vec3(0);
     bool opaque = mat.transmittance < 0.0001f;
     for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
     {
-        vec3 d, s;
         directional_light dl = directional_lights.lights[i];
-        ggx_brdf(-dl.dir * tbn, shading_view, mat, d, s);
-        d *= dl.color;
-        s *= dl.color;
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        ggx_brdf(-dl.dir * tbn, shading_view, mat, lobes);
         float shadow = 1.0f;
         if(dl.shadow_map_index >= 0 && dot(v.mapped_normal, -dl.dir) > 0)
             shadow = calc_directional_shadow(
                 dl.shadow_map_index, v.pos, v.hard_normal, -dl.dir
             );
-        d = dot(v.hard_normal, dl.dir) > 0 ? vec3(0) : d;
-        s = dot(v.hard_normal, dl.dir) > 0 ? vec3(0) : s;
-        diffuse_contrib += d * shadow;
-        specular_contrib += s * shadow;
+        if(dot(v.hard_normal, dl.dir) > 0)
+            shadow = 0.0f;
+
+        add_demodulated_color(lobes, shadow * dl.color, diffuse, reflection);
     }
 
     POINT_LIGHT_FOR_BEGIN(v.pos)
-        vec3 d, s;
         point_light pl = point_lights.lights[item_index];
         vec3 light_dir;
         float light_dist;
         vec3 light_color;
         get_point_light_info(pl, v.pos, light_dir, light_dist, light_color);
-        ggx_brdf(light_dir * tbn, shading_view, mat, d, s);
-        d *= light_color;
-        s *= light_color;
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        ggx_brdf(light_dir * tbn, shading_view, mat, lobes);
         float shadow = 1.0f;
         if(pl.shadow_map_index >= 0 && dot(v.mapped_normal, light_dir) > 0)
             shadow = calc_point_shadow(
                 pl.shadow_map_index, v.pos, v.hard_normal, light_dir
             );
-        d = dot(v.hard_normal, light_dir) < 0 ? vec3(0) : d;
-        s = dot(v.hard_normal, light_dir) < 0 ? vec3(0) : s;
-        diffuse_contrib += d * shadow;
-        specular_contrib += s * shadow;
+        if(dot(v.hard_normal, light_dir) < 0)
+            shadow = 0.0f;
+
+        add_demodulated_color(lobes, shadow * light_color, diffuse, reflection);
     POINT_LIGHT_FOR_END
 }
 
@@ -105,40 +97,33 @@ void brdf_indirect(
     vec3 view_dir,
     vec3 normal,
     sampled_material mat,
-    out vec3 diffuse_weight,
-    out vec3 specular_weight
+    inout vec3 diffuse,
+    inout vec3 reflection
 ){
     float cos_v = max(dot(normal, view_dir), 0.0f);
 
     // The fresnel value must be attenuated, because we are actually integrating
     // over all directions instead of just one specific direction here. This is
     // an approximated function, though.
-    vec3 fresnel = mix(
-        vec3(fresnel_schlick_attenuated(cos_v, mat.f0, mat.roughness)),
-        mat.albedo.rgb,
-        mat.metallic
-    );
+    float fresnel = fresnel_schlick_attenuated(cos_v, mat.f0, mat.roughness);
+    float kd = (1.0f - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
+    diffuse += kd * incoming_diffuse;
 
-    vec3 kd = (vec3(1.0f) - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
-    vec3 diffuse = kd * incoming_diffuse;
-
-    // The integration texture was generated with squared roughness, so we'll
     // have to make sure we don't square it twice!
     vec2 bi = texture(brdf_integration, vec2(cos_v, sqrt(mat.roughness))).xy;
-    vec3 specular = incoming_specular * (fresnel * bi.x + bi.y);
-
-    diffuse_weight = diffuse;
-    specular_weight = specular;
+    reflection += incoming_specular * mix(fresnel * bi.x + bi.y, 1.0f, mat.metallic);
 }
 
 void eval_indirect_light(
-    vec3 view, sampled_material mat, vertex_data v,
-    out vec3 diffuse_weight,
-    out vec3 specular_weight
+    vec3 view,
+    sampled_material mat,
+    vertex_data v,
+    inout vec3 diffuse,
+    inout vec3 reflection
 ){
     vec3 ref_dir = reflect(view, v.mapped_normal);
-    vec3 indirect_diffuse = vec3(0);
-    vec3 indirect_specular = vec3(0);
+    vec3 incoming_diffuse = vec3(0);
+    vec3 incoming_reflection = vec3(0);
 
     int sh_grid_index = instances.o[control.instance_id].sh_grid_index;
     if(sh_grid_index >= 0)
@@ -153,18 +138,17 @@ void eval_indirect_light(
         );
 
         vec3 sh_normal = normalize((sg.normal_from_world * vec4(v.mapped_normal, 0)).xyz);
-        indirect_diffuse = calc_sh_irradiance(sh, sh_normal);
+        incoming_diffuse = calc_sh_irradiance(sh, sh_normal);
 
         vec3 sh_ref = normalize((sg.normal_from_world * vec4(ref_dir, 0)).xyz);
         // The GGX specular function was fitted for squared roughness, so we'll
         // have to make sure we don't square it twice!
-        indirect_specular = calc_sh_ggx_specular(sh, sh_ref, sqrt(mat.roughness));
+        incoming_reflection = calc_sh_ggx_specular(sh, sh_ref, sqrt(mat.roughness));
     }
-    else indirect_diffuse = indirect_specular = control.ambient_color;
+    else incoming_diffuse = incoming_reflection = control.ambient_color;
     brdf_indirect(
-        indirect_diffuse, indirect_specular, -view, v.mapped_normal, mat,
-        diffuse_weight,
-        specular_weight
+        incoming_diffuse, incoming_reflection, -view, v.mapped_normal, mat,
+        diffuse, reflection
     );
 }
 
@@ -175,23 +159,18 @@ void main()
     vec3 view = normalize(v.pos - camera.pairs[control.base_camera_index + gl_ViewIndex].current.origin.xyz);
     mat3 tbn = create_tangent_space(v.mapped_normal);
     vec3 shading_view = -view * tbn;
-    vec3 direct_diffuse;
-    vec3 direct_specular;
-#if defined(COLOR_TARGET_LOCATION) || defined(DIRECT_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION)
-    eval_punctual_lights(tbn, shading_view, mat, v, direct_diffuse, direct_specular);
-    direct_diffuse *= mat.albedo.rgb;
-    direct_diffuse += mat.emission;
+    vec3 diffuse = vec3(0);
+    vec3 reflection = vec3(0);
+#if defined(COLOR_TARGET_LOCATION) || defined(REFLECTION_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION)
+    eval_punctual_lights(tbn, shading_view, mat, v, diffuse, reflection);
 #endif
-    vec3 indirect_diffuse;
-    vec3 indirect_specular;
 #if defined(COLOR_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION)
-    eval_indirect_light(view, mat, v, indirect_diffuse, indirect_specular);
-    indirect_diffuse *= mat.albedo.rgb;
+    eval_indirect_light(view, mat, v, diffuse, reflection);
 #endif
 
-    write_gbuffer_color(vec4(direct_diffuse + direct_specular + indirect_diffuse + indirect_specular, mat.albedo.a));
-    write_gbuffer_direct(vec4(direct_diffuse + direct_specular, mat.albedo.a));
-    write_gbuffer_diffuse(vec4(direct_diffuse + indirect_diffuse, mat.albedo.a));
+    write_gbuffer_color(vec4(modulate_color(mat, diffuse, reflection) + mat.emission, mat.albedo.a));
+    write_gbuffer_diffuse(vec4(diffuse, mat.albedo.a));
+    write_gbuffer_reflection(vec4(reflection, mat.albedo.a));
     write_gbuffer_albedo(vec4(mat.albedo));
     write_gbuffer_material(mat);
     write_gbuffer_normal(dot(view, v.mapped_normal) > 0 ? -v.mapped_normal : v.mapped_normal);
