@@ -166,7 +166,7 @@ public:
 
         // Writes output to current gbuffer's demodulated colors if they are
         // present. Accumulation is not supported with demodulation.
-        //bool demodulated_output = false;
+        bool demodulated_output = false;
 
         // Whether to permute temporal samples or not. This increases noise,
         // but reduces temporal correlations, which can be very useful if you

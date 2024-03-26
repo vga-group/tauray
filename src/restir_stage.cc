@@ -175,17 +175,14 @@ restir_stage::restir_stage(
         this->opt.assume_unchanged_material = true;
     }
 
-    // TODO: Change Tauray's demodulation approach globally.
-    /*
     if(!c.color && !opt.demodulated_output)
     {
         throw std::runtime_error("Missing color output buffer!");
     }
-    if((!c.indirect || !c.reflection) && opt.demodulated_output)
+    if((!c.diffuse || !c.reflection) && opt.demodulated_output)
     {
         throw std::runtime_error("Missing demodulated output buffers (direct, indirect, reflection)!");
     }
-    */
 
     //if(!scene_data->has_temporal_tlas() && !opt.assume_unchanged_acceleration_structures)
     {
@@ -297,13 +294,8 @@ restir_stage::restir_stage(
         defines["SHADE_ALL_EXPLICIT_LIGHTS"];
     if(this->opt.shade_fake_indirect)
         defines["SHADE_FAKE_INDIRECT"];
-    // TODO: Change Tauray's demodulation approach globally.
-    /*
     if(this->opt.demodulated_output)
         defines["DEMODULATE_OUTPUT"];
-    */
-    if(c.direct)
-        defines["DEMODULATE_DIRECT_DIFFUSE"];
 
     switch(opt.shift_map)
     {
@@ -480,15 +472,12 @@ restir_stage::restir_stage(
         );
     }
 
-    // TODO: Change Tauray's demodulation approach globally.
-    /*if(opt.demodulated_output)
+    if(opt.demodulated_output)
     {
-        if(current_buffers.direct)
-            current_buffers.direct.layout = vk::ImageLayout::eGeneral;
-        current_buffers.indirect.layout = vk::ImageLayout::eGeneral;
+        current_buffers.diffuse.layout = vk::ImageLayout::eGeneral;
         current_buffers.reflection.layout = vk::ImageLayout::eGeneral;
     }
-    else*/ current_buffers.color.layout = vk::ImageLayout::eGeneral;
+    else current_buffers.color.layout = vk::ImageLayout::eGeneral;
 
 #define BUF(name) \
     if(c.name) c.name.layout = vk::ImageLayout::eShaderReadOnlyOptimal; \
@@ -517,15 +506,12 @@ void restir_stage::update(uint32_t frame_index)
     vk::CommandBuffer cmd = begin_graphics(true);
     stage_timer.begin(cmd, dev->id, frame_index);
 
-    // TODO: Change Tauray's demodulation approach globally.
-    /*if(opt.demodulated_output)
+    if(opt.demodulated_output)
     {
-        if(current_buffers.direct)
-            current_buffers.direct.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
-        current_buffers.indirect.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
+        current_buffers.diffuse.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
         current_buffers.reflection.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
     }
-    else*/ current_buffers.color.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
+    else current_buffers.color.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
 
 #define X(name) \
     if(current_buffers.name) \
@@ -567,7 +553,7 @@ void restir_stage::update(uint32_t frame_index)
     { \
         vk::ImageMemoryBarrier2KHR barriers[3]; \
         uint32_t barrier_count = 0; \
-        /*if(!opt.demodulated_output)*/ \
+        if(!opt.demodulated_output) \
         { \
             barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
                 vk::PipelineStageFlagBits2::eAllCommands, \
@@ -586,9 +572,9 @@ void restir_stage::update(uint32_t frame_index)
                 } \
             }; \
         } \
-        /*else \
+        else \
         { \
-            if(current_buffers.direct) barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
+            barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
                 vk::PipelineStageFlagBits2::eAllCommands, \
                 happens_before, \
                 vk::PipelineStageFlagBits2::eAllCommands, \
@@ -597,7 +583,7 @@ void restir_stage::update(uint32_t frame_index)
                 vk::ImageLayout::eGeneral, \
                 VK_QUEUE_FAMILY_IGNORED, \
                 VK_QUEUE_FAMILY_IGNORED, \
-                current_buffers.direct->get_image(), \
+                current_buffers.diffuse.image, \
                 { \
                     vk::ImageAspectFlagBits::eColor, \
                     0, VK_REMAINING_MIP_LEVELS, \
@@ -613,30 +599,14 @@ void restir_stage::update(uint32_t frame_index)
                 vk::ImageLayout::eGeneral, \
                 VK_QUEUE_FAMILY_IGNORED, \
                 VK_QUEUE_FAMILY_IGNORED, \
-                current_buffers.indirect->get_image(), \
+                current_buffers.reflection.image, \
                 { \
                     vk::ImageAspectFlagBits::eColor, \
                     0, VK_REMAINING_MIP_LEVELS, \
                     0, VK_REMAINING_ARRAY_LAYERS \
                 } \
             }; \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
-                vk::PipelineStageFlagBits2::eAllCommands, \
-                happens_before, \
-                vk::PipelineStageFlagBits2::eAllCommands, \
-                happens_after, \
-                vk::ImageLayout::eGeneral, \
-                vk::ImageLayout::eGeneral, \
-                VK_QUEUE_FAMILY_IGNORED, \
-                VK_QUEUE_FAMILY_IGNORED, \
-                current_buffers.reflection->get_image(), \
-                { \
-                    vk::ImageAspectFlagBits::eColor, \
-                    0, VK_REMAINING_MIP_LEVELS, \
-                    0, VK_REMAINING_ARRAY_LAYERS \
-                } \
-            }; \
-        }*/ \
+        } \
         vk::DependencyInfo dependency_info = { \
             {}, \
             0, nullptr, \
@@ -970,18 +940,14 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
             spatial_gather_set.set_image("mis_data", *spatial_mis_data);
         }
 
-        // TODO: Demodulation update.
-        /*
         if(opt.demodulated_output)
         {
-            spatial_gather_set.set_image("out_direct_diffuse", current_buffers.direct->get_view());
-            spatial_gather_set.set_image("out_indirect_diffuse", current_buffers.indirect->get_view());
-            spatial_gather_set.set_image("out_reflection", current_buffers.reflection->get_view());
+            spatial_gather_set.set_image(dev->id, "out_diffuse", {{{}, current_buffers.diffuse.view, vk::ImageLayout::eGeneral}});
+            spatial_gather_set.set_image(dev->id, "out_reflection", {{{}, current_buffers.reflection.view, vk::ImageLayout::eGeneral}});
         }
         else
-        */
         {
-            spatial_gather_set.set_image("out_indirect_diffuse", *cached_sample_color);
+            spatial_gather_set.set_image("out_diffuse", *cached_sample_color);
             spatial_gather_set.set_image(dev->id, "out_reflection", {{{}, current_buffers.color.view, vk::ImageLayout::eGeneral}});
         }
 
