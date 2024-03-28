@@ -66,6 +66,17 @@ vec3 get_camera_projection(in camera_data cam, vec3 world_pos)
     return uv;
 }
 
+// Used for edge detection algorithms. Inverse size of frustum at the depth of
+// a given point.
+float get_frustum_size(camera_data cam, vec3 pos)
+{
+    float frustum_size = min(abs(cam.projection_info.z), abs(cam.projection_info.w));
+    if(cam.projection_info.x < 0) // Perspective
+        frustum_size *= abs(dot(cam.view_inverse[2].xyz, cam.view_inverse[3].xyz - pos));
+
+    return frustum_size;
+}
+
 #elif CAMERA_PROJECTION_TYPE == 2
 // Equirectangular cameras go here.
 struct camera_data

@@ -7,11 +7,9 @@
 #extension GL_EXT_debug_printf : enable
 
 #define RESTIR_TEMPORAL
-#define RAYBASE_RAY_TRACING
-#define RAYBASE_TEMPORAL_TABLE_SET 4
+#define RAY_TRACING
+#define TEMPORAL_TABLE_SET 2
 #include "restir.glsl"
-
-layout(constant_id = 15) const uint TEMPORAL_REUSE_ATTEMPTS = 1;
 
 layout(push_constant) uniform push_constant_buffer
 {
@@ -26,30 +24,43 @@ layout(push_constant) uniform push_constant_buffer
 
 #include "restir_core.glsl"
 
-layout(binding = 16, rgba32f) uniform image2D out_color;
+layout(binding = 21, rgba32f) uniform image2D out_color;
 
-const bool do_temporal_visibility_test = (RB_RESTIR_FLAGS & ASSUME_UNCHANGED_TEMPORAL_VISIBILITY) == 0;
+#ifdef ASSUME_UNCHANGED_TEMPORAL_VISIBILITY
+const bool do_temporal_visibility_test = false;
+#else
+const bool do_temporal_visibility_test = true;
+#endif
 
-int test_reuse_quality(ivec2 test_p, vec3 expected_prev_pos, camera cam)
+// https://developer.download.nvidia.com/video/gputechconf/gtc/2020/presentations/s22699-fast-denoising-with-self-stabilizing-recurrent-blurs.pdf
+float disocclusion_detect(vec3 normal1, vec3 pos1, vec3 pos2, float inv_max_plane_dist)
+{
+    return clamp(1.0f - abs(dot(normal1, pos2-pos1)) * inv_max_plane_dist, 0.0f, 1.0f);
+}
+
+int test_reuse_quality(ivec2 test_p, vec3 expected_prev_pos, camera_data prev_cam)
 {
     vec3 pos;
-    bool miss = get_prev_pos(test_p, cam, pos);
+    bool miss = get_prev_pos(test_p, prev_cam, pos);
     vec3 flat_normal;
-    mat3 tbn = get_prev_tbn(test_p, flat_normal);
-    float prev_frustum_size = get_prev_frustum_size(cam, pos);
+    mat3 tbn = create_tangent_space(sample_gbuffer_normal(prev_normal_tex, test_p));
+    float prev_frustum_size = get_frustum_size(prev_cam, pos);
     float inv_max_plane_dist = 1.0f / prev_frustum_size;
 
     bool suboptimal = disocclusion_detect(flat_normal, pos, expected_prev_pos, inv_max_plane_dist) < 0.99f;
     return miss ? 0 : (suboptimal ? 1 : 2);
 }
 
-void temporal_reuse(inout uvec4 seed, ivec2 p, camera cam, inout reservoir r, domain cur_domain)
+void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_domain)
 {
+    camera_data cur_cam = camera.pairs[pc.camera_index].current;
+    camera_data prev_cam = camera.pairs[pc.camera_index].previous;
+
     vec3 motion = texelFetch(motion_tex, ivec2(p), 0).xyz;
 
     motion.y = 1.0f - motion.y;
 
-    vec4 u = generate_uniform_random(seed);
+    vec4 u = generate_single_uniform_random(seed);
     ivec2 unclamped_prev_p = ivec2(floor(motion.xy * gl_LaunchSizeEXT.xy + pc.jitter));
     unclamped_prev_p ^= pc.permutation;
     ivec2 prev_p = clamp(unclamped_prev_p, ivec2(0), ivec2(gl_LaunchSizeEXT.xy-1));
@@ -60,22 +71,22 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, camera cam, inout reservoir r, do
             return;
 
         prev_p = mirror_wrap(
-            p + ivec2(round(sample_disk(u.zw) * pc.search_base_radius * pc.search_widening)),
+            p + ivec2(round(sample_concentric_disk(u.zw) * pc.search_base_radius * pc.search_widening)),
             ivec2(0), ivec2(gl_LaunchSizeEXT.xy-1)
         );
     }
 
     // If we assume unchanged temporal visibility, we still need to check
     // for disocclusions.
-    vec3 expected_prev_pos = unproject_position(motion.z, vec2(motion.x, 1.0f-motion.y), cam.prev_proj_info);
-    expected_prev_pos = (cam.prev_inv_view * vec4(expected_prev_pos, 1)).xyz;
+    vec3 expected_prev_pos = unproject_position(motion.z, vec2(motion.x, 1.0f-motion.y), prev_cam.projection_info);
+    expected_prev_pos = (prev_cam.view_inverse * vec4(expected_prev_pos, 1)).xyz;
 
     if(do_temporal_visibility_test && TEMPORAL_REUSE_ATTEMPTS > 0)
     {
         float prev_search_radius = 1;
         float search_radius = pc.search_base_radius;
         ivec2 best_p = prev_p;
-        int found = test_reuse_quality(best_p, expected_prev_pos, cam);
+        int found = test_reuse_quality(best_p, expected_prev_pos, prev_cam);
 
         uint i = 0;
         for(; i < TEMPORAL_REUSE_ATTEMPTS; ++i)
@@ -83,7 +94,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, camera cam, inout reservoir r, do
             if(found == 2)
                 break;
 
-            u = generate_uniform_random(seed);
+            u = generate_single_uniform_random(seed);
             ivec2 p = mirror_wrap(
                 prev_p + ivec2(round(sample_ring(u.xy, prev_search_radius, search_radius - prev_search_radius))),
                 ivec2(0), ivec2(gl_LaunchSizeEXT.xy-1)
@@ -91,7 +102,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, camera cam, inout reservoir r, do
             prev_search_radius = search_radius;
             search_radius *= pc.search_widening;
 
-            int local_found = test_reuse_quality(p, expected_prev_pos, cam);
+            int local_found = test_reuse_quality(p, expected_prev_pos, prev_cam);
             if(local_found > found)
             {
                 found = local_found;
@@ -108,15 +119,13 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, camera cam, inout reservoir r, do
         return;
 
     domain prev_domain;
-    if(read_prev_domain(cam, prev_p, cur_domain, prev_domain))
+    if(read_prev_domain(prev_cam, prev_p, cur_domain, prev_domain))
         return;
-
-    float prev_frustum_size = get_prev_frustum_size(cam, prev_domain.pos);
-    float inv_max_plane_dist = 1.0f / prev_frustum_size;
-    float frustum_size = get_frustum_size(cam, cur_domain.pos);
 
     if(!do_temporal_visibility_test)
     {
+        float prev_frustum_size = get_frustum_size(prev_cam, prev_domain.pos);
+        float inv_max_plane_dist = 1.0f / prev_frustum_size;
         bool disocclusion = disocclusion_detect(prev_domain.flat_normal, prev_domain.pos, expected_prev_pos, inv_max_plane_dist) < 0.99f;
         if(disocclusion) return;
     }
@@ -130,7 +139,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, camera cam, inout reservoir r, do
         vec4 primary_bsdf = vec4(0);
         shift_map(
             seed.x, canonical_pixel.output_sample, true, prev_domain,
-            do_temporal_visibility_test, false, prev_frustum_size,
+            do_temporal_visibility_test, false,
             jacobian, value_in_prev_domain, primary_bsdf
         );
         float target_value_in_prev_domain = target_function(primary_bsdf, value_in_prev_domain);
@@ -144,7 +153,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, camera cam, inout reservoir r, do
         // Jacobian is 1 (already in local domain), so not multiplied.
         float resampling_weight = resampling_mis_weight * canonical_pixel.target_function_value * canonical_pixel.ucw; // w_i
 
-        if(update_reservoir(generate_uniform_random(seed.x), r, canonical_pixel.target_function_value, resampling_weight, canonical_pixel.confidence))
+        if(update_reservoir(generate_single_uniform_random(seed.x), r, canonical_pixel.target_function_value, resampling_weight, canonical_pixel.confidence))
         {
             r.output_sample = canonical_pixel.output_sample;
         }
@@ -157,7 +166,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, camera cam, inout reservoir r, do
 
         shift_map(
             seed.x, prev_pixel.output_sample, false, cur_domain,
-            do_temporal_visibility_test, true, frustum_size,
+            do_temporal_visibility_test, true,
             jacobian, value, primary_bsdf
         );
 
@@ -172,7 +181,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, camera cam, inout reservoir r, do
         if(isnan(resampling_weight) || isinf(resampling_weight))
             resampling_weight = 0.0f;
 
-        if(update_reservoir(generate_uniform_random(seed.x), r, target_function_value, resampling_weight, prev_pixel.confidence))
+        if(update_reservoir(generate_single_uniform_random(seed.x), r, target_function_value, resampling_weight, prev_pixel.confidence))
         {
             r.output_sample = prev_pixel.output_sample;
             imageStore(out_color, p, output_color_function(primary_bsdf, value));
@@ -190,14 +199,14 @@ void main()
     uvec4 seed = uvec4(0xFFFFFFFFu, pc.camera_index, p.yx)+pc.sample_index+1234567u;
     pcg4d(seed);
 
-    camera cam = cameras.array[pc.camera_index];
+    camera_data cam = camera.pairs[pc.camera_index].current;
     reservoir r = read_out_reservoir(p, gl_LaunchSizeEXT.xy);
     domain cur_domain;
     read_domain(cam, p, cur_domain);
 
     if(r.confidence != 0)
     {
-        temporal_reuse(seed, p, cam, r, cur_domain);
+        temporal_reuse(seed, p, r, cur_domain);
         write_reservoir(r, p, gl_LaunchSizeEXT.xy);
     }
 }
