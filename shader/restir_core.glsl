@@ -39,7 +39,7 @@ layout(binding = 18) uniform sampler2D prev_emission_tex;
 layout(binding = 19) uniform sampler2D prev_material_tex;
 layout(binding = 20) uniform sampler2D motion_tex;
 
-#include "temporal_tables.glsl"
+//#include "temporal_tables.glsl"
 #endif
 
 #include "gbuffer.glsl"
@@ -125,7 +125,7 @@ bool get_prev_pos(ivec2 p, camera_data cam, out vec3 pos)
     return any(isnan(pos));
 #else
     ivec2 size = textureSize(prev_depth_or_position_tex, 0);
-    float depth = texelFetch(prev_depth_or_position_tex, p, 0);
+    float depth = texelFetch(prev_depth_or_position_tex, p, 0).r;
     float linear_depth = linearize_depth(depth, cam.projection_info);
 
     vec2 uv = (vec2(p)+0.5f)/vec2(size);
@@ -144,7 +144,12 @@ bool read_prev_domain(camera_data cam, ivec2 p, domain cur_domain, out domain d)
     d.mat = get_prev_material(p);
 #endif
 
-    d.tbn = get_prev_tbn(p, d.flat_normal);
+    d.tbn = create_tangent_space(sample_gbuffer_normal(prev_normal_tex, p));
+#ifdef USE_FLAT_NORMAL
+    d.flat_normal = sample_gbuffer_normal(prev_flat_normal_tex, p);
+#else
+    d.flat_normal = d.tbn[2];
+#endif
     bool miss = get_prev_pos(p, cam, d.pos);
 
     d.view = normalize(d.pos - origin);
@@ -452,7 +457,7 @@ int test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
 #ifdef RESTIR_TEMPORAL
 int test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
 {
-    payload.seed = seed;
+    payload.random_seed = seed;
     float s = sign(dot(dir, flat_normal));
 
     vec3 origin = pos + s * flat_normal * TR_RESTIR.min_ray_dist;
@@ -504,8 +509,8 @@ resolved_vertex resolve_point_light_vertex(reconnection_vertex rv, bool prev, ve
     resolved_vertex v;
 #ifdef RESTIR_TEMPORAL
     point_light pl;
-    if(prev) pl = prev_point_lights.lights[rv.primitive_id];
-    else pl = point_lights.lights[rv.primitive_id];
+    /*if(prev) pl = prev_point_lights.lights[rv.primitive_id];
+    else*/ pl = point_lights.lights[rv.primitive_id];
 #else
     point_light pl = point_lights.lights[rv.primitive_id];
 #endif
@@ -539,22 +544,22 @@ resolved_vertex resolve_directional_light_vertex(reconnection_vertex rv)
     v.normal = -dir;
 
 #ifdef RESTIR_TEMPORAL
-    vec3 env_dir = quat_rotate(scene_params.envmap_orientation, dir);
-    v.emission = scene_params.envmap_index >= 0 ?
-        textureLod(cube_textures[scene_params.envmap_index], env_dir, 0.0f).rgb :
-        vec3(0);
+    v.emission = scene_metadata.environment_factor.rgb;
+    if(scene_metadata.environment_proj >= 0)
+    {
+        vec2 uv = vec2(0);
+        uv.y = asin(-dir.y)/M_PI+0.5f;
+        uv.x = atan(dir.z, dir.x)/(2*M_PI)+0.5f;
+        v.emission *= texture(environment_map_tex, uv).rgb;
+    }
 
 #ifndef SHADE_ALL_EXPLICIT_LIGHTS
     // Directional lights don't generate vertices when they're rasterized.
-    for(uint i = 0; i < scene_params.directional_light_count; ++i)
+    for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
     {
-        directional_light light = directional_lights.array[i];
-        vec3 ddir;
-        vec3 color;
-        get_directional_light_info(light, ddir, color);
-        float visible = step(1-dot(dir, ddir), max(light.solid_angle, 1e-6f));
-        float pdf = sample_directional_light_pdf(light);
-        v.emission += visible * color * (pdf == 0.0f ? 1.0f : pdf);
+        directional_light dl = directional_lights.lights[i];
+        float visible = step(dl.dir_cutoff, dot(dir, -dl.dir));
+        v.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
     }
 #endif
 
@@ -630,14 +635,13 @@ bool resolve_reconnection_vertex(
     else if(rv.instance_id == POINT_LIGHT_INSTANCE_ID)
     {
 #ifdef RESTIR_TEMPORAL
-        uint primitive_id;
-        if(rv_is_in_past) primitive_id = point_light_map_forward.array[rv.primitive_id];
-        else primitive_id = point_light_map_backward.array[rv.primitive_id];
+        //uint primitive_id;
+        //if(rv_is_in_past) primitive_id = point_light_map_forward.array[rv.primitive_id];
+        //else primitive_id = point_light_map_backward.array[rv.primitive_id];
 
-        if(primitive_id == 0xFFFFFFFFu)
+        if(rv.primitive_id >= scene_metadata.point_light_count)
             return false;
 
-        rv.primitive_id = primitive_id;
         to = resolve_point_light_vertex(rv, !rv_is_in_past, pos);
 #else
         to = resolve_point_light_vertex(rv, false, pos);
@@ -654,10 +658,10 @@ bool resolve_reconnection_vertex(
     else
     { // Regular mesh triangle
 #ifdef RESTIR_TEMPORAL
-        if(rv_is_in_past)
-            rv.instance_id = instance_map_forward.array[rv.instance_id];
-        if(rv.instance_id == 0xFFFFFFFFu)
-            return false;
+        //if(rv_is_in_past)
+        //    rv.instance_id = instance_map_forward.array[rv.instance_id];
+        //if(rv.instance_id >= scene_metadata.instance_count)
+        //    return false;
 #endif
         resolve_mesh_triangle_vertex(rv, rv_is_in_past, pos, to);
         return true;
@@ -732,7 +736,7 @@ bool get_intersection_info(
     if(payload.instance_id >= 0)
     { // Mesh
 #ifdef RESTIR_TEMPORAL
-        if(in_past)
+        /*if(in_past)
         {
             // Translate previous mesh to current frame
             uint new_id = instance_map_forward.array[payload.instance_id];
@@ -745,7 +749,7 @@ bool get_intersection_info(
                 return false;
             }
             payload.instance_id = int(new_id);
-        }
+        }*/
 #endif
 
         float pdf = 0.0f;
@@ -792,6 +796,7 @@ bool get_intersection_info(
         // flags cull them.
         point_light pl;
 #ifdef RESTIR_TEMPORAL
+        /*
         if(in_past)
         {
             pl = prev_point_lights.lights[payload.primitive_id];
@@ -807,6 +812,7 @@ bool get_intersection_info(
             payload.primitive_index = int(new_id);
         }
         else
+        */
 #endif
         pl = point_lights.lights[payload.primitive_id];
 
@@ -1421,14 +1427,18 @@ bool reconnection_shift_map(
 
         // Optionally, update radiance based on tail path in the timeframe of
         // to_domain. This is only needed for temporal reuse.
-#ifdef RESTIR_TEMPORAL
-        if(!cur_to_prev && (TR_RESTIR_FLAGS & ASSUME_UNCHANGED_RECONNECTION_RADIANCE) == 0)
+#if defined(RESTIR_TEMPORAL) && !defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
+        if(!cur_to_prev)
         {
             domain tail_domain;
             tail_domain.mat = mat;
             tail_domain.pos = vd.pos;
-            tail_domain.tbn = vd.tangent_space;
-            tail_domain.flat_normal = vd.flat_normal;
+            tail_domain.tbn = mat3(
+                vd.tangent,
+                vd.bitangent,
+                vd.mapped_normal
+            );
+            tail_domain.flat_normal = vd.hard_normal;
             tail_domain.view = reconnect_ray_dir;
             tail_domain.tview = tview;
             update_tail_radiance(tail_domain, rs.nee_terminal, rs.tail_length, rs.tail_rng_seed, rs.vertex.radiance_estimate, rs.vertex.incident_direction);
@@ -1621,8 +1631,12 @@ bool hybrid_shift_map(
             domain tail_domain;
             tail_domain.mat = mat;
             tail_domain.pos = vd.pos;
-            tail_domain.tbn = vd.tangent_space;
-            tail_domain.flat_normal = vd.flat_normal;
+            tail_domain.tbn = mat3(
+                vd.tangent,
+                vd.bitangent,
+                vd.mapped_normal
+            );
+            tail_domain.flat_normal = vd.hard_normal;
             tail_domain.view = reconnect_ray_dir;
             tail_domain.tview = tview;
             update_tail_radiance(tail_domain, rs.nee_terminal, rs.tail_length, rs.tail_rng_seed, rs.vertex.radiance_estimate, rs.vertex.incident_direction);
