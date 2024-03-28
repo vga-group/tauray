@@ -1,4 +1,5 @@
 #version 460
+#line 2
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
@@ -31,7 +32,6 @@ void sample_path_nee_leaf(
     vec3 tail_throughput,
     float path_pdf,
     bool head_allows_reconnection,
-    float reconnect_scale,
     domain src,
     inout vec4 out_value,
     inout vec4 primary_bsdf,
@@ -55,9 +55,9 @@ void sample_path_nee_leaf(
     }
 
     rand32.w += 7u;
-    bsdf_lobes lobes;
+    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     vec3 tdir = candidate_dir * src.tbn;
-    float bsdf_pdf = full_bsdf_pdf(src.mat, tdir, src.tview, lobes);
+    float bsdf_pdf = ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
 
     // If the sampled light is infinitesimal, there's no way for the BSDF
     // sampling to sample it. So the PDF is set to zero.
@@ -68,8 +68,9 @@ void sample_path_nee_leaf(
         src, candidate_dir, lobes, primary_bsdf
     );
 
-    if(USE_PRIMARY_SAMPLE_SPACE)
-        throughput /= nee_pdf;
+#ifdef USE_PRIMARY_SAMPLE_SPACE
+    throughput /= nee_pdf;
+#endif
 
     throughput *= test_visibility(rand32.w, src.pos, candidate_dir, candidate_dist, src.flat_normal);
 
@@ -77,23 +78,25 @@ void sample_path_nee_leaf(
     if(candidate.tail_length > 1)
         tail_throughput *= throughput;
 
-    if(candidate.vertex.instance_id == UNCONNECTED_PATH_ID && allow_reconnection(reconnect_scale, candidate_dist, src.mat, false, head_allows_reconnection))
+    if(candidate.vertex.instance_id == UNCONNECTED_PATH_ID && allow_reconnection(candidate_dist, src.mat, false, head_allows_reconnection))
     {
         candidate.vertex = vertex;
         float half_jacobian = reconnection_shift_half_jacobian(
-            vec3(0), vec4(candidate_dir * candidate_dist, candidate_dist >= RB_RESTIR.max_ray_dist ? 0 : 1),
+            vec3(0), vec4(candidate_dir * candidate_dist, candidate_dist >= TR_RESTIR.max_ray_dist ? 0 : 1),
             candidate_normal
         );
         candidate.base_path_jacobian_part = half_jacobian;
-        if(USE_PRIMARY_SAMPLE_SPACE)
-            candidate.base_path_jacobian_part *= nee_pdf;
+#ifdef USE_PRIMARY_SAMPLE_SPACE
+        candidate.base_path_jacobian_part *= nee_pdf;
+#endif
     }
 
     if(candidate.vertex.instance_id != UNCONNECTED_PATH_ID && candidate.tail_length == 1)
     {
         candidate.vertex.incident_direction = candidate_dir;
-        if(USE_PRIMARY_SAMPLE_SPACE)
-            candidate.base_path_jacobian_part *= nee_pdf;
+#ifdef USE_PRIMARY_SAMPLE_SPACE
+        candidate.base_path_jacobian_part *= nee_pdf;
+#endif
     }
 
     candidate.vertex.radiance_estimate = tail_throughput * vertex.radiance_estimate;
@@ -103,10 +106,14 @@ void sample_path_nee_leaf(
     float target_function_value = target_function(primary_bsdf, value); // p^(X_i)
 
     float resampling_mis_weight = nee_pdf / (CANONICAL_SAMPLES * bsdf_pdf + CANONICAL_SAMPLES * nee_pdf); // m_i(X_i)
-    float ucw = USE_PRIMARY_SAMPLE_SPACE ? 1.0f : 1.0f / (path_pdf * nee_pdf);
+#ifdef USE_PRIMARY_SAMPLE_SPACE
+    float ucw = 1.0f;
+#else
+    float ucw = 1.0f / (path_pdf * nee_pdf);
+#endif
     float resampling_weight = resampling_mis_weight * target_function_value * ucw; // w_i
 
-    if(update_reservoir(generate_uniform_random(ris_seed), r, target_function_value, resampling_weight, 1.0f))
+    if(update_reservoir(generate_single_uniform_random(ris_seed), r, target_function_value, resampling_weight, 1.0f))
     {
         r.output_sample = candidate;
         out_value = output_color_function(primary_bsdf, value);
@@ -121,7 +128,6 @@ bool sample_path_bsdf_bounce(
     inout vec3 tail_throughput,
     inout float path_pdf,
     inout bool head_allows_reconnection,
-    float reconnect_scale,
     domain src,
     out domain dst,
     inout vec4 out_value,
@@ -133,11 +139,12 @@ bool sample_path_bsdf_bounce(
 
     uvec4 rand32 = pcg1to4(path_seed);
 
-    vec3 u = ldexp(vec3(rand32), ivec3(-32));
+    vec4 u = ldexp(vec4(rand32), ivec4(-32));
     vec3 tdir = vec3(0,0,1);
     int lobe_index;
-    bsdf_lobes lobes;
-    float bsdf_pdf = full_bsdf_sample(u, src.mat, src.tview, tdir, lobes, lobe_index);
+    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+    float bsdf_pdf = 0;
+    ggx_bsdf_sample(u, src.tview, src.mat, tdir, lobes, bsdf_pdf);
     vec3 dir = src.tbn * tdir;
 
     vec3 throughput = get_bounce_throughput(
@@ -148,8 +155,10 @@ bool sample_path_bsdf_bounce(
     reconnection_vertex vertex;
     bool bounces = generate_bsdf_vertex(rand32, dir, false, src, dst, vertex, nee_pdf);
 
-    if((RB_RESTIR_FLAGS & DEMODULATE_OUTPUT) != 0 && candidate.head_length + candidate.tail_length == 0)
+#ifdef DEMODULATE_OUTPUT
+    if(candidate.head_length + candidate.tail_length == 0)
         imageStore(out_length, ivec2(gl_LaunchIDEXT.xy), vec4(distance(src.pos, dst.pos)));
+#endif
 
     // bsdf_pdf is set to zero for extremities, such as mirror-like
     // reflections. Those can never be sampled by NEE. In this case, the BSDF
@@ -162,29 +171,32 @@ bool sample_path_bsdf_bounce(
 
     path_pdf *= bsdf_pdf;
 
-    if(USE_PRIMARY_SAMPLE_SPACE)
-        throughput /= bsdf_pdf;
+#ifdef USE_PRIMARY_SAMPLE_SPACE
+    throughput /= bsdf_pdf;
+#endif
 
     total_throughput *= throughput;
     if(candidate.tail_length > 1)
         tail_throughput *= throughput;
 
-    if(candidate.vertex.instance_id == UNCONNECTED_PATH_ID && allow_reconnection(reconnect_scale, distance(src.pos, dst.pos), dst.mat, bounces, head_allows_reconnection))
+    if(candidate.vertex.instance_id == UNCONNECTED_PATH_ID && allow_reconnection(distance(src.pos, dst.pos), dst.mat, bounces, head_allows_reconnection))
     {
         candidate.vertex = vertex;
         float half_jacobian = reconnection_shift_half_jacobian(
             src.pos, vec4(dst.pos, vertex.instance_id == ENVMAP_INSTANCE_ID ? 0 : 1), dst.flat_normal
         );
         candidate.base_path_jacobian_part = half_jacobian;
-        if(USE_PRIMARY_SAMPLE_SPACE)
-            candidate.base_path_jacobian_part *= bsdf_pdf;
+#ifdef USE_PRIMARY_SAMPLE_SPACE
+        candidate.base_path_jacobian_part *= bsdf_pdf;
+#endif
     }
 
     if(candidate.vertex.instance_id != UNCONNECTED_PATH_ID && candidate.tail_length == 1)
     {
         candidate.vertex.incident_direction = dst.view;
-        if(USE_PRIMARY_SAMPLE_SPACE)
-            candidate.base_path_jacobian_part *= bsdf_pdf;
+#ifdef USE_PRIMARY_SAMPLE_SPACE
+        candidate.base_path_jacobian_part *= bsdf_pdf;
+#endif
     }
 
     candidate.vertex.radiance_estimate = tail_throughput * vertex.radiance_estimate;
@@ -194,11 +206,15 @@ bool sample_path_bsdf_bounce(
     float target_function_value = target_function(primary_bsdf, value); // p^(X_i)
 
     float resampling_mis_weight = bsdf_pdf / (CANONICAL_SAMPLES * bsdf_pdf + CANONICAL_SAMPLES * nee_pdf); // m_i(X_i)
-    float ucw = USE_PRIMARY_SAMPLE_SPACE ? 1.0f : 1.0f / path_pdf;
+#ifdef USE_PRIMARY_SAMPLE_SPACE
+    float ucw = 1.0f;
+#else
+    float ucw = 1.0f / path_pdf;
+#endif
     float resampling_weight = resampling_mis_weight * target_function_value * ucw; // w_i
     if(isnan(resampling_weight)) resampling_weight = 0;
 
-    if(update_reservoir(generate_uniform_random(ris_seed), r, target_function_value, resampling_weight, 1.0f))
+    if(update_reservoir(generate_single_uniform_random(ris_seed), r, target_function_value, resampling_weight, 1.0f))
     {
         r.output_sample = candidate;
         out_value = output_color_function(primary_bsdf, value);
@@ -210,7 +226,6 @@ bool sample_path_bsdf_bounce(
 void sample_path(
     inout uint path_seed,
     inout uint ris_seed,
-    float reconnect_scale,
     domain primary,
     inout vec4 out_value,
     inout reservoir r
@@ -227,13 +242,13 @@ void sample_path(
     bool head_allows_reconnection = allow_initial_reconnection(src.mat);
 
     vec4 primary_bsdf = vec4(1);
-    for(int bounce = 0; bounce < max(RB_MAX_BOUNCES, 1); ++bounce)
+    for(int bounce = 0; bounce < max(MAX_BOUNCES, 1); ++bounce)
     {
         sample_path_nee_leaf(
             path_seed, ris_seed, base_sample,
             total_throughput, tail_throughput,
             path_pdf, head_allows_reconnection,
-            reconnect_scale, src, out_value, primary_bsdf, r
+            src, out_value, primary_bsdf, r
         );
 
         domain dst;
@@ -241,7 +256,7 @@ void sample_path(
             path_seed, ris_seed, base_sample,
             total_throughput, tail_throughput,
             path_pdf, head_allows_reconnection,
-            reconnect_scale, src, dst, out_value, primary_bsdf, r
+            src, dst, out_value, primary_bsdf, r
         )) break;
 
         src = dst;
@@ -259,8 +274,7 @@ void main()
     uvec4 seed = uvec4(p, pc.camera_index, 0xFFFFFFFFu)+pc.sample_index;
     pcg4d(seed);
 
-    camera cam = cameras.array[pc.camera_index];
-    vec3 origin = cam.inv_view[3].xyz;
+    camera_data cam = camera.pairs[pc.camera_index].current;
 
     reservoir r;
     init_reservoir(r);
@@ -276,9 +290,8 @@ void main()
         return;
     }
 
-    float reconnection_scale = get_frustum_size(cam, cur_domain.pos);
     vec4 out_value = vec4(0);
-    if(RB_RESTIR_DI)
+    if(RESTIR_DI)
     {
         bool head_allows_reconnection = allow_initial_reconnection(cur_domain.mat);
 
@@ -298,7 +311,7 @@ void main()
                 seed.x, seed.y, base_sample,
                 total_throughput, tail_throughput,
                 path_pdf, tmp_head_allows_reconnection,
-                reconnection_scale, cur_domain, dst, out_value, primary_bsdf, r
+                cur_domain, dst, out_value, primary_bsdf, r
             );
         }
 
@@ -317,14 +330,14 @@ void main()
                 seed.x, seed.y, base_sample,
                 total_throughput, tail_throughput,
                 path_pdf, tmp_head_allows_reconnection,
-                reconnection_scale, cur_domain, out_value, primary_bsdf, r
+                cur_domain, out_value, primary_bsdf, r
             );
         }
     }
     else
     {
         for(int i = 0; i < CANONICAL_SAMPLES; ++i)
-            sample_path(seed.x, seed.y, reconnection_scale, cur_domain, out_value, r);
+            sample_path(seed.x, seed.y, cur_domain, out_value, r);
     }
 
     r.confidence = CANONICAL_SAMPLES;
@@ -342,7 +355,7 @@ void main()
         if(isnan(resampling_weight) || isinf(resampling_weight))
             resampling_weight = 0.0f;
 
-        if(update_reservoir(generate_uniform_random(seed.x), r, prev_pixel.target_function_value, resampling_weight, prev_pixel.confidence))
+        if(update_reservoir(generate_single_uniform_random(seed.x), r, prev_pixel.target_function_value, resampling_weight, prev_pixel.confidence))
         {
             r.output_sample = prev_pixel.output_sample;
             keep_old_value = true;

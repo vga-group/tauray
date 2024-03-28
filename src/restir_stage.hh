@@ -24,8 +24,7 @@ public:
     {
         RECONNECTION_SHIFT = 0,
         RANDOM_REPLAY_SHIFT = 1,
-        HYBRID_SHIFT = 2,
-        ADAPTIVE_HYBRID_SHIFT = 3
+        HYBRID_SHIFT = 2
     };
 
     struct options
@@ -116,10 +115,7 @@ public:
         bool temporal_reuse = true;
 
         // Relative scale of the reconnection boundary for hybrid shift mapping.
-        // For HYBRID_SHIFT, this is in world-space scale. For
-        // ADAPTIVE_HYBRID_SHIFT, it's relative to spatial search radius,
-        // resolution and distance, so it's completely scene and
-        // resolution-independent.
+        // This is in world-space scale.
         float reconnection_scale = 2.0f;
 
         // The shift mapping type affects the expected graphics artifacts and
@@ -134,11 +130,7 @@ public:
         // - HYBRID_SHIFT is a combination of the previous two, where it delays
         //   reconnection further in that path. It's fairly good, but slower
         //   than RECONNECTION_SHIFT.
-        // - ADAPTIVE_HYBRID_SHIFT is the same as HYBRID_SHIFT but the way the
-        //   reconnection condition is calculated is scene-independent, so it's
-        //   a safe default. It's noisier than HYBRID_SHIFT when moving, due to
-        //   the adaptability discarding some samples that HYBRID_SHIFT can keep.
-        shift_mapping_type shift_map = ADAPTIVE_HYBRID_SHIFT;
+        shift_mapping_type shift_map = HYBRID_SHIFT;
 
         // Accumulate successive samples for a reference render. This
         // unfortunately can kinda clash with doing multiple passes.

@@ -308,9 +308,6 @@ restir_stage::restir_stage(
     case HYBRID_SHIFT:
         defines["USE_HYBRID_SHIFT"];
         break;
-    case ADAPTIVE_HYBRID_SHIFT:
-        defines["USE_ADAPTIVE_HYBRID_SHIFT"];
-        break;
     }
 
     rt_shader_sources shader;

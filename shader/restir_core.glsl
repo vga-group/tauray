@@ -687,8 +687,6 @@ bool allow_initial_reconnection(sampled_material mat)
 #elif defined(USE_RANDOM_REPLAY_SHIFT)
     return false;
 #elif defined(USE_HYBRID_SHIFT)
-    return mat.roughness > 0.05f;
-#elif defined(USE_ADAPTIVE_HYBRID_SHIFT)
     // TODO: Better reconnection heuristics, but I'm not sure what's legal to
     // take into account...
     return mat.roughness > 0.05f;
@@ -696,7 +694,6 @@ bool allow_initial_reconnection(sampled_material mat)
 }
 
 bool allow_reconnection(
-    float dist_scale,
     float dist,
     sampled_material mat,
     bool bounces,
@@ -712,10 +709,6 @@ bool allow_reconnection(
     bool head = as_head;
     as_head = !bounces ? true : mat.roughness > 0.05f;
     return head && as_head && (dist > TR_RESTIR.reconnection_scale || !bounces);
-#elif defined(USE_ADAPTIVE_HYBRID_SHIFT)
-    bool head = as_head;
-    as_head = !bounces ? true : mat.roughness > 0.05f;
-    return head && as_head && (dist > dist_scale * TR_RESTIR.reconnection_scale || !bounces);
 #endif
 }
 
@@ -1175,7 +1168,6 @@ bool replay_path_nee_leaf(
     inout vec3 path_throughput,
     inout vec4 primary_bsdf,
     inout domain src,
-    float reconnect_scale,
     bool in_past,
     inout bool head_allows_reconnection,
     inout bool reconnected
@@ -1191,7 +1183,7 @@ bool replay_path_nee_leaf(
     if(vertex.instance_id == NULL_INSTANCE_ID)
         return false;
 
-    reconnected = allow_reconnection(reconnect_scale, candidate_dist, src.mat, false, head_allows_reconnection);
+    reconnected = allow_reconnection(candidate_dist, src.mat, false, head_allows_reconnection);
 
     rand32.w += 7u;
     vec3 tdir = candidate_dir * src.tbn;
@@ -1217,7 +1209,6 @@ bool replay_path_bsdf_bounce(
     inout vec3 path_throughput,
     inout vec4 primary_bsdf,
     inout domain src,
-    float reconnect_scale,
     bool in_past,
     inout bool head_allows_reconnection,
     inout bool reconnected
@@ -1240,7 +1231,7 @@ bool replay_path_bsdf_bounce(
     domain dst;
     reconnection_vertex vertex;
     bool bounces = generate_bsdf_vertex(rand32, dir, in_past, src, dst, vertex, nee_pdf);
-    reconnected = allow_reconnection(reconnect_scale, distance(src.pos, dst.pos), dst.mat, bounces, head_allows_reconnection);
+    reconnected = allow_reconnection(distance(src.pos, dst.pos), dst.mat, bounces, head_allows_reconnection);
     src = dst;
     return bounces;
 }
@@ -1263,7 +1254,6 @@ int replay_path(
     bool end_nee,
     bool fail_on_reconnect,
     bool fail_on_last_unconnected,
-    float reconnect_scale,
     bool in_past,
     out vec3 throughput,
     out vec4 primary_bsdf
@@ -1281,7 +1271,7 @@ int replay_path(
             pcg1to4(seed);
 
         bool reconnected = false;
-        bool bounces = replay_path_bsdf_bounce(bounce, seed, throughput, primary_bsdf, src, reconnect_scale, in_past, head_allows_reconnection, reconnected);
+        bool bounces = replay_path_bsdf_bounce(bounce, seed, throughput, primary_bsdf, src, in_past, head_allows_reconnection, reconnected);
         if(fail_on_reconnect && reconnected)
             return 2;
 
@@ -1301,7 +1291,7 @@ int replay_path(
     {
         // NEE paths are always terminal.
         bool reconnected = false;
-        bool success = replay_path_nee_leaf(path_length-1, seed, throughput, primary_bsdf, src, reconnect_scale, in_past, head_allows_reconnection, reconnected);
+        bool success = replay_path_nee_leaf(path_length-1, seed, throughput, primary_bsdf, src, in_past, head_allows_reconnection, reconnected);
         if(!success || (fail_on_reconnect && reconnected))
             end_state = 2;
         else
@@ -1385,7 +1375,6 @@ bool reconnection_shift_map(
     domain to_domain,
     bool do_visibility_test,
     bool update_sample,
-    float reconnect_scale,
     out float jacobian,
     out vec3 contribution,
     out vec4 primary_bsdf
@@ -1495,7 +1484,6 @@ bool random_replay_shift_map(
 #endif
     domain to_domain,
     bool update_sample,
-    float reconnect_scale,
     out float jacobian,
     out vec3 contribution,
     out vec4 primary_bsdf
@@ -1519,7 +1507,6 @@ bool random_replay_shift_map(
         rs.nee_terminal,
         false,
         false,
-        reconnect_scale,
         cur_to_prev,
         throughput,
         primary_bsdf
@@ -1546,7 +1533,6 @@ bool hybrid_shift_map(
     domain to_domain,
     bool do_visibility_test,
     bool update_sample,
-    float reconnect_scale,
     out float jacobian,
     out vec3 contribution,
     out vec4 primary_bsdf
@@ -1573,7 +1559,6 @@ bool hybrid_shift_map(
             !has_reconnection && rs.nee_terminal,
             true,
             has_reconnection,
-            reconnect_scale,
             cur_to_prev,
             throughput,
             primary_bsdf
@@ -1623,7 +1608,7 @@ bool hybrid_shift_map(
         mat3 tbn = mat3(vd.tangent, vd.bitangent, vd.mapped_normal);
 
         bool allowed = true;
-        if(!allow_reconnection(reconnect_scale, reconnect_ray_dist, mat, true, allowed))
+        if(!allow_reconnection(reconnect_ray_dist, mat, true, allowed))
             return false;
 
         vec3 tview = -reconnect_ray_dir * tbn;
@@ -1662,7 +1647,7 @@ bool hybrid_shift_map(
     else
     {
         bool allowed = true;
-        if(!allow_reconnection(reconnect_scale, reconnect_ray_dist, to_domain.mat, false, allowed))
+        if(!allow_reconnection(reconnect_ray_dist, to_domain.mat, false, allowed))
             return false;
     }
 
@@ -1710,7 +1695,6 @@ bool shift_map(
     domain to_domain,
     bool do_visibility_test,
     bool update_sample,
-    float reconnect_scale,
     out float jacobian,
     out vec3 contribution,
     out vec4 primary_bsdf
@@ -1721,7 +1705,7 @@ bool shift_map(
 #ifdef RESTIR_TEMPORAL
         cur_to_prev,
 #endif
-        to_domain, do_visibility_test, update_sample, reconnect_scale,
+        to_domain, do_visibility_test, update_sample,
         jacobian, contribution, primary_bsdf
     );
 #elif defined(USE_RANDOM_REPLAY_SHIFT)
@@ -1730,7 +1714,7 @@ bool shift_map(
 #ifdef RESTIR_TEMPORAL
         cur_to_prev,
 #endif
-        to_domain, update_sample, reconnect_scale,
+        to_domain, update_sample,
         jacobian, contribution, primary_bsdf
     );
 #else
@@ -1739,7 +1723,7 @@ bool shift_map(
 #ifdef RESTIR_TEMPORAL
         cur_to_prev,
 #endif
-        to_domain, do_visibility_test, update_sample, reconnect_scale,
+        to_domain, do_visibility_test, update_sample,
         jacobian, contribution, primary_bsdf
     );
 #endif
