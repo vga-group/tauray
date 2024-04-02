@@ -48,7 +48,7 @@ svgf_stage::svgf_stage(
     {
         shader_source src("shader/svgf_atrous.comp");
         atrous_desc.add(src);
-        estimate_variance_comp.init(src, {&estimate_variance_desc});
+        atrous_comp.init(src, {&atrous_desc});
     }
     {
         shader_source src("shader/svgf_temporal.comp");
