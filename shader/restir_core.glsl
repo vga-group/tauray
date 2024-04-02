@@ -292,8 +292,7 @@ vec3 get_bounce_throughput(
 
 struct sum_contribution
 {
-    vec3 direct_diffuse;
-    vec3 indirect_diffuse;
+    vec3 diffuse;
     vec3 reflection;
     float canonical_reflection;
 };
@@ -302,12 +301,11 @@ sum_contribution init_sum_contribution(vec3 emission)
 {
     sum_contribution sc;
 #ifdef DEMODULATE_OUTPUT
-    sc.direct_diffuse = vec3(0);
-    sc.indirect_diffuse = vec3(0);
+    sc.diffuse = vec3(0);
     sc.reflection = vec3(0);
     sc.canonical_reflection = 0;
 #else
-    sc.direct_diffuse = emission;
+    sc.diffuse = emission;
 #endif
     return sc;
 }
@@ -316,13 +314,10 @@ void add_contribution(inout sum_contribution sc, reservoir r, vec4 contrib, floa
 {
 #ifdef DEMODULATE_OUTPUT
     vec3 color = contrib.rgb * weight;
-    vec3 diffuse_transmission = color * (1.0f - contrib.a);
-    bool indirect = r.output_sample.head_length+r.output_sample.tail_length != 0;
-    sc.direct_diffuse += indirect ? vec3(0) : diffuse_transmission;
-    sc.indirect_diffuse += indirect ? diffuse_transmission : vec3(0);
+    sc.diffuse += color * (1.0f - contrib.a);
     sc.reflection += color * contrib.a;
 #else
-    sc.direct_diffuse += contrib.rgb * weight;
+    sc.diffuse += contrib.rgb * weight;
 #endif
 }
 
@@ -340,12 +335,11 @@ void add_canonical_contribution(inout sum_contribution sc, reservoir r, vec4 con
     if(pc.accumulate_color != 0) \
     { \
         float ray_length = imageLoad(out_reflection, p).r; \
-        imageStore(out_direct_diffuse, p, vec4(sc.direct_diffuse, 0)); \
-        imageStore(out_indirect_diffuse, p, vec4(sc.indirect_diffuse, sc.canonical_reflection > 0.5 ? 0 : ray_length)); \
+        imageStore(out_diffuse, p, vec4(sc.diffuse, sc.canonical_reflection > 0.5 ? 0 : ray_length)); \
         imageStore(out_reflection, p, vec4(sc.reflection, sc.canonical_reflection > 0.5 ? ray_length : 0)); \
     } \
     if(pc.update_sample_color != 0) \
-        imageStore(out_indirect_diffuse, p, out_value); \
+        imageStore(out_diffuse, p, out_value); \
 }
 #else
 #define finish_output_color(p, reservoir, out_value, sc, display_size) { \
@@ -357,13 +351,13 @@ void add_canonical_contribution(inout sum_contribution sc, reservoir r, vec4 con
         if(pc.accumulated_samples == 0 && pc.initialize_output != 0) \
             prev_color = vec4(0); \
         float confidence_ratio = min(reservoir.confidence/TR_RESTIR.max_confidence, 1.0f); \
-        vec4 ccolor = prev_color + vec4(sc.direct_diffuse, 1.0f) * confidence_ratio; \
+        vec4 ccolor = prev_color + vec4(sc.diffuse, 1.0f) * confidence_ratio; \
         ccolor.rgb /= ccolor.a; \
         if(ccolor.a == 0) ccolor = vec4(0); \
         imageStore(out_reflection, p, ccolor); \
     } \
     if(pc.update_sample_color != 0) \
-        imageStore(out_indirect_diffuse, p, out_value); \
+        imageStore(out_diffuse, p, out_value); \
 }
 #endif
 

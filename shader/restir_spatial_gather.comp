@@ -1,4 +1,5 @@
 #version 460
+#line 3
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : enable
@@ -22,19 +23,16 @@ layout(push_constant) uniform push_constant_buffer
 // These buffers are SUPER overloaded.
 // These names are for demodulated output, but they also contain demodulated
 // input or non-demodulated input/output.
-layout(binding = 16, rgba32f) uniform image2D out_direct_diffuse;
-layout(binding = 17, rgba32f) uniform image2D out_indirect_diffuse;
-layout(binding = 18, rgba32f) uniform image2D out_reflection;
+layout(binding = 16, rgba32f) uniform image2D out_diffuse;
+layout(binding = 17, rgba32f) uniform image2D out_reflection;
 
 // These names are for accumulation-enabled non-demodulated output.
-#define in_color out_indirect_diffuse
+#define in_color out_diffuse
 #define out_color out_reflection
 
-layout(binding = 19, rg32ui) readonly uniform uimage2D spatial_selection;
-layout(binding = 20, rgba32f) readonly uniform image2DArray mis_data;
-layout(binding = 21, rgba32f) readonly uniform image2DArray spatial_candidates;
-
-layout(constant_id = 15) const uint MAX_SPATIAL_SAMPLES = 8;
+layout(binding = 18, rg32ui) readonly uniform uimage2D spatial_selection;
+layout(binding = 19, rgba32f) readonly uniform image2DArray mis_data;
+layout(binding = 20, rgba32f) readonly uniform image2DArray spatial_candidates;
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -50,8 +48,8 @@ void main()
     uvec4 seed = uvec4(p, pc.camera_index, pc.sample_index);
     pcg4d(seed);
 
-    camera cam = cameras.array[pc.camera_index];
-    vec3 origin = cam.inv_view[3].xyz;
+    camera_data cam = camera.pairs[pc.camera_index].current;
+    vec3 origin = cam.origin.xyz;
 
     reservoir r;
     init_reservoir(r);
@@ -80,16 +78,12 @@ void main()
         // Missed scene, so mark invalid so that temporal reprojection skips
         // this pixel.
         write_reservoir(r, p, pc.display_size);
-        if((RB_RESTIR_FLAGS & DEMODULATE_OUTPUT) != 0)
-        {
-            imageStore(out_direct_diffuse, p, vec4(0));
-            imageStore(out_indirect_diffuse, p, vec4(canonical_domain.mat.emission, 0.0f));
-            imageStore(out_reflection, p, vec4(0));
-        }
-        else
-        {
-            imageStore(out_color, p, vec4(canonical_domain.mat.emission, 1.0f));
-        }
+#ifdef DEMODULATE_OUTPUT
+        imageStore(out_diffuse, p, vec4(canonical_domain.mat.emission, 0.0f));
+        imageStore(out_reflection, p, vec4(0));
+#else
+        imageStore(out_color, p, vec4(canonical_domain.mat.emission, 1.0f));
+#endif
         return;
     }
 
@@ -139,7 +133,7 @@ void main()
         ); // m_i
         resampling_weight = resampling_mis_weight * target_function_value * ucw * jacobian; // w_i
         add_contribution(sc, candidate, value, resampling_mis_weight * ucw * jacobian);
-        if(update_reservoir(generate_uniform_random(seed.x), r, target_function_value, resampling_weight, candidate.confidence))
+        if(update_reservoir(generate_single_uniform_random(seed.x), r, target_function_value, resampling_weight, candidate.confidence))
         {
             r.output_sample = candidate.output_sample;
             out_value = value;
@@ -154,12 +148,11 @@ void main()
     add_canonical_contribution(sc, canonical_pixel, canonical_value, canonical_resampling_mis_weight * max(canonical_pixel.ucw, 0));
 
     if(update_reservoir(
-        generate_uniform_random(seed.x), r,
+        generate_single_uniform_random(seed.x), r,
         canonical_pixel.target_function_value,
         resampling_weight,
         canonical_pixel.confidence
-    ))
-    {
+    )){
         r.output_sample = canonical_pixel.output_sample;
         out_value = canonical_value;
     }

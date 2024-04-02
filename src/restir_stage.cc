@@ -181,7 +181,7 @@ restir_stage::restir_stage(
     }
     if((!c.diffuse || !c.reflection) && opt.demodulated_output)
     {
-        throw std::runtime_error("Missing demodulated output buffers (direct, indirect, reflection)!");
+        throw std::runtime_error("Missing demodulated output buffers (diffuse, reflection)!");
     }
 
     //if(!scene_data->has_temporal_tlas() && !opt.assume_unchanged_acceleration_structures)
@@ -356,8 +356,7 @@ restir_stage::restir_stage(
     set.set_binding_params("out_reservoir_reconnection_data_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_reservoir_reconnection_radiance_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_reservoir_rng_seeds_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
-    set.set_binding_params("out_direct_diffuse", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
-    set.set_binding_params("out_indirect_diffuse", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
+    set.set_binding_params("out_diffuse", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_reflection", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_length", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("spatial_selection", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
