@@ -344,9 +344,9 @@ void descriptor_set::set_buffer(
 
     for(size_t i = 0;;)
     {
-        while(!infos[i].buffer && i < infos.size()) ++i;
+        while(i < infos.size() && !infos[i].buffer) ++i;
         uint32_t begin = i;
-        while(infos[i].buffer && i < infos.size()) ++i;
+        while(i < infos.size() && infos[i].buffer) ++i;
         uint32_t end = i;
 
         if(end == begin)
@@ -543,9 +543,9 @@ void push_descriptor_set::set_buffer(
 
     for(size_t i = 0;;)
     {
-        while(!infos[i].buffer && i < infos.size()) ++i;
+        while(i < infos.size() && !infos[i].buffer) ++i;
         uint32_t begin = i;
-        while(infos[i].buffer && i < infos.size()) ++i;
+        while(i < infos.size() && infos[i].buffer) ++i;
         uint32_t end = i;
 
         if(end == begin)
