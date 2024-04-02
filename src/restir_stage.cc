@@ -547,14 +547,12 @@ void restir_stage::update(uint32_t frame_index)
 
 #define sample_color_barrier(happens_before, happens_after) \
     { \
-        vk::ImageMemoryBarrier2KHR barriers[3]; \
+        vk::ImageMemoryBarrier barriers[3]; \
         uint32_t barrier_count = 0; \
         if(!opt.demodulated_output) \
         { \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
-                vk::PipelineStageFlagBits2::eAllCommands, \
+            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
                 happens_before, \
-                vk::PipelineStageFlagBits2::eAllCommands, \
                 happens_after, \
                 vk::ImageLayout::eGeneral, \
                 vk::ImageLayout::eGeneral, \
@@ -570,10 +568,8 @@ void restir_stage::update(uint32_t frame_index)
         } \
         else \
         { \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
-                vk::PipelineStageFlagBits2::eAllCommands, \
+            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
                 happens_before, \
-                vk::PipelineStageFlagBits2::eAllCommands, \
                 happens_after, \
                 vk::ImageLayout::eGeneral, \
                 vk::ImageLayout::eGeneral, \
@@ -586,10 +582,8 @@ void restir_stage::update(uint32_t frame_index)
                     0, VK_REMAINING_ARRAY_LAYERS \
                 } \
             }; \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
-                vk::PipelineStageFlagBits2::eAllCommands, \
+            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
                 happens_before, \
-                vk::PipelineStageFlagBits2::eAllCommands, \
                 happens_after, \
                 vk::ImageLayout::eGeneral, \
                 vk::ImageLayout::eGeneral, \
@@ -603,25 +597,22 @@ void restir_stage::update(uint32_t frame_index)
                 } \
             }; \
         } \
-        vk::DependencyInfo dependency_info = { \
-            {}, \
-            0, nullptr, \
-            0, nullptr, \
-            barrier_count, barriers \
-        }; \
-        cmd.pipelineBarrier2(dependency_info); \
+        cmd.pipelineBarrier( \
+            vk::PipelineStageFlagBits::eAllCommands, \
+            vk::PipelineStageFlagBits::eAllCommands, \
+            {}, {}, {}, \
+            {barrier_count, barriers} \
+        ); \
     }
 
 #define reservoir_barrier(r, happens_before, happens_after) \
     { \
-        vk::ImageMemoryBarrier2KHR barriers[4]; \
+        vk::ImageMemoryBarrier barriers[4]; \
         uint32_t barrier_count = 0; \
         if(r.ris_data.has_value()) \
         { \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
-                vk::PipelineStageFlagBits2::eAllCommands, \
+            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
                 happens_before, \
-                vk::PipelineStageFlagBits2::eAllCommands, \
                 happens_after, \
                 vk::ImageLayout::eGeneral, \
                 vk::ImageLayout::eGeneral, \
@@ -637,10 +628,8 @@ void restir_stage::update(uint32_t frame_index)
         } \
         if(r.reconnection_data.has_value()) \
         { \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
-                vk::PipelineStageFlagBits2::eAllCommands, \
+            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
                 happens_before, \
-                vk::PipelineStageFlagBits2::eAllCommands, \
                 happens_after, \
                 vk::ImageLayout::eGeneral, \
                 vk::ImageLayout::eGeneral, \
@@ -656,10 +645,8 @@ void restir_stage::update(uint32_t frame_index)
         } \
         if(r.reconnection_radiance.has_value()) \
         { \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
-                vk::PipelineStageFlagBits2::eAllCommands, \
+            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
                 happens_before, \
-                vk::PipelineStageFlagBits2::eAllCommands, \
                 happens_after, \
                 vk::ImageLayout::eGeneral, \
                 vk::ImageLayout::eGeneral, \
@@ -675,10 +662,8 @@ void restir_stage::update(uint32_t frame_index)
         } \
         if(r.rng_seeds.has_value()) \
         { \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier2KHR{ \
-                vk::PipelineStageFlagBits2::eAllCommands, \
+            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
                 happens_before, \
-                vk::PipelineStageFlagBits2::eAllCommands, \
                 happens_after, \
                 vk::ImageLayout::eGeneral, \
                 vk::ImageLayout::eGeneral, \
@@ -692,21 +677,18 @@ void restir_stage::update(uint32_t frame_index)
                 } \
             }; \
         } \
-        vk::DependencyInfo dependency_info = { \
-            {}, \
-            0, nullptr, \
-            0, nullptr, \
-            barrier_count, barriers \
-        }; \
-        cmd.pipelineBarrier2(dependency_info); \
+        cmd.pipelineBarrier( \
+            vk::PipelineStageFlagBits::eAllCommands, \
+            vk::PipelineStageFlagBits::eAllCommands, \
+            {}, {}, {}, \
+            {barrier_count, barriers} \
+        ); \
     }
 
 #define image_barrier(cmd, tex, happens_before, happens_after) \
     { \
-        vk::ImageMemoryBarrier2KHR barrier{ \
-            vk::PipelineStageFlagBits2::eAllCommands, \
+        vk::ImageMemoryBarrier barrier{ \
             happens_before, \
-            vk::PipelineStageFlagBits2::eAllCommands, \
             happens_after, \
             vk::ImageLayout::eGeneral, \
             vk::ImageLayout::eGeneral, \
@@ -719,10 +701,12 @@ void restir_stage::update(uint32_t frame_index)
                 0, VK_REMAINING_ARRAY_LAYERS \
             } \
         }; \
-        vk::DependencyInfo dependency_info = { \
-            {}, 0, nullptr, 0, nullptr, 1, &barrier \
-        }; \
-        cmd.pipelineBarrier2(dependency_info); \
+        cmd.pipelineBarrier( \
+            vk::PipelineStageFlagBits::eAllCommands, \
+            vk::PipelineStageFlagBits::eAllCommands, \
+            {}, {}, {}, \
+            barrier \
+        ); \
     }
 
 
@@ -732,8 +716,8 @@ void restir_stage::update(uint32_t frame_index)
         {
             reservoir_textures& in_reservoir_data = reservoir_data[reservoir_data_parity];
             reservoir_textures& out_reservoir_data = reservoir_data[1-reservoir_data_parity];
-            reservoir_barrier(in_reservoir_data, vk::AccessFlagBits2::eShaderStorageWrite, vk::AccessFlagBits2::eShaderStorageRead);
-            reservoir_barrier(out_reservoir_data, vk::AccessFlagBits2::eShaderStorageRead, vk::AccessFlagBits2::eShaderStorageWrite);
+            reservoir_barrier(in_reservoir_data, vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead);
+            reservoir_barrier(out_reservoir_data, vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eShaderWrite);
         }
 
         if(i == 0 || opt.do_canonical_samples_for_passes)
@@ -799,12 +783,12 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
 
         reservoir_barrier(
             out_reservoir_data,
-            vk::AccessFlagBits2::eShaderStorageWrite,
-            vk::AccessFlagBits2::eShaderStorageRead|vk::AccessFlagBits2::eShaderStorageWrite
+            vk::AccessFlagBits::eShaderWrite,
+            vk::AccessFlagBits::eShaderRead|vk::AccessFlagBits::eShaderWrite
         );
         sample_color_barrier(
-            vk::AccessFlagBits2::eShaderStorageRead|vk::AccessFlagBits2::eShaderStorageWrite,
-            vk::AccessFlagBits2::eShaderStorageRead|vk::AccessFlagBits2::eShaderStorageWrite
+            vk::AccessFlagBits::eShaderRead|vk::AccessFlagBits::eShaderWrite,
+            vk::AccessFlagBits::eShaderRead|vk::AccessFlagBits::eShaderWrite
         );
     }
 
@@ -843,12 +827,12 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
 
         reservoir_barrier(
             out_reservoir_data,
-            vk::AccessFlagBits2::eShaderStorageRead|vk::AccessFlagBits2::eShaderStorageWrite,
-            vk::AccessFlagBits2::eShaderStorageRead|vk::AccessFlagBits2::eShaderStorageWrite
+            vk::AccessFlagBits::eShaderRead|vk::AccessFlagBits::eShaderWrite,
+            vk::AccessFlagBits::eShaderRead|vk::AccessFlagBits::eShaderWrite
         );
         sample_color_barrier(
-            vk::AccessFlagBits2::eShaderStorageWrite,
-            vk::AccessFlagBits2::eShaderStorageRead|vk::AccessFlagBits2::eShaderStorageWrite
+            vk::AccessFlagBits::eShaderWrite,
+            vk::AccessFlagBits::eShaderRead|vk::AccessFlagBits::eShaderWrite
         );
     }
 
@@ -886,8 +870,8 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         cmd.dispatch(wg.x, wg.y, wg.z);
         image_barrier(
             cmd, selection_data,
-            vk::AccessFlagBits2::eShaderStorageWrite,
-            vk::AccessFlagBits2::eShaderStorageRead
+            vk::AccessFlagBits::eShaderWrite,
+            vk::AccessFlagBits::eShaderRead
         );
     }
 
@@ -918,13 +902,13 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
     {
         image_barrier(
             cmd, spatial_mis_data,
-            vk::AccessFlagBits2::eShaderStorageWrite,
-            vk::AccessFlagBits2::eShaderStorageRead
+            vk::AccessFlagBits::eShaderWrite,
+            vk::AccessFlagBits::eShaderRead
         );
         image_barrier(
             cmd, spatial_candidate_color,
-            vk::AccessFlagBits2::eShaderStorageWrite,
-            vk::AccessFlagBits2::eShaderStorageRead
+            vk::AccessFlagBits::eShaderWrite,
+            vk::AccessFlagBits::eShaderRead
         );
     }
 

@@ -139,13 +139,16 @@ void gbuffer_texture::reset(
 
 #define TR_GBUFFER_ENTRY(name, ...) \
     void gbuffer_texture::add_##name(\
-        vk::ImageUsageFlags usage, vk::Format fmt\
+        vk::ImageUsageFlags usage, vk::Format fmt, vk::ImageLayout initial_layout\
     ){\
-        auto layout = vk::ImageLayout::eGeneral;\
-        if(usage & vk::ImageUsageFlagBits::eColorAttachment)\
-            layout = vk::ImageLayout::eColorAttachmentOptimal;\
-        else if(usage & vk::ImageUsageFlagBits::eDepthStencilAttachment) \
-            layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;\
+        if(initial_layout == vk::ImageLayout::eUndefined) \
+        { \
+            initial_layout = vk::ImageLayout::eGeneral;\
+            if(usage & vk::ImageUsageFlagBits::eColorAttachment)\
+                initial_layout = vk::ImageLayout::eColorAttachmentOptimal;\
+            else if(usage & vk::ImageUsageFlagBits::eDepthStencilAttachment) \
+                initial_layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;\
+        } \
         name.reset(new texture(\
             mask,\
             size,\
@@ -154,7 +157,7 @@ void gbuffer_texture::reset(
             0, nullptr,\
             vk::ImageTiling::eOptimal,\
             usage,\
-            layout,\
+            initial_layout,\
             msaa\
         ));\
     }\
@@ -165,10 +168,10 @@ void gbuffer_texture::reset(
 TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
 
-void gbuffer_texture::add(gbuffer_spec spec)
+void gbuffer_texture::add(gbuffer_spec spec, vk::ImageLayout layout)
 {
 #define TR_GBUFFER_ENTRY(name, ...) \
-    if(spec.name##_present) add_##name(spec.name##_usage, spec.name##_format);
+    if(spec.name##_present) add_##name(spec.name##_usage, spec.name##_format, layout);
     TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
 }

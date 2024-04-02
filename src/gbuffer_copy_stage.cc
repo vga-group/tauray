@@ -15,15 +15,16 @@ gbuffer_copy_stage::gbuffer_copy_stage(
         copy_timer.begin(cb, dev.id, i);
 
         in.visit([&](render_target& target){
-            target.transition_layout_temporary(cb, vk::ImageLayout::eTransferSrcOptimal);
+            target.transition_layout_temporary(cb, vk::ImageLayout::eTransferSrcOptimal, true, true);
         });
         out.visit([&](render_target& target){
-            target.transition_layout_temporary(cb, vk::ImageLayout::eTransferDstOptimal);
+            target.layout = vk::ImageLayout::eUndefined;
+            target.transition_layout_temporary(cb, vk::ImageLayout::eTransferDstOptimal, true, true);
         });
 
         for(size_t j = 0; j < MAX_GBUFFER_ENTRIES; ++j)
         {
-            if(!out[j]) continue;
+            if(!out[j] || !in[j]) continue;
             uvec3 size = uvec3(in[j].size, 1);
             cb.copyImage(
                 in[j].image,
@@ -40,10 +41,16 @@ gbuffer_copy_stage::gbuffer_copy_stage(
             );
         }
 
+        in.visit([&](render_target& target){
+            vk::ImageLayout old_layout = target.layout;
+            target.layout = vk::ImageLayout::eTransferSrcOptimal;
+            target.transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true, true);
+            target.layout = old_layout;
+        });
         out.visit([&](render_target& target){
             vk::ImageLayout old_layout = target.layout;
             target.layout = vk::ImageLayout::eTransferDstOptimal;
-            target.transition_layout_temporary(cb, vk::ImageLayout::eGeneral);
+            target.transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true, true);
             target.layout = old_layout;
         });
 
@@ -51,7 +58,7 @@ gbuffer_copy_stage::gbuffer_copy_stage(
         end_compute(cb, i);
     }
     in.visit([&](render_target& target){
-        target.layout = vk::ImageLayout::eTransferSrcOptimal;
+        target.layout = vk::ImageLayout::eGeneral;
     });
     out.visit([&](render_target& target){
         target.layout = vk::ImageLayout::eGeneral;

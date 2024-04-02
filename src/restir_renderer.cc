@@ -33,9 +33,9 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         vk::ImageUsageFlagBits::eSampled;
 
     current_gbuffer.reset(device_mask::all(ctx), ctx.get_size(), ctx.get_display_count());
-    current_gbuffer.add(gs);
+    current_gbuffer.add(gs, vk::ImageLayout::eGeneral);
     prev_gbuffer.reset(device_mask::all(ctx), ctx.get_size(), ctx.get_display_count());
-    prev_gbuffer.add(gs);
+    prev_gbuffer.add(gs, vk::ImageLayout::eGeneral);
 
     scene_update.emplace(device_mask::all(ctx), opt.scene_options);
 
@@ -62,11 +62,15 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         gbuffer_block_targets, raster_opt
     );
 
-    gbuffer_target cur = current_gbuffer.get_array_target(display_device.id);
-    gbuffer_target prev = prev_gbuffer.get_array_target(display_device.id);
-    cur.set_layout(vk::ImageLayout::eGeneral);
-    prev.set_layout(vk::ImageLayout::eGeneral);
+    gbuffer_target cur = current_gbuffer.get_layer_target(display_device.id, 0);
+    gbuffer_target prev = prev_gbuffer.get_layer_target(display_device.id, 0);
     restir.emplace(display_device, *scene_update, cur, prev, opt.restir_options);
+
+    cur = current_gbuffer.get_array_target(display_device.id);
+    cur.set_layout(vk::ImageLayout::eShaderReadOnlyOptimal);
+    cur.color.layout = vk::ImageLayout::eGeneral;
+    cur.diffuse.layout = vk::ImageLayout::eGeneral;
+    cur.reflection.layout = vk::ImageLayout::eGeneral;
 
     std::vector<render_target> display = ctx.get_array_render_target();
     tonemap.emplace(
@@ -78,8 +82,13 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     // Take out the things we don't need in the previous G-Buffer before
     // copying stuff over.
+    prev = prev_gbuffer.get_array_target(display_device.id);
+
     cur.color = render_target();
     cur.screen_motion = render_target();
+    prev.color = render_target();
+    prev.screen_motion = render_target();
+
     copy.emplace(display_device, cur, prev);
 }
 

@@ -133,13 +133,14 @@ namespace tr
 #define TR_GBUFFER_ENTRY(name, format) \
         void add_##name(\
             vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eStorage,\
-            vk::Format fmt = format\
+            vk::Format fmt = format,\
+            vk::ImageLayout layout = vk::ImageLayout::eUndefined\
         );\
         bool has_##name() const;
         TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
 
-        void add(gbuffer_spec spec);
+        void add(gbuffer_spec spec, vk::ImageLayout layout = vk::ImageLayout::eUndefined);
 
         gbuffer_target get_array_target(device_id id) const;
         gbuffer_target get_layer_target(device_id id, uint32_t layer_index) const;

@@ -97,7 +97,7 @@ depth_attachment_state get_depth_attachment(
             vk::AttachmentStoreOp::eDontCare,
             opt.clear_depth ? vk::ImageLayout::eUndefined :
                 vk::ImageLayout::eDepthStencilAttachmentOptimal,
-            vk::ImageLayout::eDepthStencilAttachmentOptimal
+            opt.output_layout
         },
         true,
         true,

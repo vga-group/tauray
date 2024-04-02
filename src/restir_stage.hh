@@ -166,6 +166,7 @@ public:
         uint32_t temporal_permutation = 0;
     };
 
+    // TODO: Doesn't expect multi-view targets for now.
     restir_stage(
         device& dev,
         scene_stage& ss,
