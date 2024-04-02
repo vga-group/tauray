@@ -33,6 +33,7 @@ private:
     
     gbuffer_target target_viewport;
 
+    push_descriptor_set desc;
     compute_pipeline comp;
     options opt;
     

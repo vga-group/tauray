@@ -1,6 +1,7 @@
 #ifndef TAURAY_DIRECT_STAGE_HH
 #define TAURAY_DIRECT_STAGE_HH
 #include "path_tracer_stage.hh"
+#include "descriptor_set.hh"
 
 namespace tr
 {
@@ -26,7 +27,6 @@ public:
     );
 
 protected:
-    void init_scene_resources() override;
     void record_command_buffer_pass(
         vk::CommandBuffer cb,
         uint32_t frame_index,
@@ -36,6 +36,7 @@ protected:
     ) override;
 
 private:
+    push_descriptor_set desc;
     rt_pipeline gfx;
     options opt;
 };

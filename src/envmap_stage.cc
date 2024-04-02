@@ -16,6 +16,7 @@ struct push_constant_buffer
     pvec2 screen_size;
     // -1 for no environment map
     int environment_proj;
+    int base_camera_index;
 };
 
 }
@@ -34,11 +35,12 @@ envmap_stage::envmap_stage(
 {
     for(const render_target& target: color_arrays)
     {
-        array_pipelines.emplace_back(new raster_pipeline(dev, {
+        array_pipelines.emplace_back(new raster_pipeline(dev));
+        array_pipelines.back()->init(raster_pipeline::pipeline_state{
             target.size,
             uvec4(0, 0, target.size),
             {{"shader/envmap.vert"}, {"shader/envmap.frag"}},
-            {},
+            {&ss.get_descriptors()},
             {}, {},
             {{
                 target,
@@ -55,8 +57,9 @@ envmap_stage::envmap_stage(
                 }
             }},
             {},
-            false, false, true
-        }));
+            false, false, true,
+            {}, false
+        });
     }
 }
 
@@ -89,19 +92,18 @@ void envmap_stage::update(uint32_t)
         size_t j = 0;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
-            // Bind descriptors
-            ss->bind(*gfx, i, j);
-            j += gfx->get_multiview_layer_count();
-
             gfx->begin_render_pass(cb, i);
-            gfx->bind(cb, i);
+            gfx->bind(cb);
+            gfx->set_descriptors(cb, ss->get_descriptors(), 0, 0);
 
             control.screen_size = vec2(gfx->get_state().output_size);
+            control.base_camera_index = j;
             gfx->push_constants(cb, control);
 
             cb.draw(6, 1, 0, 0);
 
             gfx->end_render_pass(cb);
+            j += gfx->get_multiview_layer_count();
         }
         envmap_timer.end(cb, dev->id, i);
         end_graphics(cb, i);

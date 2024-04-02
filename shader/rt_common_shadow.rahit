@@ -6,21 +6,17 @@
 
 hitAttributeEXT vec2 attribs;
 
-#define SCENE_DATA_BUFFER_BINDING 1
-#define VERTEX_BUFFER_BINDING 2
-#define INDEX_BUFFER_BINDING 3
-#define TEXTURE_ARRAY_BINDING 4
 #include "rt.glsl"
-
 #include "ggx.glsl"
 
-layout(location = 1) rayPayloadInEXT float shadow_visibility;
+#define PAYLOAD_IN
+#include "rt_common_payload.glsl"
 
 void main()
 {
     vec3 view = gl_WorldRayDirectionEXT;
     int instance_id = gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT;
-    material mat = scene.o[instance_id].mat;
+    material mat = instances.o[instance_id].mat;
 
     vec2 uv;
     get_interpolated_vertex_light(view, attribs, instance_id, gl_PrimitiveID, uv);

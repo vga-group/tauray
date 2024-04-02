@@ -3,6 +3,7 @@
 #include "context.hh"
 #include "texture.hh"
 #include "compute_pipeline.hh"
+#include "descriptor_set.hh"
 #include "sampler.hh"
 #include "timer.hh"
 #include "stage.hh"
@@ -30,6 +31,7 @@ public:
     );
 
 private:
+    push_descriptor_set desc;
     compute_pipeline comp;
     sampler input_sampler;
     timer stage_timer;

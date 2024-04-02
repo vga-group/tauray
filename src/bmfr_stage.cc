@@ -18,10 +18,14 @@ bmfr_stage::bmfr_stage(
     gbuffer_target& prev_features,
     const options& opt
 ):  single_device_stage(dev),
-    bmfr_preprocess_comp(dev, compute_pipeline::params{ load_shader_source("shader/bmfr_preprocess.comp", opt), {} }),
-    bmfr_fit_comp(dev, compute_pipeline::params{ load_shader_source("shader/bmfr_fit.comp", opt), {}}),
-    bmfr_weighted_sum_comp(dev, compute_pipeline::params{ load_shader_source("shader/bmfr_weighted_sum.comp", opt), {}}),
-    bmfr_accumulate_output_comp(dev, compute_pipeline::params{load_shader_source("shader/bmfr_accumulate_output.comp", opt), {}}),
+    bmfr_preprocess_desc(dev),
+    bmfr_preprocess_comp(dev),
+    bmfr_fit_desc(dev),
+    bmfr_fit_comp(dev),
+    bmfr_weighted_sum_desc(dev),
+    bmfr_weighted_sum_comp(dev),
+    bmfr_accumulate_output_desc(dev),
+    bmfr_accumulate_output_comp(dev),
     current_features(current_features),
     prev_features(prev_features),
     opt(opt),
@@ -32,6 +36,26 @@ bmfr_stage::bmfr_stage(
     bmfr_accumulate_output_timer(dev, "accumulated output(" + std::to_string(current_features.get_layer_count()) + " viewports)"),
     image_copy_timer(dev, "image copy(" + std::to_string(current_features.get_layer_count()) + " viewports)")
 {
+    {
+        shader_source src = load_shader_source("shader/bmfr_preprocess.comp", opt);
+        bmfr_preprocess_desc.add(src);
+        bmfr_preprocess_comp.init(src, {&bmfr_preprocess_desc});
+    }
+    {
+        shader_source src = load_shader_source("shader/bmfr_fit.comp", opt);
+        bmfr_fit_desc.add(src);
+        bmfr_fit_comp.init(src, {&bmfr_fit_desc});
+    }
+    {
+        shader_source src = load_shader_source("shader/bmfr_weighted_sum.comp", opt);
+        bmfr_weighted_sum_desc.add(src);
+        bmfr_weighted_sum_comp.init(src, {&bmfr_weighted_sum_desc});
+    }
+    {
+        shader_source src = load_shader_source("shader/bmfr_accumulate_output.comp", opt);
+        bmfr_accumulate_output_desc.add(src);
+        bmfr_accumulate_output_comp.init(src, {&bmfr_accumulate_output_desc});
+    }
     init_resources();
     record_command_buffers();
 }
@@ -119,6 +143,10 @@ void bmfr_stage::init_resources()
     weighted_sum[0] = rt_textures[8]->get_array_render_target(dev->id);
     weighted_sum[1] = rt_textures[9]->get_array_render_target(dev->id);
 
+    bmfr_preprocess_desc.reset(dev->id, MAX_FRAMES_IN_FLIGHT);
+    bmfr_fit_desc.reset(dev->id, MAX_FRAMES_IN_FLIGHT);
+    bmfr_weighted_sum_desc.reset(dev->id, MAX_FRAMES_IN_FLIGHT);
+    bmfr_accumulate_output_desc.reset(dev->id, MAX_FRAMES_IN_FLIGHT);
 
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
@@ -168,71 +196,45 @@ void bmfr_stage::init_resources()
         // Used to get current frame index for block offsetting and seeding RNG
         ubos = gpu_buffer(*dev, 4, vk::BufferUsageFlagBits::eUniformBuffer);
 
-        bmfr_preprocess_comp.update_descriptor_set({
-            {"in_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
-            {"in_normal", {{}, current_features.normal.view, vk::ImageLayout::eGeneral}},
-            {"in_pos", {{}, current_features.pos.view, vk::ImageLayout::eGeneral}},
-            {"in_screen_motion", {{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}},
-            {"previous_normal", {{}, prev_features.normal.view, vk::ImageLayout::eGeneral}},
-            {"previous_pos", {{}, prev_features.pos.view, vk::ImageLayout::eGeneral}},
-            {"in_albedo", {{}, current_features.albedo.view, vk::ImageLayout::eGeneral}},
-            {"in_diffuse", {{}, current_features.diffuse.view, vk::ImageLayout::eGeneral}},
-            {"tmp_noisy", {
-                {{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral},
-                {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}
-            }},
-            {"bmfr_diffuse_hist", {{}, diffuse_hist.view, vk::ImageLayout::eGeneral}},
-            {"bmfr_specular_hist", {{}, specular_hist.view, vk::ImageLayout::eGeneral}},
-            {"tmp_buffer", {tmp_data[i], 0, VK_WHOLE_SIZE}},
-            {"uniform_buffer", {ubos[dev->id], 0, VK_WHOLE_SIZE}},
-            {"accept_buffer", {accepts[i], 0, VK_WHOLE_SIZE}},
-        }, i);
-        bmfr_fit_comp.update_descriptor_set({
-            {"tmp_buffer", {tmp_data[i], 0, VK_WHOLE_SIZE}},
-            {"mins_maxs_buffer", {min_max_buffer[i], 0, VK_WHOLE_SIZE}},
-            {"weights_buffer", {weights[i], 0, VK_WHOLE_SIZE}},
-            {"uniform_buffer", {ubos[dev->id], 0, VK_WHOLE_SIZE}},
-            {"in_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
-        }, i);
-        bmfr_weighted_sum_comp.update_descriptor_set({
-            {"weights_buffer", {weights[i], 0, VK_WHOLE_SIZE}},
-            {"in_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
-            {"in_normal", {{}, current_features.normal.view, vk::ImageLayout::eGeneral}},
-            {"in_pos", {{}, current_features.pos.view, vk::ImageLayout::eGeneral}},
-            {"mins_maxs_buffer", {min_max_buffer[i], 0, VK_WHOLE_SIZE}},
-            {"in_diffuse", {{}, current_features.diffuse.view, vk::ImageLayout::eGeneral}},
-            {"uniform_buffer", {ubos[dev->id], 0, VK_WHOLE_SIZE}},
-            {"weighted_out", {
-                {{}, weighted_sum[0].view, vk::ImageLayout::eGeneral},
-                {{}, weighted_sum[1].view, vk::ImageLayout::eGeneral}
-            }},
-            {"tmp_noisy", {
-                {{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral},
-                {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}
-            }},
-        }, i);
-        bmfr_accumulate_output_comp.update_descriptor_set({
-            {"out_color", {{}, current_features.color.view, vk::ImageLayout::eGeneral}},
-            {"in_screen_motion", {{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}},
-            {"in_albedo", {{}, current_features.albedo.view, vk::ImageLayout::eGeneral}},
-            {"filtered_hist", {
-                {{}, filtered_hist[0].view, vk::ImageLayout::eGeneral},
-                {{}, filtered_hist[1].view, vk::ImageLayout::eGeneral}
-            }},
-            {"accept_buffer", {accepts[i], 0, VK_WHOLE_SIZE}},
-            {"tmp_hist", {
-                {{}, tmp_filtered[0].view, vk::ImageLayout::eGeneral},
-                {{}, tmp_filtered[1].view, vk::ImageLayout::eGeneral}
-            }},
-            {"weighted_in", {
-                {{}, weighted_sum[0].view, vk::ImageLayout::eGeneral},
-                {{}, weighted_sum[1].view, vk::ImageLayout::eGeneral}
-            }},
-            {"tmp_noisy", {
-                {{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral},
-                {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}
-            }},
-        }, i);
+        bmfr_preprocess_desc.set_image(dev->id, i, "in_color", {{{}, current_features.color.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "in_normal", {{{}, current_features.normal.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "in_pos", {{{}, current_features.pos.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "in_screen_motion", {{{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "previous_normal", {{{}, prev_features.normal.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "previous_pos", {{{}, prev_features.pos.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "in_albedo", {{{}, current_features.albedo.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "in_diffuse", {{{}, current_features.diffuse.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "tmp_noisy", {{{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral}, {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "bmfr_diffuse_hist", {{{}, diffuse_hist.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "bmfr_specular_hist", {{{}, specular_hist.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_buffer(dev->id, i, "tmp_buffer", {{tmp_data[i], 0, VK_WHOLE_SIZE}});
+        bmfr_preprocess_desc.set_buffer(dev->id, i, "uniform_buffer", {{ubos[dev->id], 0, VK_WHOLE_SIZE}});
+        bmfr_preprocess_desc.set_buffer(dev->id, i, "accept_buffer", {{accepts[i], 0, VK_WHOLE_SIZE}});
+
+        bmfr_fit_desc.set_buffer(dev->id, i, "tmp_buffer", {{tmp_data[i], 0, VK_WHOLE_SIZE}});
+        bmfr_fit_desc.set_buffer(dev->id, i, "mins_maxs_buffer", {{min_max_buffer[i], 0, VK_WHOLE_SIZE}});
+        bmfr_fit_desc.set_buffer(dev->id, i, "weights_buffer", {{weights[i], 0, VK_WHOLE_SIZE}});
+        bmfr_fit_desc.set_buffer(dev->id, i, "uniform_buffer", {{ubos[dev->id], 0, VK_WHOLE_SIZE}});
+        bmfr_fit_desc.set_image(dev->id, i, "in_color", {{{}, current_features.color.view, vk::ImageLayout::eGeneral}});
+
+        bmfr_weighted_sum_desc.set_buffer(dev->id, i, "weights_buffer", {{weights[i], 0, VK_WHOLE_SIZE}});
+        bmfr_weighted_sum_desc.set_image(dev->id, i, "in_color", {{{}, current_features.color.view, vk::ImageLayout::eGeneral}});
+        bmfr_weighted_sum_desc.set_image(dev->id, i, "in_normal", {{{}, current_features.normal.view, vk::ImageLayout::eGeneral}});
+        bmfr_weighted_sum_desc.set_image(dev->id, i, "in_pos", {{{}, current_features.pos.view, vk::ImageLayout::eGeneral}});
+        bmfr_weighted_sum_desc.set_buffer(dev->id, i, "mins_maxs_buffer", {{min_max_buffer[i], 0, VK_WHOLE_SIZE}});
+        bmfr_weighted_sum_desc.set_image(dev->id, i, "in_diffuse", {{{}, current_features.diffuse.view, vk::ImageLayout::eGeneral}});
+        bmfr_weighted_sum_desc.set_buffer(dev->id, i, "uniform_buffer", {{ubos[dev->id], 0, VK_WHOLE_SIZE}});
+        bmfr_weighted_sum_desc.set_image(dev->id, i, "weighted_out", {{{}, weighted_sum[0].view, vk::ImageLayout::eGeneral}, {{}, weighted_sum[1].view, vk::ImageLayout::eGeneral}});
+        bmfr_weighted_sum_desc.set_image(dev->id, i, "tmp_noisy", {{{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral}, {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}});
+
+        bmfr_accumulate_output_desc.set_image(dev->id, i, "out_color", {{{}, current_features.color.view, vk::ImageLayout::eGeneral}});
+        bmfr_accumulate_output_desc.set_image(dev->id, i, "in_screen_motion", {{{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}});
+        bmfr_accumulate_output_desc.set_image(dev->id, i, "in_albedo", {{{}, current_features.albedo.view, vk::ImageLayout::eGeneral}});
+        bmfr_accumulate_output_desc.set_image(dev->id, i, "filtered_hist", {{{}, filtered_hist[0].view, vk::ImageLayout::eGeneral}, {{}, filtered_hist[1].view, vk::ImageLayout::eGeneral}});
+        bmfr_accumulate_output_desc.set_buffer(dev->id, i, "accept_buffer", {{accepts[i], 0, VK_WHOLE_SIZE}});
+        bmfr_accumulate_output_desc.set_image(dev->id, i, "tmp_hist", {{{}, tmp_filtered[0].view, vk::ImageLayout::eGeneral}, {{}, tmp_filtered[1].view, vk::ImageLayout::eGeneral}});
+        bmfr_accumulate_output_desc.set_image(dev->id, i, "weighted_in", {{{}, weighted_sum[0].view, vk::ImageLayout::eGeneral}, {{}, weighted_sum[1].view, vk::ImageLayout::eGeneral}});
+        bmfr_accumulate_output_desc.set_image(dev->id, i, "tmp_noisy", {{{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral}, {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}});
     }
 }
 
@@ -253,7 +255,8 @@ void bmfr_stage::record_command_buffers()
         control.workset_size = pivec2(workset_size.x, workset_size.y);
 
 
-        bmfr_preprocess_comp.bind(cb, i);
+        bmfr_preprocess_comp.bind(cb);
+        bmfr_preprocess_comp.set_descriptors(cb, bmfr_preprocess_desc, i, 0);
         bmfr_preprocess_comp.push_constants(cb, control);
         bmfr_preprocess_timer.begin(cb, dev->id, i);
         cb.dispatch(workset_size.x * 2, workset_size.y * 2, current_features.get_layer_count());
@@ -270,7 +273,8 @@ void bmfr_stage::record_command_buffers()
         );
 
 
-        bmfr_fit_comp.bind(cb, i);
+        bmfr_fit_comp.bind(cb);
+        bmfr_fit_comp.set_descriptors(cb, bmfr_fit_desc, i, 0);
         bmfr_fit_comp.push_constants(cb, control);
         bmfr_fit_timer.begin(cb, dev->id, i);
         cb.dispatch(workset_size.x, workset_size.y, current_features.get_layer_count());
@@ -284,7 +288,8 @@ void bmfr_stage::record_command_buffers()
 
         wg = (workset_size*32u+15u)/16u;
         // wg = (current_features.get_size()+15u)/16u;
-        bmfr_weighted_sum_comp.bind(cb, i);
+        bmfr_weighted_sum_comp.bind(cb);
+        bmfr_weighted_sum_comp.set_descriptors(cb, bmfr_weighted_sum_desc, i, 0);
         bmfr_weighted_sum_comp.push_constants(cb, control);
         bmfr_weighted_sum_timer.begin(cb, dev->id, i);
         cb.dispatch(wg.x, wg.y, current_features.get_layer_count());
@@ -297,7 +302,8 @@ void bmfr_stage::record_command_buffers()
         );
 
         wg = (current_features.get_size()+15u)/16u;
-        bmfr_accumulate_output_comp.bind(cb, i);
+        bmfr_accumulate_output_comp.bind(cb);
+        bmfr_accumulate_output_comp.set_descriptors(cb, bmfr_accumulate_output_desc, i, 0);
         bmfr_accumulate_output_comp.push_constants(cb, control);
         bmfr_accumulate_output_timer.begin(cb, dev->id, i);
         cb.dispatch(wg.x, wg.y, current_features.get_layer_count());

@@ -4,9 +4,8 @@
 
 hitAttributeEXT vec2 attribs;
 
-#include "path_tracer.glsl"
-
-layout(location = 0) rayPayloadInEXT hit_payload payload;
+#define PAYLOAD_IN
+#include "rt_common_payload.glsl"
 
 void main()
 {

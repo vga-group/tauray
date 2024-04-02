@@ -2,8 +2,7 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_multiview : enable
 
-#define ENVIRONMENT_MAP_BINDING 0
-#define CAMERA_DATA_BINDING 1
+#define SCENE_SET 0
 #include "scene.glsl"
 
 layout(location = 0) out vec4 out_color;
@@ -13,6 +12,7 @@ layout(push_constant) uniform push_constant_buffer
     vec4 environment_factor;
     vec2 screen_size;
     int environment_proj;
+    int base_camera_index;
 } control;
 
 void main()
@@ -20,7 +20,7 @@ void main()
     vec3 origin;
     vec3 view_dir;
     get_camera_ray(
-        camera.pairs[gl_ViewIndex].current,
+        camera.pairs[control.base_camera_index+gl_ViewIndex].current,
         vec2(
             gl_FragCoord.x,
             control.screen_size.y - gl_FragCoord.y

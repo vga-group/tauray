@@ -19,8 +19,12 @@ namespace tr
 {
 
 radix_sort::radix_sort(device& dev)
-: dev(&dev), reorder(dev, {{"shader/array_reorder.comp"}, {}, 1, true})
+: dev(&dev), desc(dev), reorder(dev)
 {
+    shader_source src("shader/array_reorder.comp");
+    desc.add(src);
+    reorder.init(src, {&desc});
+
     radix_sort_vk_target* rs_target =  radix_sort_vk_target_auto_detect(
         (VkPhysicalDeviceProperties*)&dev.props,
         (VkPhysicalDeviceSubgroupProperties*)&dev.subgroup_props,
@@ -144,11 +148,10 @@ void radix_sort::sort(
     );
 
     reorder.bind(cb);
-    reorder.push_descriptors(cb, {
-        {"input_data", {input_items, 0, item_size * item_count}},
-        {"output_data", {output_items, 0, item_size * item_count}},
-        {"keyval_data", sorted_keyvals_buf}
-    });
+    desc.set_buffer(dev->id, "keyval_data", {sorted_keyvals_buf});
+    desc.set_buffer(dev->id, "input_data", {{input_items, 0, item_size * item_count}});
+    desc.set_buffer(dev->id, "output_data", {{output_items, 0, item_size * item_count}});
+    reorder.push_descriptors(cb, desc, 0);
     reorder.push_constants(cb, reorder_push_constants{(uint32_t)(item_size/sizeof(uint32_t)), (uint32_t)item_count});
     cb.dispatch((item_count * (item_size / sizeof(uint32_t)) + 255u)/256u, 1, 1);
 

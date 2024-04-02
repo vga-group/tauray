@@ -20,25 +20,6 @@ struct pt_vertex_data
     int instance_id;
 };
 
-struct hit_payload
-{
-    // Needed by anyhit alpha handling.
-    uint random_seed;
-
-    // Negative if the ray escaped the scene or otherwise died. Otherwise, it's
-    // the index of the mesh instance, and primitive_id and barycentrics are
-    // valid as well.
-    int instance_id;
-    // If instance_id is non-negative, this is the triangle index. Otherwise,
-    // if primitive_id is non-negative, it is the light index. If it is negative,
-    // that means that the ray escaped the scene and hit the environment map
-    // instead.
-    int primitive_id;
-
-    // Barycentric coordinates to the triangle that was hit.
-    vec2 barycentrics;
-};
-
 struct intersection_pdf
 {
     float point_light_pdf;
@@ -47,11 +28,9 @@ struct intersection_pdf
     float envmap_pdf;
 };
 
-#ifdef TLAS_BINDING
 #include "ggx.glsl"
 
-layout(location = 0) rayPayloadEXT hit_payload payload;
-layout(location = 1) rayPayloadEXT float shadow_visibility;
+#include "rt_common_payload.glsl"
 
 float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
 {
@@ -350,7 +329,6 @@ void next_event_estimation(
         diffuse_radiance += d * contrib;
         specular_radiance += s * contrib;
     }
-#endif
 }
 
 // This is used to remove invalid ray directions, which are caused by normal
@@ -510,7 +488,7 @@ void evaluate_ray(
 
 #endif
 
-#ifdef CAMERA_DATA_BINDING
+#ifdef DISTRIBUTION_DATA_BINDING
 void get_world_camera_ray(inout local_sampler lsampler, out vec3 origin, out vec3 dir)
 {
     vec2 cam_offset = vec2(0.0);
@@ -587,4 +565,3 @@ void write_all_outputs(
 #endif
 
 #endif
-

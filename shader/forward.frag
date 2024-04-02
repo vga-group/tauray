@@ -4,26 +4,12 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_multiview : enable
 
-#define SCENE_DATA_BUFFER_BINDING 0
-#define TEXTURE_ARRAY_BINDING 1
-#define DIRECTIONAL_LIGHT_BUFFER_BINDING 2
-#define POINT_LIGHT_BUFFER_BINDING 3
-#define CAMERA_DATA_BINDING 4
-#define SHADOW_MAP_BUFFER_BINDING 5
-#define SHADOW_MAP_CASCADE_BUFFER_BINDING 6
-#define SHADOW_MAP_ATLAS_BINDING 7
-#define SHADOW_MAP_ATLAS_TEST_BINDING 8
-#define PCF_NOISE_VECTOR_2D_BINDING 9
-#define PCF_NOISE_VECTOR_3D_BINDING 10
-#define TEXTURE_3D_ARRAY_BINDING 11
-#define SH_GRID_BUFFER_BINDING 12
-#define BRDF_INTEGRATION_BINDING 13
-#define SCENE_METADATA_BUFFER_BINDING 14
 #define CALC_PREV_VERTEX_POS
 #include "forward.glsl"
 #include "ggx.glsl"
 #include "spherical_harmonics.glsl"
 #include "gbuffer.glsl"
+#include "shadow_mapping.glsl"
 
 layout(location = 0) in vec3 in_pos;
 layout(location = 1) in vec3 in_prev_pos;
@@ -34,7 +20,7 @@ layout(location = 5) in vec3 in_bitangent;
 
 sampled_material sample_material(inout vertex_data v)
 {
-    material mat = scene.o[control.instance_id].mat;
+    material mat = instances.o[control.instance_id].mat;
     return sample_material(mat, v);
 }
 
@@ -154,7 +140,7 @@ void eval_indirect_light(
     vec3 indirect_diffuse = vec3(0);
     vec3 indirect_specular = vec3(0);
 
-    int sh_grid_index = scene.o[control.instance_id].sh_grid_index;
+    int sh_grid_index = instances.o[control.instance_id].sh_grid_index;
     if(sh_grid_index >= 0)
     {
         sh_grid sg = sh_grids.grids[sh_grid_index];
@@ -162,7 +148,7 @@ void eval_indirect_light(
         vec3 sample_normal = normalize((sg.normal_from_world * vec4(v.smooth_normal, 0)).xyz);
 
         sh_probe sh = sample_sh_grid(
-            textures3d[nonuniformEXT(sh_grid_index)], sg.grid_clamp,
+            sh_grid_data[nonuniformEXT(sh_grid_index)], sg.grid_clamp,
             sample_pos, sample_normal
         );
 
@@ -186,7 +172,7 @@ void main()
 {
     vertex_data v = get_vertex_data();
     sampled_material mat = sample_material(v);
-    vec3 view = normalize(v.pos - camera.pairs[gl_ViewIndex].current.origin.xyz);
+    vec3 view = normalize(v.pos - camera.pairs[control.base_camera_index + gl_ViewIndex].current.origin.xyz);
     mat3 tbn = create_tangent_space(v.mapped_normal);
     vec3 shading_view = -view * tbn;
     vec3 direct_diffuse;
@@ -210,7 +196,7 @@ void main()
     write_gbuffer_material(mat);
     write_gbuffer_normal(dot(view, v.mapped_normal) > 0 ? -v.mapped_normal : v.mapped_normal);
     write_gbuffer_pos(v.pos);
-    write_gbuffer_screen_motion(get_camera_projection(camera.pairs[gl_ViewIndex].previous, v.prev_pos));
+    write_gbuffer_screen_motion(get_camera_projection(camera.pairs[control.base_camera_index + gl_ViewIndex].previous, v.prev_pos));
     write_gbuffer_instance_id(int(control.instance_id));
     write_gbuffer_linear_depth();
     write_gbuffer_flat_normal(normalize(cross(dFdy(v.pos), dFdx(v.pos))));

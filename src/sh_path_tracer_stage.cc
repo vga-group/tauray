@@ -22,8 +22,8 @@ namespace sh_path_tracer
 {
     rt_shader_sources load_sources(const sh_path_tracer_stage::options& opt)
     {
-        shader_source pl_rint("shader/path_tracer_point_light.rint");
-        shader_source shadow_chit("shader/path_tracer_shadow.rchit");
+        shader_source pl_rint("shader/rt_common_point_light.rint");
+        shader_source shadow_chit("shader/rt_common_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
 
@@ -49,17 +49,17 @@ namespace sh_path_tracer
             {
                 {
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/path_tracer.rchit"},
-                    {"shader/path_tracer.rahit"}
+                    {"shader/rt_common.rchit"},
+                    {"shader/rt_common.rahit"}
                 },
                 {
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
                     shadow_chit,
-                    {"shader/path_tracer_shadow.rahit"}
+                    {"shader/rt_common_shadow.rahit"}
                 },
                 {
                     vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/path_tracer_point_light.rchit"},
+                    {"shader/rt_common_point_light.rchit"},
                     {},
                     pl_rint
                 },
@@ -71,8 +71,8 @@ namespace sh_path_tracer
                 }
             },
             {
-                {"shader/path_tracer.rmiss"},
-                {"shader/path_tracer_shadow.rmiss"}
+                {"shader/rt_common.rmiss"},
+                {"shader/rt_common_shadow.rmiss", defines}
             }
         };
     }
@@ -105,17 +105,16 @@ sh_path_tracer_stage::sh_path_tracer_stage(
     vk::ImageLayout output_layout,
     const options& opt
 ):  rt_stage(dev, ss, opt, "SH path tracing", 1),
-    gfx(dev, rt_stage::get_common_options(sh_path_tracer::load_sources(opt), opt)),
+    desc(dev),
+    gfx(dev),
     opt(opt),
     output_grid(&output_grid),
     output_layout(output_layout),
     grid_data(dev, sizeof(grid_data_buffer), vk::BufferUsageFlagBits::eUniformBuffer)
 {
-    init_descriptors(gfx);
-    rt_stage::set_local_sampler_parameters(
-        output_grid.get_dimensions(),
-        opt.samples_per_probe
-    );
+    rt_shader_sources src = sh_path_tracer::load_sources(opt);
+    desc.add(src, 0);
+    gfx.init(src, {&desc, &ss.get_descriptors()});
 }
 
 void sh_path_tracer_stage::update(uint32_t frame_index)
@@ -141,20 +140,6 @@ void sh_path_tracer_stage::update(uint32_t frame_index)
     );
 }
 
-void sh_path_tracer_stage::init_scene_resources()
-{
-    rt_stage::init_scene_resources();
-
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        ss->bind(gfx, i, -1);
-        gfx.update_descriptor_set({
-            {"inout_data", {{}, output_grid->get_image_view(dev->id), vk::ImageLayout::eGeneral}},
-            {"grid", {grid_data[dev->id], 0, VK_WHOLE_SIZE}}
-        }, i);
-    }
-}
-
 void sh_path_tracer_stage::record_command_buffer(
     vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index,
     bool /*first_in_command_buffer*/
@@ -178,7 +163,12 @@ void sh_path_tracer_stage::record_command_buffer(
         {}, {}, {}, img_barrier
     );
 
-    gfx.bind(cb, frame_index);
+    gfx.bind(cb);
+    desc.set_image("inout_data", *output_grid);
+    desc.set_buffer("grid", grid_data);
+    get_descriptors(desc);
+    gfx.push_descriptors(cb, desc, 0);
+    gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
 
     record_command_buffer_push_constants(cb, frame_index, pass_index);
 

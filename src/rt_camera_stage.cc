@@ -49,15 +49,11 @@ rt_camera_stage::rt_camera_stage(
         timer_name + " ("+ std::to_string(opt.active_viewport_count) +" viewports)",
         pass_count
     ),
-    opt(opt),
     distribution_data(dev, sizeof(distribution_data_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
+    opt(opt),
     target(output_target),
     accumulated_samples(0)
 {
-    rt_stage::set_local_sampler_parameters(
-        uvec3(opt.distribution.size, opt.active_viewport_count),
-        opt.samples_per_pixel
-    );
 }
 
 void rt_camera_stage::reset_accumulated_samples()
@@ -105,25 +101,17 @@ void rt_camera_stage::update(uint32_t frame_index)
     accumulated_samples += opt.samples_per_pixel;
 }
 
-void rt_camera_stage::init_descriptors(basic_pipeline& pp)
+void rt_camera_stage::get_descriptors(push_descriptor_set& desc)
 {
-    rt_stage::init_descriptors(pp);
+    rt_stage::get_descriptors(desc);
+    desc.set_buffer("distribution", distribution_data);
 
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        ss->bind(pp, i);
-        pp.update_descriptor_set({
 #define TR_GBUFFER_ENTRY(name, ...)\
-            {#name "_target", {\
-                {}, target.name ? target.name.view : VK_NULL_HANDLE, vk::ImageLayout::eGeneral\
-            }},
-            TR_GBUFFER_ENTRIES
+    desc.set_image(dev->id, #name "_target", {{ \
+        {}, target.name ? target.name.view : VK_NULL_HANDLE, vk::ImageLayout::eGeneral\
+    }});
+    TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
-            {"distribution", {
-                distribution_data[dev->id], 0, VK_WHOLE_SIZE
-            }}
-        }, i);
-    }
 }
 
 void rt_camera_stage::record_command_buffer(

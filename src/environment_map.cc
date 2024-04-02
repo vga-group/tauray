@@ -1,6 +1,7 @@
 #include "environment_map.hh"
 #include "compute_pipeline.hh"
 #include "placeholders.hh"
+#include "descriptor_set.hh"
 #include "misc.hh"
 #include "sampler.hh"
 
@@ -39,11 +40,11 @@ void environment_map::generate_alias_table()
 {
     alias_table.clear();
     device& dev = *get_mask().begin();
-    compute_pipeline importance_pipeline(
-        dev, compute_pipeline::params{
-            {"shader/alias_table_importance.comp", {}}, {}, 0, true
-        }
-    );
+    shader_source src("shader/alias_table_importance.comp");
+    push_descriptor_set desc(dev);
+    desc.add(src);
+    compute_pipeline importance_pipeline(dev);
+    importance_pipeline.init(src, {&desc});
     sampler envmap_sampler(dev);
     ivec2 size = texture::get_size();
     unsigned pixel_count = size.x * size.y;
@@ -52,14 +53,9 @@ void environment_map::generate_alias_table()
 
     vk::CommandBuffer cb = begin_command_buffer(dev);
     importance_pipeline.bind(cb);
-    importance_pipeline.push_descriptors(cb, {
-        {"environment", {
-            dev.ctx->get_placeholders().default_sampler.get_sampler(dev.id),
-            get_image_view(dev.id),
-            vk::ImageLayout::eShaderReadOnlyOptimal
-        }},
-        {"importances", {*readback_buffer, 0, VK_WHOLE_SIZE}}
-    });
+    desc.set_texture("environment", *this, dev.ctx->get_placeholders().default_sampler);
+    desc.set_buffer(dev.id, "importances", {{*readback_buffer, 0, VK_WHOLE_SIZE}});
+    importance_pipeline.push_descriptors(cb, desc, 0);
     cb.dispatch((size.x+15u)/16u, (size.y+15u)/16u, 1);
     end_command_buffer(dev, cb);
 

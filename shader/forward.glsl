@@ -1,7 +1,9 @@
 #ifndef FORWARD_GLSL
 #define FORWARD_GLSL
 #define USE_SHADOW_MAPPING
-#include "scene.glsl"
+#define SCENE_SET 0
+#define SCENE_RASTER_SET 1
+#include "scene_raster.glsl"
 
 layout(push_constant) uniform push_constant_buffer
 {
@@ -9,16 +11,12 @@ layout(push_constant) uniform push_constant_buffer
     int pcf_samples;
     int omni_pcf_samples;
     int pcss_samples;
+    int base_camera_index;
     float pcss_minimum_radius;
     float noise_scale;
+    int pad[3];
     vec2 shadow_map_atlas_pixel_margin;
     vec3 ambient_color;
 } control;
-
-#include "shadow_mapping.glsl"
-
-#ifdef BRDF_INTEGRATION_BINDING
-layout(binding = BRDF_INTEGRATION_BINDING, set = 0) uniform sampler2D brdf_integration;
-#endif
 
 #endif

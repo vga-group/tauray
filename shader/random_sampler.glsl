@@ -8,9 +8,8 @@ struct random_sampler
     uvec4 seed;
 };
 
-random_sampler init_random_sampler(
-    uvec4 coord, uvec3 size
-){
+random_sampler init_random_sampler(uvec4 coord)
+{
     random_sampler rsampler;
     rsampler.seed = coord;
     rsampler.seed.y ^= pcg(rsampler.seed.x);

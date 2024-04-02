@@ -3,7 +3,6 @@
 #include "context.hh"
 #include "tonemap_stage.hh"
 #include "renderer.hh"
-#include "example_denoiser_stage.hh"
 #include "temporal_reprojection_stage.hh"
 #include "spatial_reprojection_stage.hh"
 #include "svgf_stage.hh"
@@ -20,7 +19,6 @@ class post_processing_renderer
 public:
     struct options
     {
-        std::optional<example_denoiser_stage::options> example_denoiser;
         std::optional<temporal_reprojection_stage::options> temporal_reprojection;
         std::optional<spatial_reprojection_stage::options> spatial_reprojection;
         std::optional<svgf_stage::options> svgf_denoiser;
@@ -59,7 +57,6 @@ private:
     std::unique_ptr<texture> pingpong[2];
 
     // Add the new post processing pipelines here.
-    std::unique_ptr<example_denoiser_stage> example_denoiser;
     std::unique_ptr<temporal_reprojection_stage> temporal_reprojection;
     std::unique_ptr<spatial_reprojection_stage> spatial_reprojection;
     std::unique_ptr<svgf_stage> svgf;

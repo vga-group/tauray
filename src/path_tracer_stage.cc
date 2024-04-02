@@ -13,8 +13,8 @@ namespace path_tracer
         path_tracer_stage::options opt,
         const gbuffer_target& gbuf
     ){
-        shader_source pl_rint("shader/path_tracer_point_light.rint");
-        shader_source shadow_chit("shader/path_tracer_shadow.rchit");
+        shader_source pl_rint("shader/rt_common_point_light.rint");
+        shader_source shadow_chit("shader/rt_common_shadow.rchit");
         std::map<std::string, std::string> defines;
         defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
         defines["SAMPLES_PER_PASS"] = std::to_string(opt.samples_per_pass);
@@ -58,17 +58,17 @@ namespace path_tracer
             {
                 {
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/path_tracer.rchit", defines},
-                    {"shader/path_tracer.rahit", defines}
+                    {"shader/rt_common.rchit", defines},
+                    {"shader/rt_common.rahit", defines}
                 },
                 {
                     vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
                     shadow_chit,
-                    {"shader/path_tracer_shadow.rahit", defines}
+                    {"shader/rt_common_shadow.rahit", defines}
                 },
                 {
                     vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/path_tracer_point_light.rchit", defines},
+                    {"shader/rt_common_point_light.rchit", defines},
                     {},
                     pl_rint
                 },
@@ -80,8 +80,8 @@ namespace path_tracer
                 }
             },
             {
-                {"shader/path_tracer.rmiss", defines},
-                {"shader/path_tracer_shadow.rmiss", defines}
+                {"shader/rt_common.rmiss", defines},
+                {"shader/rt_common_shadow.rmiss", defines}
             }
         };
     }
@@ -116,27 +116,29 @@ path_tracer_stage::path_tracer_stage(
         dev, ss, output_target, opt, "path tracing",
         opt.samples_per_pixel / opt.samples_per_pass
     ),
-    gfx(dev, rt_stage::get_common_options(
-        path_tracer::load_sources(opt, output_target), opt
-    )),
+    desc(dev),
+    gfx(dev),
     opt(opt)
 {
-}
-
-void path_tracer_stage::init_scene_resources()
-{
-    rt_camera_stage::init_descriptors(gfx);
+    rt_shader_sources src = path_tracer::load_sources(opt, output_target);
+    desc.add(src);
+    gfx.init(src, {&desc, &ss.get_descriptors()});
 }
 
 void path_tracer_stage::record_command_buffer_pass(
     vk::CommandBuffer cb,
-    uint32_t frame_index,
+    uint32_t,
     uint32_t pass_index,
     uvec3 expected_dispatch_size,
     bool first_in_command_buffer
 ){
     if(first_in_command_buffer)
-        gfx.bind(cb, frame_index);
+    {
+        gfx.bind(cb);
+        get_descriptors(desc);
+        gfx.push_descriptors(cb, desc, 0);
+        gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+    }
 
     path_tracer::push_constant_buffer control;
 

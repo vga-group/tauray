@@ -332,8 +332,6 @@ void rt_renderer<Pipeline>::init_resources()
     if(use_raster_gbuffer)
     {
         raster_stage::options raster_opt;
-        raster_opt.max_samplers = opt.max_samplers;
-        raster_opt.max_3d_samplers = 0;
         raster_opt.pcf_samples = 0;
         raster_opt.pcss_samples = 0;
         raster_opt.output_layout = vk::ImageLayout::eGeneral;
@@ -419,7 +417,6 @@ void rt_renderer<Pipeline>::prepare_transfers(bool reserve)
 }
 
 template class rt_renderer<path_tracer_stage>;
-template class rt_renderer<whitted_stage>;
 template class rt_renderer<feature_stage>;
 template class rt_renderer<direct_stage>;
 template class rt_renderer<restir_di_stage>;

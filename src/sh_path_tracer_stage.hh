@@ -3,6 +3,7 @@
 #include "rt_stage.hh"
 #include "scene.hh"
 #include "path_tracer_stage.hh"
+#include "descriptor_set.hh"
 
 namespace tr
 {
@@ -39,12 +40,12 @@ public:
 
 protected:
     void update(uint32_t frame_index) override;
-    void init_scene_resources() override;
     void record_command_buffer(
         vk::CommandBuffer cb, uint32_t frame_index, uint32_t pass_index,
         bool first_in_command_buffer
     ) override;
 
+    push_descriptor_set desc;
     rt_pipeline gfx;
 
 private:

@@ -5,6 +5,7 @@
 #include "compute_pipeline.hh"
 #include "distribution_strategy.hh"
 #include "gbuffer.hh"
+#include "descriptor_set.hh"
 #include "timer.hh"
 #include "stage.hh"
 
@@ -37,6 +38,7 @@ public:
 private:
     void record_commands();
 
+    descriptor_set io_set;
     compute_pipeline comp;
     options opt;
     uvec2 size;

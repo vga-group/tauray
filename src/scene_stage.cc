@@ -226,7 +226,7 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     shadow_map_range(0),
     shadow_map_cascade_range(0),
     s_table(dev, true),
-    scene_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    instance_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     scene_metadata(dev, sizeof(scene_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
     directional_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     point_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
@@ -264,23 +264,55 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
         true,
         false
     ),
-    skinning(dev, compute_pipeline::params{{"shader/skinning.comp"}, {}, 1, true}),
-    extract_tri_lights(dev, compute_pipeline::params{
-        {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
-            std::map<std::string, std::string>{{"PRE_TRANSFORMED_VERTICES", ""}} :
-            std::map<std::string, std::string>()
-        },
-        {
-            {"vertices", (uint32_t)opt.max_instances},
-            {"indices", (uint32_t)opt.max_instances}
-        },
-        1
-    }),
-    pre_transform(dev, compute_pipeline::params{
-        {"shader/pre_transform.comp"}, {}, 1, true
-    }),
+    brdf_integration_sampler(
+        dev,
+        vk::Filter::eLinear,
+        vk::Filter::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest,
+        0,
+        true,
+        false
+    ),
+    brdf_integration(dev, get_resource_path("data/brdf_integration.exr")),
+    noise_vector_2d(dev, get_resource_path("data/noise_vector_2d.exr")),
+    noise_vector_3d(dev, get_resource_path("data/noise_vector_3d.exr")),
+    scene_desc(dev),
+    scene_raster_desc(dev),
+    skinning_desc(dev),
+    pre_transform_desc(dev),
     opt(opt), stage_timer(dev, "scene update")
 {
+    skinning.emplace(dev);
+    extract_tri_lights.emplace(dev);
+    pre_transform.emplace(dev);
+
+    init_descriptor_set_layout();
+    {
+        shader_source src("shader/skinning.comp");
+        skinning_desc.add(src);
+        for(const auto&[dev, p]: skinning)
+            p.init(src, {&skinning_desc});
+    }
+
+    for(const auto&[dev, p]: extract_tri_lights)
+    {
+        p.init(
+            {"shader/extract_tri_lights.comp", opt.pre_transform_vertices ?
+                std::map<std::string, std::string>{{"PRE_TRANSFORMED_VERTICES", ""}} :
+                std::map<std::string, std::string>()
+            }, {&scene_desc}
+        );
+    }
+
+    {
+        shader_source src("shader/pre_transform.comp");
+        pre_transform_desc.add(src);
+        for(const auto&[dev, p]: pre_transform)
+            p.init(src, {&pre_transform_desc, &scene_desc});
+    }
+
     if(opt.shadow_mapping)
     {
         shadow_atlas.reset(new atlas(
@@ -381,16 +413,16 @@ const std::unordered_map<sh_grid*, texture>& scene_stage::get_sh_grid_textures()
     return sh_grid_textures;
 }
 
-vk::AccelerationStructureKHR scene_stage::get_acceleration_structure(
-    device_id id
-) const {
-    device_mask dev = get_device_mask();
-    if(!dev.get_context()->is_ray_tracing_supported())
-        throw std::runtime_error(
-            "Trying to use TLAS, but ray tracing is not available!"
-        );
-    return *tlas->get_tlas_handle(id);
+descriptor_set& scene_stage::get_descriptors()
+{
+    return scene_desc;
 }
+
+descriptor_set& scene_stage::get_raster_descriptors()
+{
+    return scene_raster_desc;
+}
+
 
 vec2 scene_stage::get_shadow_map_atlas_pixel_margin() const
 {
@@ -687,6 +719,10 @@ bool scene_stage::refresh_instance_cache()
     }
     if(scene_changed)
         ensure_blas();
+
+    if(instances.size() > opt.max_instances)
+        throw std::runtime_error("The scene has more meshes than max_instances allows!");
+
     return scene_changed;
 }
 
@@ -847,175 +883,17 @@ void scene_stage::clear_pre_transformed_vertices()
     }
 }
 
-std::vector<descriptor_state> scene_stage::get_descriptor_info(device_id id, int32_t camera_index) const
-{
-    std::vector<vk::DescriptorImageInfo> dii_3d;
-    if(opt.alloc_sh_grids)
-    {
-        cur_scene->foreach([&](sh_grid& sg){
-            const texture& tex = sh_grid_textures.at(&sg);
-            dii_3d.push_back({
-                sh_grid_sampler.get_sampler(id),
-                tex.get_image_view(id),
-                vk::ImageLayout::eShaderReadOnlyOptimal
-            });
-        });
-    }
-
-    vk::AccelerationStructureKHR tlas = {};
-    device_mask dev = get_device_mask();
-    if(dev.get_context()->is_ray_tracing_supported())
-        tlas = get_acceleration_structure(id);
-
-    std::vector<vk::DescriptorBufferInfo> dbi_vertex;
-    std::vector<vk::DescriptorBufferInfo> dbi_index;
-    bool got_pre_transformed_vertices = false;
-    if(get_context()->is_ray_tracing_supported())
-    {
-        auto& ptv = pre_transformed_vertices[id];
-        if(ptv.count != 0)
-        {
-            size_t offset = 0;
-            for(size_t i = 0; i < instances.size(); ++i)
-            {
-                const mesh* m = instances[i].m;
-                size_t bytes = m->get_vertices().size() * sizeof(mesh::vertex);
-                dbi_vertex.push_back({ptv.buf, offset, bytes});
-                offset += bytes;
-            }
-            got_pre_transformed_vertices = true;
-        }
-    }
-    for(size_t i = 0; i < instances.size(); ++i)
-    {
-        const mesh* m = instances[i].m;
-        if(!got_pre_transformed_vertices)
-        {
-            vk::Buffer vertex_buffer = m->get_vertex_buffer(id);
-            dbi_vertex.push_back({vertex_buffer, 0, VK_WHOLE_SIZE});
-        }
-        vk::Buffer index_buffer = m->get_index_buffer(id);
-        dbi_index.push_back({index_buffer, 0, VK_WHOLE_SIZE});
-    }
-
-    std::vector<vk::DescriptorImageInfo> dii = s_table.get_image_infos(id);
-
-    std::vector<descriptor_state> descriptors = {
-        {"scene", {scene_data[id], 0, VK_WHOLE_SIZE}},
-        {"scene_metadata", {scene_metadata[id], 0, VK_WHOLE_SIZE}},
-        {"vertices", dbi_vertex},
-        {"indices", dbi_index},
-        {"textures", dii},
-        {"directional_lights", {
-            directional_light_data[id], 0, VK_WHOLE_SIZE
-        }},
-        {"point_lights", {point_light_data[id], 0, VK_WHOLE_SIZE}},
-        {"tri_lights", {tri_light_data[id], 0, VK_WHOLE_SIZE}},
-        {"environment_map_tex", {
-            envmap_sampler.get_sampler(id),
-            envmap ? envmap->get_image_view(id) : vk::ImageView{},
-            vk::ImageLayout::eShaderReadOnlyOptimal
-        }},
-        {"environment_map_alias_table", {
-            envmap ? envmap->get_alias_table(id) : vk::Buffer{}, 0, VK_WHOLE_SIZE
-        }},
-        {"textures3d", dii_3d},
-        {"sh_grids", {sh_grid_data[id], 0, VK_WHOLE_SIZE}}
-    };
-
-    if(camera_index >= 0)
-    {
-        std::pair<size_t, size_t> camera_offset = camera_data_offsets[camera_index];
-        descriptors.push_back(
-            {"camera", {camera_data[id], camera_offset.first, VK_WHOLE_SIZE}}
-        );
-    }
-
-    if(dev.get_context()->is_ray_tracing_supported())
-    {
-        descriptors.push_back({"tlas", {1, this->tlas->get_tlas_handle(id)}});
-    }
-
-    if(opt.shadow_mapping)
-    {
-        placeholders& pl = dev.get_context()->get_placeholders();
-
-        descriptors.push_back(
-            {"shadow_maps", {shadow_map_data[id], 0, shadow_map_range}}
-        );
-        descriptors.push_back(
-            {"shadow_map_cascades", {
-                shadow_map_data[id], shadow_map_range,
-                shadow_map_cascade_range
-            }}
-        );
-        descriptors.push_back(
-            {"shadow_map_atlas", {
-                pl.default_sampler.get_sampler(id),
-                shadow_atlas->get_image_view(id),
-                vk::ImageLayout::eShaderReadOnlyOptimal
-            }}
-        );
-        descriptors.push_back(
-            {"shadow_map_atlas_test", {
-                shadow_sampler.get_sampler(id),
-                shadow_atlas->get_image_view(id),
-                vk::ImageLayout::eShaderReadOnlyOptimal
-            }}
-        );
-    }
-    return descriptors;
-}
-
-void scene_stage::bind(basic_pipeline& pipeline, uint32_t frame_index, int32_t camera_index)
-{
-    device* dev = pipeline.get_device();
-    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->id, camera_index);
-    pipeline.update_descriptor_set(descriptors, frame_index);
-}
-
-void scene_stage::push(basic_pipeline& pipeline, vk::CommandBuffer cmd, int32_t camera_index)
-{
-    device* dev = pipeline.get_device();
-    std::vector<descriptor_state> descriptors = get_descriptor_info(dev->id, camera_index);
-    pipeline.push_descriptors(cmd, descriptors);
-}
-
-void scene_stage::bind_placeholders(
-    basic_pipeline& pipeline,
-    size_t max_samplers,
-    size_t max_3d_samplers
-){
-    device* dev = pipeline.get_device();
-    placeholders& pl = dev->ctx->get_placeholders();
-
-    pipeline.update_descriptor_set({
-        {"textures", max_samplers},
-        {"shadow_maps"},
-        {"shadow_map_cascades"},
-        {"shadow_map_atlas"},
-        {"shadow_map_atlas_test", {
-            pl.default_sampler.get_sampler(dev->id),
-            pl.depth_test_sample.get_image_view(dev->id),
-            vk::ImageLayout::eShaderReadOnlyOptimal
-        }},
-        {"textures3d", {
-            pl.default_sampler.get_sampler(dev->id),
-            pl.sample3d.get_image_view(dev->id),
-            vk::ImageLayout::eShaderReadOnlyOptimal
-        }, max_3d_samplers}
-    });
-}
-
 void scene_stage::update(uint32_t frame_index)
 {
     if(!cur_scene) return;
 
     environment_map* new_envmap = tr::get_environment_map(*cur_scene);
+    bool envmap_outdated = false;
     if(new_envmap != envmap)
     {
         envmap = new_envmap;
         envmap_change_counter++;
+        envmap_outdated = true;
     }
 
     vec3 new_ambient = tr::get_ambient_light(*cur_scene);
@@ -1045,8 +923,8 @@ void scene_stage::update(uint32_t frame_index)
         s_table.update_scene(this);
     }
 
-    scene_data.resize(sizeof(instance_buffer) * instances.size());
-    scene_data.foreach<instance_buffer>(
+    instance_data.resize(sizeof(instance_buffer) * instances.size());
+    instance_data.foreach<instance_buffer>(
         frame_index, instances.size(),
         [&](instance_buffer& inst, size_t i){
             if(instances[i].mat->emission_factor != vec3(0))
@@ -1427,6 +1305,9 @@ void scene_stage::update(uint32_t frame_index)
     if(lights_outdated) light_change_counter++;
     if(geometry_outdated) geometry_change_counter++;
 
+    if(lights_outdated || geometry_outdated || envmap_outdated)
+        update_descriptor_set();
+
     if(lights_outdated || geometry_outdated)
     {
         record_command_buffers(light_aabb_count, true);
@@ -1447,17 +1328,11 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
 
     for(device& dev: get_device_mask())
     {
-        if(opt.gather_emissive_triangles)
-        {
-            extract_tri_lights[dev.id].reset_descriptor_sets();
-            bind(extract_tri_lights[dev.id], 0, 0);
-        }
-
         for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             vk::CommandBuffer cb = begin_graphics(dev.id);
             stage_timer.begin(cb, dev.id, i);
-            scene_data.upload(dev.id, i, cb);
+            instance_data.upload(dev.id, i, cb);
             directional_light_data.upload(dev.id, i, cb);
             point_light_data.upload(dev.id, i, cb);
             sh_grid_data.upload(dev.id, i, cb);
@@ -1500,12 +1375,11 @@ void scene_stage::record_skinning(device_id id, uint32_t frame_index, vk::Comman
             uint32_t vertex_count = vg.m->get_vertices().size();
 
             skinning[id].push_constants(cb, skinning_push_constants{vertex_count});
-            skinning[id].push_descriptors(cb, {
-                {"source_data", {src->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}},
-                {"destination_data", {dst->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}},
-                {"skin_data", {src->get_skin_buffer(id), 0, VK_WHOLE_SIZE}},
-                {"joint_data", {mod.get_joint_buffer()[id], 0, VK_WHOLE_SIZE}}
-            });
+            skinning_desc.set_buffer(id, "source_data", {{src->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}});
+            skinning_desc.set_buffer(id, "destination_data", {{dst->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}});
+            skinning_desc.set_buffer(id, "skin_data", {{src->get_skin_buffer(id), 0, VK_WHOLE_SIZE}});
+            skinning_desc.set_buffer(id, "joint_data", {{mod.get_joint_buffer()[id], 0, VK_WHOLE_SIZE}});
+            skinning[id].push_descriptors(cb, skinning_desc, 0);
             cb.dispatch((vertex_count+31u)/32u, 1, 1);
         }
     });
@@ -1601,7 +1475,8 @@ void scene_stage::record_tri_light_extraction(
     device_id id,
     vk::CommandBuffer cb
 ){
-    extract_tri_lights[id].bind(cb, 0);
+    extract_tri_lights[id].bind(cb);
+    extract_tri_lights[id].set_descriptors(cb, scene_desc, 0, 0);
     for(size_t i = 0; i < instances.size(); ++i)
     {
         const instance& inst = instances[i];
@@ -1623,6 +1498,8 @@ void scene_stage::record_pre_transform(
 ){
     vk::Buffer ptv_buf = this->pre_transformed_vertices[id].buf;
     pre_transform[id].bind(cb);
+    pre_transform[id].set_descriptors(cb, scene_desc, 0, 1);
+
     size_t offset = 0;
     for(size_t i = 0; i < instances.size(); ++i)
     {
@@ -1634,12 +1511,9 @@ void scene_stage::record_pre_transform(
 
         size_t bytes = pc.vertex_count * sizeof(mesh::vertex);
 
-        pre_transform[id].push_descriptors(cb, {
-            {"input_verts", {inst.m->get_vertex_buffer(id), 0, bytes}},
-            {"output_verts", {ptv_buf, offset, bytes}},
-            {"scene", {scene_data[id], 0, VK_WHOLE_SIZE}}
-        });
-
+        pre_transform_desc.set_buffer(id, "input_verts", {{inst.m->get_vertex_buffer(id), 0, bytes}});
+        pre_transform_desc.set_buffer(id, "output_verts", {{ptv_buf, offset, bytes}});
+        pre_transform[id].push_descriptors(cb, pre_transform_desc, 0);
         pre_transform[id].push_constants(cb, pc);
         cb.dispatch((pc.vertex_count+255u)/256u, 1, 1);
 
@@ -1656,6 +1530,136 @@ void scene_stage::record_pre_transform(
             },
         }, {}
     );
+}
+
+void scene_stage::init_descriptor_set_layout()
+{
+    scene_desc.add("instances", {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("directional_lights", {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("point_lights", {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("tri_lights", {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("vertices", {4, vk::DescriptorType::eStorageBuffer, opt.max_instances, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_desc.add("indices", {5, vk::DescriptorType::eStorageBuffer, opt.max_instances, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_desc.add("textures", {6, vk::DescriptorType::eCombinedImageSampler, opt.max_samplers, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_desc.add("environment_map_tex", {7, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_desc.add("environment_map_alias_table", {8, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_desc.add("scene_metadata", {9, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_desc.add("camera", {10, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+
+    device_mask dev = get_device_mask();
+    if(dev.get_context()->is_ray_tracing_supported())
+        scene_desc.add("tlas", {11, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+
+    scene_raster_desc.add("sh_grid_data", {0, vk::DescriptorType::eCombinedImageSampler, opt.max_3d_samplers, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_raster_desc.add("sh_grids", {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_raster_desc.add("shadow_maps", {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_raster_desc.add("shadow_map_cascades", {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_raster_desc.add("shadow_map_atlas", {4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_raster_desc.add("shadow_map_atlas_test", {5, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    scene_raster_desc.add("pcf_noise_vector_2d", {6, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_raster_desc.add("pcf_noise_vector_3d", {7, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_raster_desc.add("brdf_integration", {8, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+}
+
+void scene_stage::update_descriptor_set()
+{
+    scene_desc.reset(scene_desc.get_mask(), 1);
+    scene_desc.set_buffer(0, "instances", instance_data);
+    scene_desc.set_buffer(0, "directional_lights", directional_light_data);
+    scene_desc.set_buffer(0, "point_lights", point_light_data);
+    scene_desc.set_buffer(0, "tri_lights", tri_light_data);
+    scene_desc.set_buffer(0, "scene_metadata", scene_metadata);
+    scene_desc.set_buffer(0, "camera", camera_data);
+
+    if(envmap)
+        scene_desc.set_texture(0, "environment_map_tex", *envmap, envmap_sampler);
+
+    for(device& dev: scene_desc.get_mask())
+    {
+        device_id id = dev.id;
+        std::vector<vk::DescriptorBufferInfo> dbi_vertex;
+        std::vector<vk::DescriptorBufferInfo> dbi_index;
+        bool got_pre_transformed_vertices = false;
+        if(get_context()->is_ray_tracing_supported())
+        {
+            auto& ptv = pre_transformed_vertices[id];
+            if(ptv.count != 0)
+            {
+                size_t offset = 0;
+                for(size_t i = 0; i < instances.size(); ++i)
+                {
+                    const mesh* m = instances[i].m;
+                    size_t bytes = m->get_vertices().size() * sizeof(mesh::vertex);
+                    dbi_vertex.push_back({ptv.buf, offset, bytes});
+                    offset += bytes;
+                }
+                got_pre_transformed_vertices = true;
+            }
+        }
+        for(size_t i = 0; i < instances.size(); ++i)
+        {
+            const mesh* m = instances[i].m;
+            if(!got_pre_transformed_vertices)
+            {
+                vk::Buffer vertex_buffer = m->get_vertex_buffer(id);
+                dbi_vertex.push_back({vertex_buffer, 0, VK_WHOLE_SIZE});
+            }
+            vk::Buffer index_buffer = m->get_index_buffer(id);
+            dbi_index.push_back({index_buffer, 0, VK_WHOLE_SIZE});
+        }
+
+        scene_desc.set_buffer(id, 0, "vertices", std::move(dbi_vertex));
+        scene_desc.set_buffer(id, 0, "indices", std::move(dbi_index));
+
+        std::vector<vk::DescriptorImageInfo> dii = s_table.get_image_infos(id);
+        scene_desc.set_image(id, 0, "textures", std::move(dii));
+
+        if(envmap)
+        {
+            scene_desc.set_buffer(id, 0, "environment_map_alias_table", {{
+                envmap ? envmap->get_alias_table(id) : vk::Buffer{}, 0, VK_WHOLE_SIZE
+            }});
+        }
+
+        if(dev.ctx->is_ray_tracing_supported())
+            scene_desc.set_acceleration_structure(id, 0, "tlas", *this->tlas->get_tlas_handle(id));
+    }
+
+    placeholders& pl = get_device_mask().get_context()->get_placeholders();
+
+    scene_raster_desc.reset(scene_raster_desc.get_mask(), 1);
+    scene_raster_desc.set_buffer(0, "sh_grids", sh_grid_data);
+
+    if(opt.shadow_mapping)
+    {
+        scene_raster_desc.set_buffer(0, "shadow_maps", shadow_map_data);
+        scene_raster_desc.set_buffer(0, "shadow_map_cascades", shadow_map_data, shadow_map_range);
+        scene_raster_desc.set_texture(0, "shadow_map_atlas", *shadow_atlas, pl.default_sampler);
+        scene_raster_desc.set_texture(0, "shadow_map_atlas_test", *shadow_atlas, shadow_sampler);
+    }
+
+    scene_raster_desc.set_texture(0, "pcf_noise_vector_2d", noise_vector_2d, pl.default_sampler);
+    scene_raster_desc.set_texture(0, "pcf_noise_vector_3d", noise_vector_3d, pl.default_sampler);
+    scene_raster_desc.set_texture(0, "brdf_integration", brdf_integration, brdf_integration_sampler);
+
+    for(device& dev: scene_desc.get_mask())
+    {
+        device_id id = dev.id;
+
+        std::vector<vk::DescriptorImageInfo> dii_3d;
+        if(opt.alloc_sh_grids)
+        {
+            cur_scene->foreach([&](sh_grid& sg){
+                const texture& tex = sh_grid_textures.at(&sg);
+                dii_3d.push_back({
+                    sh_grid_sampler.get_sampler(id),
+                    tex.get_image_view(id),
+                    vk::ImageLayout::eShaderReadOnlyOptimal
+                });
+            });
+        }
+        scene_raster_desc.set_image(id, 0, "sh_grid_data", std::move(dii_3d));
+    }
 }
 
 }

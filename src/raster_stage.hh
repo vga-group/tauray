@@ -20,9 +20,6 @@ class raster_stage: public single_device_stage
 public:
     struct options
     {
-        // Must be a power of two.
-        size_t max_samplers = 128;
-        size_t max_3d_samplers = 128;
         bool clear_color = true;
         bool clear_depth = true;
         bool sample_shading = false;
@@ -61,11 +58,7 @@ private:
     options opt;
 
     uint32_t scene_state_counter;
-    sampler brdf_integration_sampler;
     scene_stage* ss;
-    texture brdf_integration;
-    texture noise_vector_2d;
-    texture noise_vector_3d;
     timer raster_timer;
 };
 

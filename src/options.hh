@@ -148,7 +148,6 @@
         "Selects the renderer to use. Some options only work with certain " \
         "renderers.", \
         options::PATH_TRACER, \
-        {"whitted", options::WHITTED}, \
         {"path-tracer", options::PATH_TRACER}, \
         {"direct", options::DIRECT}, \
         {"raster", options::RASTER}, \
@@ -277,7 +276,7 @@
         "Makes all materials double-sided.", \
         false) \
     TR_VEC3_OPT(ambient,\
-        "Ambient lighting used in raster and whitted renderers.", \
+        "Ambient lighting used in raster renderers.", \
         vec3(0.1f), vec3(0), vec3(FLT_MAX)) \
     TR_INT_OPT(sh_order,\
         "Spherical harmonics order used for light probe-based renderers.", \
@@ -626,7 +625,6 @@ struct options
     {
         PATH_TRACER = 0,
         DIRECT,
-        WHITTED,
         RASTER,
         DSHGI,
         DSHGI_SERVER,
