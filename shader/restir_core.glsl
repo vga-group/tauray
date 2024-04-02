@@ -1842,4 +1842,10 @@ float mis_noncanonical(
         (w + canonical_confidence * other_in_canonical_target_function_value * jacobian_other_to_canonical);
 }
 
+// https://developer.download.nvidia.com/video/gputechconf/gtc/2020/presentations/s22699-fast-denoising-with-self-stabilizing-recurrent-blurs.pdf
+float disocclusion_detect(vec3 normal1, vec3 pos1, vec3 pos2, float inv_max_plane_dist)
+{
+    return clamp(1.0f - abs(dot(normal1, pos2-pos1)) * inv_max_plane_dist, 0.0f, 1.0f);
+}
+
 #endif

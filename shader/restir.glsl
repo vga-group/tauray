@@ -17,10 +17,10 @@
 #ifdef RAY_TRACING
 #include "rt.glsl"
 #include "rt_common_payload.glsl"
-#include "scene_raster.glsl"
 #else
 #include "scene.glsl"
 #endif
+#include "scene_raster.glsl"
 
 #if !defined(USE_RECONNECTION_SHIFT)
 #define USE_PRIMARY_SAMPLE_SPACE
@@ -29,7 +29,7 @@
 #define RESTIR_DI (MAX_BOUNCES == 1)
 
 #if !defined(USE_RANDOM_REPLAY_SHIFT)
-#define RESTIR_HAS_RECONNECTION_DATA false 
+#define RESTIR_HAS_RECONNECTION_DATA false
 #else
 #define RESTIR_HAS_RECONNECTION_DATA true
 #endif

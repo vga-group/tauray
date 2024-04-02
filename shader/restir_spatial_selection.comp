@@ -1,4 +1,5 @@
 #version 460
+#line 3
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : enable
@@ -16,15 +17,12 @@ layout(push_constant) uniform push_constant_buffer
 
 layout(binding = 18, rg32ui) writeonly uniform uimage2D spatial_selection;
 
-layout(constant_id = 15) const uint MAX_SPATIAL_SAMPLES = 8;
-layout(constant_id = 16) const uint TILE_SIZE = 2;
-
 #include "restir_core.glsl"
 
-layout(local_size_x_id = 16, local_size_y_id = 16, local_size_z_id = 15) in;
+layout(local_size_x = SELECTION_TILE_SIZE, local_size_y = SELECTION_TILE_SIZE, local_size_z = MAX_SPATIAL_SAMPLES) in;
 
-shared uint shared_selection_key[TILE_SIZE][TILE_SIZE][MAX_SPATIAL_SAMPLES];
-shared float shared_confidence[TILE_SIZE][TILE_SIZE][MAX_SPATIAL_SAMPLES];
+shared uint shared_selection_key[SELECTION_TILE_SIZE][SELECTION_TILE_SIZE][MAX_SPATIAL_SAMPLES];
+shared float shared_confidence[SELECTION_TILE_SIZE][SELECTION_TILE_SIZE][MAX_SPATIAL_SAMPLES];
 
 void main()
 {
@@ -33,7 +31,7 @@ void main()
     if(any(greaterThanEqual(p, pc.display_size)))
         return;
 
-    camera cam = cameras.array[pc.camera_index];
+    camera_data cam = camera.pairs[pc.camera_index].current;
 
     domain canonical_domain;
     bool miss = read_domain(cam, p, canonical_domain);
