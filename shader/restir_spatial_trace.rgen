@@ -6,7 +6,7 @@
 #extension GL_EXT_control_flow_attributes : enable
 //#extension GL_EXT_debug_printf : enable
 
-#define RAYBASE_RAY_TRACING
+#define RAY_TRACING
 #include "restir.glsl"
 
 layout(push_constant) uniform push_constant_buffer
@@ -24,7 +24,7 @@ layout(binding = 20, rgba32f) writeonly uniform image2DArray mis_data;
 
 void main()
 {
-    camera cam = cameras.array[pc.camera_index];
+    camera_data cam = camera.pairs[pc.camera_index].current;
     const ivec2 p = ivec2(gl_LaunchIDEXT.xy);
 
     domain canonical_domain;
@@ -41,8 +41,6 @@ void main()
 
     const float max_plane_dist = get_frustum_size(cam, canonical_domain.pos);
     mat3 flat_tbn = create_tangent_space(canonical_domain.flat_normal);
-
-    const float canonical_reconnection_scale = max_plane_dist;
 
     spatial_candidate_sampler scs = init_spatial_candidate_sampler(
         cam, canonical_domain.pos, flat_tbn, max_plane_dist
@@ -71,8 +69,7 @@ void main()
 
     shift_map(
         seed.x, candidate.output_sample, canonical_domain,
-        true, true, canonical_reconnection_scale,
-        jacobian_candidate_to_canonical, value, primary_bsdf
+        true, true, jacobian_candidate_to_canonical, value, primary_bsdf
     );
 
     float target_function_value = target_function(primary_bsdf, value);
@@ -85,11 +82,10 @@ void main()
     float jacobian_canonical_to_candidate = 0;
     vec3 canonical_in_other_value;
 
-    float candidate_reconnection_scale = get_frustum_size(cam, candidate_domain.pos);
     shift_map(
         seed.x, canonical_pixel.output_sample,  candidate_domain,
-        true, false, candidate_reconnection_scale,
-        jacobian_canonical_to_candidate, canonical_in_other_value, primary_bsdf
+        true, false, jacobian_canonical_to_candidate,
+        canonical_in_other_value, primary_bsdf
     );
 
     float canonical_in_other_target_function_value = target_function(primary_bsdf, canonical_in_other_value); // p^_i(X_1)
