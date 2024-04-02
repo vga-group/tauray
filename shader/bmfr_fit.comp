@@ -155,7 +155,7 @@ void main()
     uvec3 local_id = gl_LocalInvocationID;
 
     const int id = get_linear_id();
-    random_sampler rsampler = init_random_sampler(uvec4(p.xy, id, uniform_buffer.frame_counter), p.xyz);
+    random_sampler rsampler = init_random_sampler(uvec4(p.xyz, uniform_buffer.frame_counter));
 
     const int linear_workgroup_id = int(work_group_id.y * gl_NumWorkGroups.x + work_group_id.x);
 
