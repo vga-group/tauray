@@ -32,12 +32,12 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         vk::ImageUsageFlagBits::eTransferDst |
         vk::ImageUsageFlagBits::eSampled;
 
-    current_gbuffer.reset(device_mask::all(ctx), ctx.get_size(), ctx.get_display_count());
+    current_gbuffer.reset(display_device, ctx.get_size(), ctx.get_display_count());
     current_gbuffer.add(gs, vk::ImageLayout::eGeneral);
-    prev_gbuffer.reset(device_mask::all(ctx), ctx.get_size(), ctx.get_display_count());
+    prev_gbuffer.reset(display_device, ctx.get_size(), ctx.get_display_count());
     prev_gbuffer.add(gs, vk::ImageLayout::eGeneral);
 
-    scene_update.emplace(device_mask::all(ctx), opt.scene_options);
+    scene_update.emplace(display_device, opt.scene_options);
 
     raster_stage::options raster_opt;
     raster_opt.clear_color = true;
@@ -103,18 +103,14 @@ void restir_renderer::render()
     uint32_t swapchain_index, frame_index;
     ctx->get_indices(swapchain_index, frame_index);
 
-    dependencies deps = scene_update->run(last_frame_deps);
-    last_frame_deps.clear();
+    dependencies deps = scene_update->run(display_deps);
 
     deps = gbuffer_rasterizer->run(deps);
     deps = restir->run(deps);
     deps = tonemap->run(deps);
-
-    deps.concat(display_deps);
     deps = copy->run(deps);
 
     ctx->end_frame(deps);
-    last_frame_deps = deps;
 }
 
 }
