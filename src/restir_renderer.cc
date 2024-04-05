@@ -64,7 +64,10 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     gbuffer_target cur = current_gbuffer.get_layer_target(display_device.id, 0);
     gbuffer_target prev = prev_gbuffer.get_layer_target(display_device.id, 0);
-    restir.emplace(display_device, *scene_update, cur, prev, opt.restir_options);
+    this->opt.restir_options.max_bounces = 1;
+    this->opt.restir_options.temporal_reuse = false;
+    this->opt.restir_options.spatial_samples = 0;
+    restir.emplace(display_device, *scene_update, cur, prev, this->opt.restir_options);
 
     cur = current_gbuffer.get_array_target(display_device.id);
     cur.set_layout(vk::ImageLayout::eShaderReadOnlyOptimal);

@@ -332,14 +332,17 @@ vec4 camera::get_projection_info() const
             proj_info.z = proj_info.w * pd.perspective.aspect;
             if(pd.perspective.far == INFINITY)
             {
-                proj_info.x = -1.0/pd.perspective.near;
-                proj_info.y = 0;
+                proj_info.x = -pd.perspective.near;
+                proj_info.y = -1;
             }
             else
             {
-                // Giving the flipped near and far flip the depth range.
-                proj_info.x = 1.0/pd.perspective.far - 1.0/pd.perspective.near;
-                proj_info.y = -1.0/pd.perspective.far;
+
+                float near = pd.perspective.near;
+                float far = pd.perspective.far;
+
+                proj_info.x = near * far / (near-far);
+                proj_info.y = (near + far)/(near-far);
             }
             return proj_info;
         }

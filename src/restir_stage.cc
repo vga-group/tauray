@@ -274,8 +274,11 @@ restir_stage::restir_stage(
     defines["CANONICAL_SAMPLES"] = std::to_string(opt.canonical_samples);
     defines["TEMPORAL_REUSE_ATTEMPTS"] = std::to_string(opt.temporal_reuse_search_attempts);
     defines["MAX_SPATIAL_SAMPLES"] = std::to_string(opt.spatial_samples);
-    selection_tile_size = max(next_power_of_two(sqrt(256/opt.spatial_samples)), 1u);
-    defines["SELECTION_TILE_SIZE"] = std::to_string(selection_tile_size);
+    if(opt.spatial_samples > 0)
+    {
+        selection_tile_size = max(next_power_of_two(sqrt(256/opt.spatial_samples)), 1u);
+        defines["SELECTION_TILE_SIZE"] = std::to_string(selection_tile_size);
+    }
     if(c.pos) defines["USE_POSITION"];
     if(c.flat_normal) defines["USE_FLAT_NORMAL"];
     if(!opt.opaque_only) defines["STOCHASTIC_ALPHA_BLENDING"];

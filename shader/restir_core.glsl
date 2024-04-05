@@ -80,10 +80,10 @@ bool get_pos(ivec2 p, camera_data cam, out vec3 pos)
 #else
     ivec2 size = textureSize(depth_or_position_tex, 0);
     float depth = texelFetch(depth_or_position_tex, p, 0).r;
-    float linear_depth = linearize_depth(depth, cam.projection_info);
+    float linear_depth = linearize_depth(depth * 2.0f - 1.0f, cam.projection_info);
 
     vec2 uv = (vec2(p)+0.5f)/vec2(size);
-    pos = unproject_position(depth, vec2(uv.x, 1-uv.y), cam.projection_info);
+    pos = (cam.view_inverse * vec4(unproject_position(linear_depth, vec2(uv.x, 1-uv.y), cam.projection_info), 1)).xyz;
     return depth == 1.0f;
 #endif
 }
@@ -126,10 +126,10 @@ bool get_prev_pos(ivec2 p, camera_data cam, out vec3 pos)
 #else
     ivec2 size = textureSize(prev_depth_or_position_tex, 0);
     float depth = texelFetch(prev_depth_or_position_tex, p, 0).r;
-    float linear_depth = linearize_depth(depth, cam.projection_info);
+    float linear_depth = linearize_depth(depth * 2.0f - 1.0f, cam.projection_info);
 
     vec2 uv = (vec2(p)+0.5f)/vec2(size);
-    pos = unproject_position(depth, vec2(uv.x, 1-uv.y), cam.projection_info);
+    pos = (cam.view_inverse * vec4(unproject_position(linear_depth, vec2(uv.x, 1-uv.y), cam.projection_info), 1)).xyz;
     return depth == 1.0f;
 #endif
 }
@@ -344,20 +344,10 @@ void add_canonical_contribution(inout sum_contribution sc, reservoir r, vec4 con
 #else
 #define finish_output_color(p, reservoir, out_value, sc, display_size) { \
     write_reservoir(reservoir, p, display_size); \
-    if(pc.accumulate_color != 0) \
-    { \
-        vec4 prev_color = imageLoad(out_reflection, p); \
-        prev_color.rgb *= prev_color.a; \
-        if(pc.accumulated_samples == 0 && pc.initialize_output != 0) \
-            prev_color = vec4(0); \
-        float confidence_ratio = min(reservoir.confidence/TR_RESTIR.max_confidence, 1.0f); \
-        vec4 ccolor = prev_color + vec4(sc.diffuse, 1.0f) * confidence_ratio; \
-        ccolor.rgb /= ccolor.a; \
-        if(ccolor.a == 0) ccolor = vec4(0); \
-        imageStore(out_reflection, p, ccolor); \
-    } \
     if(pc.update_sample_color != 0) \
         imageStore(out_diffuse, p, out_value); \
+    else \
+        imageStore(out_reflection, p, vec4(sc.diffuse, 1.0f)); \
 }
 #endif
 

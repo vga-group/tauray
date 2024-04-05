@@ -325,6 +325,7 @@ vec3 next_event_estimation(
         contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
         return contrib;
     }
+#endif
     return vec3(0);
 }
 
@@ -554,6 +555,5 @@ void write_all_outputs(
         accumulate_gbuffer_reflection(vec4(reflection, alpha), p, control.samples, prev_samples);
     }
 }
-#endif
 
 #endif
