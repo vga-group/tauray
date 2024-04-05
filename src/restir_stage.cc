@@ -778,7 +778,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
         pc.sample_index = dev->ctx->get_frame_counter() * opt.passes + pass_index;
         pc.first_pass = pass_index == 0;
 
-        canonical.push_constants(cmd, &pc);
+        canonical.push_constants(cmd, pc);
         canonical.trace_rays(cmd, uvec3(size, 1));
 
         reservoir_barrier(
@@ -822,7 +822,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
         ), vec2(0.05f), vec2(0.95f))-0.5f;
         pc.permutation = opt.temporal_permutation;
 
-        temporal.push_constants(cmd, &pc);
+        temporal.push_constants(cmd, pc);
         temporal.trace_rays(cmd, uvec3(size, 1));
 
         reservoir_barrier(
@@ -865,7 +865,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         pc.sample_index = dev->ctx->get_frame_counter() * opt.passes + pass_index;
         pc.display_size = size;
 
-        selection.push_constants(cmd, &pc);
+        selection.push_constants(cmd, pc);
         uvec3 wg = uvec3((ivec2(pc.display_size) + selection_tile_size-1) / selection_tile_size, 1);
         cmd.dispatch(wg.x, wg.y, wg.z);
         image_barrier(
@@ -894,7 +894,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         pc.camera_index = 0;
         pc.sample_index = dev->ctx->get_frame_counter() * opt.passes + pass_index;
 
-        spatial_trace.push_constants(cmd, &pc);
+        spatial_trace.push_constants(cmd, pc);
         spatial_trace.trace_rays(cmd, uvec3(size, opt.spatial_samples));
     }
 
@@ -949,7 +949,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         pc.accumulate_color = opt.accumulate || pass_index == int(opt.passes)-1 ? 1 : 0;
         pc.update_sample_color = pass_index != int(opt.passes)-1 ? 1 : 0;
 
-        spatial_gather.push_constants(cmd, &pc);
+        spatial_gather.push_constants(cmd, pc);
         uvec3 wg = uvec3((size+15u)/16u, 1);
         cmd.dispatch(wg.x, wg.y, wg.z);
     }
