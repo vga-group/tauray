@@ -3,6 +3,7 @@
 #include "gbuffer.hh"
 #include "log.hh"
 #include "misc.hh"
+#include "rt_common.hh"
 
 namespace
 {
@@ -299,6 +300,9 @@ restir_stage::restir_stage(
         defines["SHADE_FAKE_INDIRECT"];
     if(this->opt.demodulated_output)
         defines["DEMODULATE_OUTPUT"];
+
+    // TODO: Obey options for these.
+    add_defines(light_sampling_weights{}, defines);
 
     switch(opt.shift_map)
     {

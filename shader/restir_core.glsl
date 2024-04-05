@@ -563,11 +563,15 @@ void resolve_mesh_triangle_vertex(
     // Normal operation: just find the emissiveness of the vertex.
 
     vertex_data vd;
+    float pdf;
     vd = get_interpolated_vertex(
         vec3(0),
         rv.hit_info,
         int(rv.instance_id),
         int(rv.primitive_id)
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+        , from_pos, pdf
+#endif
     );
     to.pos.xyz = vd.pos;
 #ifdef RESTIR_TEMPORAL
@@ -742,7 +746,7 @@ bool get_intersection_info(
             payload.instance_id,
             payload.primitive_id
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-            , origin, pdf
+            , ray_origin, pdf
 #endif
         );
 #ifdef RESTIR_TEMPORAL
@@ -1396,11 +1400,15 @@ bool reconnection_shift_map(
     {
         // The reconnection vertex wasn't the last path vertex, so we need the
         // full material data too now.
+        float nee_pdf;
         vertex_data vd = get_interpolated_vertex(
             vec3(0),
             rs.vertex.hit_info,
             int(rs.vertex.instance_id),
             int(rs.vertex.primitive_id)
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+            , to_domain.pos, nee_pdf
+#endif
         );
 
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd);
@@ -1591,11 +1599,15 @@ bool hybrid_shift_map(
     {
         // The reconnection vertex wasn't the last path vertex, so we need the
         // full material data too now.
+        float nee_pdf;
         vertex_data vd = get_interpolated_vertex(
             vec3(0),
             rs.vertex.hit_info,
             int(rs.vertex.instance_id),
             int(rs.vertex.primitive_id)
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+            , to_domain.pos, nee_pdf
+#endif
         );
 
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd);
