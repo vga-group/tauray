@@ -1313,8 +1313,7 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
 
         if(bsdf_pdf == 0) bsdf_pdf = 1;
 
-        if(bounce == 0) tail_dir = dir;
-        else
+        if(bounce != 0)
         {
             path_throughput *= modulate_bsdf(tail_domain.mat, lobes);
 #ifdef USE_PRIMARY_SAMPLE_SPACE
