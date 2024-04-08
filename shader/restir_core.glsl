@@ -1146,7 +1146,7 @@ bool generate_bsdf_vertex(
     next_domain.mat = info.mat;
     next_domain.mat.emission = vertex.radiance_estimate;
     next_domain.pos = info.vd.pos;
-    next_domain.tbn = mat3(info.vd.tangent, info.vd.bitangent, info.vd.mapped_normal);
+    next_domain.tbn = create_tangent_space(info.vd.mapped_normal);
     next_domain.flat_normal = info.vd.hard_normal;
     next_domain.view = dir;
     next_domain.tview = view_to_tangent_space(next_domain.view, next_domain.tbn);
@@ -1251,11 +1251,11 @@ int replay_path(
     out vec4 primary_bsdf
 ){
     throughput = vec3(1.0f);
+    primary_bsdf = vec4(0);
 
     int end_state = 0;
 
     bool head_allows_reconnection = allow_initial_reconnection(src.mat);
-    primary_bsdf = vec4(0);
     for(int bounce = 0; bounce < min(end_nee ? path_length-1 : path_length, MAX_BOUNCES); ++bounce)
     {
         // Eat NEE sample
@@ -1264,6 +1264,7 @@ int replay_path(
 
         bool reconnected = false;
         bool bounces = replay_path_bsdf_bounce(bounce, seed, throughput, primary_bsdf, src, in_past, head_allows_reconnection, reconnected);
+
         if(fail_on_reconnect && reconnected)
             return 2;
 

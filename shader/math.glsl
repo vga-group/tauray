@@ -8,20 +8,24 @@
 #define GOLDEN_RATIO 1.61803398874989484820
 #define FLT_MAX 3.402823466e+38
 
-// Creates an arbitrary but valid tangent space. Not suitable for normal
-// mapping, good for some isotropic shading calculations.
-// 'normal' must be normalized.
-// In the created tangent space, normal corresponds to the Z axis.
-mat3 create_tangent_space(vec3 normal)
+vec3 create_tangent(vec3 normal)
 {
     vec3 major;
     if(abs(normal.x) < M_1_SQRT3) major = vec3(1,0,0);
     else if(abs(normal.y) < M_1_SQRT3) major = vec3(0,1,0);
     else major = vec3(0,0,1);
 
-    vec3 tangent = normalize(cross(normal, major));
-    vec3 bitangent = cross(normal, tangent);
+    return normalize(cross(normal, major));
+}
 
+// Creates an arbitrary but valid tangent space. Not suitable for normal
+// mapping, good for some isotropic shading calculations.
+// 'normal' must be normalized.
+// In the created tangent space, normal corresponds to the Z axis.
+mat3 create_tangent_space(vec3 normal)
+{
+    vec3 tangent = create_tangent(normal);
+    vec3 bitangent = cross(normal, tangent);
     return mat3(tangent, bitangent, normal);
 }
 
