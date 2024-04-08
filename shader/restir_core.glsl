@@ -578,7 +578,7 @@ void resolve_mesh_triangle_vertex(
     if(!rv_is_in_past)
         to.pos.xyz = vd.prev_pos;
 #endif
-    to.normal = vd.mapped_normal;
+    to.normal = vd.hard_normal;
     to.pos.w = 1;
     // TODO: Allow mesh triangle material changes?
     to.emission = rv.radiance_estimate;
@@ -804,13 +804,11 @@ bool get_intersection_info(
 #endif
         pl = point_lights.lights[payload.primitive_id];
 
-        // No worries, radius cannot be zero -- we couldn't hit the light here
-        // if it was!
-        float radius = pl.radius;
 
         vec3 hit_pos = ray_origin + ray_direction * payload.barycentrics.x;
-
-        info.light = pl.color / (M_PI * radius * radius);
+        // No worries, radius cannot be zero -- we couldn't hit the light here
+        // if it was!
+        info.light = get_spotlight_intensity(pl, normalize(pl.pos-ray_origin)) * pl.color / (pl.radius * pl.radius * M_PI);
         info.local_pdf = sample_point_light_pdf(pl, ray_origin);
         info.vd.hard_normal = normalize(hit_pos-pl.pos);
         info.vd.pos = hit_pos;
@@ -1303,7 +1301,6 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
         // Eat NEE sample
         pcg1to4(tail_rng_seed);
 
-        vec3 throughput;
         uvec4 rand32 = pcg1to4(tail_rng_seed);
 
         vec4 u = ldexp(vec4(rand32), ivec4(-32));
@@ -1316,7 +1313,13 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
         if(bsdf_pdf == 0) bsdf_pdf = 1;
 
         if(bounce == 0) tail_dir = dir;
-        else path_throughput *= modulate_bsdf(tail_domain.mat, lobes) / bsdf_pdf;
+        else
+        {
+            path_throughput *= modulate_bsdf(tail_domain.mat, lobes);
+#ifdef USE_PRIMARY_SAMPLE_SPACE
+            path_throughput /= bsdf_pdf;
+#endif
+        }
 
         domain dst;
         reconnection_vertex vertex;
@@ -1349,7 +1352,11 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
             self_shadow(-tail_domain.view, tail_domain.flat_normal, candidate_dir, tail_domain.mat) *
             test_visibility(rand32.w, tail_domain.pos, candidate_dir, candidate_dist, tail_domain.flat_normal);
 
-        path_throughput *= visibility / nee_pdf;
+        path_throughput *= visibility;
+#ifdef USE_PRIMARY_SAMPLE_SPACE
+        if(tail_length > 1)
+            path_throughput /= nee_pdf;
+#endif
         radiance = path_throughput * vertex.radiance_estimate;
 
         if(tail_length <= 1) tail_dir = candidate_dir;
@@ -1402,7 +1409,7 @@ bool reconnection_shift_map(
         // full material data too now.
         float nee_pdf;
         vertex_data vd = get_interpolated_vertex(
-            vec3(0),
+            reconnect_ray_dir,
             rs.vertex.hit_info,
             int(rs.vertex.instance_id),
             int(rs.vertex.primitive_id)
@@ -1601,7 +1608,7 @@ bool hybrid_shift_map(
         // full material data too now.
         float nee_pdf;
         vertex_data vd = get_interpolated_vertex(
-            vec3(0),
+            reconnect_ray_dir,
             rs.vertex.hit_info,
             int(rs.vertex.instance_id),
             int(rs.vertex.primitive_id)

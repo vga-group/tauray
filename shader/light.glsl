@@ -89,7 +89,7 @@ void sample_point_light(
     float b = dot(dir, out_dir);
     out_length = -b - sqrt(max(b * b - dist2 + pl.radius * pl.radius, 0.0f));
 
-    color = get_spotlight_intensity(pl, out_dir) * pl.color;
+    color = get_spotlight_intensity(pl, normalize(-dir)) * pl.color;
 
     if(pl.radius == 0.0f)
     {

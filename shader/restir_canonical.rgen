@@ -36,9 +36,6 @@ void sample_path_nee_leaf(
     inout vec4 primary_bsdf,
     inout reservoir r
 ){
-    if(candidate.vertex.instance_id == UNCONNECTED_PATH_ID)
-        candidate.tail_rng_seed = path_seed;
-
     vec3 candidate_dir = vec3(0);
     vec3 candidate_normal = vec3(0);
     float candidate_dist = 0.0f;
@@ -133,9 +130,6 @@ bool sample_path_bsdf_bounce(
     inout vec4 primary_bsdf,
     inout reservoir r
 ){
-    if(candidate.vertex.instance_id == UNCONNECTED_PATH_ID)
-        candidate.tail_rng_seed = path_seed;
-
     uvec4 rand32 = pcg1to4(path_seed);
 
     vec4 u = ldexp(vec4(rand32), ivec4(-32));
@@ -263,7 +257,11 @@ void sample_path(
         if(base_sample.vertex.instance_id == UNCONNECTED_PATH_ID)
             base_sample.head_length++;
         else
+        {
             base_sample.tail_length++;
+            if(base_sample.tail_length == 1)
+                base_sample.tail_rng_seed = path_seed;
+        }
     }
 }
 

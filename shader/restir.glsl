@@ -28,7 +28,7 @@
 
 #define RESTIR_DI (MAX_BOUNCES == 1)
 
-#if !defined(USE_RANDOM_REPLAY_SHIFT)
+#if defined(USE_RANDOM_REPLAY_SHIFT)
 #define RESTIR_HAS_RECONNECTION_DATA false
 #else
 #define RESTIR_HAS_RECONNECTION_DATA true
@@ -110,14 +110,9 @@ void init_reservoir(out reservoir r)
 {
     // The initial output value is a null sample.
     // output_sample is invalid if the UCW is negative!
-    r.output_sample.vertex.instance_id = NULL_INSTANCE_ID;
     r.ucw = -1.0f;
     r.target_function_value = 0;
-    r.output_sample.head_length = 0;
-    r.output_sample.tail_length = 0;
-    r.output_sample.head_rng_seed = 0;
-    r.output_sample.tail_rng_seed = 0;
-    r.output_sample.nee_terminal = false;
+    init_restir_sample(r.output_sample, 0);
     r.sum_weight = 0.0f;
     r.confidence = 0;
 }
