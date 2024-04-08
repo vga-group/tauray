@@ -178,7 +178,7 @@ reservoir unpack_reservoir(
 
     r.output_sample.vertex.hit_info = unpackUnorm2x16(reconnection_data[0]);
     r.output_sample.vertex.incident_direction = octahedral_unpack(unpackSnorm2x16(reconnection_data[1]));
-    r.output_sample.vertex.instance_id = reconnection_data[2];
+    r.output_sample.vertex.instance_id = r.ucw <= 0 ? NULL_INSTANCE_ID : reconnection_data[2];
     r.output_sample.vertex.primitive_id = reconnection_data[3];
 
     r.output_sample.vertex.radiance_estimate = reconnection_radiance.rgb;

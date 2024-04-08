@@ -865,6 +865,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         selection.bind(cmd);
         selection.push_descriptors(cmd, selection_set, 0);
         selection.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
+        selection.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
 
         selection_push_constant_buffer pc;
         pc.config = config;
@@ -885,8 +886,8 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
     if(opt.spatial_samples > 0)
     {
         spatial_trace_set.set_image("spatial_selection", *selection_data);
-        spatial_trace_set.set_image("spatial_candidates", *spatial_candidate_color);
-        spatial_trace_set.set_image("mis_data", *spatial_mis_data);
+        spatial_trace_set.set_image_array("spatial_candidates", *spatial_candidate_color);
+        spatial_trace_set.set_image_array("mis_data", *spatial_mis_data);
 
         auto& set = spatial_trace_set;
         BIND_RESERVOIRS
@@ -895,6 +896,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         spatial_trace.bind(cmd);
         spatial_trace.push_descriptors(cmd, spatial_trace_set, 0);
         spatial_trace.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
+        spatial_trace.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
 
         spatial_trace_push_constant_buffer pc;
         pc.config = config;
@@ -923,8 +925,8 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         if(opt.spatial_samples > 0)
         {
             spatial_gather_set.set_image("spatial_selection", *selection_data);
-            spatial_gather_set.set_image("spatial_candidates", *spatial_candidate_color);
-            spatial_gather_set.set_image("mis_data", *spatial_mis_data);
+            spatial_gather_set.set_image_array("spatial_candidates", *spatial_candidate_color);
+            spatial_gather_set.set_image_array("mis_data", *spatial_mis_data);
         }
 
         if(opt.demodulated_output)
@@ -945,6 +947,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         spatial_gather.bind(cmd);
         spatial_gather.push_descriptors(cmd, spatial_gather_set, 0);
         spatial_gather.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
+        spatial_gather.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
 
         spatial_gather_push_constant_buffer pc;
         pc.config = config;

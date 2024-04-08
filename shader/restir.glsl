@@ -113,6 +113,7 @@ void init_reservoir(out reservoir r)
     r.ucw = -1.0f;
     r.target_function_value = 0;
     init_restir_sample(r.output_sample, 0);
+    r.output_sample.vertex.instance_id = NULL_INSTANCE_ID;
     r.sum_weight = 0.0f;
     r.confidence = 0;
 }

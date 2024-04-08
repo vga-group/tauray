@@ -325,6 +325,22 @@ void descriptor_set::set_image(
     }
 }
 
+void descriptor_set::set_image_array(
+    uint32_t index,
+    std::string_view name,
+    const texture& tex
+){
+    for(device& dev: tex.get_mask())
+    {
+        vk::DescriptorImageInfo info;
+        info.sampler = VK_NULL_HANDLE;
+        info.imageView = tex.get_array_image_view(dev.id);
+        info.imageLayout = vk::ImageLayout::eUndefined;
+        if(data.get_mask().contains(dev.id))
+            set_image(dev.id, index, name, {{info}});
+    }
+}
+
 void descriptor_set::set_buffer(
     device_id id,
     uint32_t index,
@@ -513,6 +529,21 @@ void push_descriptor_set::set_image(
         vk::DescriptorImageInfo info;
         info.sampler = VK_NULL_HANDLE;
         info.imageView = tex.get_image_view(dev.id);
+        info.imageLayout = vk::ImageLayout::eUndefined;
+        if(data.get_mask().contains(dev.id))
+            set_image(dev.id, name, {{info}});
+    }
+}
+
+void push_descriptor_set::set_image_array(
+    std::string_view name,
+    const texture& tex
+){
+    for(device& dev: tex.get_mask())
+    {
+        vk::DescriptorImageInfo info;
+        info.sampler = VK_NULL_HANDLE;
+        info.imageView = tex.get_array_image_view(dev.id);
         info.imageLayout = vk::ImageLayout::eUndefined;
         if(data.get_mask().contains(dev.id))
             set_image(dev.id, name, {{info}});
