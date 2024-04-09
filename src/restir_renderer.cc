@@ -64,11 +64,12 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     gbuffer_target cur = current_gbuffer.get_layer_target(display_device.id, 0);
     gbuffer_target prev = prev_gbuffer.get_layer_target(display_device.id, 0);
-    this->opt.restir_options.max_bounces = 1;
-    this->opt.restir_options.temporal_reuse = false;
-    this->opt.restir_options.spatial_samples = 16;
-    //this->opt.restir_options.shift_map = restir_stage::RECONNECTION_SHIFT;
-    this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
+    this->opt.restir_options.max_bounces = max(this->opt.restir_options.max_bounces, 1u);
+    this->opt.restir_options.temporal_reuse = true;
+    this->opt.restir_options.spatial_sample_oriented_disk = false;
+    this->opt.restir_options.spatial_samples = 4;
+    this->opt.restir_options.shift_map = restir_stage::RECONNECTION_SHIFT;
+    //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
     restir.emplace(display_device, *scene_update, cur, prev, this->opt.restir_options);
 
     cur = current_gbuffer.get_array_target(display_device.id);

@@ -252,7 +252,7 @@ restir_stage::restir_stage(
         {
             rtex.rng_seeds.emplace(
                 dev, size, 1,
-                vk::Format::eR32G32B32A32Sfloat,
+                vk::Format::eR32G32B32A32Uint,
                 0, nullptr,
                 vk::ImageTiling::eOptimal,
                 vk::ImageUsageFlagBits::eStorage,
@@ -301,8 +301,7 @@ restir_stage::restir_stage(
     if(this->opt.demodulated_output)
         defines["DEMODULATE_OUTPUT"];
 
-    // TODO: Obey options for these.
-    add_defines(light_sampling_weights{}, defines);
+    add_defines(opt.sampling_weights, defines);
 
     switch(opt.shift_map)
     {
@@ -778,6 +777,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
         canonical.bind(cmd);
         canonical.push_descriptors(cmd, canonical_set, 0);
         canonical.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
+        canonical.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
 
         canonical_push_constant_buffer pc;
         pc.config = config;

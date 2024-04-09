@@ -650,6 +650,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.scene_options = scene_options;
                 re_opt.tonemap_options = tonemap;
                 re_opt.sm_filter = sm_filter;
+                re_opt.restir_options.sampling_weights = sampling_weights;
+                re_opt.restir_options.max_bounces = opt.max_ray_depth-1;
+
                 return new restir_renderer(ctx, re_opt);
             }
         };

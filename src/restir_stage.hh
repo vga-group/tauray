@@ -10,6 +10,7 @@
 #include "descriptor_set.hh"
 #include "environment_map.hh"
 #include "shadow_map.hh"
+#include "rt_common.hh"
 #include "timer.hh"
 
 namespace tr
@@ -164,6 +165,8 @@ public:
         // but reduces temporal correlations, which can be very useful if you
         // intend to denoise the result.
         uint32_t temporal_permutation = 0;
+
+        light_sampling_weights sampling_weights;
     };
 
     // TODO: Doesn't expect multi-view targets for now.
@@ -237,20 +240,21 @@ private:
         std::optional<texture> ris_data;
 
         // Present unless shift_map == RANDOM_REPLAY_SHIFT
-        // uint hit_info (Barycoords, normals, envmap sample dir. UNORM 2x16)
-        // uint incident_direction (SNORM 2x16)
+        // float hit_info_x (Barycoords, normals, envmap sample dir)
+        // float hit_info_y (Barycoords, normals, envmap sample dir)
         // uint instance_id
         // uint primitive_id
         std::optional<texture> reconnection_data;
 
         // Present unless shift_map == RANDOM_REPLAY_SHIFT
         // float3 radiance_estimate
-        // float unused
         std::optional<texture> reconnection_radiance;
 
         // Present unless max_bounces == 1 and shift_map == RECONNECTION_SHIFT
         // uint head_rng_seed
         // uint tail_rng_seed
+        // float incident_direction_x
+        // float incident_direction_y
         std::optional<texture> rng_seeds;
     };
     reservoir_textures reservoir_data[2];

@@ -18,12 +18,12 @@ layout(binding = 5) uniform sampler2D material_tex;
 layout(binding = 6, rgba32ui) readonly uniform uimage2D in_reservoir_ris_data_tex;
 layout(binding = 7, rgba32ui) readonly uniform uimage2D in_reservoir_reconnection_data_tex;
 layout(binding = 8, rgba32f) readonly uniform image2D in_reservoir_reconnection_radiance_tex;
-layout(binding = 9, rg32ui) readonly uniform uimage2D in_reservoir_rng_seeds_tex;
+layout(binding = 9, rgba32ui) readonly uniform uimage2D in_reservoir_rng_seeds_tex;
 
 layout(binding = 10, rgba32ui) uniform uimage2D out_reservoir_ris_data_tex;
 layout(binding = 11, rgba32ui) uniform uimage2D out_reservoir_reconnection_data_tex;
 layout(binding = 12, rgba32f) uniform image2D out_reservoir_reconnection_radiance_tex;
-layout(binding = 13, rg32ui) uniform uimage2D out_reservoir_rng_seeds_tex;
+layout(binding = 13, rgba32ui) uniform uimage2D out_reservoir_rng_seeds_tex;
 
 #include "alias_table.glsl"
 #include "math.glsl"
@@ -162,7 +162,7 @@ reservoir unpack_reservoir(
     uvec4 ris_data,
     uvec4 reconnection_data,
     vec4 reconnection_radiance,
-    uvec2 rng_seeds
+    uvec4 rng_seeds
 ){
     reservoir r;
 
@@ -176,12 +176,18 @@ reservoir unpack_reservoir(
     r.output_sample.head_length = bitfieldExtract(confidence_path_length, 16, 8);
     r.output_sample.tail_length = bitfieldExtract(confidence_path_length, 24, 8);
 
-    r.output_sample.vertex.hit_info = unpackUnorm2x16(reconnection_data[0]);
-    r.output_sample.vertex.incident_direction = octahedral_unpack(unpackSnorm2x16(reconnection_data[1]));
+    r.output_sample.vertex.hit_info.x = uintBitsToFloat(reconnection_data[0]);
+    r.output_sample.vertex.hit_info.y = uintBitsToFloat(reconnection_data[1]);
     r.output_sample.vertex.instance_id = r.ucw <= 0 ? NULL_INSTANCE_ID : reconnection_data[2];
     r.output_sample.vertex.primitive_id = reconnection_data[3];
 
     r.output_sample.vertex.radiance_estimate = reconnection_radiance.rgb;
+
+    vec2 incident_dir = vec2(
+        uintBitsToFloat(rng_seeds[2]),
+        uintBitsToFloat(rng_seeds[3])
+    );
+    r.output_sample.vertex.incident_direction = octahedral_unpack(incident_dir);
 
     r.output_sample.head_rng_seed = rng_seeds[0];
     r.output_sample.tail_rng_seed = rng_seeds[1];
@@ -199,7 +205,7 @@ reservoir read_reservoir(ivec2 p, uvec2 size)
             imageLoad(in_reservoir_reconnection_data_tex, p) : uvec4(0),
         RESTIR_HAS_RECONNECTION_DATA ?
             imageLoad(in_reservoir_reconnection_radiance_tex, p) : uvec4(0),
-        RESTIR_HAS_SEEDS ? imageLoad(in_reservoir_rng_seeds_tex, p).rg : uvec2(0)
+        RESTIR_HAS_SEEDS ? imageLoad(in_reservoir_rng_seeds_tex, p) : uvec4(0)
     );
 }
 
@@ -217,7 +223,7 @@ reservoir read_out_reservoir(ivec2 p, uvec2 size)
             imageLoad(out_reservoir_reconnection_data_tex, p) : uvec4(0),
         RESTIR_HAS_RECONNECTION_DATA ?
             imageLoad(out_reservoir_reconnection_radiance_tex, p) : uvec4(0),
-        RESTIR_HAS_SEEDS ? imageLoad(out_reservoir_rng_seeds_tex, p).rg : uvec2(0)
+        RESTIR_HAS_SEEDS ? imageLoad(out_reservoir_rng_seeds_tex, p) : uvec4(0)
     );
 }
 
@@ -243,13 +249,15 @@ void write_reservoir(reservoir r, ivec2 p, uvec2 size)
     if(RESTIR_HAS_RECONNECTION_DATA)
     {
         uvec4 reconnection_data = uvec4(
-            packUnorm2x16(r.output_sample.vertex.hit_info),
-            packSnorm2x16(octahedral_pack(r.output_sample.vertex.incident_direction)),
+            floatBitsToUint(r.output_sample.vertex.hit_info.x),
+            floatBitsToUint(r.output_sample.vertex.hit_info.y),
             r.output_sample.vertex.instance_id,
             r.output_sample.vertex.primitive_id
         );
         imageStore(out_reservoir_reconnection_data_tex, p, reconnection_data);
-        imageStore(out_reservoir_reconnection_radiance_tex, p, vec4(r.output_sample.vertex.radiance_estimate, 0));
+        imageStore(out_reservoir_reconnection_radiance_tex, p, vec4(
+            r.output_sample.vertex.radiance_estimate, 0
+        ));
     }
 
     if(RESTIR_HAS_SEEDS)
@@ -258,7 +266,11 @@ void write_reservoir(reservoir r, ivec2 p, uvec2 size)
             r.output_sample.head_rng_seed,
             r.output_sample.tail_rng_seed
         );
-        imageStore(out_reservoir_rng_seeds_tex, p, uvec4(rng_seeds,0,0));
+        vec2 incident_dir = octahedral_pack(r.output_sample.vertex.incident_direction);
+        imageStore(out_reservoir_rng_seeds_tex, p, uvec4(rng_seeds,
+            floatBitsToUint(incident_dir.x),
+            floatBitsToUint(incident_dir.y)
+        ));
     }
 }
 
@@ -1320,6 +1332,7 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
             path_throughput /= bsdf_pdf;
 #endif
         }
+        //else tail_dir = tail_domain.tbn * tdir;
 
         domain dst;
         reconnection_vertex vertex;
@@ -1348,18 +1361,26 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
             return;
 
         rand32.w += 7u;
+
         float visibility =
             self_shadow(-tail_domain.view, tail_domain.flat_normal, candidate_dir, tail_domain.mat) *
             test_visibility(rand32.w, tail_domain.pos, candidate_dir, candidate_dist, tail_domain.flat_normal);
 
         path_throughput *= visibility;
+        if(tail_length <= 1)
+            ; //tail_dir = candidate_dir;
+        else
+        {
+            vec3 tdir = candidate_dir * tail_domain.tbn;
+            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+            ggx_bsdf(tdir, tail_domain.tview, tail_domain.mat, lobes);
+            path_throughput *= modulate_bsdf(tail_domain.mat, lobes);
 #ifdef USE_PRIMARY_SAMPLE_SPACE
-        if(tail_length > 1)
             path_throughput /= nee_pdf;
 #endif
+        }
         radiance = path_throughput * vertex.radiance_estimate;
 
-        if(tail_length <= 1) tail_dir = candidate_dir;
     }
 }
 
@@ -1421,7 +1442,7 @@ bool reconnection_shift_map(
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd);
         mat.roughness = max(mat.roughness, 0.001f);
 
-        mat3 tbn = mat3(vd.tangent, vd.bitangent, vd.mapped_normal);
+        mat3 tbn = create_tangent_space(vd.mapped_normal);
         vec3 tview = -reconnect_ray_dir * tbn;
 
         // Optionally, update radiance based on tail path in the timeframe of
@@ -1432,11 +1453,7 @@ bool reconnection_shift_map(
             domain tail_domain;
             tail_domain.mat = mat;
             tail_domain.pos = vd.pos;
-            tail_domain.tbn = mat3(
-                vd.tangent,
-                vd.bitangent,
-                vd.mapped_normal
-            );
+            tail_domain.tbn = tbn;
             tail_domain.flat_normal = vd.hard_normal;
             tail_domain.view = reconnect_ray_dir;
             tail_domain.tview = tview;
