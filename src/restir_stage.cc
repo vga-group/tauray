@@ -300,6 +300,8 @@ restir_stage::restir_stage(
         defines["SHADE_FAKE_INDIRECT"];
     if(this->opt.demodulated_output)
         defines["DEMODULATE_OUTPUT"];
+    if(this->opt.regularization_gamma > 0)
+        defines["PATH_SPACE_REGULARIZATION"] = std::to_string(this->opt.regularization_gamma);
 
     add_defines(opt.sampling_weights, defines);
 

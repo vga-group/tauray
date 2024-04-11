@@ -124,6 +124,7 @@ bool sample_path_bsdf_bounce(
     inout vec3 tail_throughput,
     inout float path_pdf,
     inout bool head_allows_reconnection,
+    inout float regularization,
     domain src,
     out domain dst,
     inout vec4 out_value,
@@ -139,6 +140,8 @@ bool sample_path_bsdf_bounce(
     float bsdf_pdf = 0;
     ggx_bsdf_sample(u, src.tview, src.mat, tdir, lobes, bsdf_pdf);
     vec3 dir = src.tbn * tdir;
+
+    update_regularization(bsdf_pdf, regularization);
 
     vec3 throughput = get_bounce_throughput(
         candidate.head_length + candidate.tail_length, src, dir, lobes, primary_bsdf
@@ -235,6 +238,7 @@ void sample_path(
     bool head_allows_reconnection = allow_initial_reconnection(src.mat);
 
     vec4 primary_bsdf = vec4(1);
+    float regularization = 1.0f;
     for(int bounce = 0; bounce < max(MAX_BOUNCES, 1); ++bounce)
     {
         sample_path_nee_leaf(
@@ -248,11 +252,12 @@ void sample_path(
         if(!sample_path_bsdf_bounce(
             path_seed, ris_seed, base_sample,
             total_throughput, tail_throughput,
-            path_pdf, head_allows_reconnection,
+            path_pdf, head_allows_reconnection, regularization,
             src, dst, out_value, primary_bsdf, r
         )) break;
 
         src = dst;
+        apply_regularization(regularization, src.mat);
 
         if(base_sample.vertex.instance_id == UNCONNECTED_PATH_ID)
             base_sample.head_length++;
@@ -304,10 +309,11 @@ void main()
 
             domain dst;
             vec4 primary_bsdf = vec4(1);
+            float regularization = 1.0f;
             sample_path_bsdf_bounce(
                 seed.x, seed.y, base_sample,
                 total_throughput, tail_throughput,
-                path_pdf, tmp_head_allows_reconnection,
+                path_pdf, tmp_head_allows_reconnection, regularization,
                 cur_domain, dst, out_value, primary_bsdf, r
             );
         }

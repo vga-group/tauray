@@ -279,6 +279,24 @@ int self_shadow(vec3 view, vec3 flat_normal, vec3 light_dir, sampled_material ma
     return dot(flat_normal, light_dir) * dot(view, flat_normal) < 0 && mat.transmittance == 0.0f ? 0 : 1;
 }
 
+void update_regularization(float bsdf_pdf, inout float regularization)
+{
+#ifdef PATH_SPACE_REGULARIZATION
+    // Regularization strategy inspired by "Optimised Path Space Regularisation", 2021 Weier et al.
+    // I'm using the BSDF PDF instead of roughness, which seems to be more
+    // effective at reducing fireflies.
+    if(bsdf_pdf != 0.0f)
+        regularization *= max(1 - PATH_SPACE_REGULARIZATION / pow(bsdf_pdf, 0.25f), 0.0f);
+#endif
+}
+
+void apply_regularization(float regularization, inout sampled_material mat)
+{
+#ifdef PATH_SPACE_REGULARIZATION
+    mat.roughness = 1.0f - ((1.0f - mat.roughness) * regularization);
+#endif
+}
+
 vec3 get_bounce_throughput(
     uint bounce_index,
     domain src,
@@ -1212,6 +1230,7 @@ bool replay_path_bsdf_bounce(
     inout uint path_seed,
     inout vec3 path_throughput,
     inout vec4 primary_bsdf,
+    inout float regularization,
     inout domain src,
     bool in_past,
     inout bool head_allows_reconnection,
@@ -1224,6 +1243,7 @@ bool replay_path_bsdf_bounce(
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     float bsdf_pdf = 0;
     ggx_bsdf_sample(u, src.tview, src.mat, tdir, lobes, bsdf_pdf);
+    update_regularization(bsdf_pdf, regularization);
     if(bsdf_pdf == 0) bsdf_pdf = 1;
     vec3 dir = src.tbn * tdir;
 
@@ -1259,6 +1279,7 @@ int replay_path(
     bool fail_on_reconnect,
     bool fail_on_last_unconnected,
     bool in_past,
+    inout float regularization,
     out vec3 throughput,
     out vec4 primary_bsdf
 ){
@@ -1275,7 +1296,8 @@ int replay_path(
             pcg1to4(seed);
 
         bool reconnected = false;
-        bool bounces = replay_path_bsdf_bounce(bounce, seed, throughput, primary_bsdf, src, in_past, head_allows_reconnection, reconnected);
+        bool bounces = replay_path_bsdf_bounce(bounce, seed, throughput, primary_bsdf, regularization, src, in_past, head_allows_reconnection, reconnected);
+        apply_regularization(regularization, src.mat);
 
         if(fail_on_reconnect && reconnected)
             return 2;
@@ -1305,7 +1327,7 @@ int replay_path(
     return end_state;
 }
 
-void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, uint tail_rng_seed, inout vec3 radiance, inout vec3 tail_dir)
+void update_tail_radiance(domain tail_domain, float regularization, bool end_nee, uint tail_length, uint tail_rng_seed, inout vec3 radiance, inout vec3 tail_dir)
 {
     vec3 path_throughput = vec3(1.0f);
 
@@ -1322,6 +1344,7 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
         float bsdf_pdf = 0.0f;
         ggx_bsdf_sample(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf);
         vec3 dir = tail_domain.tbn * tdir;
+        update_regularization(bsdf_pdf, regularization);
 
         if(bsdf_pdf == 0) bsdf_pdf = 1;
 
@@ -1340,6 +1363,7 @@ void update_tail_radiance(domain tail_domain, bool end_nee, uint tail_length, ui
         bool bounces = generate_bsdf_vertex(rand32, dir, false, tail_domain, dst, vertex, nee_pdf);
 
         tail_domain = dst;
+        apply_regularization(regularization, tail_domain.mat);
 
         radiance = path_throughput * dst.mat.emission;
         if(!bounces)
@@ -1423,6 +1447,12 @@ bool reconnection_shift_map(
     float reconnect_ray_dist;
     homogeneous_to_ray(to_domain.pos, to.pos, reconnect_ray_dir, reconnect_ray_dist);
 
+    float regularization = 1;
+    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+    vec3 tdir = reconnect_ray_dir * to_domain.tbn;
+    float bsdf_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, lobes);
+    update_regularization(bsdf_pdf, regularization);
+
     vec3 emission = to.emission;
     if(rs.tail_length >= 1)
     {
@@ -1441,9 +1471,17 @@ bool reconnection_shift_map(
 
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd);
         mat.roughness = max(mat.roughness, 0.001f);
+        apply_regularization(regularization, mat);
 
         mat3 tbn = create_tangent_space(vd.mapped_normal);
         vec3 tview = -reconnect_ray_dir * tbn;
+        vec3 incident_dir = rs.vertex.incident_direction * tbn;
+
+        // Turn radiance into emission
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        float pdf = ggx_bsdf_pdf(incident_dir, tview, mat, lobes);
+        update_regularization(pdf, regularization);
+        vec3 bsdf = modulate_bsdf(mat, lobes);
 
         // Optionally, update radiance based on tail path in the timeframe of
         // to_domain. This is only needed for temporal reuse.
@@ -1457,23 +1495,12 @@ bool reconnection_shift_map(
             tail_domain.flat_normal = vd.hard_normal;
             tail_domain.view = reconnect_ray_dir;
             tail_domain.tview = tview;
-            update_tail_radiance(tail_domain, rs.nee_terminal, rs.tail_length, rs.tail_rng_seed, rs.vertex.radiance_estimate, rs.vertex.incident_direction);
+            update_tail_radiance(tail_domain, regularization, rs.nee_terminal, rs.tail_length, rs.tail_rng_seed, rs.vertex.radiance_estimate, rs.vertex.incident_direction);
         }
 #endif
 
-        vec3 incident_dir = rs.vertex.incident_direction * tbn;
-
-        // Turn radiance into emission
-        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-        ggx_bsdf(incident_dir, tview, mat, lobes);
-        vec3 bsdf = modulate_bsdf(mat, lobes);
-
         emission = bsdf * rs.vertex.radiance_estimate;
     }
-
-    vec3 tdir = reconnect_ray_dir * to_domain.tbn;
-    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-    ggx_bsdf(tdir, to_domain.tview, to_domain.mat, lobes);
 
     contribution =
         get_bounce_throughput(0, to_domain, reconnect_ray_dir, lobes, primary_bsdf) * emission;
@@ -1526,6 +1553,7 @@ bool random_replay_shift_map(
         return false;
 
     vec3 throughput = vec3(1);
+    float regularization = 1.0f;
     int replay_status = replay_path(
         to_domain,
         rs.head_rng_seed,
@@ -1534,6 +1562,7 @@ bool random_replay_shift_map(
         false,
         false,
         cur_to_prev,
+        regularization,
         throughput,
         primary_bsdf
     );
@@ -1575,6 +1604,7 @@ bool hybrid_shift_map(
         return false;
 
     vec3 throughput = vec3(1);
+    float regularization = 1.0f;
     bool has_reconnection = rs.vertex.instance_id != UNCONNECTED_PATH_ID;
     if(!has_reconnection || rs.head_length != 0)
     {
@@ -1586,6 +1616,7 @@ bool hybrid_shift_map(
             true,
             has_reconnection,
             cur_to_prev,
+            regularization,
             throughput,
             primary_bsdf
         );
@@ -1615,8 +1646,12 @@ bool hybrid_shift_map(
     float reconnect_ray_dist;
     homogeneous_to_ray(to_domain.pos, to.pos, reconnect_ray_dir, reconnect_ray_dist);
 
-    float v0_pdf = 1.0f;
     float v1_pdf = 1.0f;
+
+    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+    vec3 tdir = reconnect_ray_dir * to_domain.tbn;
+    float v0_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, lobes);
+    update_regularization(v0_pdf, regularization);
 
     vec3 emission = to.emission;
     if(rs.tail_length >= 1)
@@ -1635,6 +1670,7 @@ bool hybrid_shift_map(
         );
 
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd);
+        apply_regularization(regularization, mat);
         mat3 tbn = mat3(vd.tangent, vd.bitangent, vd.mapped_normal);
 
         bool allowed = true;
@@ -1642,6 +1678,13 @@ bool hybrid_shift_map(
             return false;
 
         vec3 tview = -reconnect_ray_dir * tbn;
+        vec3 incident_dir = rs.vertex.incident_direction * tbn;
+
+        // Turn radiance into to.emission
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        v1_pdf = ggx_bsdf_pdf(incident_dir, tview, mat, lobes);
+        update_regularization(v1_pdf, regularization);
+        vec3 bsdf = modulate_bsdf(mat, lobes);
 
         // Optionally, update radiance based on tail path in the timeframe of
         // to_domain. This is only needed for temporal reuse.
@@ -1659,16 +1702,9 @@ bool hybrid_shift_map(
             tail_domain.flat_normal = vd.hard_normal;
             tail_domain.view = reconnect_ray_dir;
             tail_domain.tview = tview;
-            update_tail_radiance(tail_domain, rs.nee_terminal, rs.tail_length, rs.tail_rng_seed, rs.vertex.radiance_estimate, rs.vertex.incident_direction);
+            update_tail_radiance(tail_domain, regularization, rs.nee_terminal, rs.tail_length, rs.tail_rng_seed, rs.vertex.radiance_estimate, rs.vertex.incident_direction);
         }
 #endif
-
-        vec3 incident_dir = rs.vertex.incident_direction * tbn;
-
-        // Turn radiance into to.emission
-        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-        v1_pdf = ggx_bsdf_pdf(incident_dir, tview, mat, lobes);
-        vec3 bsdf = modulate_bsdf(mat, lobes);
 
         emission = bsdf * rs.vertex.radiance_estimate;
         if(isnan(v1_pdf) || isinf(v1_pdf) || v1_pdf == 0)
@@ -1685,9 +1721,6 @@ bool hybrid_shift_map(
             return false;
     }
 
-    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-    vec3 tdir = reconnect_ray_dir * to_domain.tbn;
-    v0_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, lobes);
     contribution = throughput * get_bounce_throughput(rs.head_length, to_domain, reconnect_ray_dir, lobes, primary_bsdf) * emission;
 
     if(isnan(v0_pdf) || isinf(v0_pdf) || v0_pdf == 0)

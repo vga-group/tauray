@@ -166,6 +166,8 @@ public:
         // intend to denoise the result.
         uint32_t temporal_permutation = 0;
 
+        float regularization_gamma = 0.0f; // 0 disables path regularization
+
         light_sampling_weights sampling_weights;
     };
 
