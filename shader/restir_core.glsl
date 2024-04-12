@@ -101,8 +101,15 @@ bool read_domain(camera_data  cam, ivec2 p, out domain d)
 #endif
     bool miss = get_pos(p, cam, d.pos);
 
+
     d.view = normalize(d.pos - origin);
     d.tview = view_to_tangent_space(d.view, d.tbn);
+
+    if(d.mat.transmittance == 0)
+    {
+        float s = sign(dot(d.view, d.flat_normal));
+        d.pos -= s * d.flat_normal * TR_RESTIR.min_ray_dist * distance(d.pos, origin);
+    }
     return miss;
 }
 
@@ -154,6 +161,12 @@ bool read_prev_domain(camera_data cam, ivec2 p, domain cur_domain, out domain d)
 
     d.view = normalize(d.pos - origin);
     d.tview = view_to_tangent_space(d.view, d.tbn);
+
+    if(d.mat.transmittance == 0)
+    {
+        float s = sign(dot(d.view, d.flat_normal));
+        d.pos -= s * d.flat_normal * TR_RESTIR.min_ray_dist * distance(d.pos, origin);
+    }
     return miss;
 }
 #endif
@@ -441,14 +454,6 @@ vec3 shade_explicit_lights(
 int test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
 {
     payload.random_seed = seed;
-    float s = sign(dot(dir, flat_normal));
-
-    vec3 origin = pos + s * flat_normal * TR_RESTIR.min_ray_dist;
-    vec3 target = pos + dir * dist;
-
-    vec3 new_dir = dir * dist - s * flat_normal * TR_RESTIR.min_ray_dist;
-    float new_dist = length(new_dir);
-    new_dir /= new_dist;
 
     traceRayEXT(
         tlas,
@@ -459,10 +464,10 @@ int test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
 #endif
         VISIBILITY_RAY_MASK,
         0, 0, 0,
-        origin,
+        pos,
         TR_RESTIR.min_ray_dist,
-        new_dir,
-        new_dist-TR_RESTIR.min_ray_dist*2,
+        dir,
+        dist-TR_RESTIR.min_ray_dist*2,
         0
     );
     return payload.instance_id < 0 ? 1 : 0;
@@ -472,14 +477,6 @@ int test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
 int test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
 {
     payload.random_seed = seed;
-    float s = sign(dot(dir, flat_normal));
-
-    vec3 origin = pos + s * flat_normal * TR_RESTIR.min_ray_dist;
-    vec3 target = pos + dir * dist;
-
-    vec3 new_dir = dir * dist - s * flat_normal * TR_RESTIR.min_ray_dist;
-    float new_dist = length(new_dir);
-    new_dir /= new_dist;
 
 #ifdef ASSUME_UNCHANGED_ACCELERATION_STRUCTURES
     traceRayEXT(
@@ -487,10 +484,10 @@ int test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_no
         gl_RayFlagsCullNoOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
         VISIBILITY_RAY_MASK,
         0, 0, 0,
-        origin,
+        pos,
         TR_RESTIR.min_ray_dist,
-        new_dir,
-        new_dist-TR_RESTIR.min_ray_dist*2,
+        dir,
+        dist-TR_RESTIR.min_ray_dist*2,
         0
     );
 #else
@@ -499,10 +496,10 @@ int test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_no
         gl_RayFlagsCullNoOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
         VISIBILITY_RAY_MASK,
         0, 0, 0,
-        origin,
+        pos,
         TR_RESTIR.min_ray_dist,
-        new_dir,
-        new_dist-TR_RESTIR.min_ray_dist*2,
+        dir,
+        dist-TR_RESTIR.min_ray_dist*2,
         0
     );
 #endif
@@ -550,7 +547,41 @@ resolved_vertex resolve_point_light_vertex(reconnection_vertex rv, bool prev, ve
     return v;
 }
 
+resolved_vertex resolve_envmap_vertex(reconnection_vertex rv)
+{
+    resolved_vertex v;
+    vec3 dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
+    v.pos = vec4(dir, 0);
+    v.normal = -dir;
+    v.emission = rv.radiance_estimate;
+    return v;
+}
+
 resolved_vertex resolve_directional_light_vertex(reconnection_vertex rv)
+{
+    resolved_vertex v;
+    vec3 dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
+    v.pos = vec4(dir, 0);
+    v.normal = -dir;
+
+#ifdef RESTIR_TEMPORAL
+    for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+    {
+        directional_light dl = directional_lights.lights[i];
+        float visible = step(dl.dir_cutoff, dot(dir, -dl.dir));
+        v.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
+    }
+#else
+    v.emission = rv.radiance_estimate;
+#endif
+
+    return v;
+}
+
+#ifdef SHADE_ALL_EXPLICIT_LIGHTS
+#define resolve_miss_vertex resolve_envmap_vertex
+#else
+resolved_vertex resolve_miss_vertex(reconnection_vertex rv)
 {
     resolved_vertex v;
     vec3 dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
@@ -567,21 +598,18 @@ resolved_vertex resolve_directional_light_vertex(reconnection_vertex rv)
         v.emission *= texture(environment_map_tex, uv).rgb;
     }
 
-#ifndef SHADE_ALL_EXPLICIT_LIGHTS
-    // Directional lights don't generate vertices when they're rasterized.
     for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
     {
         directional_light dl = directional_lights.lights[i];
         float visible = step(dl.dir_cutoff, dot(dir, -dl.dir));
         v.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
     }
-#endif
-
 #else
     v.emission = rv.radiance_estimate;
 #endif
     return v;
 }
+#endif
 
 void resolve_mesh_triangle_vertex(
     reconnection_vertex rv,
@@ -666,11 +694,19 @@ bool resolve_reconnection_vertex(
 #endif
         return true;
     }
-    else if(
-        rv.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID ||
-        rv.instance_id == ENVMAP_INSTANCE_ID
-    ){
+    else if(rv.instance_id == ENVMAP_INSTANCE_ID)
+    {
+        to = resolve_envmap_vertex(rv);
+        return true;
+    }
+    else if(rv.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID)
+    {
         to = resolve_directional_light_vertex(rv);
+        return true;
+    }
+    else if(rv.instance_id == MISS_INSTANCE_ID)
+    {
+        to = resolve_miss_vertex(rv);
         return true;
     }
     else
@@ -860,6 +896,7 @@ bool get_intersection_info(
             uv.x = atan(ray_direction.z, ray_direction.x)/(2*M_PI)+0.5f;
             color.rgb *= texture(environment_map_tex, uv).rgb;
         }
+        info.light += color.rgb;
 
         info.envmap_pdf = scene_metadata.environment_proj >= 0 ? sample_environment_map_pdf(ray_direction) : 0.0f;
         info.local_pdf = 0;
@@ -876,9 +913,7 @@ bool get_intersection_info(
         }
 #endif
 
-        // TODO: Not sure what to do here... This also receives directional
-        // lights, which can and do overlap with the envmap.
-        candidate.instance_id = ENVMAP_INSTANCE_ID;
+        candidate.instance_id = MISS_INSTANCE_ID;
         candidate.primitive_id = 0;
         candidate.hit_info = octahedral_pack(ray_direction) * 0.5f + 0.5f;
         candidate.radiance_estimate = info.light;
@@ -1101,10 +1136,8 @@ float calculate_light_pdf(
     float point_prob, triangle_prob, dir_prob, envmap_prob;
     get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
 
-    if(
-        instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID ||
-        instance_id == ENVMAP_INSTANCE_ID
-    ){
+    if(instance_id == MISS_INSTANCE_ID)
+    {
         return local_pdf * dir_prob / max(scene_metadata.directional_light_count, 1u) + envmap_pdf * envmap_prob;
     }
     else if(instance_id == NULL_INSTANCE_ID || local_pdf == 0)

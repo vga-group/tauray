@@ -39,6 +39,11 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     scene_update.emplace(display_device, opt.scene_options);
 
+    gbuffer_target cur = current_gbuffer.get_layer_target(display_device.id, 0);
+    gbuffer_target prev = prev_gbuffer.get_layer_target(display_device.id, 0);
+
+    envmap.emplace(display_device, *scene_update, cur.color, 0);
+
     raster_stage::options raster_opt;
     raster_opt.clear_color = true;
     raster_opt.clear_depth = true;
@@ -49,21 +54,14 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     raster_opt.force_alpha_to_coverage = true;
     raster_opt.output_layout = vk::ImageLayout::eGeneral;
 
-    std::vector<gbuffer_target> gbuffer_block_targets;
-    for(size_t i = 0; i < current_gbuffer.get_multiview_block_count(); ++i)
-    {
-        gbuffer_target mv_target = current_gbuffer.get_multiview_block_target(display_device.id, i);
-        mv_target.color = render_target();
-        gbuffer_block_targets.push_back(mv_target);
-    }
-
+    render_target color = cur.color;
+    cur.color = render_target();
     gbuffer_rasterizer.emplace(
         display_device, *scene_update,
-        gbuffer_block_targets, raster_opt
+        cur, raster_opt
     );
+    cur.color = color;
 
-    gbuffer_target cur = current_gbuffer.get_layer_target(display_device.id, 0);
-    gbuffer_target prev = prev_gbuffer.get_layer_target(display_device.id, 0);
     this->opt.restir_options.max_bounces = max(this->opt.restir_options.max_bounces, 1u);
     this->opt.restir_options.temporal_reuse = true;
     this->opt.restir_options.spatial_sample_oriented_disk = false;
@@ -74,7 +72,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     cur = current_gbuffer.get_array_target(display_device.id);
     cur.set_layout(vk::ImageLayout::eShaderReadOnlyOptimal);
-    cur.color.layout = vk::ImageLayout::eGeneral;
+    cur.color.layout = vk::ImageLayout::eColorAttachmentOptimal;
     cur.diffuse.layout = vk::ImageLayout::eGeneral;
     cur.reflection.layout = vk::ImageLayout::eGeneral;
 
@@ -111,6 +109,7 @@ void restir_renderer::render()
 
     dependencies deps = scene_update->run(display_deps);
 
+    deps = envmap->run(deps);
     deps = gbuffer_rasterizer->run(deps);
     deps = restir->run(deps);
     deps = tonemap->run(deps);

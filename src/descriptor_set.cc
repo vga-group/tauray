@@ -298,7 +298,7 @@ void descriptor_set::set_texture(
     const texture& tex,
     const sampler& s
 ){
-    for(device& dev: tex.get_mask())
+    for(device& dev: layout.get_mask())
     {
         vk::DescriptorImageInfo info;
         info.sampler = s.get_sampler(dev.id);
@@ -314,7 +314,7 @@ void descriptor_set::set_image(
     std::string_view name,
     const texture& tex
 ){
-    for(device& dev: tex.get_mask())
+    for(device& dev: layout.get_mask())
     {
         vk::DescriptorImageInfo info;
         info.sampler = VK_NULL_HANDLE;
@@ -330,7 +330,7 @@ void descriptor_set::set_image_array(
     std::string_view name,
     const texture& tex
 ){
-    for(device& dev: tex.get_mask())
+    for(device& dev: layout.get_mask())
     {
         vk::DescriptorImageInfo info;
         info.sampler = VK_NULL_HANDLE;
@@ -509,7 +509,7 @@ void push_descriptor_set::set_texture(
     const texture& tex,
     const sampler& s
 ){
-    for(device& dev: tex.get_mask())
+    for(device& dev: layout.get_mask())
     {
         vk::DescriptorImageInfo info;
         info.sampler = s.get_sampler(dev.id);
@@ -524,7 +524,7 @@ void push_descriptor_set::set_image(
     std::string_view name,
     const texture& tex
 ){
-    for(device& dev: tex.get_mask())
+    for(device& dev: layout.get_mask())
     {
         vk::DescriptorImageInfo info;
         info.sampler = VK_NULL_HANDLE;
@@ -539,7 +539,7 @@ void push_descriptor_set::set_image_array(
     std::string_view name,
     const texture& tex
 ){
-    for(device& dev: tex.get_mask())
+    for(device& dev: layout.get_mask())
     {
         vk::DescriptorImageInfo info;
         info.sampler = VK_NULL_HANDLE;

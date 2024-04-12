@@ -146,6 +146,37 @@ raster_stage::raster_stage(
     }
 }
 
+raster_stage::raster_stage(
+    device& dev,
+    scene_stage& ss,
+    gbuffer_target& output_target,
+    const options& opt
+):  single_device_stage(dev),
+    output_targets({output_target}),
+    opt(opt),
+    scene_state_counter(0),
+    ss(&ss),
+    raster_timer(
+        dev,
+        std::string(output_target.color ? "forward" : "gbuffer") +
+        " rasterization"
+    )
+{
+    array_pipelines.emplace_back(new raster_pipeline(dev));
+    array_pipelines.back()->init({
+        output_target.get_size(),
+        uvec4(0, 0, output_target.get_size()),
+        load_sources(opt, output_target),
+        {&ss.get_descriptors(), &ss.get_raster_descriptors()},
+        mesh::get_bindings(),
+        mesh::get_attributes(),
+        get_color_attachments(opt, output_target),
+        get_depth_attachment(opt, output_target),
+        opt.sample_shading, (bool)output_target.color || opt.force_alpha_to_coverage, true,
+        {}, false
+    });
+}
+
 void raster_stage::update(uint32_t)
 {
     if(!ss->check_update(scene_stage::GEOMETRY|scene_stage::LIGHT, scene_state_counter))
@@ -157,7 +188,7 @@ void raster_stage::update(uint32_t)
         vk::CommandBuffer cb = begin_graphics();
 
         raster_timer.begin(cb, dev->id, i);
-        size_t j = 0;
+        size_t j = opt.base_camera_index;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             gfx->begin_render_pass(cb, i);

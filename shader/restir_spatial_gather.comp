@@ -81,8 +81,6 @@ void main()
 #ifdef DEMODULATE_OUTPUT
         imageStore(out_diffuse, p, vec4(canonical_domain.mat.emission, 0.0f));
         imageStore(out_reflection, p, vec4(0));
-#else
-        imageStore(out_color, p, vec4(canonical_domain.mat.emission, 1.0f));
 #endif
         return;
     }

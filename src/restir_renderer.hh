@@ -6,7 +6,9 @@
 #include "raster_stage.hh"
 #include "scene_stage.hh"
 #include "restir_stage.hh"
+#include "envmap_stage.hh"
 #include "tonemap_stage.hh"
+#include "shadow_map_stage.hh"
 #include "gbuffer_copy_stage.hh"
 #include <variant>
 
@@ -18,6 +20,11 @@ class restir_renderer: public renderer
 public:
     struct options
     {
+        // If set to true, the renderer operates in a hybrid raster + restir
+        // mode, where restir only does a single bounce. The points hit by that
+        // bounce ray are then shaded with typical rasterization techniques,
+        // like punctual lights, shadow maps & light probes.
+        bool raster_hybrid = false;
         scene_stage::options scene_options;
         restir_stage::options restir_options;
         tonemap_stage::options tonemap_options;
@@ -39,6 +46,8 @@ private:
     gbuffer_texture prev_gbuffer;
 
     std::optional<scene_stage> scene_update;
+    std::optional<shadow_map_stage> sms;
+    std::optional<envmap_stage> envmap;
     std::optional<raster_stage> gbuffer_rasterizer;
     std::optional<restir_stage> restir;
     std::optional<tonemap_stage> tonemap;

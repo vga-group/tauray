@@ -35,12 +35,21 @@ public:
         bool force_alpha_to_coverage = false;
         // Output layout to avoid excess work in render pass
         vk::ImageLayout output_layout = vk::ImageLayout::eColorAttachmentOptimal;
+
+        unsigned base_camera_index = 0;
     };
 
     raster_stage(
         device& dev,
         scene_stage& ss,
         const std::vector<gbuffer_target>& output_array_targets,
+        const options& opt
+    );
+
+    raster_stage(
+        device& dev,
+        scene_stage& ss,
+        gbuffer_target& output_target,
         const options& opt
     );
 
