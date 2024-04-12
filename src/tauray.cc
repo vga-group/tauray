@@ -653,6 +653,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.restir_options.sampling_weights = sampling_weights;
                 re_opt.restir_options.max_bounces = opt.max_ray_depth-1;
                 re_opt.restir_options.regularization_gamma = opt.regularization;
+                re_opt.restir_options.shade_all_explicit_lights = true;
 
                 return new restir_renderer(ctx, re_opt);
             }

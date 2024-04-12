@@ -106,6 +106,11 @@ void directional_shadow_map::track_cameras(
     if(cascades.size() == 0)
         cascades.push_back(vec2(0));
 
+    // TODO: Can't use the more accurate cascade placement with hybrid
+    // raster / RT techniques, since it doesn't consider covering anything
+    // outside of the frustum _by design_. It also doesn't work in multi-view
+    // cases.
+    /*
     if(cameras.size() == 1)
     {
         const camera& cam = *cameras[0];
@@ -143,6 +148,7 @@ void directional_shadow_map::track_cameras(
         }
     }
     else
+    */
     {
         vec2 cam_light_pos = vec2(0);
 

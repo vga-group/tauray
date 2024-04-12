@@ -303,7 +303,12 @@ restir_stage::restir_stage(
     if(this->opt.regularization_gamma > 0)
         defines["PATH_SPACE_REGULARIZATION"] = std::to_string(this->opt.regularization_gamma);
 
-    add_defines(opt.sampling_weights, defines);
+    if(this->opt.shade_all_explicit_lights)
+    {
+        this->opt.sampling_weights.directional_lights = 0;
+        this->opt.sampling_weights.point_lights = 0;
+    }
+    add_defines(this->opt.sampling_weights, defines);
 
     switch(opt.shift_map)
     {
@@ -391,7 +396,8 @@ restir_stage::restir_stage(
             shader,
             {
                 &temporal_set,
-                &ss.get_descriptors()
+                &ss.get_descriptors(),
+                &ss.get_raster_descriptors()
                 // TODO: Temporal mapping tables!
                 //scene_data->get_temporal_tables_descriptor_set().get_layout()
             }
@@ -814,6 +820,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
         temporal.bind(cmd);
         temporal.push_descriptors(cmd, temporal_set, 0);
         temporal.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
+        temporal.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
         // TODO: Temporal tables!
         //temporal.set_descriptors(cmd, scene_data->get_temporal_tables_descriptor_set(), 0, 2);
 

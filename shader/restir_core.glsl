@@ -384,6 +384,19 @@ void add_canonical_contribution(inout sum_contribution sc, reservoir r, vec4 con
     if(pc.update_sample_color != 0) \
         imageStore(out_diffuse, p, out_value); \
 }
+#elif defined(SHADE_ALL_EXPLICIT_LIGHTS)
+#define finish_output_color(p, reservoir, out_value, sc, display_size) { \
+    write_reservoir(reservoir, p, display_size); \
+    if(pc.update_sample_color != 0) \
+    { \
+        imageStore(out_diffuse, p, out_value); \
+    } \
+    else \
+    { \
+        vec4 value = imageLoad(out_reflection, p); \
+        imageStore(out_reflection, p, vec4(value.rgb + sc.diffuse, 1.0f)); \
+    } \
+}
 #else
 #define finish_output_color(p, reservoir, out_value, sc, display_size) { \
     write_reservoir(reservoir, p, display_size); \
@@ -403,8 +416,7 @@ vec3 shade_explicit_lights(
     vertex_data vd,
     sampled_material mat
 ){
-    vec3 normal = vd.mapped_normal;
-    mat3 tbn = mat3(vd.tangent, vd.bitangent, vd.mapped_normal);
+    mat3 tbn = create_tangent_space(vd.mapped_normal);
     vec3 tview = view_to_tangent_space(view, tbn);
 
     vec3 contrib = vec3(0);
@@ -414,38 +426,39 @@ vec3 shade_explicit_lights(
 
     for(uint i = 0; i < scene_metadata.point_light_count; ++i)
     {
-        vec3 d, s;
         point_light pl = point_lights.lights[i];
         vec3 light_dir;
         float light_dist;
         vec3 light_color;
         get_point_light_info(pl, vd.pos, light_dir, light_dist, light_color);
-        ggx_brdf(light_dir * tbn, tview, mat, d, s);
-        d *= light_color;
-        s *= light_color;
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        ggx_brdf(light_dir * tbn, tview, mat, lobes);
         float shadow = 1.0f;
         if(pl.shadow_map_index >= 0 && dot(vd.mapped_normal, light_dir) > 0)
             shadow = calc_point_shadow(
                 pl.shadow_map_index, vd.pos, vd.hard_normal, light_dir
             );
-        shadow = dot(vd.hard_normal, light_dir) < 0 ? 0 : shadow;
-        contrib += (d + s) * shadow;
+        if(dot(vd.hard_normal, light_dir) < 0)
+            shadow = 0.0f;
+
+        contrib += light_color * shadow * modulate_bsdf(mat, lobes);
     }
 
     for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
     {
-        vec3 d, s;
         directional_light dl = directional_lights.lights[i];
-        ggx_brdf(-dl.dir * tbn, tview, mat, d, s);
-        d *= dl.color;
-        s *= dl.color;
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        ggx_brdf(-dl.dir * tbn, tview, mat, lobes);
+
         float shadow = 1.0f;
         if(dl.shadow_map_index >= 0 && dot(vd.mapped_normal, -dl.dir) > 0)
             shadow = calc_directional_shadow(
                 dl.shadow_map_index, vd.pos, vd.hard_normal, -dl.dir
             );
-        shadow = dot(vd.hard_normal, dl.dir) > 0 ? 0 : shadow;
-        contrib += (d + s) * shadow;
+        if(dot(vd.hard_normal, dl.dir) > 0)
+            shadow = 0.0f;
+
+        contrib += dl.color * shadow * modulate_bsdf(mat, lobes);
     }
     return contrib;
 }
@@ -643,22 +656,26 @@ void resolve_mesh_triangle_vertex(
 
 #else
     // If shading all explicit lights too, we need some extra info.
+    float pdf;
+    vertex_data vd = get_interpolated_vertex(
+        vec3(0),
+        rv.hit_info,
+        int(rv.instance_id),
+        int(rv.primitive_id)
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+        , from_pos, pdf
+#endif
+    );
 
-    instance i = instances.array[nonuniformEXT(rv.instance_id)];
-    vertex_data vd = get_vertex_data(rv.instance_id, rv.primitive_id, rv.hit_info, false);
 #ifdef RESTIR_TEMPORAL
     if(!rv_is_in_past)
         vd.pos = vd.prev_pos;
 #endif
     vec3 ray_direction = normalize(vd.pos - from_pos);
 
-    bool front_facing = dot(ray_direction, vd.flat_normal) < 0;
-    material mat = sample_material(i.material, front_facing, vd.uv.xy, vec2(0.0), vec2(0.0f));
-
-    vd.tangent_space = apply_normal_map(vd.tangent_space, mat);
-    to.emission = mat.emission + shade_explicit_lights(i.environment, ray_direction, vd, mat);
-
-    to.normal = vd.flat_normal;
+    sampled_material mat = sample_material(int(rv.instance_id), vd);
+    to.emission = mat.emission + shade_explicit_lights(ray_direction, vd, mat);
+    to.normal = vd.hard_normal;
     to.pos.w = 1;
     to.pos.xyz = vd.pos;
 #endif

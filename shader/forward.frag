@@ -164,7 +164,7 @@ void main()
 #if defined(COLOR_TARGET_LOCATION) || defined(REFLECTION_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION)
     eval_punctual_lights(tbn, shading_view, mat, v, diffuse, reflection);
 #endif
-#if defined(COLOR_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION)
+#if defined(ESTIMATE_INDIRECT) && (defined(COLOR_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION))
     eval_indirect_light(view, mat, v, diffuse, reflection);
 #endif
 

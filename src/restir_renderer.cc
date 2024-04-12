@@ -37,7 +37,13 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     prev_gbuffer.reset(display_device, ctx.get_size(), ctx.get_display_count());
     prev_gbuffer.add(gs, vk::ImageLayout::eGeneral);
 
-    scene_update.emplace(display_device, opt.scene_options);
+    if(this->opt.restir_options.shade_all_explicit_lights)
+        this->opt.scene_options.shadow_mapping = true;
+
+    scene_update.emplace(display_device, this->opt.scene_options);
+
+    if(this->opt.restir_options.shade_all_explicit_lights)
+        sms.emplace(display_device, *scene_update, shadow_map_stage::options{});
 
     gbuffer_target cur = current_gbuffer.get_layer_target(display_device.id, 0);
     gbuffer_target prev = prev_gbuffer.get_layer_target(display_device.id, 0);
@@ -45,22 +51,24 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     envmap.emplace(display_device, *scene_update, cur.color, 0);
 
     raster_stage::options raster_opt;
-    raster_opt.clear_color = true;
+    raster_opt.clear_color = false;
     raster_opt.clear_depth = true;
     raster_opt.sample_shading = false;
     raster_opt.filter = opt.sm_filter;
     raster_opt.use_probe_visibility = false;
     raster_opt.sh_order = 0;
+    raster_opt.estimate_indirect = false;
     raster_opt.force_alpha_to_coverage = true;
     raster_opt.output_layout = vk::ImageLayout::eGeneral;
 
     render_target color = cur.color;
-    cur.color = render_target();
-    gbuffer_rasterizer.emplace(
-        display_device, *scene_update,
-        cur, raster_opt
-    );
-    cur.color = color;
+    if(!this->opt.restir_options.shade_all_explicit_lights)
+        cur.color = render_target();
+    gbuffer_rasterizer.emplace(display_device, *scene_update, cur, raster_opt);
+    if(!this->opt.restir_options.shade_all_explicit_lights)
+        cur.color = color;
+
+    cur.color.layout = vk::ImageLayout::eGeneral;
 
     this->opt.restir_options.max_bounces = max(this->opt.restir_options.max_bounces, 1u);
     this->opt.restir_options.temporal_reuse = true;
@@ -72,7 +80,9 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     cur = current_gbuffer.get_array_target(display_device.id);
     cur.set_layout(vk::ImageLayout::eShaderReadOnlyOptimal);
-    cur.color.layout = vk::ImageLayout::eColorAttachmentOptimal;
+    cur.color.layout = this->opt.restir_options.shade_all_explicit_lights ?
+        vk::ImageLayout::eGeneral :
+        vk::ImageLayout::eColorAttachmentOptimal;
     cur.diffuse.layout = vk::ImageLayout::eGeneral;
     cur.reflection.layout = vk::ImageLayout::eGeneral;
 
@@ -108,6 +118,8 @@ void restir_renderer::render()
     ctx->get_indices(swapchain_index, frame_index);
 
     dependencies deps = scene_update->run(display_deps);
+    if(opt.restir_options.shade_all_explicit_lights)
+        deps = sms->run(deps);
 
     deps = envmap->run(deps);
     deps = gbuffer_rasterizer->run(deps);

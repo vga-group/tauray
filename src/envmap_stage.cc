@@ -100,6 +100,7 @@ envmap_stage::envmap_stage(
         false, false, true,
         {}, false
     });
+    color_target.layout = vk::ImageLayout::eColorAttachmentOptimal;
 }
 
 void envmap_stage::update(uint32_t)

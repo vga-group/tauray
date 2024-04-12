@@ -20,11 +20,6 @@ class restir_renderer: public renderer
 public:
     struct options
     {
-        // If set to true, the renderer operates in a hybrid raster + restir
-        // mode, where restir only does a single bounce. The points hit by that
-        // bounce ray are then shaded with typical rasterization techniques,
-        // like punctual lights, shadow maps & light probes.
-        bool raster_hybrid = false;
         scene_stage::options scene_options;
         restir_stage::options restir_options;
         tonemap_stage::options tonemap_options;
