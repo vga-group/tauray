@@ -522,180 +522,28 @@ int test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_no
 
 struct resolved_vertex
 {
-    vec4 pos; // Homogeneous coordinate, 0 in w indicates direction.
+    vec3 dir;
+    float dist;
     vec3 normal; // 0 for zero-radius point light sources
     // If the vertex is emissive, this holds the emission. If not, treat the value as undefined.
     vec3 emission;
+
+    bsdf_lobes lobes;
+    float bsdf_pdf;
 };
-
-resolved_vertex resolve_point_light_vertex(reconnection_vertex rv, bool prev, vec3 domain_pos)
-{
-    resolved_vertex v;
-#ifdef RESTIR_TEMPORAL
-    point_light pl;
-    /*if(prev) pl = prev_point_lights.lights[rv.primitive_id];
-    else*/ pl = point_lights.lights[rv.primitive_id];
-#else
-    point_light pl = point_lights.lights[rv.primitive_id];
-#endif
-    v.pos = vec4(pl.pos, 1);
-
-    vec3 center_dir = v.pos.xyz - domain_pos;
-    float dist2 = dot(center_dir, center_dir);
-
-    float radius = pl.radius;
-
-    if(radius != 0)
-    {
-        v.normal = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
-        v.pos.xyz += radius * v.normal;
-    }
-    else v.normal = vec3(0);
-
-    v.emission = pl.color;
-    if(radius != 0.0f) v.emission /= M_PI * radius * radius;
-    v.emission *= get_spotlight_intensity(pl, normalize(center_dir));
-    if(radius == 0) v.emission /= dist2;
-
-    return v;
-}
-
-resolved_vertex resolve_envmap_vertex(reconnection_vertex rv)
-{
-    resolved_vertex v;
-    vec3 dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
-    v.pos = vec4(dir, 0);
-    v.normal = -dir;
-    v.emission = rv.radiance_estimate;
-    return v;
-}
-
-resolved_vertex resolve_directional_light_vertex(reconnection_vertex rv)
-{
-    resolved_vertex v;
-    vec3 dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
-    v.pos = vec4(dir, 0);
-    v.normal = -dir;
-
-#ifdef RESTIR_TEMPORAL
-    for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
-    {
-        directional_light dl = directional_lights.lights[i];
-        float visible = step(dl.dir_cutoff, dot(dir, -dl.dir));
-        v.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
-    }
-#else
-    v.emission = rv.radiance_estimate;
-#endif
-
-    return v;
-}
-
-#ifdef SHADE_ALL_EXPLICIT_LIGHTS
-#define resolve_miss_vertex resolve_envmap_vertex
-#else
-resolved_vertex resolve_miss_vertex(reconnection_vertex rv)
-{
-    resolved_vertex v;
-    vec3 dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
-    v.pos = vec4(dir, 0);
-    v.normal = -dir;
-
-#ifdef RESTIR_TEMPORAL
-    v.emission = scene_metadata.environment_factor.rgb;
-    if(scene_metadata.environment_proj >= 0)
-    {
-        vec2 uv = vec2(0);
-        uv.y = asin(-dir.y)/M_PI+0.5f;
-        uv.x = atan(dir.z, dir.x)/(2*M_PI)+0.5f;
-        v.emission *= texture(environment_map_tex, uv).rgb;
-    }
-
-    for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
-    {
-        directional_light dl = directional_lights.lights[i];
-        float visible = step(dl.dir_cutoff, dot(dir, -dl.dir));
-        v.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
-    }
-#else
-    v.emission = rv.radiance_estimate;
-#endif
-    return v;
-}
-#endif
-
-void resolve_mesh_triangle_vertex(
-    reconnection_vertex rv,
-    bool rv_is_in_past,
-    vec3 from_pos,
-    out resolved_vertex to
-){
-#if !defined(SHADE_ALL_EXPLICIT_LIGHTS) || defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
-    // Normal operation: just find the emissiveness of the vertex.
-
-    vertex_data vd;
-    float pdf;
-    vd = get_interpolated_vertex(
-        vec3(0),
-        rv.hit_info,
-        int(rv.instance_id),
-        int(rv.primitive_id)
-#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-        , from_pos, pdf
-#endif
-    );
-    to.pos.xyz = vd.pos;
-#ifdef RESTIR_TEMPORAL
-    if(!rv_is_in_past)
-        to.pos.xyz = vd.prev_pos;
-#endif
-    to.normal = vd.hard_normal;
-    to.pos.w = 1;
-    // TODO: Allow mesh triangle material changes?
-    to.emission = rv.radiance_estimate;
-
-#else
-    // If shading all explicit lights too, we need some extra info.
-    float pdf;
-    vertex_data vd = get_interpolated_vertex(
-        vec3(0),
-        rv.hit_info,
-        int(rv.instance_id),
-        int(rv.primitive_id)
-#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-        , from_pos, pdf
-#endif
-    );
-
-#ifdef RESTIR_TEMPORAL
-    if(!rv_is_in_past)
-        vd.pos = vd.prev_pos;
-#endif
-    vec3 ray_direction = normalize(vd.pos - from_pos);
-
-    sampled_material mat = sample_material(int(rv.instance_id), vd);
-    to.emission = mat.emission + shade_explicit_lights(ray_direction, vd, mat);
-    to.normal = vd.hard_normal;
-    to.pos.w = 1;
-    to.pos.xyz = vd.pos;
-#endif
-}
 
 bool resolve_reconnection_vertex(
     inout reconnection_vertex rv,
     bool rv_is_in_past,
-    vec3 pos,
+    domain to_domain,
+    inout float regularization,
     out resolved_vertex to
 ){
     // if rv_is_in_past, to is cur. Otherwise, to is prev.
     if(rv.instance_id == NULL_INSTANCE_ID)
-    {
-        to.pos = vec4(0);
-        to.normal = vec3(0);
-        to.emission = vec3(0);
         return false;
-    }
-    else if(rv.instance_id == POINT_LIGHT_INSTANCE_ID)
+
+    if(rv.instance_id == POINT_LIGHT_INSTANCE_ID)
     {
 #ifdef RESTIR_TEMPORAL
         //uint primitive_id;
@@ -705,27 +553,96 @@ bool resolve_reconnection_vertex(
         if(rv.primitive_id >= scene_metadata.point_light_count)
             return false;
 
-        to = resolve_point_light_vertex(rv, !rv_is_in_past, pos);
+        const bool prev = !rv_is_in_past;
 #else
-        to = resolve_point_light_vertex(rv, false, pos);
+        const bool prev = false;
 #endif
-        return true;
+#ifdef RESTIR_TEMPORAL
+        point_light pl;
+        /*if(prev) pl = prev_point_lights.lights[rv.primitive_id];
+        else*/ pl = point_lights.lights[rv.primitive_id];
+#else
+        point_light pl = point_lights.lights[rv.primitive_id];
+#endif
+        vec3 pos = pl.pos;
+
+        vec3 center_dir = pos - to_domain.pos;
+        float dist2 = dot(center_dir, center_dir);
+
+        float radius = pl.radius;
+
+        if(radius != 0)
+        {
+            to.normal = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
+            pos.xyz += radius * to.normal;
+        }
+        else to.normal = vec3(0);
+
+        to.emission = pl.color;
+        if(radius != 0.0f) to.emission /= M_PI * radius * radius;
+        to.emission *= get_spotlight_intensity(pl, normalize(center_dir));
+        if(radius == 0) to.emission /= dist2;
+
+        to.dir = normalize(pos - to_domain.pos);
+        to.dist = length(pos - to_domain.pos);
     }
-    else if(rv.instance_id == ENVMAP_INSTANCE_ID)
+    else if(
+        rv.instance_id == ENVMAP_INSTANCE_ID
+#ifdef SHADE_ALL_EXPLICIT_LIGHTS
+        || rv.instance_id == MISS_INSTANCE_ID
+#endif
+    )
     {
-        to = resolve_envmap_vertex(rv);
-        return true;
+        to.dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
+        to.dist = TR_RESTIR.max_ray_dist;
+        to.normal = vec3(0);
+        to.emission = rv.radiance_estimate;
     }
     else if(rv.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID)
     {
-        to = resolve_directional_light_vertex(rv);
-        return true;
+        to.dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
+        to.dist = TR_RESTIR.max_ray_dist;
+        to.normal = vec3(0);
+
+#ifdef RESTIR_TEMPORAL
+        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+        {
+            directional_light dl = directional_lights.lights[i];
+            float visible = step(dl.dir_cutoff, dot(to.dir, -dl.dir));
+            to.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
+        }
+#else
+        to.emission = rv.radiance_estimate;
+#endif
     }
+#ifndef SHADE_ALL_EXPLICIT_LIGHTS
     else if(rv.instance_id == MISS_INSTANCE_ID)
     {
-        to = resolve_miss_vertex(rv);
-        return true;
+        to.dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
+        to.dist = TR_RESTIR.max_ray_dist;
+        to.normal = vec3(0);
+
+#ifdef RESTIR_TEMPORAL
+        to.emission = scene_metadata.environment_factor.rgb;
+        if(scene_metadata.environment_proj >= 0)
+        {
+            vec2 uv = vec2(0);
+            uv.y = asin(-to.dir.y)/M_PI+0.5f;
+            uv.x = atan(to.dir.z, to.dir.x)/(2*M_PI)+0.5f;
+            v.emission *= texture(environment_map_tex, uv).rgb;
+        }
+
+        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+        {
+            directional_light dl = directional_lights.lights[i];
+            float visible = step(dl.dir_cutoff, dot(to.dir, -dl.dir));
+            to.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
+        }
+#else
+        to.emission = rv.radiance_estimate;
+#endif
     }
+#endif
     else
     { // Regular mesh triangle
 #ifdef RESTIR_TEMPORAL
@@ -734,26 +651,49 @@ bool resolve_reconnection_vertex(
         //if(rv.instance_id >= scene_metadata.instance_count)
         //    return false;
 #endif
-        resolve_mesh_triangle_vertex(rv, rv_is_in_past, pos, to);
-        return true;
-    }
-}
+        float pdf;
+        vertex_data vd = get_interpolated_vertex(
+            vec3(0),
+            rv.hit_info,
+            int(rv.instance_id),
+            int(rv.primitive_id)
+#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
+            , to_domain.pos, pdf
+#endif
+        );
+#ifdef RESTIR_TEMPORAL
+        if(!rv_is_in_past)
+            vd.pos = vd.prev_pos;
 #endif
 
-void homogeneous_to_ray(vec3 from, vec4 to, out vec3 dir, out float len)
-{
-    if(to.w == 0)
-    {
-        dir = to.xyz;
-        len = TR_RESTIR.max_ray_dist;
+        to.dir = normalize(vd.pos-to_domain.pos);
+        to.dist = length(vd.pos-to_domain.pos);
+        to.normal = vd.hard_normal;
+
+#if !defined(SHADE_ALL_EXPLICIT_LIGHTS) || defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
+        // Normal operation: just find the emissiveness of the vertex.
+        // TODO: Allow mesh triangle material changes?
+        to.emission = rv.radiance_estimate;
+#else
+        to.lobes = bsdf_lobes(0,0,0,0);
+        vec3 tdir = to.dir * to_domain.tbn;
+        to.bsdf_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, to.lobes);
+        update_regularization(to.bsdf_pdf, regularization);
+
+        sampled_material mat = sample_material(int(rv.instance_id), vd);
+        apply_regularization(regularization, mat);
+        to.emission = mat.emission + shade_explicit_lights(to.dir, vd, mat);
+        return true;
+#endif
     }
-    else
-    {
-        dir = to.xyz - from;
-        len = length(dir);
-        dir /= len;
-    }
+
+    to.lobes = bsdf_lobes(0,0,0,0);
+    vec3 tdir = to.dir * to_domain.tbn;
+    to.bsdf_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, to.lobes);
+    update_regularization(to.bsdf_pdf, regularization);
+    return true;
 }
+#endif
 
 bool allow_initial_reconnection(sampled_material mat)
 {
@@ -793,6 +733,7 @@ bool get_intersection_info(
     vec3 ray_direction,
     hit_payload payload,
     bool in_past,
+    float regularization,
     out intersection_info info,
     out reconnection_vertex candidate
 ){
@@ -843,6 +784,8 @@ bool get_intersection_info(
         info.mat.roughness = max(info.mat.roughness, 0.001f);
 #endif
 
+        apply_regularization(regularization, info.mat);
+
         info.local_pdf = any(greaterThan(info.mat.emission, vec3(0))) ? pdf : 0;
 
         candidate.instance_id = payload.instance_id;
@@ -852,9 +795,7 @@ bool get_intersection_info(
 
 #ifdef SHADE_ALL_EXPLICIT_LIGHTS
         candidate.radiance_estimate += shade_explicit_lights(
-            ray_direction,
-            info.vd,
-            info.mat
+            ray_direction, info.vd, info.mat
         );
 #endif
 
@@ -935,16 +876,15 @@ bool get_intersection_info(
         candidate.hit_info = octahedral_pack(ray_direction) * 0.5f + 0.5f;
         candidate.radiance_estimate = info.light;
         info.vd.pos = ray_origin + TR_RESTIR.max_ray_dist * ray_direction;
+        info.vd.hard_normal = vec3(0);
         return false;
     }
 }
 
-bool trace_ray(
+void trace_ray(
     uint seed,
     vec3 origin,
-    vec3 dir,
-    out intersection_info info,
-    out reconnection_vertex candidate
+    vec3 dir
 ){
     payload.random_seed = seed;
     traceRayEXT(
@@ -964,17 +904,13 @@ bool trace_ray(
         TR_RESTIR.max_ray_dist,
         0
     );
-
-    return get_intersection_info(origin, dir, payload, false, info, candidate);
 }
 
 #ifdef RESTIR_TEMPORAL
-bool trace_prev_ray(
+void trace_prev_ray(
     uint seed,
     vec3 origin,
-    vec3 dir,
-    out intersection_info info,
-    out reconnection_vertex candidate
+    vec3 dir
 ){
     payload.random_seed = seed;
 #ifdef ASSUME_UNCHANGED_ACCELERATION_STRUCTURES
@@ -995,7 +931,6 @@ bool trace_prev_ray(
         TR_RESTIR.max_ray_dist,
         0
     );
-    return get_intersection_info(origin, dir, payload, false, info, candidate);
 #else
     traceRayEXT(
         prev_tlas,
@@ -1010,7 +945,6 @@ bool trace_prev_ray(
         TR_RESTIR.max_ray_dist,
         0
     );
-    return get_intersection_info(origin, dir, payload, true, info, candidate);
 #endif
 }
 #endif
@@ -1209,16 +1143,25 @@ bool generate_bsdf_vertex(
     vec3 dir,
     bool in_past,
     domain cur_domain,
+    float regularization,
     out domain next_domain, // Only valid if true is returned.
     out reconnection_vertex vertex,
     out float nee_pdf
 ){
     intersection_info info;
-    bool bounces =
 #ifdef RESTIR_TEMPORAL
-        in_past ? trace_prev_ray(rand32.w, cur_domain.pos, dir, info, vertex) :
+    if(in_past) trace_prev_ray(rand32.w, cur_domain.pos, dir);
+    else
 #endif
-        trace_ray(rand32.w, cur_domain.pos, dir, info, vertex);
+        trace_ray(rand32.w, cur_domain.pos, dir);
+
+#if !defined(ASSUME_UNCHANGED_ACCELERATION_STRUCTURES) && defined(RESTIR_TEMPORAL)
+    const bool get_in_past = in_past;
+#else
+    const bool get_in_past = false;
+#endif
+    bool bounces = get_intersection_info(cur_domain.pos, dir, payload, get_in_past, regularization, info, vertex);
+
     nee_pdf = calculate_light_pdf(
         vertex.instance_id, vertex.primitive_id, info.local_pdf, info.envmap_pdf
     );
@@ -1304,7 +1247,7 @@ bool replay_path_bsdf_bounce(
     float nee_pdf;
     domain dst;
     reconnection_vertex vertex;
-    bool bounces = generate_bsdf_vertex(rand32, dir, in_past, src, dst, vertex, nee_pdf);
+    bool bounces = generate_bsdf_vertex(rand32, dir, in_past, src, regularization, dst, vertex, nee_pdf);
     reconnected = allow_reconnection(distance(src.pos, dst.pos), dst.mat, bounces, head_allows_reconnection);
     src = dst;
     return bounces;
@@ -1410,10 +1353,9 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
         domain dst;
         reconnection_vertex vertex;
         float nee_pdf;
-        bool bounces = generate_bsdf_vertex(rand32, dir, false, tail_domain, dst, vertex, nee_pdf);
+        bool bounces = generate_bsdf_vertex(rand32, dir, false, tail_domain, regularization, dst, vertex, nee_pdf);
 
         tail_domain = dst;
-        apply_regularization(regularization, tail_domain.mat);
 
         radiance = path_throughput * dst.mat.emission;
         if(!bounces)
@@ -1486,22 +1428,13 @@ bool reconnection_shift_map(
     if(rs.vertex.instance_id == NULL_INSTANCE_ID || rs.vertex.instance_id == UNCONNECTED_PATH_ID)
         return false;
 
+    float regularization = 1;
     resolved_vertex to;
-    if(!resolve_reconnection_vertex(rs.vertex, !cur_to_prev, to_domain.pos, to))
+    if(!resolve_reconnection_vertex(rs.vertex, !cur_to_prev, to_domain, regularization, to))
     {
         // Failed to reconnect, vertex may have ceased to exist.
         return false;
     }
-
-    vec3 reconnect_ray_dir;
-    float reconnect_ray_dist;
-    homogeneous_to_ray(to_domain.pos, to.pos, reconnect_ray_dir, reconnect_ray_dist);
-
-    float regularization = 1;
-    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-    vec3 tdir = reconnect_ray_dir * to_domain.tbn;
-    float bsdf_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, lobes);
-    update_regularization(bsdf_pdf, regularization);
 
     vec3 emission = to.emission;
     if(rs.tail_length >= 1)
@@ -1510,7 +1443,7 @@ bool reconnection_shift_map(
         // full material data too now.
         float nee_pdf;
         vertex_data vd = get_interpolated_vertex(
-            reconnect_ray_dir,
+            to.dir,
             rs.vertex.hit_info,
             int(rs.vertex.instance_id),
             int(rs.vertex.primitive_id)
@@ -1524,7 +1457,7 @@ bool reconnection_shift_map(
         apply_regularization(regularization, mat);
 
         mat3 tbn = create_tangent_space(vd.mapped_normal);
-        vec3 tview = -reconnect_ray_dir * tbn;
+        vec3 tview = -to.dir * tbn;
         vec3 incident_dir = rs.vertex.incident_direction * tbn;
 
         // Turn radiance into emission
@@ -1543,7 +1476,7 @@ bool reconnection_shift_map(
             tail_domain.pos = vd.pos;
             tail_domain.tbn = tbn;
             tail_domain.flat_normal = vd.hard_normal;
-            tail_domain.view = reconnect_ray_dir;
+            tail_domain.view = to.dir;
             tail_domain.tview = tview;
             update_tail_radiance(tail_domain, regularization, rs.nee_terminal, rs.tail_length, rs.tail_rng_seed, rs.vertex.radiance_estimate, rs.vertex.incident_direction);
         }
@@ -1553,20 +1486,20 @@ bool reconnection_shift_map(
     }
 
     contribution =
-        get_bounce_throughput(0, to_domain, reconnect_ray_dir, lobes, primary_bsdf) * emission;
+        get_bounce_throughput(0, to_domain, to.dir, to.lobes, primary_bsdf) * emission;
 
     if(do_visibility_test)
     {
 #ifdef RESTIR_TEMPORAL
         contribution *= cur_to_prev ?
-            test_prev_visibility(seed, to_domain.pos, reconnect_ray_dir, reconnect_ray_dist, to_domain.flat_normal) :
-            test_visibility(seed, to_domain.pos, reconnect_ray_dir, reconnect_ray_dist, to_domain.flat_normal);
+            test_prev_visibility(seed, to_domain.pos, to.dir, to.dist, to_domain.flat_normal) :
+            test_visibility(seed, to_domain.pos, to.dir, to.dist, to_domain.flat_normal);
 #else
-        contribution *= test_visibility(seed, to_domain.pos, reconnect_ray_dir, reconnect_ray_dist, to_domain.flat_normal);
+        contribution *= test_visibility(seed, to_domain.pos, to.dir, to.dist, to_domain.flat_normal);
 #endif
     }
 
-    float half_jacobian = reconnection_shift_half_jacobian(to_domain.pos, to.pos, to.normal);
+    float half_jacobian = reconnection_shift_half_jacobian(to.dir, to.dist, to.normal);
 
     jacobian = half_jacobian / rs.base_path_jacobian_part;
     if(isinf(jacobian) || isnan(jacobian)) jacobian = 0;
@@ -1686,22 +1619,14 @@ bool hybrid_shift_map(
         return false;
 
     resolved_vertex to;
-    if(!resolve_reconnection_vertex(rs.vertex, !cur_to_prev, to_domain.pos, to))
+    if(!resolve_reconnection_vertex(rs.vertex, !cur_to_prev, to_domain, regularization, to))
     {
         // Failed to reconnect, vertex may have ceased to exist.
         return false;
     }
 
-    vec3 reconnect_ray_dir;
-    float reconnect_ray_dist;
-    homogeneous_to_ray(to_domain.pos, to.pos, reconnect_ray_dir, reconnect_ray_dist);
-
+    float v0_pdf = to.bsdf_pdf;
     float v1_pdf = 1.0f;
-
-    bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-    vec3 tdir = reconnect_ray_dir * to_domain.tbn;
-    float v0_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, lobes);
-    update_regularization(v0_pdf, regularization);
 
     vec3 emission = to.emission;
     if(rs.tail_length >= 1)
@@ -1710,7 +1635,7 @@ bool hybrid_shift_map(
         // full material data too now.
         float nee_pdf;
         vertex_data vd = get_interpolated_vertex(
-            reconnect_ray_dir,
+            to.dir,
             rs.vertex.hit_info,
             int(rs.vertex.instance_id),
             int(rs.vertex.primitive_id)
@@ -1724,10 +1649,10 @@ bool hybrid_shift_map(
         mat3 tbn = mat3(vd.tangent, vd.bitangent, vd.mapped_normal);
 
         bool allowed = true;
-        if(!allow_reconnection(reconnect_ray_dist, mat, true, allowed))
+        if(!allow_reconnection(to.dist, mat, true, allowed))
             return false;
 
-        vec3 tview = -reconnect_ray_dir * tbn;
+        vec3 tview = -to.dir * tbn;
         vec3 incident_dir = rs.vertex.incident_direction * tbn;
 
         // Turn radiance into to.emission
@@ -1750,7 +1675,7 @@ bool hybrid_shift_map(
                 vd.mapped_normal
             );
             tail_domain.flat_normal = vd.hard_normal;
-            tail_domain.view = reconnect_ray_dir;
+            tail_domain.view = to.dir;
             tail_domain.tview = tview;
             update_tail_radiance(tail_domain, regularization, rs.nee_terminal, rs.tail_length, rs.tail_rng_seed, rs.vertex.radiance_estimate, rs.vertex.incident_direction);
         }
@@ -1767,11 +1692,11 @@ bool hybrid_shift_map(
     else
     {
         bool allowed = true;
-        if(!allow_reconnection(reconnect_ray_dist, to_domain.mat, false, allowed))
+        if(!allow_reconnection(to.dist, to_domain.mat, false, allowed))
             return false;
     }
 
-    contribution = throughput * get_bounce_throughput(rs.head_length, to_domain, reconnect_ray_dir, lobes, primary_bsdf) * emission;
+    contribution = throughput * get_bounce_throughput(rs.head_length, to_domain, to.dir, to.lobes, primary_bsdf) * emission;
 
     if(isnan(v0_pdf) || isinf(v0_pdf) || v0_pdf == 0)
         contribution = vec3(0);
@@ -1781,14 +1706,14 @@ bool hybrid_shift_map(
     {
 #ifdef RESTIR_TEMPORAL
         contribution *= cur_to_prev && rs.head_length == 0 ?
-            test_prev_visibility(seed, to_domain.pos, reconnect_ray_dir, reconnect_ray_dist, to_domain.flat_normal) :
-            test_visibility(seed, to_domain.pos, reconnect_ray_dir, reconnect_ray_dist, to_domain.flat_normal);
+            test_prev_visibility(seed, to_domain.pos, to.dir, to.dist, to_domain.flat_normal) :
+            test_visibility(seed, to_domain.pos, to.dir, to.dist, to_domain.flat_normal);
 #else
-        contribution *= test_visibility(seed, to_domain.pos, reconnect_ray_dir, reconnect_ray_dist, to_domain.flat_normal);
+        contribution *= test_visibility(seed, to_domain.pos, to.dir, to.dist, to_domain.flat_normal);
 #endif
     }
 
-    float half_jacobian = hybrid_shift_half_jacobian(v0_pdf, v1_pdf, to_domain.pos, to.pos, to.normal);
+    float half_jacobian = v0_pdf * v1_pdf * reconnection_shift_half_jacobian(to.dir, to.dist, to.normal);
 
     jacobian = half_jacobian / rs.base_path_jacobian_part;
     if(isinf(jacobian) || isnan(jacobian))

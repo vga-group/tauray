@@ -524,34 +524,20 @@ float reconnection_shift_jacobian(
 }
 
 float reconnection_shift_half_jacobian(
-    vec3 pos,
-    vec4 vertex_pos,
+    vec3 direction,
+    float len,
     vec3 vertex_normal
 ){
-    if(vertex_pos.w != 0)
-    {
-        vec3 to_vertex = vertex_pos.xyz - pos;
-        float to_vertex_len2 = dot(to_vertex, to_vertex);
-        if(all(equal(vertex_normal, vec3(0))))
-            return 1.0f;
-        // max() prevents precision issues near grazing angles. Normals may be
-        // packed into snorm2x16 at a couple of spots, which is why this is
-        // necessary.
-        // TODO: 1e-2f is very extreme. 1e-4f would otherwise be OK, but it
-        // seems to cause weird fireflies still.
-        return max(abs(dot(vertex_normal, normalize(to_vertex))), 1e-2f) / to_vertex_len2;
-    }
-    return 1.0f;
-}
-
-float hybrid_shift_half_jacobian(
-    float v0_pdf,
-    float v1_pdf,
-    vec3 pos,
-    vec4 vertex_pos,
-    vec3 vertex_normal
-){
-    return v0_pdf * v1_pdf * reconnection_shift_half_jacobian(pos, vertex_pos, vertex_normal);
+    if(len <= 0)
+        return 1.0f;
+    if(all(equal(vertex_normal, vec3(0))))
+        return 1.0f;
+    // max() prevents precision issues near grazing angles. Normals may be
+    // packed into snorm2x16 at a couple of spots, which is why this is
+    // necessary.
+    // TODO: 1e-2f is very extreme. 1e-4f would otherwise be OK, but it
+    // seems to cause weird fireflies still.
+    return max(abs(dot(vertex_normal, direction)), 1e-2f) / (len*len);
 }
 
 float mirror_wrap(float x, float low, float high)

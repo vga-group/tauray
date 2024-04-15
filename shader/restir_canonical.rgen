@@ -4,7 +4,7 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
-//#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_debug_printf : enable
 
 #define SCENE_SET 1
 #define RAY_TRACING
@@ -78,7 +78,8 @@ void sample_path_nee_leaf(
     {
         candidate.vertex = vertex;
         float half_jacobian = reconnection_shift_half_jacobian(
-            vec3(0), vec4(candidate_dir * candidate_dist, candidate_dist >= TR_RESTIR.max_ray_dist ? 0 : 1),
+            candidate_dir,
+            candidate_dist,
             candidate_normal
         );
         candidate.base_path_jacobian_part = half_jacobian;
@@ -149,7 +150,7 @@ bool sample_path_bsdf_bounce(
 
     float nee_pdf;
     reconnection_vertex vertex;
-    bool bounces = generate_bsdf_vertex(rand32, dir, false, src, dst, vertex, nee_pdf);
+    bool bounces = generate_bsdf_vertex(rand32, dir, false, src, regularization, dst, vertex, nee_pdf);
 
 #ifdef DEMODULATE_OUTPUT
     if(candidate.head_length + candidate.tail_length == 0)
@@ -179,7 +180,7 @@ bool sample_path_bsdf_bounce(
     {
         candidate.vertex = vertex;
         float half_jacobian = reconnection_shift_half_jacobian(
-            src.pos, vec4(dst.pos, vertex.instance_id == MISS_INSTANCE_ID ? 0 : 1), dst.flat_normal
+            normalize(dst.pos-src.pos), length(dst.pos-src.pos), dst.flat_normal
         );
         candidate.base_path_jacobian_part = half_jacobian;
 #ifdef USE_PRIMARY_SAMPLE_SPACE
@@ -257,7 +258,6 @@ void sample_path(
         )) break;
 
         src = dst;
-        apply_regularization(regularization, src.mat);
 
         if(base_sample.vertex.instance_id == UNCONNECTED_PATH_ID)
             base_sample.head_length++;
