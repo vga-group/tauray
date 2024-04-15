@@ -66,6 +66,11 @@ float fresnel_importance(float cos_d, sampled_material mat)
     return mat.f0 + (max(1.0f - mat.roughness, mat.f0) - mat.f0) * pow(1.0f - cos_d, 5.0f);
 }
 
+float fresnel_schlick_attenuated(float cos_d, float f0, float roughness)
+{
+    return f0 + (max(1.0f - roughness, f0) - f0) * pow(1.0f - cos_d, 5.0f);
+}
+
 // Only valid when refraction isn't possible. Faster than the generic
 // ggx_fresnel. Specular-only, has no diffuse component!
 float ggx_fresnel_refl(float cos_d, sampled_material mat)

@@ -10,6 +10,7 @@
 #include "tonemap_stage.hh"
 #include "shadow_map_stage.hh"
 #include "gbuffer_copy_stage.hh"
+#include "sh_renderer.hh"
 #include <variant>
 
 namespace tr
@@ -21,9 +22,13 @@ public:
     struct options
     {
         scene_stage::options scene_options;
+        // If shade_all_explicit_lights is set, hybrid raster rendering is used.
+        // If shade_fake_indirect is set and scene contains SH grids, hybrid
+        // DDISH-GI rendering is used.
         restir_stage::options restir_options;
         tonemap_stage::options tonemap_options;
-        shadow_map_filter sm_filter;
+        sh_renderer::options sh_options; // For raster hybrid
+        shadow_map_filter sm_filter; // For raster hybrid
     };
 
     restir_renderer(context& ctx, const options& opt);
@@ -40,6 +45,7 @@ private:
     gbuffer_texture current_gbuffer;
     gbuffer_texture prev_gbuffer;
 
+    std::optional<sh_renderer> sh;
     std::optional<scene_stage> scene_update;
     std::optional<shadow_map_stage> sms;
     std::optional<envmap_stage> envmap;

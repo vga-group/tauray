@@ -45,6 +45,9 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     if(this->opt.restir_options.shade_all_explicit_lights)
         sms.emplace(display_device, *scene_update, shadow_map_stage::options{});
 
+    if(this->opt.restir_options.shade_all_explicit_lights && this->opt.restir_options.shade_fake_indirect)
+        sh.emplace(ctx, *scene_update, this->opt.sh_options);
+
     gbuffer_target cur = current_gbuffer.get_layer_target(display_device.id, 0);
     gbuffer_target prev = prev_gbuffer.get_layer_target(display_device.id, 0);
 
@@ -120,6 +123,7 @@ void restir_renderer::render()
     dependencies deps = scene_update->run(display_deps);
     if(opt.restir_options.shade_all_explicit_lights)
         deps = sms->run(deps);
+    if(sh) deps = sh->render(deps);
 
     deps = envmap->run(deps);
     deps = gbuffer_rasterizer->run(deps);

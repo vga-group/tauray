@@ -86,11 +86,6 @@ void eval_punctual_lights(
     POINT_LIGHT_FOR_END
 }
 
-float fresnel_schlick_attenuated(float cos_d, float f0, float roughness)
-{
-    return f0 + (max(1.0f - roughness, f0) - f0) * pow(1.0f - cos_d, 5.0f);
-}
-
 void brdf_indirect(
     vec3 incoming_diffuse,
     vec3 incoming_specular,

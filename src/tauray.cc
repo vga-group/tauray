@@ -363,6 +363,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     bool use_shadow_terminator_fix = false;
     bool has_tri_lights = false;
+    bool has_sh_grids = s.count<sh_grid>() != 0;
     bool has_point_lights = s.count<point_light>() + s.count<spotlight>() > 0;
     bool has_directional_lights = s.count<directional_light>() > 0;
     s.foreach([&](model& mod){
@@ -416,6 +417,18 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     sampling_weights.directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
     sampling_weights.envmap = get_environment_map(s) ? opt.sample_envmap : 0.0f;
     sampling_weights.emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
+
+    sh_renderer::options sh;
+    (rt_stage::options&)sh = rc_opt;
+    sh.samples_per_probe = opt.samples_per_probe;
+    sh.film = opt.film;
+    sh.film_radius = opt.film_radius;
+    sh.mis_mode = opt.multiple_importance_sampling;
+    sh.russian_roulette_delta = opt.russian_roulette;
+    sh.temporal_ratio = opt.dshgi_temporal_ratio;
+    sh.indirect_clamping = opt.indirect_clamping;
+    sh.regularization_gamma = opt.regularization;
+    sh.sampling_weights = sampling_weights;
 
     shadow_map_filter sm_filter;
     sm_filter.pcf_samples = min(opt.pcf, 64);
@@ -566,17 +579,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         case options::DSHGI:
             {
                 dshgi_renderer::options dr_opt;
-                sh_renderer::options sh;
-                (rt_stage::options&)sh = rc_opt;
-                sh.samples_per_probe = opt.samples_per_probe;
-                sh.film = opt.film;
-                sh.film_radius = opt.film_radius;
-                sh.mis_mode = opt.multiple_importance_sampling;
-                sh.russian_roulette_delta = opt.russian_roulette;
-                sh.temporal_ratio = opt.dshgi_temporal_ratio;
-                sh.indirect_clamping = opt.indirect_clamping;
-                sh.regularization_gamma = opt.regularization;
-                sh.sampling_weights = sampling_weights;
                 dr_opt.sh_source = sh;
                 dr_opt.sh_order = opt.sh_order;
                 dr_opt.use_probe_visibility = opt.use_probe_visibility;
@@ -594,16 +596,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         case options::DSHGI_SERVER:
             {
                 dshgi_server::options dr_opt;
-                (rt_stage::options&)dr_opt.sh = rc_opt;
-                dr_opt.sh.samples_per_probe = opt.samples_per_probe;
-                dr_opt.sh.film = opt.film;
-                dr_opt.sh.film_radius = opt.film_radius;
-                dr_opt.sh.mis_mode = opt.multiple_importance_sampling;
-                dr_opt.sh.russian_roulette_delta = opt.russian_roulette;
-                dr_opt.sh.temporal_ratio = opt.dshgi_temporal_ratio;
-                dr_opt.sh.indirect_clamping = opt.indirect_clamping;
-                dr_opt.sh.regularization_gamma = opt.regularization;
-                dr_opt.sh.sampling_weights = sampling_weights;
+                dr_opt.sh = sh;
                 dr_opt.port_number = opt.port;
                 return new dshgi_server(ctx, dr_opt);
             }
@@ -649,11 +642,18 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 restir_renderer::options re_opt;
                 re_opt.scene_options = scene_options;
                 re_opt.tonemap_options = tonemap;
+                re_opt.sh_options = sh;
                 re_opt.sm_filter = sm_filter;
                 re_opt.restir_options.sampling_weights = sampling_weights;
                 re_opt.restir_options.max_bounces = opt.max_ray_depth-1;
                 re_opt.restir_options.regularization_gamma = opt.regularization;
                 re_opt.restir_options.shade_all_explicit_lights = true;
+                re_opt.restir_options.shade_fake_indirect = true;
+                if(!has_sh_grids)
+                    re_opt.restir_options.shade_fake_indirect = false;
+
+                if(re_opt.restir_options.shade_fake_indirect)
+                    re_opt.scene_options.alloc_sh_grids = true;
 
                 return new restir_renderer(ctx, re_opt);
             }
