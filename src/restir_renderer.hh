@@ -48,9 +48,16 @@ private:
     std::optional<sh_renderer> sh;
     std::optional<scene_stage> scene_update;
     std::optional<shadow_map_stage> sms;
-    std::optional<envmap_stage> envmap;
-    std::optional<raster_stage> gbuffer_rasterizer;
-    std::optional<restir_stage> restir;
+
+    struct per_view_stages
+    {
+        std::optional<envmap_stage> envmap;
+        std::optional<raster_stage> gbuffer_rasterizer;
+        std::optional<restir_stage> restir;
+    };
+
+    std::vector<per_view_stages> per_view;
+
     std::optional<tonemap_stage> tonemap;
     std::optional<gbuffer_copy_stage> copy;
 

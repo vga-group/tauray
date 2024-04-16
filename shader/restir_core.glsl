@@ -1214,9 +1214,13 @@ bool generate_bsdf_vertex(
 #endif
     bool bounces = get_intersection_info(cur_domain.pos, dir, payload, bounce_index, get_in_past, regularization, info, vertex);
 
+#if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_ENVMAP)
     nee_pdf = calculate_light_pdf(
         vertex.instance_id, vertex.primitive_id, info.local_pdf, info.envmap_pdf
     );
+#else
+    nee_pdf = 0;
+#endif
 
     next_domain.mat = info.mat;
     next_domain.mat.emission = vertex.radiance_estimate;

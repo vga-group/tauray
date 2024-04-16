@@ -789,7 +789,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
 
         canonical_push_constant_buffer pc;
         pc.config = config;
-        pc.camera_index = 0;
+        pc.camera_index = opt.camera_index;
         pc.sample_index = dev->ctx->get_frame_counter() * opt.passes + pass_index;
         pc.first_pass = pass_index == 0;
 
@@ -828,7 +828,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
         pc.config = config;
         pc.search_base_radius = opt.temporal_search_base_radius;
         pc.search_widening = opt.temporal_search_widening;
-        pc.camera_index = 0;
+        pc.camera_index = opt.camera_index;
         pc.sample_index = frame_counter * opt.passes + pass_index;
 
         uint32_t tmp_seed = pc.sample_index;
@@ -878,7 +878,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
 
         selection_push_constant_buffer pc;
         pc.config = config;
-        pc.camera_index = 0;
+        pc.camera_index = opt.camera_index;
         pc.sample_index = dev->ctx->get_frame_counter() * opt.passes + pass_index;
         pc.display_size = size;
 
@@ -909,7 +909,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
 
         spatial_trace_push_constant_buffer pc;
         pc.config = config;
-        pc.camera_index = 0;
+        pc.camera_index = opt.camera_index;
         pc.sample_index = dev->ctx->get_frame_counter() * opt.passes + pass_index;
 
         spatial_trace.push_constants(cmd, pc);
@@ -961,7 +961,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         spatial_gather_push_constant_buffer pc;
         pc.config = config;
         pc.display_size = size;
-        pc.camera_index = 0;
+        pc.camera_index = opt.camera_index;
         pc.sample_index = dev->ctx->get_frame_counter() * opt.passes + pass_index;
         pc.accumulated_samples = accumulated_samples;
         pc.initialize_output = (opt.accumulate && pass_index == 0) || !opt.accumulate ? 1 : 0;

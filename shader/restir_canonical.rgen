@@ -242,12 +242,14 @@ void sample_path(
     float regularization = 1.0f;
     for(int bounce = 0; bounce < max(MAX_BOUNCES, 1); ++bounce)
     {
+#if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_ENVMAP)
         sample_path_nee_leaf(
             path_seed, ris_seed, base_sample,
             total_throughput, tail_throughput,
             path_pdf, head_allows_reconnection,
             src, out_value, primary_bsdf, r
         );
+#endif
 
         domain dst;
         if(!sample_path_bsdf_bounce(

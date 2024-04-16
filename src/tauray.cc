@@ -996,12 +996,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
     // Ensure everything is finished before going to destructors.
     ctx.sync();
-
-    // TODO: This hack prevents SteamVR from freezing on exit. This isn't just
-    // a Tauray bug, it seems every Vulkan+Linux+Nvidia combo causes that...
-    // Remove it once SteamVR isn't busted anymore.
-    if(opt.display == options::display_type::OPENXR)
-        abort();
 }
 
 void replay_viewer(context& ctx, scene_data& sd, options& opt)

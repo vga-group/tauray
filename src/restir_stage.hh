@@ -169,6 +169,7 @@ public:
         float regularization_gamma = 0.0f; // 0 disables path regularization
 
         light_sampling_weights sampling_weights;
+        int camera_index = 0;
     };
 
     // TODO: Doesn't expect multi-view targets for now.

@@ -4,7 +4,7 @@ namespace tr
 {
 
 restir_renderer::restir_renderer(context& ctx, const options& opt)
-: ctx(&ctx), opt(opt)
+: ctx(&ctx), opt(opt), per_view(ctx.get_display_count())
 {
     device& display_device = ctx.get_display_device();
 
@@ -48,42 +48,47 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     if(this->opt.restir_options.shade_all_explicit_lights && this->opt.restir_options.shade_fake_indirect)
         sh.emplace(ctx, *scene_update, this->opt.sh_options);
 
-    gbuffer_target cur = current_gbuffer.get_layer_target(display_device.id, 0);
-    gbuffer_target prev = prev_gbuffer.get_layer_target(display_device.id, 0);
+    for(size_t i = 0; i < ctx.get_display_count(); ++i)
+    {
+        gbuffer_target cur = current_gbuffer.get_layer_target(display_device.id, i);
+        gbuffer_target prev = prev_gbuffer.get_layer_target(display_device.id, i);
 
-    envmap.emplace(display_device, *scene_update, cur.color, 0);
+        per_view[i].envmap.emplace(display_device, *scene_update, cur.color, i);
 
-    raster_stage::options raster_opt;
-    raster_opt.clear_color = false;
-    raster_opt.clear_depth = true;
-    raster_opt.sample_shading = false;
-    raster_opt.filter = opt.sm_filter;
-    raster_opt.use_probe_visibility = false;
-    raster_opt.sh_order = 0;
-    raster_opt.estimate_indirect = false;
-    raster_opt.force_alpha_to_coverage = true;
-    raster_opt.output_layout = vk::ImageLayout::eGeneral;
+        raster_stage::options raster_opt;
+        raster_opt.clear_color = false;
+        raster_opt.clear_depth = true;
+        raster_opt.sample_shading = false;
+        raster_opt.filter = opt.sm_filter;
+        raster_opt.use_probe_visibility = false;
+        raster_opt.sh_order = 0;
+        raster_opt.estimate_indirect = false;
+        raster_opt.force_alpha_to_coverage = true;
+        raster_opt.base_camera_index = i;
+        raster_opt.output_layout = vk::ImageLayout::eGeneral;
 
-    render_target color = cur.color;
-    if(!this->opt.restir_options.shade_all_explicit_lights)
-        cur.color = render_target();
-    gbuffer_rasterizer.emplace(display_device, *scene_update, cur, raster_opt);
-    if(!this->opt.restir_options.shade_all_explicit_lights)
-        cur.color = color;
+        render_target color = cur.color;
+        if(!this->opt.restir_options.shade_all_explicit_lights)
+            cur.color = render_target();
+        per_view[i].gbuffer_rasterizer.emplace(display_device, *scene_update, cur, raster_opt);
+        if(!this->opt.restir_options.shade_all_explicit_lights)
+            cur.color = color;
 
-    cur.color.layout = vk::ImageLayout::eGeneral;
+        cur.color.layout = vk::ImageLayout::eGeneral;
 
-    this->opt.restir_options.max_bounces = max(this->opt.restir_options.max_bounces, 1u);
-    this->opt.restir_options.temporal_reuse = true;
-    this->opt.restir_options.spatial_sample_oriented_disk = false;
-    this->opt.restir_options.spatial_samples = 2;
-    this->opt.restir_options.assume_unchanged_reconnection_radiance = true;
-    this->opt.restir_options.assume_unchanged_temporal_visibility = false;
-    this->opt.restir_options.shift_map = restir_stage::RECONNECTION_SHIFT;
-    //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
-    restir.emplace(display_device, *scene_update, cur, prev, this->opt.restir_options);
+        this->opt.restir_options.max_bounces = max(this->opt.restir_options.max_bounces, 1u);
+        this->opt.restir_options.temporal_reuse = true;
+        this->opt.restir_options.spatial_sample_oriented_disk = false;
+        this->opt.restir_options.spatial_samples = 2;
+        this->opt.restir_options.assume_unchanged_reconnection_radiance = true;
+        this->opt.restir_options.assume_unchanged_temporal_visibility = false;
+        this->opt.restir_options.shift_map = restir_stage::RECONNECTION_SHIFT;
+        this->opt.restir_options.camera_index = i;
+        //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
+        per_view[i].restir.emplace(display_device, *scene_update, cur, prev, this->opt.restir_options);
+    }
 
-    cur = current_gbuffer.get_array_target(display_device.id);
+    gbuffer_target cur = current_gbuffer.get_array_target(display_device.id);
     cur.set_layout(vk::ImageLayout::eShaderReadOnlyOptimal);
     cur.color.layout = this->opt.restir_options.shade_all_explicit_lights ?
         vk::ImageLayout::eGeneral :
@@ -101,7 +106,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     // Take out the things we don't need in the previous G-Buffer before
     // copying stuff over.
-    prev = prev_gbuffer.get_array_target(display_device.id);
+    gbuffer_target prev = prev_gbuffer.get_array_target(display_device.id);
 
     cur.color = render_target();
     cur.screen_motion = render_target();
@@ -127,9 +132,12 @@ void restir_renderer::render()
         deps = sms->run(deps);
     if(sh) deps = sh->render(deps);
 
-    deps = envmap->run(deps);
-    deps = gbuffer_rasterizer->run(deps);
-    deps = restir->run(deps);
+    for(auto& pv: per_view)
+    {
+        deps = pv.envmap->run(deps);
+        deps = pv.gbuffer_rasterizer->run(deps);
+        deps = pv.restir->run(deps);
+    }
     deps = tonemap->run(deps);
     deps = copy->run(deps);
 
