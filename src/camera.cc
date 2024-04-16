@@ -342,7 +342,7 @@ vec4 camera::get_projection_info() const
                 float far = pd.perspective.far;
 
                 proj_info.x = near * far / (near-far);
-                proj_info.y = (near + far)/(near-far);
+                proj_info.y = (near + far) / (near-far);
             }
             return proj_info;
         }

@@ -9,8 +9,8 @@ using namespace tr;
 
 struct grid_data_buffer
 {
-    mat4 transform;
-    mat4 normal_transform;
+    pmat4 transform;
+    pmat4 normal_transform;
     puvec3 grid_size;
     float mix_ratio;
     pvec3 cell_scale;
@@ -50,7 +50,8 @@ sh_path_tracer_stage::sh_path_tracer_stage(
     opt(opt),
     output_grid(&output_grid),
     output_layout(output_layout),
-    grid_data(dev, sizeof(grid_data_buffer), vk::BufferUsageFlagBits::eUniformBuffer)
+    grid_data(dev, sizeof(grid_data_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
+    history_length(0)
 {
     shader_source pl_rint("shader/rt_common_point_light.rint");
     shader_source shadow_chit("shader/rt_common_shadow.rchit");
@@ -118,13 +119,14 @@ void sh_path_tracer_stage::update(uint32_t frame_index)
 
     uint32_t sampling_start_counter =
         dev->ctx->get_frame_counter() * opt.samples_per_probe;
+    history_length++;
     grid_data.map<grid_data_buffer>(
         frame_index,
         [&](grid_data_buffer* guni){
             guni->transform = transform;
             guni->normal_transform = mat4(get_matrix_orientation(transform));
             guni->grid_size = grid->get_resolution();
-            guni->mix_ratio = max(1.0f/dev->ctx->get_frame_counter(), opt.temporal_ratio);
+            guni->mix_ratio = max(1.0f/history_length, opt.temporal_ratio);
             guni->cell_scale = 0.5f*vec3(grid->get_resolution())/grid_transform->get_scaling();
             guni->rotation_x = pcg(sampling_start_counter)/float(0xFFFFFFFFu);
             guni->rotation_y = pcg(sampling_start_counter+1)/float(0xFFFFFFFFu);

@@ -416,49 +416,54 @@ vec3 shade_explicit_lights(
     int instance_id,
     vec3 view,
     vertex_data vd,
-    sampled_material mat
+    sampled_material mat,
+    uint bounce_index
 ){
     mat3 tbn = create_tangent_space(vd.mapped_normal);
     vec3 tview = view_to_tangent_space(view, tbn);
 
     vec3 contrib = vec3(0);
 #ifdef SHADE_FAKE_INDIRECT
-    vec3 ref_dir = reflect(-view, vd.mapped_normal);
-    vec3 incoming_diffuse = vec3(0);
-    vec3 incoming_reflection = vec3(0);
-
-    int sh_grid_index = instances.o[instance_id].sh_grid_index;
-    if(sh_grid_index >= 0)
+    // Only last bounce gets fake indirect light.
+    if(bounce_index == MAX_BOUNCES-1)
     {
-        sh_grid sg = sh_grids.grids[sh_grid_index];
-        vec3 sample_pos = (sg.pos_from_world * vec4(vd.pos, 1)).xyz;
-        vec3 sample_normal = normalize((sg.normal_from_world * vec4(vd.smooth_normal, 0)).xyz);
+        vec3 ref_dir = reflect(-view, vd.mapped_normal);
+        vec3 incoming_diffuse = vec3(0);
+        vec3 incoming_reflection = vec3(0);
 
-        sh_probe sh = sample_sh_grid(
-            sh_grid_data[nonuniformEXT(sh_grid_index)], sg.grid_clamp,
-            sample_pos, sample_normal
-        );
+        int sh_grid_index = instances.o[instance_id].sh_grid_index;
+        if(sh_grid_index >= 0)
+        {
+            sh_grid sg = sh_grids.grids[sh_grid_index];
+            vec3 sample_pos = (sg.pos_from_world * vec4(vd.pos, 1)).xyz;
+            vec3 sample_normal = normalize((sg.normal_from_world * vec4(vd.smooth_normal, 0)).xyz);
 
-        vec3 sh_normal = normalize((sg.normal_from_world * vec4(vd.mapped_normal, 0)).xyz);
-        incoming_diffuse = calc_sh_irradiance(sh, sh_normal);
+            sh_probe sh = sample_sh_grid(
+                sh_grid_data[nonuniformEXT(sh_grid_index)], sg.grid_clamp,
+                sample_pos, sample_normal
+            );
 
-        vec3 sh_ref = normalize((sg.normal_from_world * vec4(ref_dir, 0)).xyz);
-        // The GGX specular function was fitted for squared roughness, so we'll
+            vec3 sh_normal = normalize((sg.normal_from_world * vec4(vd.mapped_normal, 0)).xyz);
+            incoming_diffuse = calc_sh_irradiance(sh, sh_normal);
+
+            vec3 sh_ref = normalize((sg.normal_from_world * vec4(ref_dir, 0)).xyz);
+            // The GGX specular function was fitted for squared roughness, so we'll
+            // have to make sure we don't square it twice!
+            incoming_reflection = calc_sh_ggx_specular(sh, sh_ref, sqrt(mat.roughness));
+        }
+        float cos_v = max(dot(vd.mapped_normal, view), 0.0f);
+
+        // The fresnel value must be attenuated, because we are actually integrating
+        // over all directions instead of just one specific direction here. This is
+        // an approximated function, though.
+        float fresnel = fresnel_schlick_attenuated(cos_v, mat.f0, mat.roughness);
+        float kd = (1.0f - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
+        contrib += kd * incoming_diffuse * mat.albedo.rgb;
+
         // have to make sure we don't square it twice!
-        incoming_reflection = calc_sh_ggx_specular(sh, sh_ref, sqrt(mat.roughness));
+        vec2 bi = texture(brdf_integration, vec2(cos_v, sqrt(mat.roughness))).xy;
+        contrib += incoming_reflection * mix(vec3(fresnel * bi.x + bi.y), mat.albedo.rgb, mat.metallic);
     }
-    float cos_v = max(dot(vd.mapped_normal, view), 0.0f);
-
-    // The fresnel value must be attenuated, because we are actually integrating
-    // over all directions instead of just one specific direction here. This is
-    // an approximated function, though.
-    float fresnel = fresnel_schlick_attenuated(cos_v, mat.f0, mat.roughness);
-    float kd = (1.0f - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
-    contrib += kd * incoming_diffuse * mat.albedo.rgb;
-
-    // have to make sure we don't square it twice!
-    vec2 bi = texture(brdf_integration, vec2(cos_v, sqrt(mat.roughness))).xy;
-    contrib += incoming_reflection * mix(vec3(fresnel * bi.x + bi.y), mat.albedo.rgb, mat.metallic);
 #endif
 
     for(uint i = 0; i < scene_metadata.point_light_count; ++i)
@@ -573,6 +578,7 @@ bool resolve_reconnection_vertex(
     inout reconnection_vertex rv,
     bool rv_is_in_past,
     domain to_domain,
+    uint bounce_index,
     inout float regularization,
     out resolved_vertex to
 ){
@@ -712,6 +718,14 @@ bool resolve_reconnection_vertex(
         // TODO: Allow mesh triangle material changes?
         to.emission = rv.radiance_estimate;
 #else
+        vd.back_facing = dot(vd.hard_normal, to.dir) > 0;
+        if(vd.back_facing)
+        {
+            vd.smooth_normal = -vd.smooth_normal;
+            vd.hard_normal = -vd.hard_normal;
+        }
+        vd.mapped_normal = vd.smooth_normal;
+
         to.lobes = bsdf_lobes(0,0,0,0);
         vec3 tdir = to.dir * to_domain.tbn;
         to.bsdf_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, to.lobes);
@@ -719,7 +733,7 @@ bool resolve_reconnection_vertex(
 
         sampled_material mat = sample_material(int(rv.instance_id), vd);
         apply_regularization(regularization, mat);
-        to.emission = mat.emission + shade_explicit_lights(int(rv.instance_id), to.dir, vd, mat);
+        to.emission = mat.emission + shade_explicit_lights(int(rv.instance_id), to.dir, vd, mat, bounce_index);
         return true;
 #endif
     }
@@ -769,6 +783,7 @@ bool get_intersection_info(
     vec3 ray_origin,
     vec3 ray_direction,
     hit_payload payload,
+    uint bounce_index,
     bool in_past,
     float regularization,
     out intersection_info info,
@@ -814,7 +829,6 @@ bool get_intersection_info(
         if(in_past) info.vd.pos = info.vd.prev_pos;
 #endif
 
-        bool front_facing = dot(ray_direction, info.vd.hard_normal) < 0;
         info.mat = sample_material(payload.instance_id, info.vd);
 #ifdef USE_RECONNECTION_SHIFT
         // See read_domain() for context.
@@ -832,7 +846,7 @@ bool get_intersection_info(
 
 #ifdef SHADE_ALL_EXPLICIT_LIGHTS
         candidate.radiance_estimate += shade_explicit_lights(
-            payload.instance_id, ray_direction, info.vd, info.mat
+            payload.instance_id, ray_direction, info.vd, info.mat, bounce_index
         );
 #endif
 
@@ -1180,6 +1194,7 @@ bool generate_bsdf_vertex(
     vec3 dir,
     bool in_past,
     domain cur_domain,
+    uint bounce_index,
     float regularization,
     out domain next_domain, // Only valid if true is returned.
     out reconnection_vertex vertex,
@@ -1197,7 +1212,7 @@ bool generate_bsdf_vertex(
 #else
     const bool get_in_past = false;
 #endif
-    bool bounces = get_intersection_info(cur_domain.pos, dir, payload, get_in_past, regularization, info, vertex);
+    bool bounces = get_intersection_info(cur_domain.pos, dir, payload, bounce_index, get_in_past, regularization, info, vertex);
 
     nee_pdf = calculate_light_pdf(
         vertex.instance_id, vertex.primitive_id, info.local_pdf, info.envmap_pdf
@@ -1284,7 +1299,7 @@ bool replay_path_bsdf_bounce(
     float nee_pdf;
     domain dst;
     reconnection_vertex vertex;
-    bool bounces = generate_bsdf_vertex(rand32, dir, in_past, src, regularization, dst, vertex, nee_pdf);
+    bool bounces = generate_bsdf_vertex(rand32, dir, in_past, src, bounce_index, regularization, dst, vertex, nee_pdf);
     reconnected = allow_reconnection(distance(src.pos, dst.pos), dst.mat, bounces, head_allows_reconnection);
     src = dst;
     return bounces;
@@ -1390,7 +1405,7 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
         domain dst;
         reconnection_vertex vertex;
         float nee_pdf;
-        bool bounces = generate_bsdf_vertex(rand32, dir, false, tail_domain, regularization, dst, vertex, nee_pdf);
+        bool bounces = generate_bsdf_vertex(rand32, dir, false, tail_domain, bounce, regularization, dst, vertex, nee_pdf);
 
         tail_domain = dst;
 
@@ -1467,7 +1482,7 @@ bool reconnection_shift_map(
 
     float regularization = 1;
     resolved_vertex to;
-    if(!resolve_reconnection_vertex(rs.vertex, !cur_to_prev, to_domain, regularization, to))
+    if(!resolve_reconnection_vertex(rs.vertex, !cur_to_prev, to_domain, rs.head_length, regularization, to))
     {
         // Failed to reconnect, vertex may have ceased to exist.
         return false;
@@ -1656,7 +1671,7 @@ bool hybrid_shift_map(
         return false;
 
     resolved_vertex to;
-    if(!resolve_reconnection_vertex(rs.vertex, !cur_to_prev, to_domain, regularization, to))
+    if(!resolve_reconnection_vertex(rs.vertex, !cur_to_prev, to_domain, rs.head_length, regularization, to))
     {
         // Failed to reconnect, vertex may have ceased to exist.
         return false;

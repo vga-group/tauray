@@ -76,7 +76,9 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     this->opt.restir_options.max_bounces = max(this->opt.restir_options.max_bounces, 1u);
     this->opt.restir_options.temporal_reuse = true;
     this->opt.restir_options.spatial_sample_oriented_disk = false;
-    this->opt.restir_options.spatial_samples = 4;
+    this->opt.restir_options.spatial_samples = 2;
+    this->opt.restir_options.assume_unchanged_reconnection_radiance = true;
+    this->opt.restir_options.assume_unchanged_temporal_visibility = false;
     this->opt.restir_options.shift_map = restir_stage::RECONNECTION_SHIFT;
     //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
     restir.emplace(display_device, *scene_update, cur, prev, this->opt.restir_options);

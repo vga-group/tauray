@@ -643,6 +643,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.scene_options = scene_options;
                 re_opt.tonemap_options = tonemap;
                 re_opt.sh_options = sh;
+                re_opt.sh_options.max_ray_depth = 4;
                 re_opt.sm_filter = sm_filter;
                 re_opt.restir_options.sampling_weights = sampling_weights;
                 re_opt.restir_options.max_bounces = opt.max_ray_depth-1;
