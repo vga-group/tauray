@@ -60,7 +60,7 @@ void calc_omni_shadow_map_pos(
     // Projection is simple due to forced 90 degree FOV and 1:1 aspect ratio
     uv = 0.5f + 0.5f * face_pos.xy / face_pos.z;
 
-    depth = hyperbolic_depth(min(-face_pos.z, 0.0f), sm.projection_info);
+    depth = hyperbolic_depth(min(-face_pos.z, 0.0f), sm.projection_info) * 0.5f + 0.5f;
     rect = vec4(sm.rect.xy+face_offset, sm.rect.zw);
 }
 
@@ -119,7 +119,7 @@ void calc_perspective_shadow_map_pos(
     // linear depth.
     float bias = max(sm.max_bias * (1.0f - ndotl), sm.min_bias);
     uv = project_position(p, sm.projection_info);
-    depth = hyperbolic_depth((1-bias)*p.z, sm.projection_info);
+    depth = hyperbolic_depth((1-bias)*p.z, sm.projection_info) * 0.5f + 0.5f;
 }
 
 bool calc_perspective_pcss_radius(
@@ -287,7 +287,7 @@ float calc_directional_shadow(
     vec4 p = sm.world_to_shadow * vec4(pos, 1.0f);
     p.z = p.z * 2.0f - 1.0f;
     float ndotl = abs(dot(normal, dir));
-    float bias = max(sm.max_bias * (1.0f - ndotl), sm.min_bias); 
+    float bias = max(sm.max_bias * (1.0f - ndotl), sm.min_bias);
 
     vec4 rect;
     vec2 radius;
