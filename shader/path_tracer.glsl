@@ -205,7 +205,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
     float point_prob, triangle_prob, dir_prob, envmap_prob;
     get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
 
-    vec4 u = ldexp(vec4(rand_uint), ivec4(-32));
+    vec4 u = vec4(rand_uint) * INV_UINT32_MAX;
 
     if(false) {}
 #ifdef NEE_SAMPLE_POINT_LIGHTS

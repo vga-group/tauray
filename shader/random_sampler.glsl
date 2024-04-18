@@ -29,23 +29,23 @@ uvec4 generate_uniform_random_uint(inout random_sampler rsampler)
 
 vec4 generate_uniform_random(inout random_sampler rsampler)
 {
-    return ldexp(vec4(generate_uniform_random_uint(rsampler)), ivec4(-32));
+    return vec4(generate_uniform_random_uint(rsampler)) * INV_UINT32_MAX;
 }
 
 float generate_single_uniform_random(inout uint seed)
 {
-    return ldexp(float(pcg(seed)), -32);
+    return float(pcg(seed)) * INV_UINT32_MAX;
 }
 
 vec4 generate_single_uniform_random(inout uvec4 seed)
 {
-    return ldexp(vec4(pcg4d(seed)), ivec4(-32));
+    return vec4(pcg4d(seed)) * INV_UINT32_MAX;
 }
 
 // Gives a random color, useful for debugging.
 vec3 debug_color(uvec4 param)
 {
-    return ldexp(vec3(pcg4d(param).xyz), ivec3(-32));
+    return vec3(pcg4d(param).xyz) * INV_UINT32_MAX;
 }
 
 #endif

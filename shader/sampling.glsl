@@ -76,7 +76,7 @@ uvec4 generate_ray_sample_uint(inout local_sampler ls, uint bounce_index)
 
 vec4 generate_ray_sample(inout local_sampler ls, uint bounce_index)
 {
-    return ldexp(vec4(generate_ray_sample_uint(ls, bounce_index)), ivec4(-32));
+    return vec4(generate_ray_sample_uint(ls, bounce_index)) * INV_UINT32_MAX;
 }
 
 #endif

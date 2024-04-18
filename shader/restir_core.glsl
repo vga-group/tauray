@@ -1026,7 +1026,7 @@ light_sample sample_light(
     light_sample ls;
     ls.color = vec3(0);
 
-    vec4 u = ldexp(vec4(rand32), ivec4(-32));
+    vec4 u = vec4(rand32) * INV_UINT32_MAX;
 
     ls.instance_id = NULL_INSTANCE_ID;
     ls.normal = vec3(0);
@@ -1287,7 +1287,7 @@ bool replay_path_bsdf_bounce(
 ){
     uvec4 rand32 = pcg1to4(path_seed);
 
-    vec4 u = ldexp(vec4(rand32), ivec4(-32));
+    vec4 u = vec4(rand32) * INV_UINT32_MAX;
     vec3 tdir = vec3(0,0,1);
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     float bsdf_pdf = 0;
@@ -1387,7 +1387,7 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
 
         uvec4 rand32 = pcg1to4(tail_rng_seed);
 
-        vec4 u = ldexp(vec4(rand32), ivec4(-32));
+        vec4 u = vec4(rand32) * INV_UINT32_MAX;
         vec3 tdir = vec3(0,0,1);
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
         float bsdf_pdf = 0.0f;

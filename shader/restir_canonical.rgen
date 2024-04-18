@@ -134,7 +134,7 @@ bool sample_path_bsdf_bounce(
 ){
     uvec4 rand32 = pcg1to4(path_seed);
 
-    vec4 u = ldexp(vec4(rand32), ivec4(-32));
+    vec4 u = vec4(rand32) * INV_UINT32_MAX;
     vec3 tdir = vec3(0,0,1);
     int lobe_index;
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);

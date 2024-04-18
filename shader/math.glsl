@@ -7,6 +7,7 @@
 #define SQRT3 1.73205080756
 #define GOLDEN_RATIO 1.61803398874989484820
 #define FLT_MAX 3.402823466e+38
+#define INV_UINT32_MAX 2.3283064365386963e-10f
 
 vec3 create_tangent(vec3 normal)
 {

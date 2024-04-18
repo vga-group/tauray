@@ -254,7 +254,7 @@ vec3 sample_environment_map(
         }
 
         ivec2 p = ivec2(i % size.x, i / size.x);
-        vec2 off = ldexp(vec2(uvec2(rand.xy*pixel_count)), ivec2(-32));
+        vec2 off = vec2(uvec2(rand.xy*pixel_count)) * INV_UINT32_MAX;
         vec2 uv = (vec2(p) + off)/vec2(size);
 
         shadow_ray_direction = uv_to_latlong_direction(uv);
@@ -264,7 +264,7 @@ vec3 sample_environment_map(
     else
     {
         pdf = 1.0f / (4.0f * M_PI);
-        shadow_ray_direction = sample_sphere(ldexp(vec2(rand.xy), ivec2(-32)));
+        shadow_ray_direction = sample_sphere(vec2(rand.xy) * INV_UINT32_MAX);
     }
     shadow_ray_length = RAY_MAX_DIST;
     return color;
