@@ -100,6 +100,9 @@ bool get_intersection_info(
     nee_pdf.directional_light_pdf = 0;
     nee_pdf.tri_light_pdf = 0;
     nee_pdf.envmap_pdf = 0;
+    mat.metallic = 1;
+    mat.albedo = vec4(0);
+
     if(payload.instance_id >= 0)
     {
         float pdf = 0.0f;
@@ -366,7 +369,7 @@ void evaluate_ray(
 
     float regularization = 1.0f;
     float bsdf_pdf = 0.0f;
-    bsdf_lobes primary_lobes = bsdf_lobes(0,0,0,0);
+    bsdf_lobes primary_lobes = bsdf_lobes(0,0,0,1);
     payload.random_seed = pcg4d(lsampler.rs.seed).x;
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
