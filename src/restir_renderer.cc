@@ -1,4 +1,6 @@
 #include "restir_renderer.hh"
+#include "vulkan/vulkan_format_traits.hpp"
+#include "log.hh"
 
 namespace tr
 {
@@ -7,6 +9,22 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 : ctx(&ctx), opt(opt), per_view(ctx.get_display_count())
 {
     device& display_device = ctx.get_display_device();
+    std::vector<device>& devices = ctx.get_devices();
+    size_t device_count = devices.size();
+
+    if(device_count < ctx.get_display_count())
+    {
+        TR_WARN("Fewer GPUs than views; using only one GPU for all.");
+        device_count = 1;
+    }
+    else device_count = std::min(device_count, ctx.get_display_count());
+
+    if(this->opt.restir_options.shade_all_explicit_lights)
+    {
+        this->opt.scene_options.shadow_mapping = true;
+        this->opt.restir_options.sampling_weights.directional_lights = 0;
+        this->opt.restir_options.sampling_weights.point_lights = 0;
+    }
 
     gbuffer_spec gs;
     gs.color_present = true;
@@ -32,28 +50,41 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         vk::ImageUsageFlagBits::eTransferDst |
         vk::ImageUsageFlagBits::eSampled;
 
-    current_gbuffer.reset(display_device, ctx.get_size(), ctx.get_display_count());
-    current_gbuffer.add(gs, vk::ImageLayout::eGeneral);
-    prev_gbuffer.reset(display_device, ctx.get_size(), ctx.get_display_count());
-    prev_gbuffer.add(gs, vk::ImageLayout::eGeneral);
+    scene_update.emplace(
+        device_count == 1 ? device_mask(display_device) : device_mask::all(ctx),
+        this->opt.scene_options
+    );
 
-    if(this->opt.restir_options.shade_all_explicit_lights)
-        this->opt.scene_options.shadow_mapping = true;
+    per_device.resize(device_count);
+    device_mask dev = device_mask::none(ctx);
+    for(size_t i = 0; i < per_device.size(); ++i)
+    {
+        int view_count = device_count ==  1 ? ctx.get_display_count() : 1;
+        dev.insert(devices[i].id);
 
-    scene_update.emplace(display_device, this->opt.scene_options);
+        per_device[i].current_gbuffer.reset(devices[i], ctx.get_size(), view_count);
+        per_device[i].current_gbuffer.add(gs, vk::ImageLayout::eGeneral);
+        per_device[i].prev_gbuffer.reset(devices[i], ctx.get_size(), view_count);
+        per_device[i].prev_gbuffer.add(gs, vk::ImageLayout::eGeneral);
 
-    if(this->opt.restir_options.shade_all_explicit_lights)
-        sms.emplace(display_device, *scene_update, shadow_map_stage::options{});
-
+        if(this->opt.restir_options.shade_all_explicit_lights)
+            per_device[i].sms.reset(new shadow_map_stage(devices[i], *scene_update, shadow_map_stage::options{}));
+    }
     if(this->opt.restir_options.shade_all_explicit_lights && this->opt.restir_options.shade_fake_indirect)
-        sh.emplace(ctx, *scene_update, this->opt.sh_options);
+        sh.reset(new sh_renderer(dev, *scene_update, this->opt.sh_options));
 
     for(size_t i = 0; i < ctx.get_display_count(); ++i)
     {
-        gbuffer_target cur = current_gbuffer.get_layer_target(display_device.id, i);
-        gbuffer_target prev = prev_gbuffer.get_layer_target(display_device.id, i);
+        int device_index = device_count == 1 ? 0 : i;
+        int layer_index = device_count == 1 ? i : 0;
+        per_device_data& data = per_device[device_index];
+        bool is_display_device = devices[device_index].id == display_device.id;
 
-        per_view[i].envmap.emplace(display_device, *scene_update, cur.color, i);
+        gbuffer_target cur = data.current_gbuffer.get_layer_target(devices[device_index].id, layer_index);
+        gbuffer_target prev = data.prev_gbuffer.get_layer_target(devices[device_index].id, layer_index);
+
+        per_view_stages& pv = per_view[i];
+        pv.envmap.emplace(devices[device_index], *scene_update, cur.color, i);
 
         raster_stage::options raster_opt;
         raster_opt.clear_color = false;
@@ -70,7 +101,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         render_target color = cur.color;
         if(!this->opt.restir_options.shade_all_explicit_lights)
             cur.color = render_target();
-        per_view[i].gbuffer_rasterizer.emplace(display_device, *scene_update, cur, raster_opt);
+        pv.gbuffer_rasterizer.emplace(devices[device_index], *scene_update, cur, raster_opt);
         if(!this->opt.restir_options.shade_all_explicit_lights)
             cur.color = color;
 
@@ -85,35 +116,99 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         this->opt.restir_options.shift_map = restir_stage::RECONNECTION_SHIFT;
         this->opt.restir_options.camera_index = i;
         //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
-        per_view[i].restir.emplace(display_device, *scene_update, cur, prev, this->opt.restir_options);
+        pv.restir.emplace(devices[device_index], *scene_update, cur, prev, this->opt.restir_options);
+
+        gbuffer_target arr_cur = data.current_gbuffer.get_array_target(devices[device_index].id);
+        arr_cur.set_layout(vk::ImageLayout::eShaderReadOnlyOptimal);
+        arr_cur.color.layout = this->opt.restir_options.shade_all_explicit_lights ?
+            vk::ImageLayout::eGeneral :
+            vk::ImageLayout::eColorAttachmentOptimal;
+        arr_cur.diffuse.layout = vk::ImageLayout::eGeneral;
+        arr_cur.reflection.layout = vk::ImageLayout::eGeneral;
+
+        std::vector<render_target> display = ctx.get_array_render_target();
+        if(is_display_device)
+        {
+            this->opt.tonemap_options.limit_to_input_layer = layer_index;
+            this->opt.tonemap_options.limit_to_output_layer = i;
+            this->opt.tonemap_options.transition_output_layout = true;
+            pv.tonemap.emplace(
+                devices[device_index],
+                arr_cur.color,
+                display,
+                this->opt.tonemap_options
+            );
+        }
+        else
+        {
+            pv.tmp_compressed_output_img.emplace(
+                devices[i],
+                ctx.get_size(),
+                1,
+                ctx.get_display_format(),
+                0, nullptr,
+                vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eStorage|vk::ImageUsageFlagBits::eTransferSrc,
+                vk::ImageLayout::eGeneral,
+                vk::SampleCountFlagBits::e1
+            );
+
+            this->opt.tonemap_options.transition_output_layout = true;
+            this->opt.tonemap_options.limit_to_input_layer = 0;
+            this->opt.tonemap_options.limit_to_output_layer = 0;
+            this->opt.tonemap_options.output_image_layout = vk::ImageLayout::eTransferSrcOptimal;
+            std::vector<render_target> output_frames;
+            output_frames.resize(display.size(), pv.tmp_compressed_output_img->get_array_render_target(devices[i].id));
+            pv.tonemap.emplace(
+                devices[device_index],
+                arr_cur.color,
+                output_frames,
+                this->opt.tonemap_options
+            );
+        }
+
+        // Take out the things we don't need in the previous G-Buffer before
+        // copying stuff over.
+
+        cur.color = render_target();
+        cur.screen_motion = render_target();
+        prev.color = render_target();
+        prev.screen_motion = render_target();
+
+        pv.copy.emplace(devices[device_index], cur, prev);
+
+        if(!is_display_device)
+        {
+            vk::Image own_color = pv.tmp_compressed_output_img->get_image(devices[device_index].id);
+            for(size_t j = 0; j < display.size(); ++j)
+            {
+                pv.transfer.push_back(create_device_transfer_interface(
+                    devices[device_index],
+                    display_device
+                ));
+
+                size_t pixel_format_size = vk::blockSize(ctx.get_display_format());
+                std::vector<device_transfer_interface::image_transfer> images = {
+                    device_transfer_interface::image_transfer{
+                        own_color,
+                        display[j].image,
+                        pixel_format_size,
+                        vk::ImageCopy{
+                            {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                            {0,0,0},
+                            {vk::ImageAspectFlagBits::eColor, 0, (uint32_t)i, 1},
+                            {0,0,0},
+                            {display[j].size.x, display[j].size.y, 1}
+                        },
+                        vk::ImageLayout::eTransferSrcOptimal,
+                        ctx.get_expected_display_layout()
+                    }
+                };
+
+                pv.transfer.back()->build(images, {});
+            }
+        }
     }
-
-    gbuffer_target cur = current_gbuffer.get_array_target(display_device.id);
-    cur.set_layout(vk::ImageLayout::eShaderReadOnlyOptimal);
-    cur.color.layout = this->opt.restir_options.shade_all_explicit_lights ?
-        vk::ImageLayout::eGeneral :
-        vk::ImageLayout::eColorAttachmentOptimal;
-    cur.diffuse.layout = vk::ImageLayout::eGeneral;
-    cur.reflection.layout = vk::ImageLayout::eGeneral;
-
-    std::vector<render_target> display = ctx.get_array_render_target();
-    tonemap.emplace(
-        display_device,
-        cur.color,
-        display,
-        opt.tonemap_options
-    );
-
-    // Take out the things we don't need in the previous G-Buffer before
-    // copying stuff over.
-    gbuffer_target prev = prev_gbuffer.get_array_target(display_device.id);
-
-    cur.color = render_target();
-    cur.screen_motion = render_target();
-    prev.color = render_target();
-    prev.screen_motion = render_target();
-
-    copy.emplace(display_device, cur, prev);
 }
 
 void restir_renderer::set_scene(scene* s)
@@ -128,8 +223,13 @@ void restir_renderer::render()
     ctx->get_indices(swapchain_index, frame_index);
 
     dependencies deps = scene_update->run(display_deps);
-    if(opt.restir_options.shade_all_explicit_lights)
-        deps = sms->run(deps);
+
+    for(auto& pd: per_device)
+    {
+        if(opt.restir_options.shade_all_explicit_lights)
+            deps = pd.sms->run(deps);
+    }
+
     if(sh) deps = sh->render(deps);
 
     for(auto& pv: per_view)
@@ -137,9 +237,16 @@ void restir_renderer::render()
         deps = pv.envmap->run(deps);
         deps = pv.gbuffer_rasterizer->run(deps);
         deps = pv.restir->run(deps);
+        deps = pv.tonemap->run(deps);
+        deps = pv.copy->run(deps);
     }
-    deps = tonemap->run(deps);
-    deps = copy->run(deps);
+
+    for(auto& pv: per_view)
+    {
+        if(pv.transfer.size() != 0)
+            deps = pv.transfer[swapchain_index]->run(deps, frame_index);
+    }
+
 
     ctx->end_frame(deps);
 }

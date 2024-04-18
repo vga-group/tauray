@@ -119,7 +119,7 @@ dshgi_server::dshgi_server(context& ctx, const options& opt)
     scene_update.reset(new scene_stage(ctx.get_display_device(), scene_opts));
     sh_grid_to_cpu.reset(new sh_grid_to_cpu_stage(ctx.get_display_device(), *scene_update));
 
-    sh.emplace(ctx, *scene_update, opt.sh);
+    sh.emplace(ctx.get_display_device(), *scene_update, opt.sh);
 
     sender_semaphore = create_timeline_semaphore(ctx.get_display_device());
 }

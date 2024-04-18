@@ -10,6 +10,7 @@
 #include "tonemap_stage.hh"
 #include "shadow_map_stage.hh"
 #include "gbuffer_copy_stage.hh"
+#include "device_transfer.hh"
 #include "sh_renderer.hh"
 #include <variant>
 
@@ -42,24 +43,36 @@ private:
     context* ctx;
     options opt;
 
-    gbuffer_texture current_gbuffer;
-    gbuffer_texture prev_gbuffer;
-
-    std::optional<sh_renderer> sh;
     std::optional<scene_stage> scene_update;
-    std::optional<shadow_map_stage> sms;
+
+    struct per_device_data
+    {
+        gbuffer_texture current_gbuffer;
+        gbuffer_texture prev_gbuffer;
+
+        std::unique_ptr<shadow_map_stage> sms;
+    };
+
+    // If re-rendering each SH probe on every GPU is a perf issue, we should
+    // make the remote rendering mode available as well.
+    std::unique_ptr<sh_renderer> sh;
+
+    std::vector<per_device_data> per_device;
 
     struct per_view_stages
     {
+        std::optional<texture> tmp_compressed_output_img;
+
         std::optional<envmap_stage> envmap;
         std::optional<raster_stage> gbuffer_rasterizer;
         std::optional<restir_stage> restir;
+        std::vector<std::unique_ptr<device_transfer_interface>> transfer;
+        std::optional<tonemap_stage> tonemap;
+        std::optional<gbuffer_copy_stage> copy;
     };
 
+    // There's either 1 device with multiple views, or one device per view.
     std::vector<per_view_stages> per_view;
-
-    std::optional<tonemap_stage> tonemap;
-    std::optional<gbuffer_copy_stage> copy;
 
     dependencies last_frame_deps;
 };

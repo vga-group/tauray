@@ -9,7 +9,7 @@ dshgi_renderer::dshgi_renderer(context& ctx, const options& opt)
 : raster_renderer(ctx, opt), opt(opt)
 {
     if(auto rtype = std::get_if<sh_renderer::options>(&opt.sh_source))
-        sh.reset(new sh_renderer(ctx, *scene_update, *rtype));
+        sh.reset(new sh_renderer(ctx.get_display_device(), *scene_update, *rtype));
     else if(auto rtype = std::get_if<dshgi_client::options>(&opt.sh_source))
         client.reset(new dshgi_client(ctx, *scene_update, *rtype));
 }
