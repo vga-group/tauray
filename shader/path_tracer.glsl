@@ -364,8 +364,8 @@ void evaluate_ray(
 ){
     vec3 attenuation = vec3(1);
 
-    diffuse = vec4(0,0,0,-1);
-    reflection = vec4(0,0,0,-1);
+    diffuse = vec4(0,0,0,0);
+    reflection = vec4(0,0,0,0);
 
     float regularization = 1.0f;
     float bsdf_pdf = 0.0f;
@@ -455,6 +455,8 @@ void evaluate_ray(
 #endif
             }
             add_demodulated_color(primary_lobes, radiance, diffuse.rgb, reflection.rgb);
+            if(bounce == 1)
+                diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
         }
 
         if(terminal) break;
@@ -518,8 +520,8 @@ void get_world_camera_ray(inout local_sampler lsampler, out vec3 origin, out vec
 
 void write_all_outputs(
     vec3 color,
-    vec3 diffuse,
-    vec3 reflection,
+    vec4 diffuse,
+    vec4 reflection,
     pt_vertex_data first_hit_vertex,
     sampled_material first_hit_material
 ){
@@ -554,8 +556,8 @@ void write_all_outputs(
 #endif
 
         accumulate_gbuffer_color(vec4(color, alpha), p, control.samples, prev_samples);
-        accumulate_gbuffer_diffuse(vec4(diffuse, alpha), p, control.samples, prev_samples);
-        accumulate_gbuffer_reflection(vec4(reflection, alpha), p, control.samples, prev_samples);
+        accumulate_gbuffer_diffuse(diffuse, p, control.samples, prev_samples);
+        accumulate_gbuffer_reflection(reflection, p, control.samples, prev_samples);
     }
 }
 

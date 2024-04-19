@@ -56,6 +56,10 @@
 #define INSTANCE_ID_TARGET_BINDING 10
 #endif
 
+#ifdef USE_REFLECTION_TARGET
+#define REFLECTION_TARGET_BINDING 11
+#endif
+
 layout(push_constant, scalar) uniform push_constant_buffer
 {
     uint samples;
@@ -75,8 +79,8 @@ void main()
     pt_vertex_data first_hit_vertex;
     sampled_material first_hit_material;
     vec3 sum_color = vec3(0,0,0);
-    vec4 sum_diffuse = vec4(0,0,0,-1);
-    vec4 sum_reflection = vec4(0,0,0,-1);
+    vec4 sum_diffuse = vec4(0,0,0,0);
+    vec4 sum_reflection = vec4(0,0,0,0);
 #if SAMPLES_PER_PASS != 1
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
 #else
@@ -115,8 +119,8 @@ void main()
 
     write_all_outputs(
         sum_color.rgb / SAMPLES_PER_PASS,
-        sum_diffuse.rgb / SAMPLES_PER_PASS,
-        sum_reflection.rgb / SAMPLES_PER_PASS,
+        sum_diffuse.rgba / SAMPLES_PER_PASS,
+        sum_reflection.rgba / SAMPLES_PER_PASS,
         first_hit_vertex,
         first_hit_material
     );

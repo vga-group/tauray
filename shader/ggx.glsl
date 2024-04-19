@@ -260,7 +260,7 @@ void ggx_bsdf_sample(
     float specular_cutoff = mix(1, fresnel_importance(view_dir.z, mat), (1-mat.metallic) * max_albedo);
     // Lower noise, but seems to bias slightly :(
     //float specular_cutoff = mix(1, max(fresnel.r, max(fresnel.g, fresnel.b)), (1-mat.metallic) * max_albedo);
-
+    
     // If the specular test fails, next up is the decision between diffuse /
     // transmissive. Again, arbitrary number that must be accounted for in the
     // PDF.

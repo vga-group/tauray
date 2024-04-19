@@ -1,0 +1,56 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_debug_printf : enable
+
+#include "svgf.glsl"
+
+layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray in_color;
+layout(binding = 1, set = 0, rgba32f) uniform image2DArray out_color;
+layout(binding = 2, set = 0, rgba32f) uniform image2DArray in_specular;
+layout(binding = 3, set = 0, rgba32f) uniform image2DArray out_specular;
+
+layout (local_size_x = 16, local_size_y = 16) in;
+void main()
+{
+    const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    if (!all(lessThan(p.xy, control.size))) return;
+
+    vec4 color = imageLoad(in_color, p);
+    vec4 specular = imageLoad(in_specular, p);
+
+#if PREFILTER_VARIANCE_ENABLED == 1
+    const int radius = 1;
+    float variance_sum = 0.0;
+    float w_sum = 0.0;
+
+    float variance_sum_spec = 0.0;
+    float w_sum_spec = 0.0;
+    for (int y = -radius; y <= radius; ++y)
+    {
+        for (int x = -radius; x <= radius; ++x)
+        {
+            ivec3 q = ivec3(p.xy + ivec2(x, y), p.z);
+            if (!is_in_screen(q.xy)) continue;
+
+            float kernel = gaussian_kernel[abs(x)][abs(y)];
+            
+            float c = imageLoad(in_color, q).a;
+            float spec_a = imageLoad(in_specular, q).a;
+
+            float w = kernel;
+
+            variance_sum += c * w;
+            w_sum += w;
+
+            variance_sum_spec += spec_a * w;
+            w_sum_spec += w;
+        }
+    }
+
+    color.a = variance_sum / w_sum;
+    specular.a = variance_sum_spec / w_sum_spec;
+
+#endif
+    imageStore(out_color, p, color);
+    imageStore(out_specular, p, specular);
+}

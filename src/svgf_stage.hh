@@ -48,21 +48,40 @@ private:
     compute_pipeline temporal_comp;
     push_descriptor_set estimate_variance_desc;
     compute_pipeline estimate_variance_comp;
+    push_descriptor_set firefly_suppression_desc;
+    compute_pipeline firefly_suppression_comp;
+    push_descriptor_set disocclusion_fix_desc;
+    compute_pipeline disocclusion_fix_comp;
+    push_descriptor_set prefilter_variance_desc;
+    compute_pipeline prefilter_variance_comp;    
+    push_descriptor_set preblur_desc;
+    compute_pipeline preblur_comp;    
+    push_descriptor_set demodulate_inputs_desc;
+    compute_pipeline demodulate_inputs_comp;
     options opt;
     gbuffer_target input_features;
     gbuffer_target prev_features;
     render_target atrous_diffuse_pingpong[2];
     render_target atrous_specular_pingpong[2];
     render_target moments_history[2];
+    render_target moments_history_specular[2];
     render_target svgf_color_hist;
     render_target svgf_spec_hist;
-    std::unique_ptr<texture> render_target_texture[8];
+    render_target specular_hit_distance_history;
+    render_target accumulated_specular_hit_distance;
+    render_target emissive; // Needed to store emissive for reconstruction later, since diffuse and specular don't have it and path tracer doesn't store it separately.
+    static constexpr uint32_t render_target_count = 13;
+    std::unique_ptr<texture> render_target_texture[render_target_count];
     timer svgf_timer;
+
+    sampler my_sampler;
 
     std::vector<vec4> jitter_history;
     gpu_buffer jitter_buffer;
     scene_stage* ss;
     uint32_t scene_state_counter;
+
+    gpu_buffer uniforms;
 };
 }
 

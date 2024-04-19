@@ -61,7 +61,7 @@ void get_camera_ray(
 vec3 get_camera_projection(in camera_data cam, vec3 world_pos)
 {
     vec4 projected_pos = cam.view_proj * vec4(world_pos, 1.0f);
-    vec3 uv = vec3(projected_pos.xy / projected_pos.w, projected_pos.z);
+    vec3 uv = vec3(projected_pos.xy / projected_pos.w, projected_pos.w);
     uv.xy = uv.xy * 0.5 + 0.5;
     return uv;
 }

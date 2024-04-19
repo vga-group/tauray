@@ -1,0 +1,192 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+#include "svgf.glsl"
+#include "color.glsl"
+#include "gbuffer.glsl"
+
+#include "scene.glsl"
+
+layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray accumulated_diffuse;
+layout(binding = 1, set = 0, rgba32f) uniform image2DArray filtered_diffuse;
+layout(binding = 2, set = 0, rgba32f) uniform image2DArray depth;
+layout(binding = 3, set = 0, rgba32f) uniform image2DArray normal;
+layout(binding = 4, set = 0, rgba32f) uniform image2DArray world_position;
+layout(binding = 5, set = 0, rgba32f) uniform image2DArray moments_histlen;
+layout(binding = 6, set = 0, rgba32f) uniform image2DArray diffuse_hist;
+layout(binding = 7, set = 0, rgba32f) uniform image2DArray spec_hist;
+layout(binding = 8, set = 0, rgba32f) uniform image2DArray accumulated_specular;
+layout(binding = 9, set = 0, rgba32f) uniform image2DArray specular_hist;
+layout(binding = 10, set = 0, rgba32f) uniform image2DArray filtered_specular;
+layout(binding = 11, set = 0, rgba32f) uniform readonly image2DArray accumulated_specular_hit_distance;
+layout(binding = 12, set = 0, rgba32f) uniform image2DArray specular_hit_distance_history;
+layout(binding = 13, set = 0, rgba32f) uniform image2DArray in_material;
+
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+#define PRINT_PLANE_DISTS 0
+
+void main()
+{
+    const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    if (!all(lessThan(p.xy, control.size))) return;
+
+    camera_pair cameras = camera.pairs[p.z];
+    camera_data curr_camera = cameras.current;
+
+    vec4 center = imageLoad(accumulated_diffuse, p);
+    vec4 center_specular = imageLoad(accumulated_specular, p);
+    vec4 averaged = center;
+    vec4 averaged_spec = center_specular;
+    vec3 moments = imageLoad(moments_histlen, p).xyz;
+    float history_length = moments.z;
+    float specular_hit_t = imageLoad(accumulated_specular_hit_distance, p).r;
+#if DISOCCLUSION_FIX_ENABLED == 1
+    if (history_length < 4.0f)
+    {
+        vec4 center_depth = imageLoad(depth, p);
+        vec3 center_normal = unpack_gbuffer_normal(imageLoad(normal, p).rg);
+        vec3 center_pos = imageLoad(world_position, p).xyz;
+        vec2 center_material = imageLoad(in_material, p).xy;
+        float center_roughness = center_material.y;
+        
+        float frustum_size = control.min_rect_dim_mul_unproject * abs(center_depth.x);
+        float inv_dist_to_point = 1.0 / frustum_size;
+        vec3 X_cam_rel = center_pos - curr_camera.origin.xyz;
+        //float NoX = abs(dot(X_cam_rel, center_normal)) * inv_dist_to_point;
+        vec3 Nv = (curr_camera.view * vec4(center_normal, 0.0)).xyz;
+        vec3 Xv = (curr_camera.view * vec4(center_pos, 1.0)).xyz;
+        vec3 Vv = normalize(-Xv);
+        vec3 V = normalize(curr_camera.origin.xyz - center_pos);
+        float NoV = abs(dot(Nv, Vv));
+        float NoX = dot(Nv, Xv);
+        const float plane_dist_sensitivity = 0.005;
+        float plane_dist_scale = inv_dist_to_point / plane_dist_sensitivity;
+
+        const float spec_half_angle = get_specular_lobe_half_angle(0.75, 1.0);
+
+        const int radius = 2;
+
+        float stride = exp2(3.0f - history_length) + 1.0;
+
+        vec4 color_sum = vec4(0.0);
+        vec4 spec_sum = vec4(0.0);
+
+        float w_sum = 0.0;
+        float w_sum_spec = 0.0;
+    #if PRINT_PLANE_DISTS == 1
+        float plane_dists[5 * 5];
+    #endif
+        int count = 0;
+        for (int y = -radius; y <= radius; ++y)
+        {
+            for (int x = -radius; x <= radius; ++x)
+            {
+                count++;
+                //if (x == 0 && y == 0) continue; // Skip current pixel
+
+                ivec3 q = ivec3(p.xy + ivec2(x, y) * stride, p.z);
+                if (!is_in_screen(q.xy)) continue;
+
+                vec4 c = imageLoad(accumulated_diffuse, q);
+                vec4 spec = imageLoad(accumulated_specular, q);
+                if (any(isnan(c)) || any(isnan(spec))) continue;
+
+                vec3 X = imageLoad(world_position, q).xyz;
+                vec3 Xvs = (curr_camera.view * vec4(X, 1.0)).xyz;
+                vec3 Vs = normalize(curr_camera.origin.xyz - X);
+                vec3 Ns = unpack_gbuffer_normal(imageLoad(normal, q).rg);
+                float Nvs = dot(Nv, Xvs);
+                float Z = imageLoad(depth, q).x;
+                vec2 sample_material = imageLoad(in_material, q).xy;
+                float sample_roughness = sample_material.y;
+
+    #if 1
+                float plane_dist = abs(dot((X - center_pos), center_normal) * plane_dist_scale);
+    #else
+                float plane_dist = abs(Nvs - NoX) * plane_dist_scale; // View space version, can be faster if position is reconstructed from linear depth
+    #endif
+
+                float plane_dist_weight = smoothstep(1, 0, plane_dist);
+
+                float ndotn = saturate(dot(Ns, center_normal));
+                float angle = acos(ndotn);
+                float angle_percentage = angle / spec_half_angle;
+                float normal_weight = exp(-3.0 * angle_percentage);
+                float w = 1.0;
+    #if DISOCCLUSION_FIX_USE_EDGE_STOPPERS == 1
+                w *= plane_dist_weight;
+
+                float w_spec = w;
+
+                w *= normal_weight;
+
+                float relax_lobe_weight = 0.5;
+                vec3 sample_view = normalize(curr_camera.origin.xyz - X);
+                vec3 relaxed_view = normalize(mix(sample_view, V, relax_lobe_weight));
+                float lobe_similarity = specular_lobe_similarity(V, center_normal, center_roughness, relaxed_view, Ns, sample_roughness);
+                float lobe_weight = pow(lobe_similarity, 128.0);
+                w_spec *= lobe_weight;
+
+    #endif
+
+    #if PRINT_PLANE_DISTS == 1
+                plane_dists[count - 1] = normal_weight;
+    #endif
+                color_sum += c * vec4(vec3(w), w * w);
+                w_sum += w;
+
+                spec_sum += spec * vec4(vec3(w_spec), w_spec * w_spec);
+                w_sum_spec += w_spec;
+            }
+        }
+
+    #if PRINT_PLANE_DISTS == 1
+        if (p.xy == ivec2(640, 360))
+        {
+            debugPrintfEXT("\n%f %f %f %f %f\n%f %f %f %f %f\n%f %f %f %f %f\n%f %f %f %f %f\n%f %f %f %f %f\n", 
+                plane_dists[0],
+                plane_dists[1],
+                plane_dists[2],
+                plane_dists[3],
+                plane_dists[4],
+                plane_dists[5],
+                plane_dists[6],
+                plane_dists[7],
+                plane_dists[8],
+                plane_dists[9],
+                plane_dists[10],
+                plane_dists[11],
+                plane_dists[12],
+                plane_dists[13],
+                plane_dists[14],
+                plane_dists[15],
+                plane_dists[16],
+                plane_dists[17],
+                plane_dists[18],
+                plane_dists[19],
+                plane_dists[20],
+                plane_dists[21],
+                plane_dists[22],
+                plane_dists[23],
+                plane_dists[24]
+            );
+        }
+
+    #endif
+
+        w_sum = max(w_sum, 1e-4);
+        w_sum_spec = max(w_sum_spec, 1e-4);
+        averaged = color_sum / vec4(vec3(w_sum), w_sum * w_sum);
+        averaged_spec = spec_sum / vec4(vec3(w_sum_spec), w_sum_spec * w_sum_spec);
+    }
+#endif
+
+
+    imageStore(diffuse_hist, p, averaged);
+    imageStore(filtered_diffuse, p, averaged);
+    imageStore(filtered_specular, p, averaged_spec);
+    imageStore(specular_hist, p, averaged_spec);
+    imageStore(specular_hit_distance_history, p, vec4(vec3(specular_hit_t), 1.0));
+}

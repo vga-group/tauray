@@ -1,6 +1,8 @@
 #ifndef GBUFFER_GLSL
 #define GBUFFER_GLSL
 #include "material.glsl"
+#include "math.glsl"
+#extension GL_EXT_debug_printf : enable
 
 //==============================================================================
 // Color
@@ -515,7 +517,8 @@ layout(location = LINEAR_DEPTH_TARGET_LOCATION) out vec4 linear_depth_target;
 
 void write_gbuffer_linear_depth()
 {
-    const float linear_depth = gl_FragCoord.z / gl_FragCoord.w;
+    //const float linear_depth = gl_FragCoord.z / gl_FragCoord.w;
+    const float linear_depth = 1.0 / gl_FragCoord.w; // Viewspace Z coordinate
     const vec2 grad = vec2(dFdx(linear_depth), dFdy(linear_depth));
     linear_depth_target = vec4(linear_depth, grad, 0.0);
 }

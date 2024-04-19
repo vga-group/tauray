@@ -10,23 +10,32 @@
 layout (local_size_x = 16, local_size_y = 16) in;
 
 layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray in_color;
-layout(binding = 1, set = 0, rg16_snorm) uniform readonly image2DArray in_normal;
-layout(binding = 2, set = 0, rgba16f) uniform readonly image2DArray in_albedo;
-layout(binding = 3, set = 0, rg16_snorm) uniform readonly image2DArray previous_normal;
-layout(binding = 4, set = 0, rg32f) uniform readonly image2DArray in_screen_motion;
-layout(binding = 5, set = 0, rgba32f) uniform readonly image2DArray previous_color;
-layout(binding = 6, set = 0, rgba32f) uniform image2DArray out_color;
-layout(binding = 7, set = 0, rgba32f) uniform readonly image2DArray in_linear_depth;
-layout(binding = 8, set = 0, rgba32f) uniform readonly image2DArray previous_linear_depth;
-layout(binding = 9, set = 0, rgba32f) uniform readonly image2DArray previous_moments;
-layout(binding = 10, set = 0, rgba32f) uniform image2DArray out_moments;
-layout(binding = 11, set = 0, rgba32f) uniform readonly image2DArray in_diffuse;
-layout(binding = 12, set = 0, rgba32f) uniform readonly image2DArray previous_specular;
-layout(binding = 13, set = 0, rgba32f) uniform image2DArray out_specular;
-layout(binding = 14) buffer jitter_info_buffer
+layout(binding = 1, set = 0, rgba32f) uniform readonly image2DArray in_specular;
+layout(binding = 2, set = 0, rg16_snorm) uniform readonly image2DArray in_normal;
+layout(binding = 3, set = 0, rgba16f) uniform readonly image2DArray in_albedo;
+layout(binding = 4, set = 0) uniform sampler2DArray previous_normal;
+layout(binding = 5, set = 0, rg32f) uniform readonly image2DArray in_screen_motion;
+layout(binding = 6, set = 0) uniform sampler2DArray previous_color;
+layout(binding = 7, set = 0, rgba32f) uniform image2DArray out_color;
+layout(binding = 8, set = 0) uniform sampler2DArray in_linear_depth;
+layout(binding = 9, set = 0) uniform sampler2DArray previous_linear_depth;
+layout(binding = 10, set = 0) uniform sampler2DArray previous_moments;
+layout(binding = 11, set = 0, rgba32f) uniform image2DArray out_moments;
+layout(binding = 12, set = 0, rgba32f) uniform readonly image2DArray in_diffuse;
+layout(binding = 13, set = 0) uniform sampler2DArray previous_specular;
+layout(binding = 14, set = 0, rgba32f) uniform image2DArray out_specular;
+layout(binding = 15) buffer jitter_info_buffer
 {
     vec4 jitter[];
 } jitter_info;
+layout(binding = 16, set = 0, rgba32f) uniform image2DArray in_material;
+layout(binding = 17, set = 0, rgba32f) uniform image2DArray in_world_pos;
+layout(binding = 18, set = 0) uniform sampler2DArray specular_hit_distance_history;
+layout(binding = 19, set = 0, rgba32f) uniform image2DArray previous_world_pos;
+layout(binding = 20, set = 0, rgba32f) uniform image2DArray out_specular_hit_distance;
+layout(binding = 21, set = 0) uniform sampler2DArray previous_material;
+layout(binding = 22, set = 0) uniform sampler2DArray previous_moments_specular;
+layout(binding = 23, set = 0, rgba32f) uniform image2DArray out_moments_specular;
 
 bool temporal_reprojection_is_valid(ivec3 p, float z, float prev_z, vec3 normal, vec3 prev_normal, float motion_z)
 {
@@ -45,6 +54,594 @@ bool temporal_reprojection_is_valid(ivec3 p, float z, float prev_z, vec3 normal,
     return true;
 }
 
+struct Bilinear 
+{ 
+    vec2 origin;
+    vec2 weights; 
+};
+
+Bilinear get_bilinear_filter( vec2 uv, vec2 tex_size )
+{
+    Bilinear result;
+    result.origin = floor( uv * tex_size - 0.5 );
+    result.weights = fract( uv * tex_size - 0.5 );
+    return result;
+}
+
+vec4 get_bilinear_weights(Bilinear bilinear)
+{
+    vec4 bilinear_weights = {
+        (1.0 - bilinear.weights.x) * (1.0 - bilinear.weights.y), (bilinear.weights.x) * (1.0 - bilinear.weights.y),
+        (1.0 - bilinear.weights.x) * (bilinear.weights.y), (bilinear.weights.x) * (bilinear.weights.y)
+    };
+
+    return bilinear_weights;
+}
+
+vec3 rgb_to_ycocg(vec3 rgb)
+{
+    const mat3 m = mat3(vec3(0.25, 0.5, -0.25), vec3(0.5, 0.0, 0.5), vec3(0.25, -0.5, -0.25));
+    return m * rgb;
+}
+
+vec3 ycocg_to_rgb(vec3 ycocg)
+{
+    mat3 m = mat3(vec3(1.0, 1.0, 1.0), vec3(1.0, 0.0, -1.0), vec3(-1.0, 1.0, -1.0));
+    return m * ycocg;
+}
+
+vec4 bicubic_filter(sampler2DArray tex, vec3 uv, vec4 render_target_params)
+{
+    vec2 pos = render_target_params.zw * uv.xy; // zw: width and height
+    vec2 center_pos = floor(pos - 0.5) + 0.5; // 
+    vec2 f = pos - center_pos;
+    vec2 f2 = f * f;
+    vec2 f3 = f * f2;
+
+    float c = 0.5;
+    vec2 w0 =        -c  * f3 +  2.0 * c        * f2 - c * f;
+    vec2 w1 =  (2.0 - c) * f3 - (3.0 - c)       * f2         + 1.0;
+    vec2 w2 = -(2.0 - c) * f3 + (3.0 - 2.0 * c) * f2 + c * f;
+    vec2 w3 =         c  * f3 -               c * f2;
+
+    vec2 w12 = w1 + w2;
+    vec2 tc12 = render_target_params.xy * (center_pos + w2 / w12);
+    vec4 center_color = texture(tex, vec3(tc12.x, tc12.y, uv.z));
+
+    vec2 tc0 = render_target_params.xy * (center_pos - 1.0);
+    vec2 tc3 = render_target_params.xy * (center_pos + 2.0);
+    vec4 color = texture(tex, vec3(tc12.x, tc0.y, uv.z)) * (w12.x * w0.y) + 
+        texture(tex, vec3(tc0.x, tc12.y, uv.z)) * (w0.x * w12.y) +
+        center_color * (w12.x * w12.y) + 
+        texture(tex, vec3(tc3.x, tc12.y, uv.z)) * (w3.x * w12.y) +
+        texture(tex, vec3(tc12.x, tc3.y, uv.z)) * (w12.x * w3.y);
+
+    float total_w =  (w12.x * w0.y) + (w0.x * w12.y) + (w12.x * w12.y) + (w3.x * w12.y) + (w12.x * w3.y);
+
+    return color / total_w;
+}
+
+float check_plane_distance(vec3 current_world_pos, vec3 previous_world_pos, vec3 normal, float threshold)
+{
+    float plane_dist = abs(dot(current_world_pos - previous_world_pos, normal));
+    return plane_dist < threshold ? 1.0 : 0.0;
+}
+
+vec3 get_x_virtual(vec3 X, vec3 V, float NoV, float roughness, float hit_dist)
+{
+    float f = get_specular_dominant_factor(NoV, roughness);
+    return X - V * hit_dist * f;
+}
+
+float compute_parallax(vec3 V, vec3 V_prev)
+{
+    float cosa = saturate(dot(V, V_prev));
+    // parallax = tan(acos(dot(v, v_prev)))
+    // tana = sina/cosa
+    // cos^2 + sin^2 = 1 => sin = sqrt(1 - cos^2)
+    float parallax = sqrt(1.0 - cosa * cosa) / max(cosa, 1e-6);
+
+    // Normalize to 60 fps? 
+    parallax *= 60.0; 
+    return parallax;
+}
+
+#define SPEC_ACCUM_BASE_POWER 0.5
+#define SPEC_ACCUM_CURVE 1.0
+
+// ReBLUR article specifies roughness as "Linear roughness"
+// Our roughness is the alpha used for shading equations, which is the square of linear roughness
+// This function has been adjusted for the differences in convention
+float get_parallax_corrected_specular_history_length(float history_length, float roughness, float NoV, float parallax)
+{
+    float acos01sq = saturate(1.0 - NoV);
+    float a = pow(acos01sq, SPEC_ACCUM_CURVE);
+    float b = 1.1 + roughness; // Is this linear roughness or actual roughness?
+    float parallax_sensitivity = (b + a) / (b - a);
+    float power_scale = 1.0 + parallax * parallax_sensitivity;
+    float f = 1.0 - exp2(-200.0 * roughness);
+    f *= pow(sqrt(roughness), SPEC_ACCUM_BASE_POWER * power_scale);
+    float adjusted_max_hist_len = MAX_ACCUMULATED_FRAMES * f;
+
+    return min(adjusted_max_hist_len, history_length);
+}
+
+#if 1
+void main()
+{
+    const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    if(all(lessThan(p.xy, control.size)))
+    {
+        vec4 jitter_history = jitter_info.jitter[p.z];
+        vec2 cur_jitter = jitter_history.xy;
+        vec2 prev_jitter = jitter_history.zw;
+
+        vec4 full_motion = imageLoad(in_screen_motion, p);
+        vec2 motion = full_motion.xy;
+        // Remove jitter caused by TAA
+        vec2 unjittered_motion = motion - (cur_jitter - prev_jitter)*0.5f;
+        vec2 pixel_motion = vec2(unjittered_motion.x, 1.0f - unjittered_motion.y) * vec2(control.size)- vec2(0.5);
+
+        vec3 normal = unpack_gbuffer_normal(imageLoad(in_normal, p).rg);
+        vec4 depth = texelFetch(in_linear_depth, p, 0);
+        vec3 uv = vec3((p.xy + 0.5) / control.size, p.z);
+        uv.y = 1.0 - uv.y;
+        //vec4 depth = imageLoad(in_linear_depth, p);
+        vec4 prev_color = vec4(0.0);
+        vec4 prev_diffuse = vec4(0.0);
+        vec4 prev_specular = vec4(0.0);
+        vec3 prev_moments = vec3(0.0);
+
+        camera_pair cameras = camera.pairs[p.z];
+        camera_data curr_camera = cameras.current;
+        camera_data prev_camera = cameras.previous;
+        vec3 current_world_pos = imageLoad(in_world_pos, p).xyz;
+        vec4 camera_space = curr_camera.view * vec4(current_world_pos, 1.0);
+        vec2 ndc = ((p.xy + 0.5) / control.size) * 2.0 - 1.0;
+        ndc.y *= -1.0;
+        float aspect = curr_camera.proj_inverse[0][0] / curr_camera.proj_inverse[1][1];
+        float tan_half_fov_y = curr_camera.proj_inverse[1][1];
+        float prev_view_z = full_motion.z;
+        prev_view_z = max(1e-6, prev_view_z);
+        vec3 prev_uv = vec3(unjittered_motion.x, 1.0 - unjittered_motion.y, p.z);
+        vec3 curr_uv = vec3((p.xy + 0.50) / control.size, p.z);
+        Bilinear bilinear = get_bilinear_filter(prev_uv.xy, vec2(control.size));
+        vec4 bilinear_weights = get_bilinear_weights(bilinear);
+        if (any(isnan(bilinear_weights))) bilinear_weights = vec4(0.0);
+
+        float frustum_size = control.min_rect_dim_mul_unproject * abs(depth.x);
+        float inv_dist_to_point = 1.0 / frustum_size;
+        const float occlusion_threshold = 0.005;
+
+        vec3 Xv_prev = vec3(prev_view_z * tan_half_fov_y * (unjittered_motion * 2.0 - 1.0) * vec2(aspect, 1.0), -prev_view_z);
+        vec3 X_prev = (prev_camera.view_inverse * vec4(Xv_prev, 1.0)).xyz;
+        vec3 X_prev_cam_rel = (X_prev - curr_camera.origin.xyz);
+        vec3 V_prev = normalize(prev_camera.origin.xyz - X_prev);
+
+        float view_z = depth.x;
+
+        float in_screen = float(prev_uv == clamp(prev_uv, 0.0, 1.0));
+        float threshold = mix(-1.0, occlusion_threshold, in_screen);
+        float NoXprev = abs(dot(X_prev_cam_rel, normal)) * inv_dist_to_point;
+        float Zprev = abs(Xv_prev.z);
+        float NoVprev = NoXprev / prev_view_z;
+
+        vec3 V = normalize(curr_camera.origin.xyz - current_world_pos);
+        float NoV = abs(dot(normal, V));
+
+        // For bicubic
+        vec4 prev_depths00 = textureGather(previous_linear_depth, vec3((bilinear.origin) / control.size, p.z)).wzxy;
+        vec4 prev_depths10 = textureGather(previous_linear_depth, vec3((bilinear.origin + vec2(2.0, 0.0)) / control.size, p.z)).wzxy;
+        vec4 prev_depths01 = textureGather(previous_linear_depth, vec3((bilinear.origin + vec2(0.0, 2.0)) / control.size, p.z)).wzxy;
+        vec4 prev_depths11 = textureGather(previous_linear_depth, vec3((bilinear.origin + vec2(2.0, 2.0)) / control.size, p.z)).wzxy;
+
+        vec3 plane_dist00 = abs(NoVprev * prev_depths00.yzw - NoXprev);
+        vec3 plane_dist10 = abs(NoVprev * prev_depths10.xzw - NoXprev);
+        vec3 plane_dist01 = abs(NoVprev * prev_depths01.xyw - NoXprev);
+        vec3 plane_dist11 = abs(NoVprev * prev_depths11.xyz - NoXprev);
+
+        if (any(isnan(plane_dist00))) plane_dist00 = vec3(1.0);
+        if (any(isnan(plane_dist10))) plane_dist10 = vec3(1.0);
+        if (any(isnan(plane_dist01))) plane_dist01 = vec3(1.0);
+        if (any(isnan(plane_dist11))) plane_dist11 = vec3(1.0);
+
+        vec3 valid00 = step(plane_dist00, vec3(threshold));
+        vec3 valid10 = step(plane_dist10, vec3(threshold));
+        vec3 valid01 = step(plane_dist01, vec3(threshold));
+        vec3 valid11 = step(plane_dist11, vec3(threshold));
+
+        bool allow_bicubic = dot(valid00, vec3(1.0)) + dot(valid10, vec3(1.0)) + dot(valid01, vec3(1.0)) + dot(valid11, vec3(1.0)) == 12.0;
+        // Bilinear params
+        vec4 valids = vec4(valid00.z, valid10.y, valid01.y, valid11.x);
+        vec4 occlusion_weights = bilinear_weights * valids;
+        float w_sum = dot(occlusion_weights, vec4(1.0));
+#if TEMPORAL_ACCUMULATION_USE_BICUBIC_FILTER == 1
+        if (allow_bicubic)
+        {
+            vec4 rt_params = vec4(1.0 / vec2(control.size), vec2(control.size));
+            prev_color = bicubic_filter(previous_color, prev_uv, rt_params);
+            prev_color = max(vec4(0.0), prev_color);
+
+            prev_moments = bicubic_filter(previous_moments, prev_uv, rt_params).xyz;
+            prev_moments = max(vec3(0.0), prev_moments);
+        }
+        else
+#endif
+        {        
+            { // Diffuse
+                vec4 s00 = texelFetch(previous_color, ivec3(bilinear.origin + vec2(0, 0), p.z), 0);
+                vec4 s10 = texelFetch(previous_color, ivec3(bilinear.origin + vec2(1, 0), p.z), 0);
+                vec4 s01 = texelFetch(previous_color, ivec3(bilinear.origin + vec2(0, 1), p.z), 0);
+                vec4 s11 = texelFetch(previous_color, ivec3(bilinear.origin + vec2(1, 1), p.z), 0);
+
+                if (any(isnan(s00))) s00 = vec4(0.0);
+                if (any(isnan(s10))) s10 = vec4(0.0);
+                if (any(isnan(s01))) s01 = vec4(0.0);
+                if (any(isnan(s11))) s11 = vec4(0.0);
+
+                prev_color = s00 * occlusion_weights.x + s10 * occlusion_weights.y + s01 * occlusion_weights.z + s11 * occlusion_weights.w;
+                //prev_color = vec4(1.0, 0.0, 1.0, 1.0);
+                
+                prev_color = w_sum < 0.001 ? vec4(0.0) : prev_color / w_sum;
+            }
+
+            { // Diffuse moments and history
+                vec3 h00 = texelFetch(previous_moments, ivec3(bilinear.origin + vec2(0, 0), p.z), 0).rgb;
+                vec3 h10 = texelFetch(previous_moments, ivec3(bilinear.origin + vec2(1, 0), p.z), 0).rgb;
+                vec3 h01 = texelFetch(previous_moments, ivec3(bilinear.origin + vec2(0, 1), p.z), 0).rgb;
+                vec3 h11 = texelFetch(previous_moments, ivec3(bilinear.origin + vec2(1, 1), p.z), 0).rgb;
+
+                if (any(isnan(h00))) h00 = vec3(0.0);
+                if (any(isnan(h10))) h10 = vec3(0.0);
+                if (any(isnan(h01))) h01 = vec3(0.0);
+                if (any(isnan(h11))) h11 = vec3(0.0);
+
+                prev_moments = (h00 * occlusion_weights.x + h10 * occlusion_weights.y + h01 * occlusion_weights.z + h11 * occlusion_weights.w);
+
+                prev_moments = w_sum < 0.001 ? vec3(0.0) : prev_moments / w_sum;
+            }
+        }
+
+        float history_length = prev_moments.z;
+
+        vec4 current_color = imageLoad(in_color, p);
+        vec4 current_diffuse = imageLoad(in_diffuse, p);
+        vec4 current_albedo = imageLoad(in_albedo, p);
+        vec4 current_specular = imageLoad(in_specular, p);
+        vec2 metallic_roughness = imageLoad(in_material, p).xy;
+        if (any(isnan(current_color))) current_color = vec4(0.0);
+        if (any(isnan(current_diffuse))) current_diffuse = vec4(0.0);
+        if (any(isnan(current_specular))) current_specular = vec4(0.0);
+
+        history_length += 1.0;
+        history_length = min(history_length, MAX_ACCUMULATED_FRAMES);
+
+
+        // Reduce amount of glancing angle speed stripes
+        float footprint_quality = allow_bicubic ? 1.0 : w_sum;
+        {
+            vec3 Vprev = normalize(prev_camera.origin.xyz - X_prev);
+            float NoVprev = abs(dot(normal, Vprev));
+            float size_quality = (NoVprev + 1e-3) / (NoV + 1e-3);
+            size_quality *= size_quality;
+            size_quality *= size_quality;
+
+            footprint_quality *= mix(0.1, 1.0, saturate(size_quality));
+        }
+
+        if (footprint_quality < 1.0)
+        {
+            history_length *= sqrt(footprint_quality);
+            history_length = max(history_length, 1.0);
+        }
+
+#if TEMPORAL_ACCUMULATION_ENABLED == 0
+        history_length = 1.0;
+#endif
+        vec3 out_spec = current_specular.rgb;
+
+        float alpha = 1.0 / history_length;
+        float alpha_moments = 1.0 / history_length;
+        
+        vec2 moments;
+        moments.x = rgb_to_luminance(current_diffuse.rgb);
+        moments.y = moments.x * moments.x;
+        moments = mix(prev_moments.xy, moments, alpha);
+
+        vec3 out_diffuse = mix(prev_color.rgb, current_diffuse.rgb, alpha);
+        float variance = max(1e-8, moments.y - moments.x * moments.x);
+
+        float out_specular_inv_hit_distance = current_specular.a;
+
+        vec2 moments_specular;
+        moments_specular.x = rgb_to_luminance(current_specular.rgb);
+        moments_specular.y = moments_specular.x * moments_specular.x;
+
+        vec2 out_moments_spec = moments_specular;
+        float specular_history_length = history_length;
+        //===========================================================
+        // Specular accumulation
+        //===========================================================
+        {
+            float inv_specular_hit_dist = current_specular.a;
+            const int radius = 1;
+            for (int y = -radius; y <= radius; ++y)
+            {
+                for (int x = -radius; x <= radius; ++x)
+                {
+                    ivec3 q = ivec3(p.xy + ivec2(x, y), p.z);
+                    if (!is_in_screen(q.xy)) continue;
+
+                    vec4 s = imageLoad(in_specular, q);
+                    inv_specular_hit_dist = max(inv_specular_hit_dist, s.a);
+                }
+            }
+            out_specular_inv_hit_distance = inv_specular_hit_dist;
+
+            //===========================================================
+            // Virtual motion based specular
+            //===========================================================
+
+            float specular_hit_dist = inv_specular_hit_dist != 0.0 ? 1.0 / inv_specular_hit_dist : 1e6;
+            vec3 V = normalize(curr_camera.origin.xyz - current_world_pos);
+            vec3 Xvirtual = get_x_virtual(current_world_pos, V, NoV, metallic_roughness.g, specular_hit_dist);
+
+            vec4 homo_prev = prev_camera.view_proj * vec4(Xvirtual, 1.0);
+            homo_prev.xyz /= homo_prev.w;
+
+            vec2 pixel_uv_virtual_prev = homo_prev.xy * 0.5 + 0.5;
+            pixel_uv_virtual_prev.y = 1.0 - pixel_uv_virtual_prev.y;
+
+            Bilinear bilinear_virtual_motion = get_bilinear_filter(pixel_uv_virtual_prev.xy, vec2(control.size));
+            vec4 bilinear_weights_virtual_motion = get_bilinear_weights(bilinear_virtual_motion);
+
+            float parallax = compute_parallax(V, V_prev);
+
+            vec4 specular_prev_vm = vec4(0.0);
+            vec4 accumulated_specular_vm = vec4(0.0);
+            vec2 specular_moments_prev_vm = vec2(0.0);
+            vec2 accumulated_moments_specular_vm = vec2(0.0);
+            float accumulated_hit_dist_vm = 0.0;
+
+            bool virtual_motion_valid = false;
+
+            float is_in_screen_virtual = float(saturate(pixel_uv_virtual_prev) == pixel_uv_virtual_prev);
+            float virtual_history_confidence = is_in_screen_virtual;
+            vec3 prev_normal_vm = vec3(0.0);
+            vec2 prev_material = vec2(0.0);
+
+            float virtual_motion_amount = get_specular_dominant_factor(NoV, metallic_roughness.g);
+            virtual_motion_amount *= is_in_screen_virtual;
+            float history_length_vm = history_length;
+            if (is_in_screen_virtual == 1.0)
+            {
+                vec4 valid = vec4(0.0);
+
+                float threshold = float(is_in_screen(ivec2(bilinear_virtual_motion.origin)));
+                threshold *= occlusion_threshold * depth.x;
+                vec3 prev_world_pos00 = imageLoad(previous_world_pos, ivec3(bilinear_virtual_motion.origin + vec2(0, 0), p.z)).rgb;
+                valid.x = check_plane_distance(current_world_pos, prev_world_pos00, normal, threshold);
+                vec3 prev_world_pos10 = imageLoad(previous_world_pos, ivec3(bilinear_virtual_motion.origin + vec2(1, 0), p.z)).rgb;
+                valid.y = check_plane_distance(current_world_pos, prev_world_pos10, normal, threshold);
+                vec3 prev_world_pos01 = imageLoad(previous_world_pos, ivec3(bilinear_virtual_motion.origin + vec2(0, 1), p.z)).rgb;
+                valid.z = check_plane_distance(current_world_pos, prev_world_pos01, normal, threshold);
+                vec3 prev_world_pos11 = imageLoad(previous_world_pos, ivec3(bilinear_virtual_motion.origin + vec2(1, 1), p.z)).rgb;
+                valid.w = check_plane_distance(current_world_pos, prev_world_pos01, normal, threshold);
+
+                virtual_motion_valid = all(equal(valid, vec4(1.0)));
+                virtual_motion_amount *= float(virtual_motion_valid);
+
+                if (virtual_motion_valid)
+                {
+                    if (allow_bicubic)
+                    {
+                        vec4 rt_params = vec4(1.0 / vec2(control.size), vec2(control.size));
+                        specular_prev_vm = bicubic_filter(previous_specular, vec3(pixel_uv_virtual_prev, p.z), rt_params);
+                        specular_moments_prev_vm = bicubic_filter(previous_moments_specular, vec3(pixel_uv_virtual_prev, p.z), rt_params).xy;
+
+                        if (any(isnan(specular_prev_vm))) specular_prev_vm = vec4(0.0);
+                        if (any(isnan(specular_moments_prev_vm))) specular_moments_prev_vm = vec2(0.0);
+                    }
+                    else
+                    {
+                        { // Specular illmuination
+                            vec4 s00 = texelFetch(previous_specular, ivec3(bilinear_virtual_motion.origin + vec2(0, 0), p.z), 0);
+                            vec4 s10 = texelFetch(previous_specular, ivec3(bilinear_virtual_motion.origin + vec2(1, 0), p.z), 0);
+                            vec4 s01 = texelFetch(previous_specular, ivec3(bilinear_virtual_motion.origin + vec2(0, 1), p.z), 0);
+                            vec4 s11 = texelFetch(previous_specular, ivec3(bilinear_virtual_motion.origin + vec2(1, 1), p.z), 0);
+
+                            if (any(isnan(s00))) s00 = vec4(0.0);
+                            if (any(isnan(s10))) s10 = vec4(0.0);
+                            if (any(isnan(s01))) s01 = vec4(0.0);
+                            if (any(isnan(s11))) s11 = vec4(0.0);
+
+                            specular_prev_vm = s00 * bilinear_weights_virtual_motion.x + s10 * bilinear_weights_virtual_motion.y + s01 * bilinear_weights_virtual_motion.z + s11 * bilinear_weights_virtual_motion.w;
+                        }
+                        { // Specular moments
+                            vec2 s00 = texelFetch(previous_moments_specular, ivec3(bilinear_virtual_motion.origin + vec2(0, 0), p.z), 0).xy;
+                            vec2 s10 = texelFetch(previous_moments_specular, ivec3(bilinear_virtual_motion.origin + vec2(1, 0), p.z), 0).xy;
+                            vec2 s01 = texelFetch(previous_moments_specular, ivec3(bilinear_virtual_motion.origin + vec2(0, 1), p.z), 0).xy;
+                            vec2 s11 = texelFetch(previous_moments_specular, ivec3(bilinear_virtual_motion.origin + vec2(1, 1), p.z), 0).xy;
+
+                            if (any(isnan(s00))) s00 = vec2(0.0);
+                            if (any(isnan(s10))) s10 = vec2(0.0);
+                            if (any(isnan(s01))) s01 = vec2(0.0);
+                            if (any(isnan(s11))) s11 = vec2(0.0);
+
+                            specular_moments_prev_vm = s00 * bilinear_weights_virtual_motion.x + s10 * bilinear_weights_virtual_motion.y + s01 * bilinear_weights_virtual_motion.z + s11 * bilinear_weights_virtual_motion.w;
+                        }
+                    }
+
+                    float prev_reflection_inv_hit_dist_vm = texture(specular_hit_distance_history, vec3(pixel_uv_virtual_prev, p.z)).r;
+
+                    vec4 prev_normal_r = textureGather(previous_normal, vec3(pixel_uv_virtual_prev, p.z), 0).wzxy;
+                    vec4 prev_normal_g = textureGather(previous_normal, vec3(pixel_uv_virtual_prev, p.z), 1).wzxy;
+                    vec3 n00 = unpack_gbuffer_normal(vec2(prev_normal_r.x, prev_normal_g.x));
+                    vec3 n10 = unpack_gbuffer_normal(vec2(prev_normal_r.y, prev_normal_g.y));
+                    vec3 n01 = unpack_gbuffer_normal(vec2(prev_normal_r.z, prev_normal_g.z));
+                    vec3 n11 = unpack_gbuffer_normal(vec2(prev_normal_r.w, prev_normal_g.w));
+                    prev_normal_vm = n00 * bilinear_weights_virtual_motion.x + n10 * bilinear_weights_virtual_motion.y + n01 * bilinear_weights_virtual_motion.z + n11 * bilinear_weights_virtual_motion.w;
+
+                    prev_material = texture(previous_material, vec3(pixel_uv_virtual_prev, p.z)).rg;
+
+                    vec3 V_prev_vm = normalize(prev_camera.origin.xyz - Xvirtual);
+
+                    // Use same view vector to only compare difference caused by normal and roughness
+                    // Changing the view vector does not work since any changes discards everything for smooth surfaces.
+                    // This therefore assumes zero parallax
+                    float lobe_similarity = specular_lobe_similarity(V, normal, metallic_roughness.g, V, prev_normal_vm, prev_material.g);
+                    float normal_roughness_weight = pow(lobe_similarity, 16.0);
+        
+                    virtual_history_confidence *= normal_roughness_weight;
+
+                    float prev_hit_dist = prev_reflection_inv_hit_dist_vm != 0.0 ? 1.0 / prev_reflection_inv_hit_dist_vm : 1e6;
+
+                    // I don't have much confidence for this heuristic.
+                    float hit_dist_max = max(prev_hit_dist, specular_hit_dist);
+                    float hit_dist_delta = abs(prev_hit_dist - specular_hit_dist) / (hit_dist_max + view_z);
+                    // What the fuck is this stuff?
+                    float threshold_min = 0.02 * smoothstep(0.2, 0.01, parallax / 60.0);
+                    float threshold_max = mix(0.01, 0.25, metallic_roughness.g) + threshold_min;
+                    float hit_dist_weight = smoothstep(threshold_max, threshold_min, hit_dist_delta);
+
+                    // This is super aggressive. Might this be because we have diffuse and specular hit distances mixed in and the diffuse rays cause the confidence to get lower?
+                    virtual_history_confidence *= hit_dist_weight;
+                    
+                    float A_virt = get_parallax_corrected_specular_history_length(history_length, metallic_roughness.g, NoV, 0.0 /* parallax */);
+                    A_virt = history_length;
+                    A_virt = max(1.0, A_virt);
+                    float A_min = min(A_virt, pow(metallic_roughness.g, 0.25) * 4.0) + 1.0;
+                    float a = mix(1.0 / A_min, 1.0 / A_virt, virtual_history_confidence);
+                    //a = 1.0 / history_length;
+
+#if TEMPORAL_ACCUMULATION_ENABLED == 0
+                    a = 1.0;
+#endif
+
+                    history_length_vm = 1.0 / a;
+
+                    accumulated_specular_vm = mix(specular_prev_vm.rgba, current_specular.rgba, a);
+                    accumulated_moments_specular_vm = mix(specular_moments_prev_vm.xy, moments_specular, a);
+                    accumulated_hit_dist_vm = mix(prev_reflection_inv_hit_dist_vm, inv_specular_hit_dist, a);
+                }
+
+            }
+
+            //===========================================================
+            // Surface motion based specular
+            //===========================================================
+
+            // Reuse diffuse disocclusion tests
+            vec4 specular_prev_sm = vec4(0.0);
+            vec2 specular_moments_prev_sm = vec2(0.0);
+            float specular_hit_dist_prev_sm = 0.0;
+            if (allow_bicubic)
+            {
+                vec4 rt_params = vec4(1.0 / vec2(control.size), vec2(control.size));
+                specular_prev_sm = bicubic_filter(previous_specular, prev_uv, rt_params);
+                specular_moments_prev_sm = bicubic_filter(previous_moments_specular, prev_uv, rt_params).xy;
+
+                if (any(isnan(specular_prev_sm))) specular_prev_sm = vec4(0.0);
+                if (any(isnan(specular_moments_prev_sm))) specular_moments_prev_sm = vec2(0.0);
+            }
+            else
+            {
+                // Specular illumination
+                {
+                    vec4 s00 = texelFetch(previous_specular, ivec3(bilinear.origin + vec2(0, 0), p.z), 0);
+                    vec4 s10 = texelFetch(previous_specular, ivec3(bilinear.origin + vec2(1, 0), p.z), 0);
+                    vec4 s01 = texelFetch(previous_specular, ivec3(bilinear.origin + vec2(0, 1), p.z), 0);
+                    vec4 s11 = texelFetch(previous_specular, ivec3(bilinear.origin + vec2(1, 1), p.z), 0);
+
+                    if (any(isnan(s00))) s00 = vec4(0.0);
+                    if (any(isnan(s10))) s10 = vec4(0.0);
+                    if (any(isnan(s01))) s01 = vec4(0.0);
+                    if (any(isnan(s11))) s11 = vec4(0.0);
+
+                    if (any(isnan(occlusion_weights))) debugPrintfEXT("HEELLPP!! NANNN!!!\n");
+                    specular_prev_sm = (s00 * occlusion_weights.x + s10 * occlusion_weights.y + s01 * occlusion_weights.z + s11 * occlusion_weights.w);
+                    specular_prev_sm = w_sum < 0.001 ? vec4(0.0) : specular_prev_sm / w_sum;
+                }
+                // Specular moments
+                {
+                    vec3 s00 = texelFetch(previous_moments_specular, ivec3(bilinear.origin + vec2(0, 0), p.z), 0).rgb;
+                    vec3 s10 = texelFetch(previous_moments_specular, ivec3(bilinear.origin + vec2(1, 0), p.z), 0).rgb;
+                    vec3 s01 = texelFetch(previous_moments_specular, ivec3(bilinear.origin + vec2(0, 1), p.z), 0).rgb;
+                    vec3 s11 = texelFetch(previous_moments_specular, ivec3(bilinear.origin + vec2(1, 1), p.z), 0).rgb;
+
+                    if (any(isnan(s00))) s00 = vec3(0.0);
+                    if (any(isnan(s10))) s10 = vec3(0.0);
+                    if (any(isnan(s01))) s01 = vec3(0.0);
+                    if (any(isnan(s11))) s11 = vec3(0.0);
+
+                    specular_moments_prev_sm = (s00 * occlusion_weights.x + s10 * occlusion_weights.y + s01 * occlusion_weights.z + s11 * occlusion_weights.w).xy;
+                    specular_moments_prev_sm = w_sum < 0.001 ? vec2(0.0) : specular_moments_prev_sm / w_sum;
+                }
+                // Specular hit distance
+                {
+                    // TODO: Use textureGather
+                    float s00 = texelFetch(specular_hit_distance_history, ivec3(bilinear.origin + vec2(0, 0), p.z), 0).r;
+                    float s10 = texelFetch(specular_hit_distance_history, ivec3(bilinear.origin + vec2(1, 0), p.z), 0).r;
+                    float s01 = texelFetch(specular_hit_distance_history, ivec3(bilinear.origin + vec2(0, 1), p.z), 0).r;
+                    float s11 = texelFetch(specular_hit_distance_history, ivec3(bilinear.origin + vec2(1, 1), p.z), 0).r;
+
+                    if (isnan(s00)) s00 = 0.0;
+                    if (isnan(s10)) s10 = 0.0;
+                    if (isnan(s01)) s01 = 0.0;
+                    if (isnan(s11)) s11 = 0.0;
+
+                    specular_hit_dist_prev_sm = (s00 * occlusion_weights.x + s10 * occlusion_weights.y + s01 * occlusion_weights.z + s11 * occlusion_weights.w);
+                    specular_hit_dist_prev_sm = w_sum < 0.001 ? 0.0 : specular_hit_dist_prev_sm / w_sum;
+                }
+            }
+
+            float history_length_sm = history_length;
+            history_length_sm = get_parallax_corrected_specular_history_length(history_length_sm, metallic_roughness.g, NoV, parallax);
+            history_length_sm = max(history_length_sm, 1.0);
+
+            float alpha = 1.0 / history_length_sm;
+
+#if TEMPORAL_ACCUMULATION_ENABLED == 0
+            alpha = 1.0;
+#endif
+            vec4 accumuluated_specular_sm = mix(specular_prev_sm, current_specular, alpha);
+            vec2 accumulated_moments_specular_sm = mix(specular_moments_prev_sm.xy, moments_specular, alpha);
+            float accumulated_hit_dist_sm = mix(specular_hit_dist_prev_sm, inv_specular_hit_dist, alpha);
+
+            //===========================================================
+            // Combine virtual motion and surface motion based specular
+            //=========================================================== 
+
+            vec4 combined_specular = mix(accumuluated_specular_sm, accumulated_specular_vm, virtual_motion_amount);
+            specular_history_length = mix(history_length_sm, history_length_vm, virtual_motion_amount);
+            out_moments_spec = mix(accumulated_moments_specular_sm, accumulated_moments_specular_vm, virtual_motion_amount);
+            out_specular_inv_hit_distance = mix(accumulated_hit_dist_sm, accumulated_hit_dist_vm, virtual_motion_amount);
+
+            out_spec = combined_specular.rgb;
+
+            // Debugging
+            if (any(isnan(out_spec)) || any(isinf(out_spec)))
+                out_spec = vec3(1.0, 0.0, 1.0);
+        }
+
+        //===========================================================
+        // Write outputs
+        //=========================================================== 
+
+        float specular_variance = max(1e-8, out_moments_spec.y - out_moments_spec.x * out_moments_spec.x);
+        //imageStore(out_color, p, vec4(viridis_quintic(alpha), variance));
+        imageStore(out_color, p, vec4(out_diffuse.rgb, variance));
+        imageStore(out_specular, p, vec4(out_spec, specular_variance));
+        imageStore(out_moments, p, vec4(moments.xy, history_length, 0.0));
+        imageStore(out_moments_specular, p, vec4(out_moments_spec.xy, specular_history_length, 1.0));
+        imageStore(out_specular_hit_distance, p, vec4(vec3(out_specular_inv_hit_distance), 1.0));
+    }
+}
+
+
+#else // OLD STUFF
+
+
 void main()
 {
     const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
@@ -62,7 +659,7 @@ void main()
         motion = motion * vec2(control.size)- vec2(0.5);
 
         vec3 normal = unpack_gbuffer_normal(imageLoad(in_normal, p).rg);
-        vec4 depth = imageLoad(in_linear_depth, p);
+        vec4 depth = texelFetch(in_linear_depth, p, 0);
         vec4 prev_color = vec4(0.0);
         vec4 prev_diffuse = vec4(0.0);
         vec4 prev_specular = vec4(0.0);
@@ -85,13 +682,13 @@ void main()
             ivec3 q = ivec3(floor(motion), p.z);
             q.xy += offsets[i];
             vec3 prev_normal = unpack_gbuffer_normal(imageLoad(previous_normal, q).rg);
-            vec4 prev_depth = imageLoad(previous_linear_depth, q);
+            vec4 prev_depth = texelFetch(previous_linear_depth, q, 0);
             if (temporal_reprojection_is_valid(q, depth.x, prev_depth.x, normal, prev_normal, full_motion.z))
             {
                 float w = weights[i] * max(0.0, dot(prev_normal, normal));
                 float w_spec = w;
 
-                prev_color += w * imageLoad(previous_color, q);
+                prev_color += w * texelFetch(previous_color, q, 0);
                 prev_specular += w_spec * imageLoad(previous_specular, q);
                 prev_moments += w * imageLoad(previous_moments, q).xyz;
                 sum_w += w;
@@ -116,11 +713,11 @@ void main()
             {
                 ivec3 q = ivec3(floor(motion.xy + vec2(0.5)) + ivec2(xx, yy), p.z);
                 vec3 prev_normal = unpack_gbuffer_normal(imageLoad(previous_normal, q).rg);
-                vec2 prev_depth = imageLoad(previous_linear_depth, q).rg;
+                vec2 prev_depth = texelFetch(previous_linear_depth, q, 0).rg;
 
                 if (temporal_reprojection_is_valid(q, depth.x, prev_depth.x, normal, prev_normal, full_motion.z))
                 {
-                    prev_color += imageLoad(previous_color, q);
+                    prev_color += texelFetch(previous_color, q, 0);
                     prev_specular += imageLoad(previous_specular, q);
                     prev_moments += imageLoad(previous_moments, q).xyz;
                     n_valid += 1.0;
@@ -171,11 +768,16 @@ void main()
 
         float variance = max(1e-8, moments.y - moments.x * moments.x);
 
-        vec3 out_diff = mix(prev_color.rgb, current_diffuse.rgb, alpha);
+#if ENABLE_TEMPORAL_ACCUMULATION == 1
+        vec3 out_diff = mix(prev_color.rgb, current_diffuse.rgb, 0.01);
+#else
+        vec3 out_dirr = current_diffuse.rgb;
+#endif
         vec3 out_spec = mix(prev_specular.rgb, current_specular.rgb, alpha);
 
-        imageStore(out_color, p, vec4(out_diff, variance));
+        imageStore(out_color, p, vec4(out_diff.rgb, variance));
         imageStore(out_specular, p, vec4(out_spec, variance));
         imageStore(out_moments, p, vec4(moments.xy, 1.0 / alpha, 0.0));
     }
 }
+#endif
