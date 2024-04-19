@@ -105,6 +105,7 @@ float get_specular_lobe_half_angle(float percentage_of_energy, float roughness)
     return atan(roughness * sqrt(percentage_of_energy / (1.0 - percentage_of_energy)));
 }
 
+// From brdf.h, pasted here for reference
 // Approximates the directional-hemispherical reflectance of the micriofacet specular BRDF with GG-X distribution
 // Source: "Accurate Real-Time Specular Reflections with Radiance Caching" in Ray Tracing Gems by Hirvonen et al.
 vec3 specularGGXReflectanceApprox(vec3 specular_f0, float alpha, float NdotV)
@@ -151,7 +152,8 @@ vec3 specularGGXReflectanceApprox(vec3 specular_f0, float alpha, float NdotV)
 	return vec3(bias, bias, bias) + vec3(scale, scale, scale) * specular_f0;
 }
 
-vec3 environment_term_rtg(vec3 f0, float NoV, float roughness)
+// f0 converted to float for clarity, since colors have already been demodulated from our ipnuts
+float environment_term_rtg(float f0, float NoV, float roughness)
 {
     float m = roughness;
 
@@ -176,7 +178,7 @@ vec3 environment_term_rtg(vec3 f0, float NoV, float roughness)
     float bias = dot(M1 * X.xy, Y.xy) / (dot(M2 * X.xyw, Y.xyw));
     float scale = dot(M3 * X.xy, Y.xy) / (dot(M4 * X.xzw, Y.xyw));
 
-    return clamp(bias + scale * f0, vec3(0.0), vec3(1.0));
+    return clamp(bias + scale * f0, 0.0, 1.0);
 }
 
 //====================================================================================

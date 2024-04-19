@@ -236,17 +236,15 @@ void main()
         vec3 V = normalize(camera.pairs[p.z].current.origin.xyz - center_pos);
         vec3 N = center_normal;
         float NoV = dot(N, V);
-        vec3 f0 = mix(vec3(0.04), albedo.rgb, metallic);
-        vec3 specular_reflectance = environment_term_rtg(f0, NoV, roughness);
-        specular_reflectance = max(specular_reflectance, vec3(1e-4));
+        float f0 = mix(0.04, 1.0, metallic);
+        float specular_reflectance = environment_term_rtg(f0, NoV, roughness);
         vec3 remodulated_spec = out_specular.rgb * specular_reflectance;
 #else
-        vec3 remodulated_spec = albedo.rgb * metallic * out_specular.rgb + (1.0 - metallic) * out_specular.rgb;
+        vec3 remodulated_spec = out_specular.rgb;
 #endif
-        vec3 remodulated_diff = mix(albedo.rgb, vec3(0.0), metallic) * out_color.rgb;
         vec3 emissive = imageLoad(in_emissive, p).rgb;
         emissive = vec3(0.0);
-        vec3 remodulated = remodulated_spec + remodulated_diff + emissive;
+        vec3 remodulated = albedo.rgb * mix(out_color.rgb, remodulated_spec.rgb, metallic) + remodulated_spec.rgb * (1.0 - metallic);
         imageStore(final_output, p, vec4(remodulated.rgb, 1.0));
 #elif FINAL_OUTPUT == OUTPUT_DIFFUSE_HITDIST
         vec4 noisy_diffuse = imageLoad(raw_diffuse, p);
@@ -265,10 +263,10 @@ void main()
         vec3 V = normalize(camera.pairs[p.z].current.origin.xyz - center_pos);
         vec3 N = center_normal;
         float NoV = dot(N, V);
-        vec3 f0 = mix(vec3(0.04), albedo.rgb, metallic);
-        vec3 specular_reflectance = environment_term_rtg(f0, NoV, roughness);
-        specular_reflectance = max(specular_reflectance, vec3(1e-4));
+        float f0 = mix(0.04, 1.0, metallic);
+        float specular_reflectance = environment_term_rtg(f0, NoV, roughness);
         vec3 remodulated_spec = out_specular.rgb * specular_reflectance;
+        remodulated_spec = albedo.rgb * metallic * remodulated_spec.rgb + (1.0 - metallic) * remodulated_spec.rgb;
 #else
         vec3 remodulated_spec = albedo.rgb * metallic * out_specular.rgb + (1.0 - metallic) * out_specular.rgb;
 #endif

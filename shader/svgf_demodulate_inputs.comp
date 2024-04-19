@@ -35,9 +35,6 @@ void main()
     float roughness = material.y;
     vec3 remodulated = albedo.rgb * mix(diffuse.rgb, specular.rgb, metallic) + specular.rgb * (1.0 - metallic);
 
-    vec3 remodulated_specular = albedo * metallic * specular.rgb + (1.0 - metallic) * specular.rgb;
-    vec3 alternative = mix(vec3(1.0), albedo, metallic) * specular.rgb;
-
     vec3 color = imageLoad(in_color, p).rgb;
     vec3 emissive = max(color - remodulated, vec3(0.0));
 
@@ -51,11 +48,15 @@ void main()
         vec3 V = normalize(curr_camera.origin.xyz - pos);
         vec3 N = unpack_gbuffer_normal(imageLoad(in_normal, p).rg);
         float NoV = dot(N, V);
-        vec3 f0 = mix(vec3(0.04), albedo, metallic);
+
+        // Our input already has f0 demodulated from metallics, but not dielectrics
+        // Therefore the f0 used for demodulation with the environment split sum approximation
+        // is 1.0 for metallics and for dielectrics it depends on the ior which we no longer have access to
+        // dielectric_f0 = 0.04 is a reasonable approximation for most common materials.
+        float f0 = mix(0.04, 1.0, metallic);
         //vec3 specular_reflectance = specularGGXReflectanceApprox(f0, roughness, NoV);
-        vec3 specular_reflectance = environment_term_rtg(f0, NoV, roughness);
-        specular_reflectance = max(specular_reflectance, vec3(1e-4));   
-        specular.rgb = remodulated_specular / specular_reflectance;
+        float specular_reflectance = environment_term_rtg(f0, NoV, roughness);
+        specular.rgb /= specular_reflectance;
 #endif
     }
 
