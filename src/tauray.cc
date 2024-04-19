@@ -656,6 +656,20 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if(re_opt.restir_options.shade_fake_indirect)
                     re_opt.scene_options.alloc_sh_grids = true;
 
+                if (opt.denoiser == options::denoiser_type::SVGF)
+                {
+                    svgf_stage::options svgf_opt{};
+                    svgf_opt.atrous_diffuse_iters = opt.svgf_params.atrous_diffuse_iter;
+                    svgf_opt.atrous_spec_iters = opt.svgf_params.atrous_spec_iter;
+                    svgf_opt.atrous_kernel_radius = opt.svgf_params.atrous_kernel_radius;
+                    svgf_opt.sigma_l = opt.svgf_params.sigma_l;
+                    svgf_opt.sigma_n = opt.svgf_params.sigma_n;
+                    svgf_opt.sigma_z = opt.svgf_params.sigma_z;
+                    svgf_opt.temporal_alpha_color = opt.svgf_params.min_alpha_color;
+                    svgf_opt.temporal_alpha_moments = opt.svgf_params.min_alpha_moments;
+                    re_opt.svgf_options = svgf_opt;
+                }
+
                 return new restir_renderer(ctx, re_opt);
             }
         };

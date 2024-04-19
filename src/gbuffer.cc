@@ -206,6 +206,16 @@ gbuffer_target gbuffer_texture::get_multiview_block_target(device_id id, uint32_
     return gbuf;
 }
 
+gbuffer_target gbuffer_texture::get_render_target(device_id id, texture_view_params view) const
+{
+    gbuffer_target gbuf;
+#define TR_GBUFFER_ENTRY(name, ...) \
+    if(name) gbuf.name = name->get_render_target(id, view);
+    TR_GBUFFER_ENTRIES
+#undef TR_GBUFFER_ENTRY
+    return gbuf;
+}
+
 size_t gbuffer_texture::entry_count() const
 {
     size_t count = 0;

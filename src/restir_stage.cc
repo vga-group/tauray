@@ -490,8 +490,8 @@ restir_stage::restir_stage(
     else current_buffers.color.layout = vk::ImageLayout::eGeneral;
 
 #define BUF(name) \
-    if(c.name) c.name.layout = vk::ImageLayout::eShaderReadOnlyOptimal; \
-    if(p.name) p.name.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    if(c.name) c.name.layout = vk::ImageLayout::eGeneral; \
+    if(p.name) p.name.layout = vk::ImageLayout::eGeneral;
 
     BUF(depth)
     BUF(pos)
@@ -501,7 +501,7 @@ restir_stage::restir_stage(
     BUF(emission)
     BUF(material)
 #undef OPT_BUF
-    c.screen_motion.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    c.screen_motion.layout = vk::ImageLayout::eGeneral;
 }
 
 void restir_stage::reset_accumulation()
@@ -974,6 +974,18 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
     }
 
     reservoir_data_parity = 1-reservoir_data_parity;
+
+#undef X
+
+#define X(name) \
+    if(current_buffers.name) \
+        current_buffers.name.transition_layout(cmd, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral); \
+    if(previous_buffers.name) \
+        previous_buffers.name.transition_layout(cmd, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral); \
+
+    USED_BUFFERS
+#undef X
+    current_buffers.screen_motion.transition_layout(cmd, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral);
 }
 
 }

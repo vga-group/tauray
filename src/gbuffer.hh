@@ -145,6 +145,7 @@ namespace tr
         gbuffer_target get_array_target(device_id id) const;
         gbuffer_target get_layer_target(device_id id, uint32_t layer_index) const;
         gbuffer_target get_multiview_block_target(device_id id, uint32_t block_index) const;
+        gbuffer_target get_render_target(device_id id, texture_view_params view) const;
         size_t entry_count() const;
         size_t get_layer_count() const;
         size_t get_multiview_block_count() const;

@@ -28,6 +28,11 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     gbuffer_spec gs;
     gs.color_present = true;
+    if(opt.svgf_options)
+    {
+        gs.diffuse_present = true;
+        gs.reflection_present = true;
+    }
     gs.depth_present = true;
     gs.albedo_present = true;
     gs.material_present = true;
@@ -99,11 +104,18 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         raster_opt.output_layout = vk::ImageLayout::eGeneral;
 
         render_target color = cur.color;
+        render_target diffuse = cur.diffuse;
+        render_target reflection = cur.reflection;
         if(!this->opt.restir_options.shade_all_explicit_lights)
             cur.color = render_target();
+        cur.diffuse = render_target();
+        cur.reflection = render_target();
+
         pv.gbuffer_rasterizer.emplace(devices[device_index], *scene_update, cur, raster_opt);
         if(!this->opt.restir_options.shade_all_explicit_lights)
             cur.color = color;
+        cur.diffuse = diffuse;
+        cur.reflection = reflection;
 
         cur.color.layout = vk::ImageLayout::eGeneral;
 
@@ -118,13 +130,26 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
         pv.restir.emplace(devices[device_index], *scene_update, cur, prev, this->opt.restir_options);
 
-        gbuffer_target arr_cur = data.current_gbuffer.get_array_target(devices[device_index].id);
-        arr_cur.set_layout(vk::ImageLayout::eShaderReadOnlyOptimal);
-        arr_cur.color.layout = this->opt.restir_options.shade_all_explicit_lights ?
-            vk::ImageLayout::eGeneral :
-            vk::ImageLayout::eColorAttachmentOptimal;
-        arr_cur.diffuse.layout = vk::ImageLayout::eGeneral;
-        arr_cur.reflection.layout = vk::ImageLayout::eGeneral;
+        texture_view_params view = {
+            (unsigned)layer_index, 1, 0, 1,
+            vk::ImageViewType::e2DArray
+        };
+
+        if(opt.svgf_options)
+        {
+            cur = data.current_gbuffer.get_render_target(devices[device_index].id, view);
+            prev = data.prev_gbuffer.get_render_target(devices[device_index].id, view);
+
+            pv.svgf.emplace(
+                devices[device_index],
+                *scene_update,
+                cur,
+                prev,
+                *opt.svgf_options
+            );
+        }
+
+        cur = data.current_gbuffer.get_array_target(devices[device_index].id);
 
         std::vector<render_target> display = ctx.get_array_render_target();
         if(is_display_device)
@@ -134,7 +159,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
             this->opt.tonemap_options.transition_output_layout = true;
             pv.tonemap.emplace(
                 devices[device_index],
-                arr_cur.color,
+                cur.color,
                 display,
                 this->opt.tonemap_options
             );
@@ -161,7 +186,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
             output_frames.resize(display.size(), pv.tmp_compressed_output_img->get_array_render_target(devices[i].id));
             pv.tonemap.emplace(
                 devices[device_index],
-                arr_cur.color,
+                cur.color,
                 output_frames,
                 this->opt.tonemap_options
             );
@@ -237,6 +262,7 @@ void restir_renderer::render()
         deps = pv.envmap->run(deps);
         deps = pv.gbuffer_rasterizer->run(deps);
         deps = pv.restir->run(deps);
+        if(pv.svgf) deps = pv.svgf->run(deps);
         deps = pv.tonemap->run(deps);
         deps = pv.copy->run(deps);
     }
