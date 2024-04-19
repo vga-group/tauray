@@ -51,7 +51,12 @@ vec3 modulate_bsdf(sampled_material mat, bsdf_lobes bsdf)
 
 vec3 modulate_color(sampled_material mat, vec3 diffuse, vec3 reflected)
 {
-    return mat.albedo.rgb * mix(diffuse, reflected, mat.metallic) + (1-mat.metallic) * reflected;
+    float approx_fresnel = 0.02f;
+    diffuse = diffuse * mat.albedo.rgb * (1-mat.metallic);
+    reflected = reflected
+        * mix(vec3(approx_fresnel), mat.albedo.rgb, mat.metallic)
+        / mix(approx_fresnel, 1, mat.metallic);
+    return diffuse + reflected;
 }
 
 void add_demodulated_color(
