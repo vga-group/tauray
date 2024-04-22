@@ -292,7 +292,7 @@ vec3 next_event_estimation(
     uvec4 rand_uint,
     mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
-    out bsdf_lobes lobes
+    inout bsdf_lobes lobes
 ){
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_ENVMAP)
     if(false
@@ -437,7 +437,7 @@ void evaluate_ray(
         if(!terminal)
         {
             // Do NEE ray
-            bsdf_lobes lobes;
+            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
             vec3 radiance = attenuation * next_event_estimation(
                 generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
                 mat, v, lobes

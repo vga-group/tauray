@@ -20,7 +20,7 @@ struct local_sampler
 #ifdef SAMPLING_DATA_BINDING
 layout(binding = SAMPLING_DATA_BINDING, set = 0) uniform sampling_data_buffer
 {
-    uint frame_counter;
+    uint sample_counter;
     uint rng_seed;
 } sampling_data;
 
@@ -32,7 +32,7 @@ layout(binding = SAMPLING_DATA_BINDING, set = 0) uniform sampling_data_buffer
 local_sampler init_local_sampler(uvec4 coord)
 {
     local_sampler ls;
-    coord.w += sampling_data.frame_counter;
+    coord.w += sampling_data.sample_counter;
     coord.z += sampling_data.rng_seed;
 
 #if defined(USE_SOBOL_Z_ORDER_SAMPLING)

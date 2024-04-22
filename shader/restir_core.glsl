@@ -647,7 +647,8 @@ bool resolve_reconnection_vertex(
         to.dist = TR_RESTIR.max_ray_dist;
         to.normal = vec3(0);
 
-#ifdef RESTIR_TEMPORAL
+#if defined(RESTIR_TEMPORAL) && !defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
+        to.emission = vec3(0);
         for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
         {
             directional_light dl = directional_lights.lights[i];
@@ -665,14 +666,14 @@ bool resolve_reconnection_vertex(
         to.dist = TR_RESTIR.max_ray_dist;
         to.normal = vec3(0);
 
-#ifdef RESTIR_TEMPORAL
+#if defined(RESTIR_TEMPORAL) && !defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
         to.emission = scene_metadata.environment_factor.rgb;
         if(scene_metadata.environment_proj >= 0)
         {
             vec2 uv = vec2(0);
             uv.y = asin(-to.dir.y)/M_PI+0.5f;
             uv.x = atan(to.dir.z, to.dir.x)/(2*M_PI)+0.5f;
-            v.emission *= texture(environment_map_tex, uv).rgb;
+            to.emission *= texture(environment_map_tex, uv).rgb;
         }
 
         for(uint i = 0; i < scene_metadata.directional_light_count; ++i)

@@ -15,7 +15,7 @@ using namespace tr;
 
 struct sampling_data_buffer
 {
-    uint frame_counter;
+    uint sample_counter;
     uint rng_seed;
 };
 
@@ -54,6 +54,7 @@ rt_stage::rt_stage(
     unsigned pass_count
 ):  single_device_stage(dev),
     ss(&ss),
+    sample_count_multiplier(1),
     opt(opt),
     pass_count(pass_count),
     rt_timer(dev, timer_name),
@@ -77,7 +78,7 @@ void rt_stage::update(uint32_t frame_index)
     sampling_data.map<sampling_data_buffer>(
         frame_index,
         [&](sampling_data_buffer* suni){
-            suni->frame_counter = frame_counter;
+            suni->sample_counter = frame_counter * sample_count_multiplier;
             suni->rng_seed = opt.rng_seed != 0 ? pcg(opt.rng_seed) : 0;
         }
     );

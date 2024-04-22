@@ -52,6 +52,7 @@ rt_camera_stage::rt_camera_stage(
     target(output_target),
     accumulated_samples(0)
 {
+    sample_count_multiplier = opt.samples_per_pixel;
 }
 
 void rt_camera_stage::reset_accumulated_samples()
