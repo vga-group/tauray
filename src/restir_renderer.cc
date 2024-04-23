@@ -126,6 +126,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         this->opt.restir_options.assume_unchanged_reconnection_radiance = true;
         this->opt.restir_options.assume_unchanged_temporal_visibility = false;
         this->opt.restir_options.shift_map = restir_stage::RECONNECTION_SHIFT;
+        this->opt.restir_options.demodulated_output = opt.svgf_options.has_value();
         this->opt.restir_options.camera_index = i;
         //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
         pv.restir.emplace(devices[device_index], *scene_update, cur, prev, this->opt.restir_options);
