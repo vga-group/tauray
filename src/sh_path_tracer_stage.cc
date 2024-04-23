@@ -53,6 +53,8 @@ sh_path_tracer_stage::sh_path_tracer_stage(
     grid_data(dev, sizeof(grid_data_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
     history_length(0)
 {
+    sample_count_multiplier = opt.samples_per_probe;
+
     shader_source pl_rint("shader/rt_common_point_light.rint");
     shader_source shadow_chit("shader/rt_common_shadow.rchit");
     std::map<std::string, std::string> defines;
