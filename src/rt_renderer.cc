@@ -225,8 +225,9 @@ void rt_renderer<Pipeline>::init_resources()
     if(use_raster_gbuffer)
     {
         spec.depth_present = true;
-        spec.depth_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment|
-            vk::ImageUsageFlagBits::eTransferSrc;
+        spec.depth_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
+            vk::ImageUsageFlagBits::eTransferSrc |
+            vk::ImageUsageFlagBits::eSampled;
         copy_spec.color_present = spec.color_present;
         copy_spec.color_format = spec.color_format;
         copy_spec.diffuse_present = spec.diffuse_present;

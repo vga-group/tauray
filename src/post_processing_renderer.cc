@@ -130,7 +130,6 @@ void post_processing_renderer::init_pipelines()
     if(need_temporal)
     {
         gbuffer_target simplified = input_target;
-        simplified.depth = {};
         delay.reset(new frame_delay_stage(*dev, simplified));
 
         prev_gbuffer = delay->get_output();

@@ -5,29 +5,28 @@
 #include "projection.glsl"
 #include "gbuffer.glsl"
 #include "color.glsl"
+#include "scene.glsl"
 
 layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray in_diffuse;
 layout(binding = 1, set = 0, rgba32f) uniform image2DArray out_diffuse;
-layout(binding = 2, set = 0, rgba32f) uniform readonly image2DArray in_linear_depth;
 layout(binding = 3, set = 0, rgba32f) uniform readonly image2DArray current_moments;
 layout(binding = 4, set = 0, rgba32f) uniform image2DArray moments_hist;
 layout(binding = 5, set = 0, rgba32f) uniform readonly image2DArray in_normal;
 layout(binding = 6, set = 0, rgba32f) uniform readonly image2DArray in_specular;
 layout(binding = 7, set = 0, rgba32f) uniform image2DArray out_specular;
-layout(binding = 8, set = 0, rgba32f) uniform readonly image2DArray world_position;
+layout(binding = 8, set = 0) uniform sampler2DArray in_depth;
 layout(binding = 9, set = 0, rgba32f) uniform readonly image2DArray current_moments_specular;
 layout(binding = 10, set = 0, rgba32f) uniform image2DArray moments_hist_specular;
 
 layout (local_size_x = 16, local_size_y = 16) in;
-
-
-#if 1
 
 void main()
 {
     const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
 
     if (!is_in_screen(p.xy)) return;
+
+    camera_data curr_camera = camera.pairs[p.z].current;
 
     vec4 out_color = imageLoad(in_diffuse, p);
     vec4 out_spec = imageLoad(in_specular, p);
@@ -38,11 +37,18 @@ void main()
     // History length based on surface motion
     if (history_length < 4.0f)
     {
-        vec4 center_depth = imageLoad(in_linear_depth, p);
+        vec3 view_pos;
+        float view_z;
+        {
+            bool invalid = get_view_pos(in_depth, p, curr_camera, view_pos);
+            if (invalid) return;
+            view_z = abs(view_pos.z);
+        }
         vec3 center_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).rg);
-        vec3 center_pos = imageLoad(world_position, p).xyz;
+        vec3 center_pos = get_pos(curr_camera, view_pos);
+
         float center_luminance = rgb_to_luminance(out_color.rgb);
-        float frustum_size = control.min_rect_dim_mul_unproject * abs(center_depth.x);
+        float frustum_size = control.min_rect_dim_mul_unproject * view_z;
         float inv_dist_to_point = 1.0 / frustum_size;
 
         vec4 color_sum = vec4(0.0);
@@ -66,7 +72,12 @@ void main()
                 vec3 m = imageLoad(current_moments, q).xyz;
                 vec3 m_spec = imageLoad(current_moments_specular, q).xyz;
 
-                vec3 X = imageLoad(world_position, q).xyz;
+                vec3 X;
+                {
+                    bool invalid = get_pos(in_depth, q, curr_camera, X);
+                    if (invalid) continue;
+                }
+
                 float plane_dist = abs(dot((X - center_pos), center_normal) * inv_dist_to_point);
                 float w_geom = smoothstep(0, 1, saturate(1.0 - plane_dist * 100.0));
 
@@ -113,85 +124,3 @@ void main()
     imageStore(moments_hist, p, vec4(out_moments, 0.0));
     imageStore(moments_hist_specular, p, vec4(out_moments_specular, 0.0));
 }
-
-#else
-
-// OLD 
-void main()
-{
-    const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
-    if(all(lessThan(p.xy, control.size)))
-    {
-        vec3 moments = imageLoad(current_moments, p).rgb;
-        float hist_len = moments.z;
-        vec4 c_center = imageLoad(in_diffuse, p);
-        vec4 spec_center = imageLoad(in_specular, p);
-        if (false && hist_len < 4.0)
-        {
-            float sum_w = 0.0;
-            vec3 sum_diffuse = vec3(0.0);
-            vec2 sum_moments = vec2(0.0);
-            vec3 sum_specular = vec3(0.0);
-            float lum_center = rgb_to_luminance(c_center.rgb);
-
-            vec4 z_center = imageLoad(in_linear_depth, p);
-            const vec2 depth_grad = z_center.yz;
-
-            if (any(isnan(z_center)))
-            {
-                imageStore(out_diffuse, p, c_center);
-                imageStore(out_specular, p, spec_center);
-                return;
-            }
-
-            vec3 normal_center = unpack_gbuffer_normal(imageLoad(in_normal, p).rg);
-
-            const int r = 3;
-            for (int yy = -r; yy <= r; ++yy)
-            for (int xx = -r; xx <= r; ++xx)
-            {
-                ivec3 q = ivec3(p.xy + ivec2(xx, yy), p.z);
-                if (all(lessThan(q.xy, control.size)) && all(greaterThanEqual(q.xy, ivec2(0))))
-                {
-                    vec3 q_diffuse = imageLoad(in_diffuse, q).rgb;
-                    vec3 q_specular = imageLoad(in_specular, q).rgb;
-                    vec2 q_moments = imageLoad(current_moments, q).rg;
-                    float q_lum = rgb_to_luminance(q_diffuse);
-                    float q_z = imageLoad(in_linear_depth, q).r;
-                    vec3 q_n = unpack_gbuffer_normal(imageLoad(in_normal, q).rg);
-
-                    float w_n = pow(max(0.0, dot(q_n, normal_center)), control.sigma_n);
-                    float w_z = abs(q_z - z_center.x) / (control.sigma_z * abs(dot(depth_grad, p.xy - q.xy)) + 1e-6);
-                    float w_l = abs(q_lum - lum_center) / control.sigma_l;
-
-                    float w = exp(-max(0.0, w_l) - max(0.0, w_z)) * w_n;
-
-                    sum_w += w;
-                    sum_diffuse += q_diffuse * w;
-                    sum_specular += q_specular * w;
-                    sum_moments += q_moments * w;
-                }
-            }
-
-            sum_w = max(sum_w, 1e-6f);
-            sum_diffuse /= sum_w;
-            sum_specular /= sum_w;
-            sum_moments /= sum_w;
-
-            float variance = max(1e-8, sum_moments.y - sum_moments.x * sum_moments.x);
-            variance *= 4.0 / hist_len;
-
-            imageStore(out_diffuse, p, vec4(sum_diffuse.rgb, variance));
-            imageStore(out_specular, p, vec4(sum_specular, variance));
-        }
-        else
-        {
-            imageStore(out_diffuse, p, vec4(c_center));
-            imageStore(out_specular, p, vec4(spec_center));
-        }
-
-
-        imageStore(moments_hist, p, vec4(moments, 0.0));
-    }
-}
-#endif

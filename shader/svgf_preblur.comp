@@ -10,16 +10,15 @@
 
 layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray in_diffuse;
 layout(binding = 1, set = 0, rgba32f) uniform readonly image2DArray normal;
-layout(binding = 2, set = 0, rgba32f) uniform readonly image2DArray world_position;
-layout(binding = 3, set = 0, rgba32f) uniform readonly image2DArray linear_depth;
-layout(binding = 4, set = 0, rgba32f) uniform image2DArray out_diffuse;
-layout(binding = 5) buffer uniforms
+layout(binding = 2, set = 0) uniform sampler2DArray in_depth;
+layout(binding = 3, set = 0, rgba32f) uniform image2DArray out_diffuse;
+layout(binding = 4) buffer uniforms
 {
     uint frame_index;
 } uniforms_buffer;
-layout(binding = 6, set = 0, rgba32f) uniform readonly image2DArray in_specular;
-layout(binding = 7, set = 0, rgba32f) uniform image2DArray out_specular;
-layout(binding = 8, set = 0, rgba32f) uniform image2DArray in_material;
+layout(binding = 5, set = 0, rgba32f) uniform readonly image2DArray in_specular;
+layout(binding = 6, set = 0, rgba32f) uniform image2DArray out_specular;
+layout(binding = 7, set = 0, rgba32f) uniform image2DArray in_material;
 
 
 const vec3 poisson_disk[8] = {
@@ -42,11 +41,17 @@ void main()
 
     float diffuse_blur_radius = PREPASS_DIFFUSE_BLUR_RADIUS;
 
-    vec4 depth = imageLoad(linear_depth, p);
-    const float Z = abs(depth.x);
+    camera_data curr_camera = camera.pairs[p.z].current;
+
+    vec3 view_pos;
+    {
+        bool invalid = get_view_pos(in_depth, p, curr_camera, view_pos);
+        if (invalid) return;
+    }
+    const float Z = abs(view_pos.z);
     const float frustum_size = control.min_rect_dim_mul_unproject * Z;
     const float inv_dist_to_point = 1.0 / frustum_size;
-    
+
     vec4 color = imageLoad(in_diffuse, p);
 
     float hit_dist = color.a != 0.0 ? 1.0 / color.a : 1.0;
@@ -59,7 +64,11 @@ void main()
 
     const float diff_half_angle = get_specular_lobe_half_angle(0.75, 1.0);
 
-    vec3 center_pos = imageLoad(world_position, p).xyz;
+    vec3 center_pos;
+    {
+        bool invalid = get_pos(in_depth, p, curr_camera, center_pos);
+        if (invalid) return;
+    }
     vec3 center_normal = unpack_gbuffer_normal(imageLoad(normal, p).xy);
 
     float w_sum = 1.0;
@@ -71,10 +80,6 @@ void main()
     float sx = sin(theta);
     mat2 rot = mat2(cx, sx, -sx, cx);
     //rot = mat2(1.0);
-    // if (p.xy == ivec2(640, 360))
-    // {
-    //     debugPrintfEXT("frustum_size: %f\n", frustum_size);
-    // }
 
 #if PREPASS_ENABLED == 1
     for (int i = 0; i < 8; ++i)
@@ -83,8 +88,12 @@ void main()
 
         if (!is_in_screen(q.xy)) continue;
 
-        vec3 X = imageLoad(world_position, q).xyz;
-        if (any(isnan(X))) continue;
+        vec3 X;
+        {
+            bool invalid = get_pos(in_depth, q, curr_camera, X);
+            if (invalid) continue;
+        }
+
         vec4 c = imageLoad(in_diffuse, q);
 
         float plane_dist = abs(dot((X - center_pos), center_normal) * plane_dist_scale);
@@ -130,8 +139,12 @@ void main()
 
         if (!is_in_screen(q.xy)) continue;
 
-        vec3 X = imageLoad(world_position, q).xyz;
-        if (any(isnan(X))) continue;
+        vec3 X;
+        {
+            bool invalid = get_pos(in_depth, q, curr_camera, X);
+            if (invalid) continue;
+        }
+
         vec4 c = imageLoad(in_specular, q);
 
         float plane_dist = abs(dot((X - center_pos), center_normal) * plane_dist_scale);

@@ -9,9 +9,8 @@
 
 layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray accumulated_diffuse;
 layout(binding = 1, set = 0, rgba32f) uniform image2DArray filtered_diffuse;
-layout(binding = 2, set = 0, rgba32f) uniform image2DArray depth;
 layout(binding = 3, set = 0, rgba32f) uniform image2DArray normal;
-layout(binding = 4, set = 0, rgba32f) uniform image2DArray world_position;
+layout(binding = 4, set = 0) uniform sampler2DArray in_depth;
 layout(binding = 5, set = 0, rgba32f) uniform image2DArray moments_histlen;
 layout(binding = 6, set = 0, rgba32f) uniform image2DArray diffuse_hist;
 layout(binding = 7, set = 0, rgba32f) uniform image2DArray spec_hist;
@@ -21,7 +20,6 @@ layout(binding = 10, set = 0, rgba32f) uniform image2DArray filtered_specular;
 layout(binding = 11, set = 0, rgba32f) uniform readonly image2DArray accumulated_specular_hit_distance;
 layout(binding = 12, set = 0, rgba32f) uniform image2DArray specular_hit_distance_history;
 layout(binding = 13, set = 0, rgba32f) uniform image2DArray in_material;
-
 
 layout (local_size_x = 16, local_size_y = 16) in;
 
@@ -45,13 +43,19 @@ void main()
 #if DISOCCLUSION_FIX_ENABLED == 1
     if (history_length < 4.0f)
     {
-        vec4 center_depth = imageLoad(depth, p);
+        float view_z;
+        vec3 view_pos;
+        {
+            bool invalid = get_view_pos(in_depth, p, curr_camera, view_pos);
+            if (invalid) return;
+            view_z = abs(view_pos.z);
+        }
         vec3 center_normal = unpack_gbuffer_normal(imageLoad(normal, p).rg);
-        vec3 center_pos = imageLoad(world_position, p).xyz;
+        vec3 center_pos = get_pos(curr_camera, view_pos);
         vec2 center_material = imageLoad(in_material, p).xy;
         float center_roughness = center_material.y;
         
-        float frustum_size = control.min_rect_dim_mul_unproject * abs(center_depth.x);
+        float frustum_size = control.min_rect_dim_mul_unproject * view_z;
         float inv_dist_to_point = 1.0 / frustum_size;
         vec3 X_cam_rel = center_pos - curr_camera.origin.xyz;
         //float NoX = abs(dot(X_cam_rel, center_normal)) * inv_dist_to_point;
@@ -93,12 +97,21 @@ void main()
                 vec4 spec = imageLoad(accumulated_specular, q);
                 if (any(isnan(c)) || any(isnan(spec))) continue;
 
-                vec3 X = imageLoad(world_position, q).xyz;
+                vec3 sample_view_pos;
+                {
+                    bool invalid = get_view_pos(in_depth, q, curr_camera, sample_view_pos);
+                    if (invalid) continue;
+                }
+                vec3 X = get_pos(curr_camera, sample_view_pos);
+                float Z = abs(sample_view_pos.z);
+
                 vec3 Xvs = (curr_camera.view * vec4(X, 1.0)).xyz;
                 vec3 Vs = normalize(curr_camera.origin.xyz - X);
                 vec3 Ns = unpack_gbuffer_normal(imageLoad(normal, q).rg);
                 float Nvs = dot(Nv, Xvs);
-                float Z = imageLoad(depth, q).x;
+
+
+
                 vec2 sample_material = imageLoad(in_material, q).xy;
                 float sample_roughness = sample_material.y;
 
@@ -115,10 +128,11 @@ void main()
                 float angle_percentage = angle / spec_half_angle;
                 float normal_weight = exp(-3.0 * angle_percentage);
                 float w = 1.0;
+                float w_spec = 1.0;
     #if DISOCCLUSION_FIX_USE_EDGE_STOPPERS == 1
                 w *= plane_dist_weight;
 
-                float w_spec = w;
+                w_spec = w;
 
                 w *= normal_weight;
 

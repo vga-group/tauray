@@ -79,7 +79,7 @@ svgf_stage::svgf_stage(
     {
         shader_source src("shader/svgf_spatial_variance.comp");
         estimate_variance_desc.add(src);
-        estimate_variance_comp.init(src, {&estimate_variance_desc});
+        estimate_variance_comp.init(src, {&estimate_variance_desc, &ss.get_descriptors() });
     }
     {
         shader_source src("shader/svgf_firefly_suppression.comp");
@@ -215,7 +215,7 @@ void svgf_stage::record_command_buffers()
         demodulate_inputs_desc.set_image(dev->id, "in_specular", { {{}, input_features.reflection.view, vk::ImageLayout::eGeneral} });
         demodulate_inputs_desc.set_image(dev->id, "in_material", { {{}, input_features.material.view, vk::ImageLayout::eGeneral} });
         demodulate_inputs_desc.set_image(dev->id, "in_albedo", { {{}, input_features.albedo.view, vk::ImageLayout::eGeneral} });
-        demodulate_inputs_desc.set_image(dev->id, "in_world_position", { {{}, input_features.pos.view, vk::ImageLayout::eGeneral} });
+        demodulate_inputs_desc.set_image(dev->id, "in_depth", { {my_sampler.get_sampler(dev->id), input_features.depth.view, vk::ImageLayout::eGeneral} });
         demodulate_inputs_desc.set_image(dev->id, "in_normal", { {{}, input_features.normal.view, vk::ImageLayout::eGeneral} });
         demodulate_inputs_desc.set_image(dev->id, "out_diffuse", { {{}, input_features.diffuse.view, vk::ImageLayout::eGeneral} });
         demodulate_inputs_desc.set_image(dev->id, "out_specular", { {{}, input_features.reflection.view, vk::ImageLayout::eGeneral} });
@@ -234,9 +234,8 @@ void svgf_stage::record_command_buffers()
         preblur_comp.bind(cb);
         preblur_desc.set_image(dev->id, "in_diffuse", { {{}, input_features.diffuse.view, vk::ImageLayout::eGeneral} });
         preblur_desc.set_image(dev->id, "normal", { {{}, input_features.normal.view, vk::ImageLayout::eGeneral} });
-        preblur_desc.set_image(dev->id, "world_position", { {{}, input_features.pos.view, vk::ImageLayout::eGeneral} });
+        preblur_desc.set_image(dev->id, "in_depth", { {my_sampler.get_sampler(dev->id), input_features.depth.view, vk::ImageLayout::eGeneral} });
         preblur_desc.set_image(dev->id, "out_diffuse", { {{}, atrous_diffuse_pingpong[0].view, vk::ImageLayout::eGeneral} });
-        preblur_desc.set_image(dev->id, "linear_depth", { {{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral} });
         preblur_desc.set_image(dev->id, "in_specular", { {{}, input_features.reflection.view, vk::ImageLayout::eGeneral} });
         preblur_desc.set_image(dev->id, "out_specular", { {{}, atrous_specular_pingpong[0].view,  vk::ImageLayout::eGeneral} });
         preblur_desc.set_buffer("uniforms_buffer", uniforms);
@@ -265,14 +264,12 @@ void svgf_stage::record_command_buffers()
         temporal_desc.set_image(dev->id, "out_moments", {{{}, moments_history[1].view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "out_color", {{{}, atrous_diffuse_pingpong[1].view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "out_specular", {{{}, atrous_specular_pingpong[1].view, vk::ImageLayout::eGeneral} });
-        temporal_desc.set_image(dev->id, "in_linear_depth", {{my_sampler.get_sampler(dev->id), input_features.linear_depth.view, vk::ImageLayout::eGeneral}});
-        temporal_desc.set_image(dev->id, "previous_linear_depth", {{my_sampler.get_sampler(dev->id), prev_features.linear_depth.view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "in_prev_depth", {{my_sampler.get_sampler(dev->id), prev_features.depth.view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_buffer("jitter_info", jitter_buffer);
         temporal_desc.set_image(dev->id, "previous_specular", {{my_sampler.get_sampler(dev->id), svgf_spec_hist.view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "in_material", {{{}, input_features.material.view, vk::ImageLayout::eGeneral}});
-        temporal_desc.set_image(dev->id, "in_world_pos", { {{}, input_features.pos.view, vk::ImageLayout::eGeneral} });
+        temporal_desc.set_image(dev->id, "in_depth", { {my_sampler.get_sampler(dev->id), input_features.depth.view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_image(dev->id, "specular_hit_distance_history", { {my_sampler.get_sampler(dev->id), specular_hit_distance_history.view, vk::ImageLayout::eGeneral} });
-        temporal_desc.set_image(dev->id, "previous_world_pos", { {{}, prev_features.pos.view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_image(dev->id, "out_specular_hit_distance", { {{}, accumulated_specular_hit_distance.view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_image(dev->id, "previous_material", { {my_sampler.get_sampler(dev->id), prev_features.material.view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_image(dev->id, "previous_moments_specular", { {my_sampler.get_sampler(dev->id), moments_history_specular[0].view, vk::ImageLayout::eGeneral}});
@@ -292,9 +289,8 @@ void svgf_stage::record_command_buffers()
         disocclusion_fix_comp.bind(cb);
         disocclusion_fix_desc.set_image(dev->id, "accumulated_diffuse", { {{}, atrous_diffuse_pingpong[1].view, vk::ImageLayout::eGeneral} });
         disocclusion_fix_desc.set_image(dev->id, "filtered_diffuse", { {{}, atrous_diffuse_pingpong[0].view, vk::ImageLayout::eGeneral} });
-        disocclusion_fix_desc.set_image(dev->id, "depth", { {{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral}});
         disocclusion_fix_desc.set_image(dev->id, "normal", { {{}, input_features.normal.view, vk::ImageLayout::eGeneral} });
-        disocclusion_fix_desc.set_image(dev->id, "world_position", { {{}, input_features.pos.view, vk::ImageLayout::eGeneral} });
+        disocclusion_fix_desc.set_image(dev->id, "in_depth", { {my_sampler.get_sampler(dev->id), input_features.depth.view, vk::ImageLayout::eGeneral} });
         disocclusion_fix_desc.set_image(dev->id, "moments_histlen", { {{}, moments_history[1].view, vk::ImageLayout::eGeneral} });
         disocclusion_fix_desc.set_image(dev->id, "diffuse_hist", { {{}, svgf_color_hist.view, vk::ImageLayout::eGeneral} });
         disocclusion_fix_desc.set_image(dev->id, "accumulated_specular", { {{}, atrous_specular_pingpong[1].view, vk::ImageLayout::eGeneral} });
@@ -336,15 +332,15 @@ void svgf_stage::record_command_buffers()
         estimate_variance_desc.set_image(dev->id, "out_diffuse", {{{}, atrous_diffuse_pingpong[0].view, vk::ImageLayout::eGeneral}});
         estimate_variance_desc.set_image(dev->id, "in_specular", {{{}, atrous_specular_pingpong[1].view, vk::ImageLayout::eGeneral} });
         estimate_variance_desc.set_image(dev->id, "out_specular", {{{}, atrous_specular_pingpong[0].view, vk::ImageLayout::eGeneral} });
-        estimate_variance_desc.set_image(dev->id, "in_linear_depth", {{{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral}});
         estimate_variance_desc.set_image(dev->id, "current_moments", {{{}, moments_history[1].view, vk::ImageLayout::eGeneral}});
         estimate_variance_desc.set_image(dev->id, "moments_hist", {{{}, moments_history[0].view, vk::ImageLayout::eGeneral}});
         estimate_variance_desc.set_image(dev->id, "in_normal", { {{}, input_features.normal.view, vk::ImageLayout::eGeneral} });
-        estimate_variance_desc.set_image(dev->id, "world_position", {{{}, input_features.pos.view, vk::ImageLayout::eGeneral}});
+        estimate_variance_desc.set_image(dev->id, "in_depth", {{my_sampler.get_sampler(dev->id), input_features.depth.view, vk::ImageLayout::eGeneral}});
         estimate_variance_desc.set_image(dev->id, "current_moments_specular", { {{}, moments_history_specular[1].view, vk::ImageLayout::eGeneral} });
         estimate_variance_desc.set_image(dev->id, "moments_hist_specular", { {{}, moments_history_specular[0].view, vk::ImageLayout::eGeneral} });
 
         estimate_variance_comp.push_descriptors(cb, estimate_variance_desc, 0);
+        estimate_variance_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
         estimate_variance_comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, input_features.get_layer_count());
 
@@ -388,7 +384,6 @@ void svgf_stage::record_command_buffers()
             atrous_desc.set_image(dev->id, "final_output", {{{}, input_features.color.view, vk::ImageLayout::eGeneral}});
             atrous_desc.set_image(dev->id, "diffuse_hist", {{{}, svgf_color_hist.view, vk::ImageLayout::eGeneral}});
             atrous_desc.set_image(dev->id, "spec_hist", {{{}, svgf_spec_hist.view, vk::ImageLayout::eGeneral}});
-            atrous_desc.set_image(dev->id, "in_linear_depth", {{{}, input_features.linear_depth.view, vk::ImageLayout::eGeneral}});
             atrous_desc.set_image(dev->id, "in_normal", {{{}, input_features.normal.view, vk::ImageLayout::eGeneral}});
             atrous_desc.set_image(dev->id, "in_albedo", {{{}, input_features.albedo.view, vk::ImageLayout::eGeneral}});
             atrous_desc.set_image(dev->id, "in_material", {{{}, input_features.material.view, vk::ImageLayout::eGeneral}});
@@ -397,7 +392,7 @@ void svgf_stage::record_command_buffers()
             atrous_desc.set_image(dev->id, "diffuse_out", {{{}, atrous_diffuse_pingpong[out_index].view, vk::ImageLayout::eGeneral}});
             atrous_desc.set_image(dev->id, "specular_in", {{{}, atrous_specular_pingpong[in_index].view, vk::ImageLayout::eGeneral}});
             atrous_desc.set_image(dev->id, "specular_out", { {{}, atrous_specular_pingpong[out_index].view, vk::ImageLayout::eGeneral} });
-            atrous_desc.set_image(dev->id, "world_position", { {{}, input_features.pos.view, vk::ImageLayout::eGeneral} });
+            atrous_desc.set_image(dev->id, "in_depth", { {my_sampler.get_sampler(dev->id), input_features.depth.view, vk::ImageLayout::eGeneral} });
             atrous_desc.set_image(dev->id, "raw_diffuse", { {{}, input_features.diffuse.view, vk::ImageLayout::eGeneral} });
             atrous_desc.set_buffer("uniforms_buffer", uniforms);
             atrous_desc.set_image(dev->id, "in_moments_specular", { {{}, moments_history_specular[1].view, vk::ImageLayout::eGeneral} });

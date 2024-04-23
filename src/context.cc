@@ -19,6 +19,8 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     // These are usually spammy and useless messages.
     if(type == VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
         return false;
+    if(data->messageIdNumber == 0x912ddde2) // FIXME: Timer ID error on windows
+        return false;
     (void)severity;
     (void)type;
     (void)pUserData;

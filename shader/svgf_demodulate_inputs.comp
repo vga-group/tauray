@@ -14,7 +14,7 @@ layout(binding = 1, set = 0, rgba32f) uniform readonly image2DArray in_diffuse;
 layout(binding = 2, set = 0, rgba32f) uniform readonly image2DArray in_specular;
 layout(binding = 3, set = 0, rgba32f) uniform readonly image2DArray in_material;
 layout(binding = 4, set = 0, rgba32f) uniform readonly image2DArray in_albedo;
-layout(binding = 5, set = 0, rgba32f) uniform readonly image2DArray in_world_position;
+layout(binding = 5, set = 0) uniform sampler2DArray in_depth;
 layout(binding = 6, set = 0, rgba32f) uniform readonly image2DArray in_normal;
 layout(binding = 7, set = 0, rgba32f) uniform image2DArray out_emissive;
 layout(binding = 8, set = 0, rgba32f) uniform image2DArray out_diffuse;
@@ -41,8 +41,9 @@ void main()
     camera_pair cameras = camera.pairs[p.z];
     camera_data curr_camera = cameras.current;
 
-    vec3 pos = imageLoad(in_world_position, p).xyz;
-    if (!any(isnan(pos)))
+    vec3 pos;
+    bool invalid = get_pos(in_depth, p, curr_camera, pos);
+    if (!invalid)
     {
 #if DEMODULATION_USE_SPLIT_SUM_APPROXIMATION == 1
         vec3 V = normalize(curr_camera.origin.xyz - pos);

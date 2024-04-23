@@ -1,6 +1,9 @@
 #ifndef SVGF_GLSL
 #define SVGF_GLSL
 
+#include "projection.glsl"
+#include "camera.glsl"
+
 const float gaussian_kernel[2][2] = {
     { 1.0 / 4.0, 1.0 / 8.0  },
     { 1.0 / 8.0, 1.0 / 16.0 }
@@ -179,6 +182,29 @@ float environment_term_rtg(float f0, float NoV, float roughness)
     float scale = dot(M3 * X.xy, Y.xy) / (dot(M4 * X.xzw, Y.xyw));
 
     return clamp(bias + scale * f0, 0.0, 1.0);
+}
+
+bool get_view_pos(sampler2DArray depth_sampler, ivec3 p, camera_data cam, out vec3 pos)
+{
+    ivec2 size = control.size;
+    float depth = texelFetch(depth_sampler, p, 0).r;
+    float linear_depth = linearize_depth(depth * 2.0f - 1.0f, cam.projection_info);
+
+    vec2 uv = (vec2(p.xy)+0.5f)/vec2(size);
+    pos = unproject_position(linear_depth, vec2(uv.x, 1-uv.y), cam.projection_info);
+    return depth == 1.0f;
+}
+
+bool get_pos(sampler2DArray depth_sampler, ivec3 p, camera_data cam, out vec3 pos)
+{
+    bool valid = get_view_pos(depth_sampler, p, cam, pos);
+    pos = (cam.view_inverse * vec4(pos, 1)).xyz;
+    return valid;
+}
+
+vec3 get_pos(camera_data cam, vec3 view_pos)
+{
+    return (cam.view_inverse * vec4(view_pos, 1.0)).xyz;
 }
 
 //====================================================================================
