@@ -376,14 +376,14 @@ void add_canonical_contribution(inout sum_contribution sc, reservoir r, vec4 con
 #ifdef DEMODULATE_OUTPUT
 #define finish_output_color(p, reservoir, out_value, sc, display_size) { \
     write_reservoir(reservoir, p, display_size); \
-    if(pc.accumulate_color != 0) \
+    if(pc.update_sample_color != 0) \
+        imageStore(out_diffuse, p, out_value); \
+    else \
     { \
         float ray_length = imageLoad(out_reflection, p).r; \
         imageStore(out_diffuse, p, vec4(sc.diffuse, sc.canonical_reflection > 0.5 ? 0 : ray_length)); \
         imageStore(out_reflection, p, vec4(sc.reflection, sc.canonical_reflection > 0.5 ? ray_length : 0)); \
     } \
-    if(pc.update_sample_color != 0) \
-        imageStore(out_diffuse, p, out_value); \
 }
 #elif defined(SHADE_ALL_EXPLICIT_LIGHTS)
 #define finish_output_color(p, reservoir, out_value, sc, display_size) { \

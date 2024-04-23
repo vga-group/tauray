@@ -938,6 +938,8 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
             spatial_gather_set.set_image_array("mis_data", *spatial_mis_data);
         }
 
+        spatial_gather_set.set_image("in_color", *cached_sample_color);
+
         if(opt.demodulated_output)
         {
             spatial_gather_set.set_image(dev->id, "out_diffuse", {{{}, current_buffers.diffuse.view, vk::ImageLayout::eGeneral}});
@@ -945,7 +947,6 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         }
         else
         {
-            spatial_gather_set.set_image("out_diffuse", *cached_sample_color);
             spatial_gather_set.set_image(dev->id, "out_reflection", {{{}, current_buffers.color.view, vk::ImageLayout::eGeneral}});
         }
 
