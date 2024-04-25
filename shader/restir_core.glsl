@@ -25,6 +25,7 @@ layout(binding = 11, rgba32ui) uniform uimage2D out_reservoir_reconnection_data_
 layout(binding = 12, rgba32f) uniform image2D out_reservoir_reconnection_radiance_tex;
 layout(binding = 13, rgba32ui) uniform uimage2D out_reservoir_rng_seeds_tex;
 
+#define SH_INTERPOLATION_TRILINEAR
 #include "alias_table.glsl"
 #include "math.glsl"
 #include "random_sampler.glsl"
@@ -427,7 +428,7 @@ vec3 shade_explicit_lights(
     // Only last bounce gets fake indirect light.
     if(bounce_index == MAX_BOUNCES-1)
     {
-        vec3 ref_dir = reflect(-view, vd.mapped_normal);
+        vec3 ref_dir = reflect(view, vd.mapped_normal);
         vec3 incoming_diffuse = vec3(0);
         vec3 incoming_reflection = vec3(0);
 
@@ -451,7 +452,7 @@ vec3 shade_explicit_lights(
             // have to make sure we don't square it twice!
             incoming_reflection = calc_sh_ggx_specular(sh, sh_ref, sqrt(mat.roughness));
         }
-        float cos_v = max(dot(vd.mapped_normal, view), 0.0f);
+        float cos_v = max(dot(vd.mapped_normal, -view), 0.0f);
 
         // The fresnel value must be attenuated, because we are actually integrating
         // over all directions instead of just one specific direction here. This is
@@ -462,7 +463,7 @@ vec3 shade_explicit_lights(
 
         // have to make sure we don't square it twice!
         vec2 bi = texture(brdf_integration, vec2(cos_v, sqrt(mat.roughness))).xy;
-        contrib += incoming_reflection * mix(vec3(fresnel * bi.x + bi.y), mat.albedo.rgb, mat.metallic);
+        contrib += incoming_reflection * mix(vec3(mat.f0 * bi.x + bi.y), mat.albedo.rgb, mat.metallic);
     }
 #endif
 
