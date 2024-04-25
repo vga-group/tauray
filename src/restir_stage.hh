@@ -239,7 +239,15 @@ private:
         // float target_function_value
         // float ucw
         // float base_path_jacobian_part
-        // uint confidence_path_length (0..14: confidence, 15: nee_terminal, 16..23 head length, 24..31 tail length)
+        // uint confidence_path_length:
+        //     0..14: confidence
+        //     15: nee_terminal
+        //     16..17: head_lobe (0 = NEE/ALL, 1 = DIFFUSE, 2 = TRANSMISSION, 3 = REFLECTION)
+        //     18..19: tail_lobe (0 = NEE/ALL, 1 = DIFFUSE, 2 = TRANSMISSION, 3 = REFLECTION)
+        //     20..25: head length
+        //     26..31: tail length
+        //
+        // head_lobe == 0 implicates NEE sample.
         std::optional<texture> ris_data;
 
         // Present unless shift_map == RANDOM_REPLAY_SHIFT

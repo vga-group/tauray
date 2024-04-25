@@ -78,9 +78,11 @@ struct restir_sample
     reconnection_vertex vertex; // ReVertex
     uint head_rng_seed; // Used to replay path up to reconnection vertex
     uint tail_rng_seed; // Used to replay path after reconnection vertex
-    uint head_length;
-    uint tail_length;
-    bool nee_terminal; // Path ends in NEE.
+    uint head_lobe; // Sampled lobe at last vertex before reconnection
+    uint tail_lobe; // Sampled lobe at first vertex after reconnection
+    uint head_length; // Number of vertices before reconnection
+    uint tail_length; // Number of vertices after reconnection
+    bool nee_terminal; // true if terminal vertex is NEE.
     float base_path_jacobian_part; // J
 };
 
@@ -102,6 +104,8 @@ void init_restir_sample(out restir_sample s, uint path_seed)
     s.vertex.incident_direction = vec3(0);
     s.head_rng_seed = path_seed;
     s.tail_rng_seed = path_seed;
+    s.head_lobe = 0;
+    s.tail_lobe = 0;
     s.head_length = 0;
     s.tail_length = 0;
     s.nee_terminal = false;

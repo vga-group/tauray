@@ -62,15 +62,6 @@ sampled_material get_material(ivec2 p)
     sampled_material mat = sample_gbuffer_material(
         albedo_tex, material_tex, emission_tex, p
     );
-    // Reconnection shift cannot deal with roughness == 0 extremities
-    // correctly, so we just set the roughness to _almost_ zero but not
-    // quite. This avoids having to tag whether a ray was an extremity ray
-    // or not, while producing _almost_ the same results anyway.
-    // This should not be an issue with hybrid shift, as it would only use
-    // reconnection shift in cases where the reconnection lobes are rough.
-#ifdef USE_RECONNECTION_SHIFT
-    mat.roughness = max(mat.roughness, 0.001f);
-#endif
     return mat;
 }
 
@@ -121,9 +112,6 @@ sampled_material get_prev_material(ivec2 p)
     sampled_material mat = sample_gbuffer_material(
         prev_albedo_tex, prev_material_tex, prev_emission_tex, p
     );
-#ifdef USE_RECONNECTION_SHIFT
-    mat.roughness = max(mat.roughness, 0.001f);
-#endif
     return mat;
 }
 
@@ -187,9 +175,11 @@ reservoir unpack_reservoir(
 
     uint confidence_path_length = ris_data[3];
     r.confidence = bitfieldExtract(confidence_path_length, 0, 15);
-    r.output_sample.nee_terminal= bitfieldExtract(confidence_path_length, 15, 1) == 1 ? true : false;
-    r.output_sample.head_length = bitfieldExtract(confidence_path_length, 16, 8);
-    r.output_sample.tail_length = bitfieldExtract(confidence_path_length, 24, 8);
+    r.output_sample.nee_terminal = bitfieldExtract(confidence_path_length, 15, 1) == 1 ? true : false;
+    r.output_sample.head_lobe = bitfieldExtract(confidence_path_length, 16, 2);
+    r.output_sample.tail_lobe = bitfieldExtract(confidence_path_length, 18, 2);
+    r.output_sample.head_length = bitfieldExtract(confidence_path_length, 20, 6);
+    r.output_sample.tail_length = bitfieldExtract(confidence_path_length, 26, 6);
 
     r.output_sample.vertex.hit_info.x = uintBitsToFloat(reconnection_data[0]);
     r.output_sample.vertex.hit_info.y = uintBitsToFloat(reconnection_data[1]);
@@ -248,8 +238,10 @@ void write_reservoir(reservoir r, ivec2 p, uvec2 size)
     uint reconnection_info = 0;
     reconnection_info = bitfieldInsert(reconnection_info, int(r.confidence), 0, 15);
     reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.nee_terminal ? 1 : 0, 15, 1);
-    reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.head_length, 16, 8);
-    reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.tail_length, 24, 8);
+    reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.head_lobe, 16, 2);
+    reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.tail_lobe, 18, 2);
+    reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.head_length, 20, 6);
+    reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.tail_length, 26, 6);
     if(isnan(r.ucw) || isinf(r.ucw) || r.ucw < 0)
         r.ucw = 0;
 
@@ -576,25 +568,26 @@ struct resolved_vertex
 };
 
 bool resolve_reconnection_vertex(
-    inout reconnection_vertex rv,
+    inout restir_sample rs,
     bool rv_is_in_past,
     domain to_domain,
-    uint bounce_index,
     inout float regularization,
     out resolved_vertex to
 ){
+    uint bounce_index = rs.head_length;
+
     // if rv_is_in_past, to is cur. Otherwise, to is prev.
-    if(rv.instance_id == NULL_INSTANCE_ID)
+    if(rs.vertex.instance_id == NULL_INSTANCE_ID)
         return false;
 
-    if(rv.instance_id == POINT_LIGHT_INSTANCE_ID)
+    if(rs.vertex.instance_id == POINT_LIGHT_INSTANCE_ID)
     {
 #ifdef RESTIR_TEMPORAL
         //uint primitive_id;
-        //if(rv_is_in_past) primitive_id = point_light_map_forward.array[rv.primitive_id];
-        //else primitive_id = point_light_map_backward.array[rv.primitive_id];
+        //if(rv_is_in_past) primitive_id = point_light_map_forward.array[rs.vertex.primitive_id];
+        //else primitive_id = point_light_map_backward.array[rs.vertex.primitive_id];
 
-        if(rv.primitive_id >= scene_metadata.point_light_count)
+        if(rs.vertex.primitive_id >= scene_metadata.point_light_count)
             return false;
 
         const bool prev = !rv_is_in_past;
@@ -603,10 +596,10 @@ bool resolve_reconnection_vertex(
 #endif
 #ifdef RESTIR_TEMPORAL
         point_light pl;
-        /*if(prev) pl = prev_point_lights.lights[rv.primitive_id];
-        else*/ pl = point_lights.lights[rv.primitive_id];
+        /*if(prev) pl = prev_point_lights.lights[rs.vertex.primitive_id];
+        else*/ pl = point_lights.lights[rs.vertex.primitive_id];
 #else
-        point_light pl = point_lights.lights[rv.primitive_id];
+        point_light pl = point_lights.lights[rs.vertex.primitive_id];
 #endif
         vec3 pos = pl.pos;
 
@@ -617,7 +610,7 @@ bool resolve_reconnection_vertex(
 
         if(radius != 0)
         {
-            to.normal = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
+            to.normal = octahedral_unpack(rs.vertex.hit_info * 2.0f - 1.0f);
             pos.xyz += radius * to.normal;
         }
         else to.normal = vec3(0);
@@ -631,20 +624,20 @@ bool resolve_reconnection_vertex(
         to.dist = length(pos - to_domain.pos);
     }
     else if(
-        rv.instance_id == ENVMAP_INSTANCE_ID
+        rs.vertex.instance_id == ENVMAP_INSTANCE_ID
 #ifdef SHADE_ALL_EXPLICIT_LIGHTS
-        || rv.instance_id == MISS_INSTANCE_ID
+        || rs.vertex.instance_id == MISS_INSTANCE_ID
 #endif
     )
     {
-        to.dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
+        to.dir = octahedral_unpack(rs.vertex.hit_info * 2.0f - 1.0f);
         to.dist = TR_RESTIR.max_ray_dist;
         to.normal = vec3(0);
-        to.emission = rv.radiance_estimate;
+        to.emission = rs.vertex.radiance_estimate;
     }
-    else if(rv.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID)
+    else if(rs.vertex.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID)
     {
-        to.dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
+        to.dir = octahedral_unpack(rs.vertex.hit_info * 2.0f - 1.0f);
         to.dist = TR_RESTIR.max_ray_dist;
         to.normal = vec3(0);
 
@@ -657,13 +650,13 @@ bool resolve_reconnection_vertex(
             to.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
         }
 #else
-        to.emission = rv.radiance_estimate;
+        to.emission = rs.vertex.radiance_estimate;
 #endif
     }
 #ifndef SHADE_ALL_EXPLICIT_LIGHTS
-    else if(rv.instance_id == MISS_INSTANCE_ID)
+    else if(rs.vertex.instance_id == MISS_INSTANCE_ID)
     {
-        to.dir = octahedral_unpack(rv.hit_info * 2.0f - 1.0f);
+        to.dir = octahedral_unpack(rs.vertex.hit_info * 2.0f - 1.0f);
         to.dist = TR_RESTIR.max_ray_dist;
         to.normal = vec3(0);
 
@@ -684,7 +677,7 @@ bool resolve_reconnection_vertex(
             to.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
         }
 #else
-        to.emission = rv.radiance_estimate;
+        to.emission = rs.vertex.radiance_estimate;
 #endif
     }
 #endif
@@ -692,16 +685,16 @@ bool resolve_reconnection_vertex(
     { // Regular mesh triangle
 #ifdef RESTIR_TEMPORAL
         //if(rv_is_in_past)
-        //    rv.instance_id = instance_map_forward.array[rv.instance_id];
-        //if(rv.instance_id >= scene_metadata.instance_count)
+        //    rs.vertex.instance_id = instance_map_forward.array[rs.vertex.instance_id];
+        //if(rs.vertex.instance_id >= scene_metadata.instance_count)
         //    return false;
 #endif
         float pdf;
         vertex_data vd = get_interpolated_vertex(
             vec3(0),
-            rv.hit_info,
-            int(rv.instance_id),
-            int(rv.primitive_id)
+            rs.vertex.hit_info,
+            int(rs.vertex.instance_id),
+            int(rs.vertex.primitive_id)
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
             , to_domain.pos, pdf
 #endif
@@ -718,7 +711,7 @@ bool resolve_reconnection_vertex(
 #if !defined(SHADE_ALL_EXPLICIT_LIGHTS) || defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
         // Normal operation: just find the emissiveness of the vertex.
         // TODO: Allow mesh triangle material changes?
-        to.emission = rv.radiance_estimate;
+        to.emission = rs.vertex.radiance_estimate;
 #else
         vd.back_facing = dot(vd.hard_normal, to.dir) > 0;
         if(vd.back_facing)
@@ -730,19 +723,19 @@ bool resolve_reconnection_vertex(
 
         to.lobes = bsdf_lobes(0,0,0,0);
         vec3 tdir = to.dir * to_domain.tbn;
-        to.bsdf_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, to.lobes);
+        to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
         update_regularization(to.bsdf_pdf, regularization);
 
-        sampled_material mat = sample_material(int(rv.instance_id), vd);
+        sampled_material mat = sample_material(int(rs.vertex.instance_id), vd);
         apply_regularization(regularization, mat);
-        to.emission = mat.emission + shade_explicit_lights(int(rv.instance_id), to.dir, vd, mat, bounce_index);
+        to.emission = mat.emission + shade_explicit_lights(int(rs.vertex.instance_id), to.dir, vd, mat, bounce_index);
         return true;
 #endif
     }
 
     to.lobes = bsdf_lobes(0,0,0,0);
     vec3 tdir = to.dir * to_domain.tbn;
-    to.bsdf_pdf = ggx_bsdf_pdf(tdir, to_domain.tview, to_domain.mat, to.lobes);
+    to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
     update_regularization(to.bsdf_pdf, regularization);
     return true;
 }
@@ -832,10 +825,6 @@ bool get_intersection_info(
 #endif
 
         info.mat = sample_material(payload.instance_id, info.vd);
-#ifdef USE_RECONNECTION_SHIFT
-        // See read_domain() for context.
-        info.mat.roughness = max(info.mat.roughness, 0.001f);
-#endif
 
         apply_regularization(regularization, info.mat);
 
@@ -1232,6 +1221,9 @@ bool generate_bsdf_vertex(
     next_domain.view = dir;
     next_domain.tview = view_to_tangent_space(next_domain.view, next_domain.tbn);
 
+    if(bounce_index == MAX_BOUNCES-1)
+        bounces = false;
+
     return bounces;
 }
 
@@ -1292,8 +1284,9 @@ bool replay_path_bsdf_bounce(
     vec4 u = vec4(rand32) * INV_UINT32_MAX;
     vec3 tdir = vec3(0,0,1);
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+    uint sampled_lobe = 0;
     float bsdf_pdf = 0;
-    ggx_bsdf_sample(u, src.tview, src.mat, tdir, lobes, bsdf_pdf);
+    ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, sampled_lobe);
     update_regularization(bsdf_pdf, regularization);
     if(bsdf_pdf == 0) bsdf_pdf = 1;
     vec3 dir = src.tbn * tdir;
@@ -1392,8 +1385,9 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
         vec4 u = vec4(rand32) * INV_UINT32_MAX;
         vec3 tdir = vec3(0,0,1);
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        uint sampled_lobe = 0;
         float bsdf_pdf = 0.0f;
-        ggx_bsdf_sample(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf);
+        ggx_bsdf_sample_lobe(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf, sampled_lobe);
         vec3 dir = tail_domain.tbn * tdir;
         update_regularization(bsdf_pdf, regularization);
 
@@ -1488,7 +1482,7 @@ bool reconnection_shift_map(
 
     float regularization = 1;
     resolved_vertex to;
-    if(!resolve_reconnection_vertex(rs.vertex, !cur_to_prev, to_domain, rs.head_length, regularization, to))
+    if(!resolve_reconnection_vertex(rs, !cur_to_prev, to_domain, regularization, to))
     {
         // Failed to reconnect, vertex may have ceased to exist.
         return false;
@@ -1511,7 +1505,6 @@ bool reconnection_shift_map(
         );
 
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd);
-        mat.roughness = max(mat.roughness, 0.001f);
         apply_regularization(regularization, mat);
 
         mat3 tbn = create_tangent_space(vd.mapped_normal);
@@ -1520,7 +1513,7 @@ bool reconnection_shift_map(
 
         // Turn radiance into emission
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-        float pdf = ggx_bsdf_pdf(incident_dir, tview, mat, lobes);
+        float pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
         update_regularization(pdf, regularization);
         vec3 bsdf = modulate_bsdf(mat, lobes);
 
@@ -1677,7 +1670,7 @@ bool hybrid_shift_map(
         return false;
 
     resolved_vertex to;
-    if(!resolve_reconnection_vertex(rs.vertex, !cur_to_prev, to_domain, rs.head_length, regularization, to))
+    if(!resolve_reconnection_vertex(rs, !cur_to_prev, to_domain, regularization, to))
     {
         // Failed to reconnect, vertex may have ceased to exist.
         return false;
@@ -1715,7 +1708,7 @@ bool hybrid_shift_map(
 
         // Turn radiance into to.emission
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-        v1_pdf = ggx_bsdf_pdf(incident_dir, tview, mat, lobes);
+        v1_pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
         update_regularization(v1_pdf, regularization);
         vec3 bsdf = modulate_bsdf(mat, lobes);
 

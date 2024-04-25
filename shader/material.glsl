@@ -30,10 +30,10 @@ struct sampled_material
     float shadow_terminator_mul;
 };
 
-#define MATERIAL_LOBE_REFLECTION 2
-#define MATERIAL_LOBE_TRANSMISSION 1
-#define MATERIAL_LOBE_DIFFUSE 0
-#define MATERIAL_LOBE_ALL -1
+#define MATERIAL_LOBE_REFLECTION 3
+#define MATERIAL_LOBE_TRANSMISSION 2
+#define MATERIAL_LOBE_DIFFUSE 1
+#define MATERIAL_LOBE_ALL 0
 
 // Stores the strength of each lobe. Initialize to zero before use!
 struct bsdf_lobes

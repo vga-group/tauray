@@ -237,13 +237,15 @@ vec3 ggx_vndf_sample(
 
 // https://hal.inria.fr/hal-00996995v1/document
 // http://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf
-void ggx_bsdf_sample(
+void ggx_bsdf_sample_core(
     vec4 uniform_random,
     vec3 view_dir,
     sampled_material mat,
     out vec3 out_dir,
     inout bsdf_lobes bsdf,
-    out float pdf
+    bool eval_all_lobes,
+    out float pdf,
+    out uint selected_lobe
 ){
     const bool zero_roughness = mat.roughness < 0.001f;
     vec3 h = zero_roughness ? vec3(0,0,1) : ggx_vndf_sample(view_dir, mat.roughness, uniform_random.x, uniform_random.y);
@@ -260,7 +262,7 @@ void ggx_bsdf_sample(
     float specular_cutoff = mix(1, fresnel_importance(view_dir.z, mat), (1-mat.metallic) * max_albedo);
     // Lower noise, but seems to bias slightly :(
     //float specular_cutoff = mix(1, max(fresnel.r, max(fresnel.g, fresnel.b)), (1-mat.metallic) * max_albedo);
-    
+
     // If the specular test fails, next up is the decision between diffuse /
     // transmissive. Again, arbitrary number that must be accounted for in the
     // PDF.
@@ -280,14 +282,21 @@ void ggx_bsdf_sample(
 
     if(u <= specular_cutoff)
     { // Reflective
+        selected_lobe = MATERIAL_LOBE_REFLECTION;
         out_dir = reflect(-view_dir, h);
         float cos_l = out_dir.z;
         float cos_h = h.z; // dot(normal, h)
         float G1 = ggx_masking(cos_v, cos_d, mat.roughness);
         float D = zero_roughness ? 4 * cos_l * cos_v : ggx_distribution(cos_h, mat.roughness);
-        pdf = G1 * D / (4*abs(cos_v)) * specular_probability +
-            (zero_roughness ? 0 : pdf_cosine_hemisphere(out_dir) * diffuse_probability);
+        pdf = G1 * D / (4*abs(cos_v)) * specular_probability;
+
+        if(eval_all_lobes)
+            pdf += (zero_roughness ? 0 : pdf_cosine_hemisphere(out_dir) * diffuse_probability);
+
         ggx_brdf_inner(out_dir, view_dir, h, fresnel, D, cos_d, mat, bsdf);
+
+        if(!eval_all_lobes)
+            bsdf.diffuse = 0;
 
         // With zero roughness, the pdf really reaches infinity for the specular
         // part. Compared to that, the diffuse part basically reaches zero.
@@ -307,6 +316,7 @@ void ggx_bsdf_sample(
         u = clamp((u - specular_cutoff)/(1 - specular_cutoff), 0.0f, 0.99999f);
         if(u <= diffuse_cutoff)
         { // Diffuse
+            selected_lobe = MATERIAL_LOBE_DIFFUSE;
             u = clamp(u/diffuse_cutoff, 0.0f, 0.99999f);
             out_dir = sample_cosine_hemisphere(vec2(u, uniform_random.w));
             // The half-vector is no longer related to the one from earlier;
@@ -319,10 +329,11 @@ void ggx_bsdf_sample(
 
             float G1 = ggx_masking(cos_v, cos_d, mat.roughness);
             float D = (zero_roughness ? 0 : ggx_distribution(cos_h, mat.roughness));
-            pdf = G1 * D / (4*abs(cos_v)) * specular_probability +
-                pdf_cosine_hemisphere(out_dir) * diffuse_probability;
+            pdf = pdf_cosine_hemisphere(out_dir) * diffuse_probability;
+            if(eval_all_lobes)
+                pdf += G1 * D / (4*abs(cos_v)) * specular_probability;
             ggx_brdf_inner(out_dir, view_dir, h, fresnel, D, cos_d, mat, bsdf);
-            if(zero_roughness)
+            if(!eval_all_lobes || zero_roughness)
             {
                 bsdf.dielectric_reflection = 0;
                 bsdf.metallic_reflection = 0;
@@ -330,6 +341,7 @@ void ggx_bsdf_sample(
         }
         else
         { // Transmissive
+            selected_lobe = MATERIAL_LOBE_TRANSMISSION;
             out_dir = normalize(refract(-view_dir, h, mat.ior_in/mat.ior_out));
             if(any(isnan(out_dir)))
             {
@@ -357,7 +369,32 @@ void ggx_bsdf_sample(
     }
 }
 
-float ggx_bsdf_pdf(
+void ggx_bsdf_sample(
+    vec4 uniform_random,
+    vec3 view_dir,
+    sampled_material mat,
+    out vec3 out_dir,
+    inout bsdf_lobes bsdf,
+    out float pdf
+){
+    uint lobe_index;
+    ggx_bsdf_sample_core(uniform_random, view_dir, mat, out_dir, bsdf, true, pdf, lobe_index);
+}
+
+void ggx_bsdf_sample_lobe(
+    vec4 uniform_random,
+    vec3 view_dir,
+    sampled_material mat,
+    out vec3 out_dir,
+    inout bsdf_lobes bsdf,
+    out float pdf,
+    out uint lobe_index
+){
+    ggx_bsdf_sample_core(uniform_random, view_dir, mat, out_dir, bsdf, false, pdf, lobe_index);
+}
+
+float ggx_bsdf_lobe_pdf(
+    uint lobe,
     vec3 out_dir,
     vec3 view_dir,
     sampled_material mat,
@@ -404,16 +441,25 @@ float ggx_bsdf_pdf(
         float specular = fresnel * geometry * distribution;
         float kd = (1.0f - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
 
-        pdf = G1 * distribution / (4*abs(cos_v)) * specular_probability +
-            pdf_cosine_hemisphere(out_dir) * diffuse_probability;
-
-        if(!isnan(pdf) && !isinf(pdf) && pdf > 0.0f)
+        if(lobe == MATERIAL_LOBE_ALL || lobe == MATERIAL_LOBE_DIFFUSE)
         {
-            bsdf.diffuse += kd * cos_l / M_PI;
-            bsdf.dielectric_reflection += fresnel * geometry * distribution * cos_l * (1.0f - mat.metallic);
-            bsdf.metallic_reflection += geometry * distribution * cos_l * mat.metallic;
+            float diffuse_pdf = pdf_cosine_hemisphere(out_dir) * diffuse_probability;
+            if(!isnan(diffuse_pdf) && !isinf(diffuse_pdf) && diffuse_pdf > 0.0f)
+            {
+                bsdf.diffuse += kd * cos_l / M_PI;
+                pdf += diffuse_pdf;
+            }
         }
-        else pdf = 0;
+        if(lobe == MATERIAL_LOBE_ALL || lobe == MATERIAL_LOBE_REFLECTION)
+        {
+            float specular_pdf = G1 * distribution / (4*abs(cos_v)) * specular_probability;
+            if(!isnan(specular_pdf) && !isinf(specular_pdf) && specular_pdf > 0.0f)
+            {
+                bsdf.dielectric_reflection += fresnel * geometry * distribution * cos_l * (1.0f - mat.metallic);
+                bsdf.metallic_reflection += geometry * distribution * cos_l * mat.metallic;
+                pdf += specular_pdf;
+            }
+        }
     }
     else
     { // Transmissive
@@ -421,17 +467,29 @@ float ggx_bsdf_pdf(
         // Un-predivide geometry term ;)
         geometry *= 4.0;
 
-        pdf = (abs(cos_d * cos_o) * G1 * distribution) / (abs(cos_v) * denom * denom * M_PI) * transmissive_probability;
-
-        if(!isnan(pdf) && !isinf(pdf) && pdf > 0.0f)
+        if(lobe == MATERIAL_LOBE_ALL || lobe == MATERIAL_LOBE_TRANSMISSION)
         {
-            // This should be the reciprocal form, which is necessary when the light
-            // source is inside the volume...
-            bsdf.transmission += -cos_l * abs(cos_d * cos_o) * mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * geometry * distribution / (denom * denom);
+            float transmit_pdf = (abs(cos_d * cos_o) * G1 * distribution) / (abs(cos_v) * denom * denom * M_PI) * transmissive_probability;
+
+            if(!isnan(transmit_pdf) && !isinf(transmit_pdf) && transmit_pdf > 0.0f)
+            {
+                // This should be the reciprocal form, which is necessary when the light
+                // source is inside the volume...
+                bsdf.transmission += -cos_l * abs(cos_d * cos_o) * mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * geometry * distribution / (denom * denom);
+                pdf += transmit_pdf;
+            }
         }
-        else pdf = 0;
     }
     return pdf;
+}
+
+float ggx_bsdf_pdf(
+    vec3 out_dir,
+    vec3 view_dir,
+    sampled_material mat,
+    inout bsdf_lobes bsdf
+){
+    return ggx_bsdf_lobe_pdf(MATERIAL_LOBE_ALL, out_dir, view_dir, mat, bsdf);
 }
 
 void material_bsdf_sample(
