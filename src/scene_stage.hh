@@ -74,6 +74,7 @@ public:
 
     descriptor_set& get_descriptors();
     descriptor_set& get_raster_descriptors();
+    descriptor_set& get_temporal_tables();
 
     void get_defines(std::map<std::string, std::string>& defines);
 
@@ -176,6 +177,7 @@ private:
     );
     bool reserve_pre_transformed_vertices(size_t max_vertex_count);
     void clear_pre_transformed_vertices();
+    void update_temporal_tables(uint32_t frame_index);
 
     //==========================================================================
     // Shadow map stuff.
@@ -210,6 +212,7 @@ private:
     gpu_buffer sh_grid_data;
     gpu_buffer shadow_map_data;
     gpu_buffer camera_data;
+
     sampler envmap_sampler;
     sampler shadow_sampler;
     sampler sh_grid_sampler;
@@ -225,8 +228,23 @@ private:
     texture noise_vector_2d;
     texture noise_vector_3d;
 
+    // Temporal tables
+    std::vector<uint32_t> backward_instance_ids;
+    std::vector<uint32_t> forward_instance_ids;
+    std::vector<uint32_t> backward_point_light_ids;
+    std::vector<uint32_t> forward_point_light_ids;
+    size_t prev_instance_count;
+    size_t prev_point_light_count;
+
+    gpu_buffer temporal_tables;
+    gpu_buffer prev_point_light_data;
+
+    //==========================================================================
+    // Descriptor sets
+    //==========================================================================
     descriptor_set scene_desc;
     descriptor_set scene_raster_desc;
+    descriptor_set temporal_tables_desc;
 
     //==========================================================================
     // Pipelines

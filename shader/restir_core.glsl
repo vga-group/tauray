@@ -41,7 +41,7 @@ layout(binding = 18) uniform sampler2D prev_emission_tex;
 layout(binding = 19) uniform sampler2D prev_material_tex;
 layout(binding = 20) uniform sampler2D motion_tex;
 
-//#include "temporal_tables.glsl"
+#include "temporal_tables.glsl"
 #endif
 
 #include "gbuffer.glsl"
@@ -573,11 +573,11 @@ bool resolve_reconnection_vertex(
     if(rs.vertex.instance_id == POINT_LIGHT_INSTANCE_ID)
     {
 #ifdef RESTIR_TEMPORAL
-        //uint primitive_id;
-        //if(rv_is_in_past) primitive_id = point_light_map_forward.array[rs.vertex.primitive_id];
-        //else primitive_id = point_light_map_backward.array[rs.vertex.primitive_id];
+        uint primitive_id;
+        if(rv_is_in_past) primitive_id = point_light_forward_map.array[rs.vertex.primitive_id];
+        else primitive_id = point_light_backward_map.array[rs.vertex.primitive_id];
 
-        if(rs.vertex.primitive_id >= scene_metadata.point_light_count)
+        if(primitive_id >= scene_metadata.point_light_count)
             return false;
 
         const bool prev = !rv_is_in_past;
@@ -586,8 +586,8 @@ bool resolve_reconnection_vertex(
 #endif
 #ifdef RESTIR_TEMPORAL
         point_light pl;
-        /*if(prev) pl = prev_point_lights.lights[rs.vertex.primitive_id];
-        else*/ pl = point_lights.lights[rs.vertex.primitive_id];
+        if(prev) pl = prev_point_lights.lights[rs.vertex.primitive_id];
+        else pl = point_lights.lights[rs.vertex.primitive_id];
 #else
         point_light pl = point_lights.lights[rs.vertex.primitive_id];
 #endif
@@ -674,10 +674,10 @@ bool resolve_reconnection_vertex(
     else
     { // Regular mesh triangle
 #ifdef RESTIR_TEMPORAL
-        //if(rv_is_in_past)
-        //    rs.vertex.instance_id = instance_map_forward.array[rs.vertex.instance_id];
-        //if(rs.vertex.instance_id >= scene_metadata.instance_count)
-        //    return false;
+        if(rv_is_in_past)
+            rs.vertex.instance_id = instance_forward_map.array[rs.vertex.instance_id];
+        if(rs.vertex.instance_id >= scene_metadata.instance_count)
+            return false;
 #endif
         float pdf;
         vertex_data vd = get_interpolated_vertex(
@@ -785,10 +785,10 @@ bool get_intersection_info(
     if(payload.instance_id >= 0)
     { // Mesh
 #ifdef RESTIR_TEMPORAL
-        /*if(in_past)
+        if(in_past)
         {
             // Translate previous mesh to current frame
-            uint new_id = instance_map_forward.array[payload.instance_id];
+            uint new_id = instance_forward_map.array[payload.instance_id];
             if(new_id == 0xFFFFFFFFu)
             {
                 candidate.instance_id = NULL_INSTANCE_ID;
@@ -798,7 +798,7 @@ bool get_intersection_info(
                 return false;
             }
             payload.instance_id = int(new_id);
-        }*/
+        }
 #endif
 
         float pdf = 0.0f;
@@ -840,11 +840,10 @@ bool get_intersection_info(
         // flags cull them.
         point_light pl;
 #ifdef RESTIR_TEMPORAL
-        /*
         if(in_past)
         {
             pl = prev_point_lights.lights[payload.primitive_id];
-            uint new_id = point_light_map_forward.array[payload.primitive_id];
+            uint new_id = point_light_forward_map.array[payload.primitive_id];
             if(new_id == 0xFFFFFFFFu)
             {
                 candidate.instance_id = NULL_INSTANCE_ID;
@@ -856,7 +855,6 @@ bool get_intersection_info(
             payload.primitive_index = int(new_id);
         }
         else
-        */
 #endif
         pl = point_lights.lights[payload.primitive_id];
 

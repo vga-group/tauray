@@ -155,11 +155,12 @@ layout(binding = 8, set = SCENE_SET) readonly buffer environment_map_alias_table
 
 layout(binding = 9, set = SCENE_SET, scalar) uniform scene_metadata_buffer
 {
+    uint instance_count;
     uint point_light_count;
     uint directional_light_count;
     uint tri_light_count;
-    int environment_proj;
     vec4 environment_factor;
+    int environment_proj;
 } scene_metadata;
 
 #define POINT_LIGHT_FOR_BEGIN(world_pos) \

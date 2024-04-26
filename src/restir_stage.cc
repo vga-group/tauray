@@ -397,9 +397,9 @@ restir_stage::restir_stage(
             {
                 &temporal_set,
                 &ss.get_descriptors(),
-                &ss.get_raster_descriptors()
+                &ss.get_raster_descriptors(),
                 // TODO: Temporal mapping tables!
-                //scene_data->get_temporal_tables_descriptor_set().get_layout()
+                &ss.get_temporal_tables()
             }
         );
     }
@@ -778,7 +778,8 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
 
     { // CANONICAL
         canonical_set.set_image("out_color", *cached_sample_color);
-        canonical_set.set_image(dev->id, "out_length", {{{}, current_buffers.reflection.view, vk::ImageLayout::eGeneral}});
+        if(opt.demodulated_output)
+            canonical_set.set_image(dev->id, "out_length", {{{}, current_buffers.reflection.view, vk::ImageLayout::eGeneral}});
         auto& set = canonical_set;
         BIND_RESERVOIRS
         USED_BUFFERS
@@ -822,8 +823,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
         temporal.push_descriptors(cmd, temporal_set, 0);
         temporal.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
         temporal.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
-        // TODO: Temporal tables!
-        //temporal.set_descriptors(cmd, scene_data->get_temporal_tables_descriptor_set(), 0, 2);
+        temporal.set_descriptors(cmd, scene_data->get_temporal_tables(), 0, 3);
 
         temporal_push_constant_buffer pc;
         pc.config = config;

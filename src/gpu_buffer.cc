@@ -72,6 +72,8 @@ void gpu_buffer::update(uint32_t frame_index, const void* data, size_t offset, s
 {
     if(!*this) return;
 
+    offset = std::min(size, offset);
+
     if(bytes == 0 || bytes > size - offset)
         bytes = size - offset;
 
@@ -91,6 +93,8 @@ void gpu_buffer::update(uint32_t frame_index, const void* data, size_t offset, s
 void gpu_buffer::update_one(device_id id, uint32_t frame_index, const void* data, size_t offset, size_t bytes)
 {
     if(!*this) return;
+
+    offset = std::min(size, offset);
 
     if(bytes == 0 || bytes > size - offset)
         bytes = size - offset;

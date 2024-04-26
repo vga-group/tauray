@@ -164,11 +164,12 @@ struct light_order_push_constants
 
 struct scene_metadata_buffer
 {
+    uint32_t instance_count;
     uint32_t point_light_count;
     uint32_t directional_light_count;
     uint32_t tri_light_count;
-    int32_t environment_proj;
     pvec4 environment_factor;
+    int32_t environment_proj;
 };
 
 struct skinning_push_constants
@@ -186,6 +187,23 @@ struct pre_tranform_push_constants
 {
     uint32_t vertex_count;
     uint32_t instance_id;
+};
+
+struct temporal_instance_data
+{
+    uint64_t frame_stamp;
+    uint32_t static_base_index;
+    uint32_t dynamic_base_index;
+    uint32_t group_count;
+    mat4 cur_transform;
+    mat4 cur_normal_transform;
+    mat4 prev_transform;
+    mat4 prev_normal_transform;
+};
+
+struct temporal_light_data
+{
+    uint32_t prev_index;
 };
 
 const quat face_orientations[6] = {
@@ -230,7 +248,7 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     instance_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     scene_metadata(dev, sizeof(scene_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
     directional_light_data(dev, 4, vk::BufferUsageFlagBits::eStorageBuffer),
-    point_light_data(dev, 4, vk::BufferUsageFlagBits::eStorageBuffer),
+    point_light_data(dev, max(opt.max_lights * sizeof(point_light_entry), (size_t)4), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc),
     tri_light_data(dev, 4, vk::BufferUsageFlagBits::eStorageBuffer),
     sh_grid_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     shadow_map_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
@@ -279,8 +297,13 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     brdf_integration(dev, get_resource_path("data/brdf_integration.exr")),
     noise_vector_2d(dev, get_resource_path("data/noise_vector_2d.exr")),
     noise_vector_3d(dev, get_resource_path("data/noise_vector_3d.exr")),
+    prev_instance_count(0),
+    prev_point_light_count(0),
+    temporal_tables(dev, max(2 * (opt.max_instances + opt.max_lights) * sizeof(uint32_t), (size_t)4), vk::BufferUsageFlagBits::eStorageBuffer),
+    prev_point_light_data(dev, max(opt.max_lights * sizeof(point_light_entry), (size_t)4), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst),
     scene_desc(dev),
     scene_raster_desc(dev),
+    temporal_tables_desc(dev),
     skinning_desc(dev),
     pre_transform_desc(dev),
     opt(opt), stage_timer(dev, "scene update")
@@ -422,6 +445,11 @@ descriptor_set& scene_stage::get_descriptors()
 descriptor_set& scene_stage::get_raster_descriptors()
 {
     return scene_raster_desc;
+}
+
+descriptor_set& scene_stage::get_temporal_tables()
+{
+    return temporal_tables_desc;
 }
 
 void scene_stage::get_defines(std::map<std::string, std::string>& defines)
@@ -624,21 +652,68 @@ int scene_stage::get_shadow_map_index(const light* l)
 bool scene_stage::refresh_instance_cache()
 {
     uint64_t frame_counter = get_context()->get_frame_counter();
-    size_t i = 0;
+    uint32_t i = 0;
     entity last_object_id = INVALID_ENTITY;
     group_cache.clear();
+
+    prev_instance_count = backward_instance_ids.size();
+    backward_instance_ids.clear();
+
     bool scene_changed = false;
 
     auto add_instances = [&](bool static_mesh, bool static_transformable){
-        cur_scene->foreach([&](entity id, transformable& t, model& mod){
+        cur_scene->foreach([&](entity id, transformable& t, model& mod, temporal_instance_data* td){
             // If requesting dynamic meshes, we don't care about the
             // transformable staticness any more.
             if(static_mesh && static_transformable != t.is_static())
                 return;
 
-            bool fetched_transforms = false;
             mat4 transform;
             mat4 normal_transform;
+            mat4 prev_transform;
+            uint32_t prev_i = 0xFFFFFFFFu;
+
+            if(td)
+            {
+                if(td->group_count == mod.group_count())
+                    prev_i = static_mesh ? td->static_base_index : td->dynamic_base_index;
+                if(static_mesh) td->static_base_index = i;
+                else td->dynamic_base_index = i;
+
+                td->group_count = mod.group_count();
+
+                if(td->frame_stamp == frame_counter || t.is_static())
+                {
+                    td->frame_stamp = frame_counter;
+                    transform = td->cur_transform;
+                    normal_transform = td->cur_normal_transform;
+                    prev_transform = td->prev_transform;
+                }
+                else
+                {
+                    transform = t.get_global_transform();
+                    normal_transform = t.get_global_inverse_transpose_transform();
+                    prev_transform = td->cur_transform;
+                    td->frame_stamp = frame_counter;
+                    td->prev_transform = td->cur_transform;
+                    td->prev_normal_transform = td->cur_normal_transform;
+                    td->cur_transform = transform;
+                    td->cur_normal_transform = normal_transform;
+                }
+            }
+            else
+            {
+                transform = t.get_global_transform();
+                normal_transform = t.get_global_inverse_transpose_transform();
+                prev_transform = transform;
+                cur_scene->attach(id, temporal_instance_data{
+                    frame_counter,
+                    static_mesh ? i : 0xFFFFFFFFu,
+                    static_mesh ? 0xFFFFFFFFu : i,
+                    (uint32_t)mod.group_count(), transform, normal_transform, transform, normal_transform
+                });
+            }
+
             for(const auto& vg: mod)
             {
                 bool is_static = !vg.m->is_skinned() && !vg.m->get_animation_source();
@@ -692,16 +767,9 @@ bool scene_stage::refresh_instance_cache()
 
                 if(inst.last_refresh_frame+1 >= frame_counter || !t.is_static())
                 {
-                    if(!fetched_transforms)
+                    if(inst.prev_transform != prev_transform)
                     {
-                        transform = t.get_global_transform();
-                        normal_transform = t.get_global_inverse_transpose_transform();
-                        fetched_transforms = true;
-                    }
-
-                    if(inst.prev_transform != inst.transform)
-                    {
-                        inst.prev_transform = inst.transform;
+                        inst.prev_transform = prev_transform;
                         inst.last_refresh_frame = frame_counter;
                     }
                     if(inst.transform != transform)
@@ -711,6 +779,9 @@ bool scene_stage::refresh_instance_cache()
                         inst.last_refresh_frame = frame_counter;
                     }
                 }
+                backward_instance_ids.push_back(prev_i);
+                if(prev_i != 0xFFFFFFFFu)
+                    prev_i++;
                 ++i;
             }
         });
@@ -723,6 +794,7 @@ bool scene_stage::refresh_instance_cache()
         instances.resize(i);
         scene_changed = true;
     }
+
     if(scene_changed)
         ensure_blas();
 
@@ -887,6 +959,44 @@ void scene_stage::clear_pre_transformed_vertices()
             ptv.count = 0;
         }
     }
+}
+
+void scene_stage::update_temporal_tables(uint32_t frame_index)
+{
+    forward_instance_ids.clear();
+    forward_instance_ids.resize(prev_instance_count, 0xFFFFFFFFu);
+    forward_point_light_ids.clear();
+    forward_point_light_ids.resize(prev_point_light_count, 0xFFFFFFFFu);
+
+    for(uint32_t new_id = 0; new_id < backward_instance_ids.size(); ++new_id)
+    {
+        uint32_t& prev_id = backward_instance_ids[new_id];
+        if(prev_id < forward_instance_ids.size())
+            forward_instance_ids[prev_id] = new_id;
+        else prev_id = 0xFFFFFFFFu;
+    }
+    for(uint32_t new_id = 0; new_id < backward_point_light_ids.size(); ++new_id)
+    {
+        uint32_t& prev_id = backward_point_light_ids[new_id];
+        if(prev_id < forward_instance_ids.size())
+            forward_point_light_ids[prev_id] = new_id;
+        else prev_id = 0xFFFFFFFFu;
+    }
+
+    geometry_outdated |= temporal_tables.resize(
+        (backward_instance_ids.size() +
+        forward_instance_ids.size() +
+        backward_point_light_ids.size() +
+        forward_point_light_ids.size()) * sizeof(uint32_t)
+    );
+    size_t instance_backward_map_offset =  0;
+    size_t instance_forward_map_offset = instance_backward_map_offset + backward_instance_ids.size() * sizeof(uint32_t);
+    size_t point_light_backward_map_offset = instance_forward_map_offset + forward_instance_ids.size() * sizeof(uint32_t);
+    size_t point_light_forward_map_offset = point_light_backward_map_offset + backward_point_light_ids.size() * sizeof(uint32_t);
+    temporal_tables.update(frame_index, backward_instance_ids.data(), instance_backward_map_offset, backward_instance_ids.size() * sizeof(uint32_t));
+    temporal_tables.update(frame_index, forward_instance_ids.data(), instance_forward_map_offset, forward_instance_ids.size() * sizeof(uint32_t));
+    temporal_tables.update(frame_index, backward_point_light_ids.data(), point_light_backward_map_offset, backward_point_light_ids.size() * sizeof(uint32_t));
+    temporal_tables.update(frame_index, forward_point_light_ids.data(), point_light_forward_map_offset, forward_point_light_ids.size() * sizeof(uint32_t));
 }
 
 void scene_stage::update(uint32_t frame_index)
@@ -1136,19 +1246,44 @@ void scene_stage::update(uint32_t frame_index)
         });
     }
 
+    prev_point_light_count = backward_point_light_ids.size();
+    backward_point_light_ids.clear();
+
     size_t point_light_count = cur_scene->count<point_light>() + cur_scene->count<spotlight>();
     lights_outdated |= point_light_data.resize(sizeof(point_light_entry) * point_light_count);
+    lights_outdated |= prev_point_light_data.resize(sizeof(point_light_entry) * prev_point_light_count);
+
     point_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
         point_light_entry* point_light_data =
             reinterpret_cast<point_light_entry*>(light_data);
 
-        size_t i = 0;
-        cur_scene->foreach([&](transformable& t, point_light& pl) {
+        uint32_t i = 0;
+        cur_scene->foreach([&](entity id, transformable& t, point_light& pl, temporal_light_data* td) {
+            if(td)
+            {
+                backward_point_light_ids.push_back(td->prev_index);
+                td->prev_index = i;
+            }
+            else
+            {
+                backward_point_light_ids.push_back(0xFFFFFFFFu);
+                cur_scene->attach(id, temporal_light_data{i});
+            }
             point_light_entry pe = point_light_entry(t, pl, get_shadow_map_index(&pl));
             point_light_data[i] = pe;
             ++i;
         });
-        cur_scene->foreach([&](transformable& t, spotlight& sl) {
+        cur_scene->foreach([&](entity id, transformable& t, spotlight& sl, temporal_light_data* td) {
+            if(td)
+            {
+                backward_point_light_ids.push_back(td->prev_index);
+                td->prev_index = i;
+            }
+            else
+            {
+                backward_point_light_ids.push_back(0xFFFFFFFFu);
+                cur_scene->attach(id, temporal_light_data{i});
+            }
             point_light_entry pe = point_light_entry(t, sl, get_shadow_map_index(&sl));
             point_light_data[i] = pe;
             ++i;
@@ -1176,6 +1311,7 @@ void scene_stage::update(uint32_t frame_index)
 
     scene_metadata.map<scene_metadata_buffer>(
         frame_index, [&](scene_metadata_buffer* data){
+            data->instance_count = instances.size();
             data->point_light_count = point_light_count;
             data->directional_light_count = directional_light_count;
             data->tri_light_count = tri_light_count;
@@ -1309,6 +1445,7 @@ void scene_stage::update(uint32_t frame_index)
     if(lights_outdated) light_change_counter++;
     if(geometry_outdated) geometry_change_counter++;
 
+    update_temporal_tables(frame_index);
     if(lights_outdated || geometry_outdated || envmap_outdated)
         update_descriptor_set();
 
@@ -1336,6 +1473,13 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
         {
             vk::CommandBuffer cb = begin_graphics(dev.id);
             stage_timer.begin(cb, dev.id, i);
+
+            // Copy over previous light data.
+            if(prev_point_light_count != 0)
+            {
+                cb.copyBuffer(point_light_data[dev.id], prev_point_light_data[dev.id], vk::BufferCopy{0, 0, prev_point_light_count * sizeof(point_light_entry)});
+            }
+
             instance_data.upload(dev.id, i, cb);
             directional_light_data.upload(dev.id, i, cb);
             point_light_data.upload(dev.id, i, cb);
@@ -1344,6 +1488,7 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
             camera_data.upload(dev.id, i, cb);
             scene_metadata.upload(dev.id, i, cb);
             light_aabb_buffer.upload(dev.id, i, cb);
+            temporal_tables.upload(dev.id, i, cb);
 
             bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
 
@@ -1563,6 +1708,12 @@ void scene_stage::init_descriptor_set_layout()
     scene_raster_desc.add("pcf_noise_vector_2d", {6, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
     scene_raster_desc.add("pcf_noise_vector_3d", {7, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
     scene_raster_desc.add("brdf_integration", {8, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+
+    temporal_tables_desc.add("instance_forward_map", {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    temporal_tables_desc.add("instance_backward_map", {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    temporal_tables_desc.add("point_light_forward_map", {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    temporal_tables_desc.add("point_light_backward_map", {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    temporal_tables_desc.add("prev_point_lights", {4, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
 }
 
 void scene_stage::update_descriptor_set()
@@ -1664,6 +1815,17 @@ void scene_stage::update_descriptor_set()
         }
         scene_raster_desc.set_image(id, 0, "sh_grid_data", std::move(dii_3d));
     }
+
+    temporal_tables_desc.reset(temporal_tables_desc.get_mask(), 1);
+    size_t instance_backward_map_offset =  0;
+    size_t instance_forward_map_offset = instance_backward_map_offset + backward_instance_ids.size() * sizeof(uint32_t);
+    size_t point_light_backward_map_offset = instance_forward_map_offset + forward_instance_ids.size() * sizeof(uint32_t);
+    size_t point_light_forward_map_offset = point_light_backward_map_offset + backward_point_light_ids.size() * sizeof(uint32_t);
+    temporal_tables_desc.set_buffer(0, "instance_forward_map", temporal_tables, instance_forward_map_offset);
+    temporal_tables_desc.set_buffer(0, "instance_backward_map", temporal_tables, instance_backward_map_offset);
+    temporal_tables_desc.set_buffer(0, "point_light_forward_map", temporal_tables, point_light_forward_map_offset);
+    temporal_tables_desc.set_buffer(0, "point_light_backward_map", temporal_tables, point_light_backward_map_offset);
+    temporal_tables_desc.set_buffer(0, "prev_point_lights", prev_point_light_data);
 }
 
 }

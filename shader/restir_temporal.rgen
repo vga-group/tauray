@@ -8,7 +8,6 @@
 
 #define RESTIR_TEMPORAL
 #define RAY_TRACING
-#define TEMPORAL_TABLE_SET 2
 #include "restir.glsl"
 
 layout(push_constant) uniform push_constant_buffer
