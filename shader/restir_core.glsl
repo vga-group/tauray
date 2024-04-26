@@ -331,7 +331,6 @@ struct sum_contribution
 {
     vec3 diffuse;
     vec3 reflection;
-    float canonical_reflection;
 };
 
 sum_contribution init_sum_contribution(vec3 emission)
@@ -340,7 +339,6 @@ sum_contribution init_sum_contribution(vec3 emission)
 #ifdef DEMODULATE_OUTPUT
     sc.diffuse = vec3(0);
     sc.reflection = vec3(0);
-    sc.canonical_reflection = 0;
 #else
     sc.diffuse = emission;
 #endif
@@ -358,14 +356,6 @@ void add_contribution(inout sum_contribution sc, reservoir r, vec4 contrib, floa
 #endif
 }
 
-void add_canonical_contribution(inout sum_contribution sc, reservoir r, vec4 contrib, float weight)
-{
-    add_contribution(sc, r, contrib, weight);
-#ifdef DEMODULATE_OUTPUT
-    sc.canonical_reflection = contrib.a;
-#endif
-}
-
 #ifdef DEMODULATE_OUTPUT
 #define finish_output_color(p, reservoir, out_value, sc, display_size) { \
     write_reservoir(reservoir, p, display_size); \
@@ -373,9 +363,9 @@ void add_canonical_contribution(inout sum_contribution sc, reservoir r, vec4 con
         imageStore(out_diffuse, p, out_value); \
     else \
     { \
-        float ray_length = imageLoad(out_reflection, p).r; \
-        imageStore(out_diffuse, p, vec4(sc.diffuse, sc.canonical_reflection > 0.5 ? 0 : ray_length)); \
-        imageStore(out_reflection, p, vec4(sc.reflection, sc.canonical_reflection > 0.5 ? ray_length : 0)); \
+        vec2 ray_lengths = imageLoad(out_reflection, p).rg; \
+        imageStore(out_diffuse, p, vec4(sc.diffuse, ray_lengths.r)); \
+        imageStore(out_reflection, p, vec4(sc.reflection, ray_lengths.g)); \
     } \
 }
 #elif defined(SHADE_ALL_EXPLICIT_LIGHTS)

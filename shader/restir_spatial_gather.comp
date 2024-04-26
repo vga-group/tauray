@@ -87,7 +87,7 @@ void main()
 
     if(MAX_SPATIAL_SAMPLES == 0)
     {
-        add_canonical_contribution(sc, canonical_pixel, canonical_value, max(canonical_pixel.ucw, 0.0f));
+        add_contribution(sc, canonical_pixel, canonical_value, max(canonical_pixel.ucw, 0.0f));
         finish_output_color(p, canonical_pixel, out_value, sc, pc.display_size);
         return;
     }
@@ -143,7 +143,7 @@ void main()
     // canonical_resampling_mis_weight previously)
     float resampling_weight = canonical_resampling_mis_weight * canonical_pixel.target_function_value * max(canonical_pixel.ucw, 0); // w_i
 
-    add_canonical_contribution(sc, canonical_pixel, canonical_value, canonical_resampling_mis_weight * max(canonical_pixel.ucw, 0));
+    add_contribution(sc, canonical_pixel, canonical_value, canonical_resampling_mis_weight * max(canonical_pixel.ucw, 0));
 
     if(update_reservoir(
         generate_single_uniform_random(seed.x), r,

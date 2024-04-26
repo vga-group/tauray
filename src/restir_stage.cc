@@ -778,6 +778,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
 
     { // CANONICAL
         canonical_set.set_image("out_color", *cached_sample_color);
+        canonical_set.set_image(dev->id, "out_length", {{{}, current_buffers.reflection.view, vk::ImageLayout::eGeneral}});
         auto& set = canonical_set;
         BIND_RESERVOIRS
         USED_BUFFERS

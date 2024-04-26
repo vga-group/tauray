@@ -19,7 +19,7 @@ layout(push_constant) uniform push_constant_buffer
 } pc;
 
 layout(binding = 16, rgba32f) writeonly uniform image2D out_color;
-layout(binding = 17, r32f) writeonly uniform image2D out_length;
+layout(binding = 17, rg32f) writeonly uniform image2D out_length;
 
 #include "restir_core.glsl"
 
@@ -156,7 +156,11 @@ bool sample_path_bsdf_bounce(
 
 #ifdef DEMODULATE_OUTPUT
     if(candidate.head_length + candidate.tail_length == 0)
-        imageStore(out_length, ivec2(gl_LaunchIDEXT.xy), vec4(distance(src.pos, dst.pos)));
+    {
+        float inv_len = 1.0f / distance(src.pos, dst.pos);
+        vec2 lengths = sampled_lobe == MATERIAL_LOBE_DIFFUSE ? vec2(inv_len, 0) : vec2(0, inv_len);
+        imageStore(out_length, ivec2(gl_LaunchIDEXT.xy), vec4(lengths, 0, 0));
+    }
 #endif
 
     // bsdf_pdf is set to zero for extremities, such as mirror-like
