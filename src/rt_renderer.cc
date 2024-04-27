@@ -217,7 +217,7 @@ void rt_renderer<Pipeline>::init_resources()
     if(use_raster_gbuffer) img_usage |= vk::ImageUsageFlagBits::eColorAttachment;
 
     spec.set_all_usage(img_usage);
-    spec.set_all_usage(img_usage | vk::ImageUsageFlagBits::eSampled);
+    spec.set_all_usage(img_usage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst);
 
     spec.color_usage = vk::ImageUsageFlagBits::eStorage|
         vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eTransferSrc;

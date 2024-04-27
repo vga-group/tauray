@@ -54,8 +54,15 @@ vec3 viridis_quintic( float x )
 float get_specular_dominant_factor(float n_dot_v, float roughness)
 {
     // https://seblagarde.files.wordpress.com/2015/07/course_notes_moving_frostbite_to_pbr_v32.pdf
+
+#if 1
+    // Simple approximation
+    float smoothness = saturate(1 - roughness);
+    return smoothness * (sqrt(smoothness) + roughness);
+#else
     float l = 0.298475f * log(39.4115f - 39.0029f * roughness);
     return clamp(pow(max(1.0f - n_dot_v, 0.0f), 10.8649f) * (1.0f - l) + l, 0.0f, 1.0f);
+#endif
 }
 
 // View should point away from surface.
@@ -216,6 +223,7 @@ vec3 get_pos(camera_data cam, vec3 view_pos)
 #define PREPASS_SPECULAR_BLUR_RADIUS 50.0
 
 #define TEMPORAL_ACCUMULATION_USE_BICUBIC_FILTER 1
+#define TEMPORAL_ACCUMULATION_USE_SPEC_MIN_DIST_3X3 1
 
 #define ATROUS_ITERATIONS 5
 #define ATROUS_RADIUS 1 
@@ -232,6 +240,8 @@ vec3 get_pos(camera_data cam, vec3 view_pos)
 #define DENOISING_ENABLED 1
 
 #if DENOISING_ENABLED == 1
+
+#define HIT_DIST_RECONSTRUCTION_ENABLED 1
 
 #define PREPASS_ENABLED 1
 
@@ -262,6 +272,7 @@ vec3 get_pos(camera_data cam, vec3 view_pos)
 #define OUTPUT_UNFILTERED_SPECULAR_VARIANCE 9
 #define OUTPUT_REMODULATED_DENOISED_SPECULAR 10
 #define OUTPUT_RAW_INPUT 11
+#define OUTPUT_SPECULAR_HIT_DIST 12
 
 #define FINAL_OUTPUT 6
 

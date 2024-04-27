@@ -44,6 +44,7 @@ svgf_stage::svgf_stage(
     prefilter_variance_desc(dev), prefilter_variance_comp(dev),
     preblur_desc(dev), preblur_comp(dev),
     demodulate_inputs_desc(dev), demodulate_inputs_comp(dev),
+    hit_dist_reconstruction_desc(dev), hit_dist_reconstruction_comp(dev),
     opt(opt),
     input_features(input_features),
     prev_features(prev_features),
@@ -106,6 +107,11 @@ svgf_stage::svgf_stage(
         demodulate_inputs_desc.add(src);
         demodulate_inputs_comp.init(src, { &demodulate_inputs_desc, &ss.get_descriptors() });
     }
+    {
+        shader_source src("shader/svgf_hit_dist_reconstruction.comp");
+        hit_dist_reconstruction_desc.add(src);
+        hit_dist_reconstruction_comp.init(src, { &hit_dist_reconstruction_desc, &ss.get_descriptors() });
+    }
 }
 
 void svgf_stage::update(uint32_t frame_index)
@@ -141,15 +147,16 @@ void svgf_stage::init_resources()
 {
     for (int i = 0; i < svgf_stage::render_target_count; ++i)
     {
+        vk::Format format = i == render_target_count - 1 ? vk::Format::eR16G16B16A16Sfloat : vk::Format::eR32G32B32A32Sfloat;
         render_target_texture[i].reset(new texture(
             *dev,
             input_features.color.size,
             input_features.get_layer_count(),
             //vk::Format::eR16G16B16A16Sfloat,
-            vk::Format::eR32G32B32A32Sfloat,
+            format,
             0, nullptr,
             vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+            vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc,
             vk::ImageLayout::eGeneral,
             vk::SampleCountFlagBits::e1
         ));
@@ -168,7 +175,8 @@ void svgf_stage::init_resources()
     accumulated_specular_hit_distance = render_target_texture[rt_index++]->get_array_render_target(dev->id);
     emissive                        = render_target_texture[rt_index++]->get_array_render_target(dev->id);
     moments_history_specular[0]     = render_target_texture[rt_index++]->get_array_render_target(dev->id);
-    moments_history_specular[1]     = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    moments_history_specular[1] = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    hit_dist_reconst_temp           = render_target_texture[rt_index++]->get_array_render_target(dev->id);
 }
 
 void svgf_stage::record_command_buffers()
@@ -225,11 +233,62 @@ void svgf_stage::record_command_buffers()
         demodulate_inputs_comp.push_constants(cb, control);
         cb.dispatch(wg.x, wg.y, input_features.get_layer_count());
 
+
         cb.pipelineBarrier(
             vk::PipelineStageFlagBits::eComputeShader,
             vk::PipelineStageFlagBits::eComputeShader,
             {}, barrier, {}, {}
         );
+
+        // Hit dist reconstruction
+        hit_dist_reconstruction_comp.bind(cb);
+        hit_dist_reconstruction_desc.set_image(dev->id, "in_specular", { {{}, input_features.reflection.view, vk::ImageLayout::eGeneral} });
+        hit_dist_reconstruction_desc.set_image(dev->id, "out_specular", { {{}, hit_dist_reconst_temp.view,  vk::ImageLayout::eGeneral} }); hit_dist_reconstruction_desc.set_image(dev->id, "normal", { {{}, input_features.normal.view, vk::ImageLayout::eGeneral} });
+        hit_dist_reconstruction_desc.set_image(dev->id, "in_material", { {{}, input_features.material.view,  vk::ImageLayout::eGeneral} });
+        hit_dist_reconstruction_desc.set_image(dev->id, "in_normal", { {{}, input_features.normal.view, vk::ImageLayout::eGeneral} });
+        hit_dist_reconstruction_desc.set_image(dev->id, "in_depth", { {my_sampler.get_sampler(dev->id), input_features.depth.view, vk::ImageLayout::eGeneral} });
+        hit_dist_reconstruction_comp.push_descriptors(cb, hit_dist_reconstruction_desc, 0);
+        hit_dist_reconstruction_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+        hit_dist_reconstruction_comp.push_constants(cb, control);
+        cb.dispatch(wg.x, wg.y, input_features.get_layer_count());
+
+        // Copy image
+        {
+            uvec3 size = uvec3(input_features.get_size(), 1);
+
+            render_target& src = hit_dist_reconst_temp;
+            render_target& dst = input_features.reflection;
+            src.transition_layout_temporary(cb, vk::ImageLayout::eTransferSrcOptimal);
+            dst.transition_layout_temporary(
+                cb, vk::ImageLayout::eTransferDstOptimal, true, true
+            );
+
+            cb.copyImage(
+                src.image,
+                vk::ImageLayout::eTransferSrcOptimal,
+                dst.image,
+                vk::ImageLayout::eTransferDstOptimal,
+                vk::ImageCopy(
+                    src.get_layers(),
+                    { 0,0,0 },
+                    dst.get_layers(),
+                    { 0,0,0 },
+                    { size.x, size.y, size.z }
+                )
+            );
+
+            vk::ImageLayout old_layout = src.layout;
+            src.layout = vk::ImageLayout::eTransferSrcOptimal;
+            src.transition_layout_temporary(cb, vk::ImageLayout::eGeneral);
+            src.layout = old_layout;
+
+            old_layout = dst.layout;
+            dst.layout = vk::ImageLayout::eTransferDstOptimal;
+            dst.transition_layout_temporary(
+                cb, vk::ImageLayout::eGeneral, true, true
+            );
+            dst.layout = old_layout;
+        }
 
         preblur_comp.bind(cb);
         preblur_desc.set_image(dev->id, "in_diffuse", { {{}, input_features.diffuse.view, vk::ImageLayout::eGeneral} });
@@ -397,6 +456,7 @@ void svgf_stage::record_command_buffers()
             atrous_desc.set_buffer("uniforms_buffer", uniforms);
             atrous_desc.set_image(dev->id, "in_moments_specular", { {{}, moments_history_specular[1].view, vk::ImageLayout::eGeneral} });
             atrous_desc.set_image(dev->id, "in_emissive", { {{}, emissive.view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "specular_hit_dist", { {{}, specular_hit_distance_history.view, vk::ImageLayout::eGeneral}});
             
             atrous_comp.push_descriptors(cb, atrous_desc, 0);
             atrous_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);

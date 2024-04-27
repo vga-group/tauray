@@ -64,11 +64,7 @@ void main()
 
     const float diff_half_angle = get_specular_lobe_half_angle(0.75, 1.0);
 
-    vec3 center_pos;
-    {
-        bool invalid = get_pos(in_depth, p, curr_camera, center_pos);
-        if (invalid) return;
-    }
+    vec3 center_pos = get_pos(curr_camera, view_pos);
     vec3 center_normal = unpack_gbuffer_normal(imageLoad(normal, p).xy);
 
     float w_sum = 1.0;
@@ -181,7 +177,7 @@ void main()
 
     specular /= w_sum;
 #endif
-
+    
     imageStore(out_specular, p, vec4(specular.rgb, max_inv_hit_dist));
     imageStore(out_diffuse, p, color);
 }

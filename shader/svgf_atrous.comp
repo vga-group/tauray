@@ -28,6 +28,7 @@ layout(binding = 13) buffer uniforms
 layout(binding = 14, set = 0, rgba32f) uniform image2DArray raw_diffuse;
 layout(binding = 15, set = 0, rgba32f) uniform image2DArray in_moments_specular;
 layout(binding = 16, set = 0, rgba32f) uniform image2DArray in_emissive;
+layout(binding = 17, set = 0, rgba32f) uniform image2DArray specular_hit_dist;
 
 float filter_variance(ivec3 p)
 {
@@ -292,7 +293,13 @@ void main()
             * mix(vec3(approx_fresnel), albedo.rgb, metallic)
             / mix(approx_fresnel, 1, metallic);
         imageStore(final_output, p, vec4(remodulated_spec, 1.0));
-
+#elif FINAL_OUTPUT == OUTPUT_SPECULAR_HIT_DIST
+        float hitdist = imageLoad(specular_hit_dist, p).r;
+        if (p.xy == ivec2(640, 360))
+        {
+            debugPrintfEXT("hit t: %f", hitdist != 0.0 ? 1.0 / hitdist : 1e6);
+        }
+        imageStore(final_output, p, vec4(vec3(hitdist), 1.0));
 #elif FINAL_OUTPUT == OUTPUT_RAW_INPUT
 
 #endif  

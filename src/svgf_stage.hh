@@ -58,6 +58,8 @@ private:
     compute_pipeline preblur_comp;    
     push_descriptor_set demodulate_inputs_desc;
     compute_pipeline demodulate_inputs_comp;
+    push_descriptor_set hit_dist_reconstruction_desc;
+    compute_pipeline hit_dist_reconstruction_comp;
     options opt;
     gbuffer_target input_features;
     gbuffer_target prev_features;
@@ -70,7 +72,8 @@ private:
     render_target specular_hit_distance_history;
     render_target accumulated_specular_hit_distance;
     render_target emissive; // Needed to store emissive for reconstruction later, since diffuse and specular don't have it and path tracer doesn't store it separately.
-    static constexpr uint32_t render_target_count = 13;
+    render_target hit_dist_reconst_temp;
+    static constexpr uint32_t render_target_count = 14;
     std::unique_ptr<texture> render_target_texture[render_target_count];
     timer svgf_timer;
 

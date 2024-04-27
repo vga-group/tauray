@@ -1,0 +1,85 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_debug_printf : enable
+
+#include "svgf.glsl"
+#include "gbuffer.glsl"
+#include "random_sampler.glsl"
+#include "math.glsl"
+#include "scene.glsl"
+
+layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray in_specular;
+layout(binding = 1, set = 0, rgba32f) uniform image2DArray out_specular;
+layout(binding = 2, set = 0, rgba32f) uniform readonly image2DArray in_material;
+layout(binding = 3, set = 0, rgba32f) uniform readonly image2DArray in_normal;
+layout(binding = 4, set = 0) uniform sampler2DArray in_depth;
+
+layout (local_size_x = 16, local_size_y = 16) in;
+void main()
+{
+    const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    if (!all(lessThan(p.xy, control.size))) return;
+
+    camera_data curr_camera = camera.pairs[p.z].current;
+
+    vec3 view_pos;
+    {
+        bool invalid = get_view_pos(in_depth, p, curr_camera, view_pos);
+        if (invalid) return;
+    }
+    const float Z = abs(view_pos.z);
+    const float frustum_size = control.min_rect_dim_mul_unproject * Z;
+    const float inv_dist_to_point = 1.0 / frustum_size;
+
+    vec4 center_spec = imageLoad(in_specular, p);
+
+    const float plane_dist_sensitivity = 0.005;
+    const float plane_dist_scale = inv_dist_to_point / plane_dist_sensitivity;
+
+    vec3 center_pos = get_pos(curr_camera, view_pos);
+    vec3 center_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).xy);
+
+    float average_inv_hit_dist = center_spec.a;
+    float w_sum = center_spec.a != 0.0 ? 1.0 : 0.0;
+    const int radius = 1;
+    // if (p.xy == ivec2(640, 360))
+    // {
+    //     debugPrintfEXT("hit t: %f", center_spec.a != 0.0 ? 1.0 / center_spec.a : 1e6);
+    // }
+#if HIT_DIST_RECONSTRUCTION_ENABLED == 1
+    if (center_spec.a == 0.0)
+    {
+        for (int y = -radius; y <= radius; ++y)
+        {
+            for (int x = -radius; x <= radius; ++x)
+            {
+                ivec3 q = ivec3(p.xy + ivec2(x, y), p.z);
+
+                if (!is_in_screen(q.xy)) continue;
+
+                vec3 X;
+                {
+                    bool invalid = get_pos(in_depth, q, curr_camera, X);
+                    if (invalid) continue;
+                }
+
+                vec4 c = imageLoad(in_specular, q);
+
+                float w = c.a != 0.0 ? 1.0 : 0.0;
+
+                float plane_dist = abs(dot((X - center_pos), center_normal) * plane_dist_scale);
+                float plane_dist_weight = step(plane_dist, 1);
+
+                w *= plane_dist_weight;
+
+                w_sum += w;
+                average_inv_hit_dist += c.a * w;
+            }
+        }
+
+        average_inv_hit_dist = w_sum > 1e-3 ? average_inv_hit_dist / w_sum : 0.0;
+    }
+#endif
+
+    imageStore(out_specular, p, vec4(center_spec.rgb, average_inv_hit_dist));
+}
