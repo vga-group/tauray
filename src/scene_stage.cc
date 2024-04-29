@@ -983,16 +983,23 @@ void scene_stage::update_temporal_tables(uint32_t frame_index)
         else prev_id = 0xFFFFFFFFu;
     }
 
-    geometry_outdated |= temporal_tables.resize(
-        (backward_instance_ids.size() +
-        forward_instance_ids.size() +
-        backward_point_light_ids.size() +
-        forward_point_light_ids.size()) * sizeof(uint32_t)
-    );
+    size_t alignment = get_device_mask().get_min_storage_buffer_alignment();
     size_t instance_backward_map_offset =  0;
-    size_t instance_forward_map_offset = instance_backward_map_offset + backward_instance_ids.size() * sizeof(uint32_t);
-    size_t point_light_backward_map_offset = instance_forward_map_offset + forward_instance_ids.size() * sizeof(uint32_t);
-    size_t point_light_forward_map_offset = point_light_backward_map_offset + backward_point_light_ids.size() * sizeof(uint32_t);
+    size_t instance_forward_map_offset = align_up_to(
+        instance_backward_map_offset + backward_instance_ids.size() * sizeof(uint32_t),
+        alignment
+    );
+    size_t point_light_backward_map_offset = align_up_to(
+        instance_forward_map_offset + forward_instance_ids.size() * sizeof(uint32_t),
+        alignment
+    );
+    size_t point_light_forward_map_offset = align_up_to(
+        point_light_backward_map_offset + backward_point_light_ids.size() * sizeof(uint32_t),
+        alignment
+    );
+    size_t end_offset = point_light_forward_map_offset + forward_point_light_ids.size() * sizeof(uint32_t);
+
+    geometry_outdated |= temporal_tables.resize(end_offset);
     temporal_tables.update(frame_index, backward_instance_ids.data(), instance_backward_map_offset, backward_instance_ids.size() * sizeof(uint32_t));
     temporal_tables.update(frame_index, forward_instance_ids.data(), instance_forward_map_offset, forward_instance_ids.size() * sizeof(uint32_t));
     temporal_tables.update(frame_index, backward_point_light_ids.data(), point_light_backward_map_offset, backward_point_light_ids.size() * sizeof(uint32_t));
@@ -1817,10 +1824,20 @@ void scene_stage::update_descriptor_set()
     }
 
     temporal_tables_desc.reset(temporal_tables_desc.get_mask(), 1);
+    size_t alignment = get_device_mask().get_min_storage_buffer_alignment();
     size_t instance_backward_map_offset =  0;
-    size_t instance_forward_map_offset = instance_backward_map_offset + backward_instance_ids.size() * sizeof(uint32_t);
-    size_t point_light_backward_map_offset = instance_forward_map_offset + forward_instance_ids.size() * sizeof(uint32_t);
-    size_t point_light_forward_map_offset = point_light_backward_map_offset + backward_point_light_ids.size() * sizeof(uint32_t);
+    size_t instance_forward_map_offset = align_up_to(
+        instance_backward_map_offset + backward_instance_ids.size() * sizeof(uint32_t),
+        alignment
+    );
+    size_t point_light_backward_map_offset = align_up_to(
+        instance_forward_map_offset + forward_instance_ids.size() * sizeof(uint32_t),
+        alignment
+    );
+    size_t point_light_forward_map_offset = align_up_to(
+        point_light_backward_map_offset + backward_point_light_ids.size() * sizeof(uint32_t),
+        alignment
+    );
     temporal_tables_desc.set_buffer(0, "instance_forward_map", temporal_tables, instance_forward_map_offset);
     temporal_tables_desc.set_buffer(0, "instance_backward_map", temporal_tables, instance_backward_map_offset);
     temporal_tables_desc.set_buffer(0, "point_light_forward_map", temporal_tables, point_light_forward_map_offset);

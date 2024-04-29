@@ -96,6 +96,8 @@ public:
     device_mask& operator&=(device_mask other);
     device_mask& operator^=(device_mask other);
 
+    size_t get_min_storage_buffer_alignment() const;
+
 private:
     context* ctx;
     uint64_t bitmask;
