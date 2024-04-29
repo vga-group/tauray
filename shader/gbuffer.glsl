@@ -239,7 +239,7 @@ sampled_material unpack_gbuffer_material(vec4 packed_mat, vec4 albedo, vec3 emis
     ret.ior_out = packed_mat[2] * 4.0f;
     ret.f0 = (ret.ior_out - ret.ior_in)/(ret.ior_out + ret.ior_in);
     ret.f0 *= ret.f0;
-    ret.double_sided = true;
+    ret.flags = MATERIAL_FLAG_DOUBLE_SIDED;
     ret.shadow_terminator_mul = 0.0f;
 
     return ret;

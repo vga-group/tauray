@@ -1,15 +1,20 @@
 #ifndef MATERIAL_GLSL
 #define MATERIAL_GLSL
 
+#define MATERIAL_FLAG_DOUBLE_SIDED (1<<0)
+// If set object or its material will not have any temporal consistency and may
+// require different handling in temporal algorithms.
+#define MATERIAL_FLAG_TRANSIENT (1<<1)
+
 struct material
 {
     vec4 albedo_factor;
     vec4 metallic_roughness_factor;
-    vec4 emission_factor_double_sided;
+    vec4 emission_factor;
     float transmittance;
     float ior;
     float normal_factor;
-    float pad;
+    uint flags;
     int albedo_tex_id;
     int metallic_roughness_tex_id;
     int normal_tex_id;
@@ -26,7 +31,7 @@ struct sampled_material
     float ior_in;
     float ior_out;
     float f0;
-    bool double_sided;
+    uint flags;
     float shadow_terminator_mul;
 };
 

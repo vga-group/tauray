@@ -11,15 +11,18 @@ namespace
 {
 using namespace tr;
 
+constexpr uint32_t MATERIAL_FLAG_DOUBLE_SIDED = 1<<0;
+constexpr uint32_t MATERIAL_FLAG_TRANSIENT = 1<<1;
+
 struct material_buffer
 {
     pvec4 albedo_factor;
     pvec4 metallic_roughness_factor;
-    pvec4 emission_factor_double_sided;
+    pvec4 emission_factor;
     float transmittance;
     float ior;
     float normal_factor;
-    float pad[1];
+    uint32_t flags;
     int albedo_tex_id;
     int metallic_roughness_tex_id;
     int normal_tex_id;
@@ -1082,9 +1085,10 @@ void scene_stage::update(uint32_t frame_index)
             inst.mat.albedo_factor = mat.albedo_factor;
             inst.mat.metallic_roughness_factor =
                 vec4(mat.metallic_factor, mat.roughness_factor, 0, 0);
-            inst.mat.emission_factor_double_sided = vec4(
-                mat.emission_factor, mat.double_sided ? 1.0f : 0.0f
-            );
+            inst.mat.emission_factor = vec4(mat.emission_factor, 0.0f);
+            inst.mat.flags =
+                (mat.double_sided ? MATERIAL_FLAG_DOUBLE_SIDED : 0) |
+                (mat.transient ? MATERIAL_FLAG_TRANSIENT : 0);
             inst.mat.transmittance = mat.transmittance;
             inst.mat.ior = mat.ior;
             inst.mat.normal_factor = mat.normal_factor;

@@ -759,6 +759,8 @@ bool allow_reconnection(
 #elif defined(USE_HYBRID_SHIFT)
     bool head = as_head;
     as_head = !bounces ? true : mat.roughness > 0.05f;
+    // Don't allow reconnection to transient objects.
+    if((mat.flags & MATERIAL_FLAG_TRANSIENT) != 0) as_head = false;
     return head && as_head && (dist > TR_RESTIR.reconnection_scale || !bounces);
 #endif
 }
