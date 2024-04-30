@@ -74,7 +74,7 @@ void gpu_buffer::update(uint32_t frame_index, const void* data, size_t offset, s
 
     offset = std::min(size, offset);
 
-    if(bytes == 0 || bytes > size - offset)
+    if(bytes > size - offset)
         bytes = size - offset;
 
     if(bytes == 0)

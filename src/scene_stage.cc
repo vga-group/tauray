@@ -409,9 +409,11 @@ scene* scene_stage::get_scene() const
 bool scene_stage::check_update(uint32_t categories, uint32_t& prev_counter) const
 {
     uint32_t new_counter = 0;
-    if(categories&ENVMAP) new_counter += envmap_change_counter;
-    if(categories&GEOMETRY) new_counter += geometry_change_counter;
-    if(categories&LIGHT) new_counter += light_change_counter;
+    // HACK: Descriptor sets are currently updated from changes that we aren't tracking here
+    // which causes all command buffers to require updating
+    /*if (categories & ENVMAP)*/ new_counter += envmap_change_counter;
+    /*if (categories & GEOMETRY)*/ new_counter += geometry_change_counter;
+    /*if (categories & LIGHT)*/ new_counter += light_change_counter;
     if(prev_counter != new_counter)
     {
         prev_counter = new_counter;
@@ -989,18 +991,18 @@ void scene_stage::update_temporal_tables(uint32_t frame_index)
     size_t alignment = get_device_mask().get_min_storage_buffer_alignment();
     size_t instance_backward_map_offset =  0;
     size_t instance_forward_map_offset = align_up_to(
-        instance_backward_map_offset + backward_instance_ids.size() * sizeof(uint32_t),
+        instance_backward_map_offset + std::max((size_t)1, backward_instance_ids.size()) * sizeof(uint32_t),
         alignment
     );
     size_t point_light_backward_map_offset = align_up_to(
-        instance_forward_map_offset + forward_instance_ids.size() * sizeof(uint32_t),
+        instance_forward_map_offset + std::max((size_t)1, forward_instance_ids.size()) * sizeof(uint32_t),
         alignment
     );
     size_t point_light_forward_map_offset = align_up_to(
-        point_light_backward_map_offset + backward_point_light_ids.size() * sizeof(uint32_t),
+        point_light_backward_map_offset + std::max((size_t)1, backward_point_light_ids.size()) * sizeof(uint32_t),
         alignment
     );
-    size_t end_offset = point_light_forward_map_offset + forward_point_light_ids.size() * sizeof(uint32_t);
+    size_t end_offset = point_light_forward_map_offset + std::max((size_t)1, forward_point_light_ids.size()) * sizeof(uint32_t);
 
     geometry_outdated |= temporal_tables.resize(end_offset);
     temporal_tables.update(frame_index, backward_instance_ids.data(), instance_backward_map_offset, backward_instance_ids.size() * sizeof(uint32_t));
@@ -1453,10 +1455,10 @@ void scene_stage::update(uint32_t frame_index)
             clear_pre_transformed_vertices();
     }
 
+    update_temporal_tables(frame_index);
     if(lights_outdated) light_change_counter++;
     if(geometry_outdated) geometry_change_counter++;
 
-    update_temporal_tables(frame_index);
     if(lights_outdated || geometry_outdated || envmap_outdated)
         update_descriptor_set();
 
@@ -1831,15 +1833,15 @@ void scene_stage::update_descriptor_set()
     size_t alignment = get_device_mask().get_min_storage_buffer_alignment();
     size_t instance_backward_map_offset =  0;
     size_t instance_forward_map_offset = align_up_to(
-        instance_backward_map_offset + backward_instance_ids.size() * sizeof(uint32_t),
+        instance_backward_map_offset + std::max((size_t)1, backward_instance_ids.size()) * sizeof(uint32_t),
         alignment
     );
     size_t point_light_backward_map_offset = align_up_to(
-        instance_forward_map_offset + forward_instance_ids.size() * sizeof(uint32_t),
+        instance_forward_map_offset + std::max((size_t)1, forward_instance_ids.size()) * sizeof(uint32_t),
         alignment
     );
     size_t point_light_forward_map_offset = align_up_to(
-        point_light_backward_map_offset + backward_point_light_ids.size() * sizeof(uint32_t),
+        point_light_backward_map_offset + std::max((size_t)1, backward_point_light_ids.size()) * sizeof(uint32_t),
         alignment
     );
     temporal_tables_desc.set_buffer(0, "instance_forward_map", temporal_tables, instance_forward_map_offset);

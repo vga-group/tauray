@@ -157,7 +157,8 @@ bool sample_path_bsdf_bounce(
 #ifdef DEMODULATE_OUTPUT
     if(candidate.head_length + candidate.tail_length == 0)
     {
-        float inv_len = 1.0f / distance(src.pos, dst.pos);
+        int self_intersect = self_shadow(-src.view, src.flat_normal, dir, src.mat);
+        float inv_len = 1.0f / distance(src.pos, dst.pos) * self_intersect;
         vec2 lengths = sampled_lobe == MATERIAL_LOBE_DIFFUSE ? vec2(inv_len, 0) : vec2(0, inv_len);
         imageStore(out_length, ivec2(gl_LaunchIDEXT.xy), vec4(lengths, 0, 0));
     }
