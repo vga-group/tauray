@@ -55,8 +55,12 @@ void sh_renderer::update_grids()
 
 dependencies sh_renderer::render(dependencies deps)
 {
-    if(ss->check_update(scene_stage::LIGHT, scene_state_counter))
+    //if(ss->check_update(scene_stage::LIGHT, scene_state_counter))
+    if(scene_state_counter == 0)
+    {
         update_grids();
+        scene_state_counter++;
+    }
 
     for(auto& p: per_grid)
     {

@@ -164,13 +164,23 @@ add_executable(tauray
   src/main.cc
 )
 
+add_executable(demo
+  src/demo.cc
+)
+
 target_include_directories(tauray-core PUBLIC SYSTEM
+    "external"
+    "external/SPIRV-Headers/include"
+    "external/Vulkan-Headers/include"
+)
+target_include_directories(demo PUBLIC SYSTEM
     "external"
     "external/SPIRV-Headers/include"
     "external/Vulkan-Headers/include"
 )
 target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp)
 target_link_libraries(tauray PUBLIC tauray-core SDL2::SDL2main)
+target_link_libraries(demo PUBLIC tauray-core SDL2::SDL2main)
 
 if(MSVC)
   target_compile_options(tauray-core PRIVATE /W4 /WX- /MP)
@@ -232,6 +242,11 @@ target_compile_features(tauray PUBLIC cxx_std_17)
 set_property(TARGET tauray PROPERTY CXX_STANDARD 17)
 set_property(TARGET tauray PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET tauray PROPERTY CXX_EXTENSIONS OFF)
+
+target_compile_features(demo PUBLIC cxx_std_17)
+set_property(TARGET demo PROPERTY CXX_STANDARD 17)
+set_property(TARGET demo PROPERTY CXX_STANDARD_REQUIRED ON)
+set_property(TARGET demo PROPERTY CXX_EXTENSIONS OFF)
 
 install(TARGETS tauray
     RUNTIME DESTINATION bin

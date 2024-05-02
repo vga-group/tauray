@@ -15,7 +15,7 @@ class sh_grid
 public:
     sh_grid(
         uvec3 resolution = uvec3(1),
-        int order = 3
+        int order = 2
     );
 
     texture create_target_texture(

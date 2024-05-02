@@ -416,6 +416,15 @@ bool scene_stage::check_update(uint32_t categories, uint32_t& prev_counter) cons
     /*if (categories & ENVMAP)*/ new_counter += envmap_change_counter;
     /*if (categories & GEOMETRY)*/ new_counter += geometry_change_counter;
     /*if (categories & LIGHT)*/ new_counter += light_change_counter;
+    if(categories == LIGHT)
+    {
+        new_counter += light_change_counter;
+    }
+    else
+    {
+        new_counter += envmap_change_counter;
+        new_counter += geometry_change_counter;
+    }
     if(prev_counter != new_counter)
     {
         prev_counter = new_counter;

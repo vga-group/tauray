@@ -17,6 +17,7 @@ namespace tr
     };
 
     scene_data load_scenes(context& ctx, const options& opt);
+    renderer* create_renderer(context& ctx, options& opt, scene& s);
     context* create_context(const options& opt);
     void run(context& ctx, scene_data& s, options& opt);
 }
