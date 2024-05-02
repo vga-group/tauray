@@ -1609,6 +1609,9 @@ void scene_stage::record_as_build(
     auto& instance_buffer = tlas->get_instances_buffer();
     bool as_update = !rebuild;
 
+    if(opt.track_prev_tlas)
+        prev_tlas->copy(id, *tlas, cb);
+
     if(light_blas.has_value())
     {
         light_blas->rebuild(
@@ -1637,8 +1640,6 @@ void scene_stage::record_as_build(
         );
     }
 
-    if(frame_index != 0 && opt.track_prev_tlas)
-        prev_tlas->copy(id, *tlas, cb);
     tlas->rebuild(id, cb, as_instance_count, as_update);
 }
 
