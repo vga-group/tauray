@@ -530,7 +530,7 @@ int test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_no
     );
 #else
     traceRayEXT(
-        scene_prev_tlas,
+        prev_tlas,
         gl_RayFlagsCullNoOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
         VISIBILITY_RAY_MASK,
         0, 0, 0,

@@ -87,6 +87,11 @@ public:
         bool update
     );
     size_t get_updates_since_rebuild() const;
+    void copy(
+        device_id id,
+        top_level_acceleration_structure& other,
+        vk::CommandBuffer cmd
+    );
     const vk::AccelerationStructureKHR* get_tlas_handle(device_id id) const;
     vk::DeviceAddress get_tlas_address(device_id id) const;
 

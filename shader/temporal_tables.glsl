@@ -23,10 +23,13 @@ layout(binding = 3, set = TEMPORAL_TABLE_SET) readonly buffer point_light_backwa
     uint array[];
 } point_light_backward_map;
 
-layout(binding = 4, set = SCENE_SET, scalar) buffer prev_point_light_buffer
+layout(binding = 4, set = TEMPORAL_TABLE_SET, scalar) buffer prev_point_light_buffer
 {
     point_light lights[];
 } prev_point_lights;
 
+#ifdef RAY_TRACING
+layout(binding = 5, set = TEMPORAL_TABLE_SET) uniform accelerationStructureEXT prev_tlas;
+#endif
 
 #endif

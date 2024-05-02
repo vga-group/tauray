@@ -26,6 +26,9 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         this->opt.restir_options.sampling_weights.point_lights = 0;
     }
 
+    if(!this->opt.restir_options.assume_unchanged_acceleration_structures)
+        this->opt.scene_options.track_prev_tlas = true;
+
     gbuffer_spec gs;
     gs.color_present = true;
     if(opt.svgf_options)

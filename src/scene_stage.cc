@@ -354,6 +354,8 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     if(dev.get_context()->is_ray_tracing_supported())
     {
         tlas.emplace(dev, opt.max_instances);
+        if(opt.track_prev_tlas)
+            prev_tlas.emplace(dev, opt.max_instances);
 
         if(opt.max_lights > 0)
         {
@@ -420,6 +422,11 @@ bool scene_stage::check_update(uint32_t categories, uint32_t& prev_counter) cons
         return true;
     }
     return false;
+}
+
+bool scene_stage::has_prev_tlas() const
+{
+    return opt.track_prev_tlas;
 }
 
 environment_map* scene_stage::get_environment_map() const
@@ -1630,6 +1637,8 @@ void scene_stage::record_as_build(
         );
     }
 
+    if(frame_index != 0 && opt.track_prev_tlas)
+        prev_tlas->copy(id, *tlas, cb);
     tlas->rebuild(id, cb, as_instance_count, as_update);
 }
 
@@ -1727,6 +1736,8 @@ void scene_stage::init_descriptor_set_layout()
     temporal_tables_desc.add("point_light_forward_map", {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     temporal_tables_desc.add("point_light_backward_map", {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     temporal_tables_desc.add("prev_point_lights", {4, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    if(dev.get_context()->is_ray_tracing_supported())
+        temporal_tables_desc.add("prev_tlas", {5, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 }
 
 void scene_stage::update_descriptor_set()
@@ -1790,7 +1801,9 @@ void scene_stage::update_descriptor_set()
         }
 
         if(dev.ctx->is_ray_tracing_supported())
+        {
             scene_desc.set_acceleration_structure(id, 0, "tlas", *this->tlas->get_tlas_handle(id));
+        }
     }
 
     placeholders& pl = get_device_mask().get_context()->get_placeholders();
@@ -1849,6 +1862,16 @@ void scene_stage::update_descriptor_set()
     temporal_tables_desc.set_buffer(0, "point_light_forward_map", temporal_tables, point_light_forward_map_offset);
     temporal_tables_desc.set_buffer(0, "point_light_backward_map", temporal_tables, point_light_backward_map_offset);
     temporal_tables_desc.set_buffer(0, "prev_point_lights", prev_point_light_data);
+    for(device& dev: scene_desc.get_mask())
+    {
+        if(dev.ctx->is_ray_tracing_supported())
+        {
+            if(opt.track_prev_tlas)
+                temporal_tables_desc.set_acceleration_structure(dev.id, 0, "prev_tlas", *this->prev_tlas->get_tlas_handle(dev.id));
+            else
+                temporal_tables_desc.set_acceleration_structure(dev.id, 0, "prev_tlas", *this->tlas->get_tlas_handle(dev.id));
+        }
+    }
 }
 
 }

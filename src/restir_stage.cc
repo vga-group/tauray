@@ -185,13 +185,11 @@ restir_stage::restir_stage(
         throw std::runtime_error("Missing demodulated output buffers (diffuse, reflection)!");
     }
 
-    //if(!scene_data->has_temporal_tlas() && !opt.assume_unchanged_acceleration_structures)
+    if(!scene_data->has_prev_tlas() && !opt.assume_unchanged_acceleration_structures)
     {
-        // TODO: Keep previous acceleration structures around.
         TR_LOG(
             "ReSTIR will now assume unchanged acceleration structures due to "
-            "previous acceleration structures not being available. This feature "
-            "has not been implemented yet in Tauray."
+            "previous acceleration structures not being available."
         );
         this->opt.assume_unchanged_acceleration_structures = true;
     }
@@ -398,7 +396,6 @@ restir_stage::restir_stage(
                 &temporal_set,
                 &ss.get_descriptors(),
                 &ss.get_raster_descriptors(),
-                // TODO: Temporal mapping tables!
                 &ss.get_temporal_tables()
             }
         );

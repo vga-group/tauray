@@ -39,6 +39,7 @@ public:
         bool shadow_mapping = false;
         bool alloc_sh_grids = false;
         blas_strategy group_strategy = blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL;
+        bool track_prev_tlas = false;
     };
 
     scene_stage(device_mask dev, const options& opt);
@@ -54,6 +55,7 @@ public:
     static inline constexpr uint32_t LIGHT = 1<<2;
 
     bool check_update(uint32_t categories, uint32_t& prev_counter) const;
+    bool has_prev_tlas() const;
 
     environment_map* get_environment_map() const;
     vec3 get_ambient() const;
@@ -221,6 +223,7 @@ private:
     std::unordered_map<sh_grid*, texture> sh_grid_textures;
 
     std::optional<top_level_acceleration_structure> tlas;
+    std::optional<top_level_acceleration_structure> prev_tlas;
     std::optional<event_subscription> events[10];
 
     sampler brdf_integration_sampler;
