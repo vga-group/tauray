@@ -168,7 +168,7 @@ void main()
     write_gbuffer_reflection(vec4(reflection, mat.albedo.a));
     write_gbuffer_albedo(vec4(mat.albedo));
     write_gbuffer_material(mat);
-    write_gbuffer_normal(dot(view, v.mapped_normal) > 0 ? -v.mapped_normal : v.mapped_normal);
+    write_gbuffer_normal(dot(view, v.hard_normal) > 0 ? -v.mapped_normal : v.mapped_normal);
     write_gbuffer_pos(v.pos);
     write_gbuffer_screen_motion(get_camera_projection(camera.pairs[control.base_camera_index + gl_ViewIndex].previous, v.prev_pos));
     write_gbuffer_instance_id(int(control.instance_id));
