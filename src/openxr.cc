@@ -82,15 +82,20 @@ namespace tr
 openxr::openxr(const options& opt)
 : context(opt), opt(opt), xr_device(VK_NULL_HANDLE)
 {
-    init_sdl();
+    if(opt.preview_window)
+        init_sdl();
     init_xr();
-    init_vulkan((PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr());
-    if(!SDL_Vulkan_CreateSurface(win, instance, &surface))
-        throw std::runtime_error(SDL_GetError());
+    init_vulkan(vkGetInstanceProcAddr);
+    if(opt.preview_window)
+    {
+        if(!SDL_Vulkan_CreateSurface(win, instance, &surface))
+            throw std::runtime_error(SDL_GetError());
+    }
     init_devices();
     init_session();
     init_xr_swapchain();
-    init_window_swapchain();
+    if(opt.preview_window)
+        init_window_swapchain();
     init_resources();
     init_local_resources();
 }
@@ -99,14 +104,17 @@ openxr::~openxr()
 {
     deinit_local_resources();
     deinit_resources();
-    deinit_window_swapchain();
+    if(opt.preview_window)
+        deinit_window_swapchain();
     deinit_xr_swapchain();
     deinit_session();
     deinit_xr();
     deinit_devices();
-    vkDestroySurfaceKHR(instance, surface, nullptr);
+    if(opt.preview_window)
+        vkDestroySurfaceKHR(instance, surface, nullptr);
     deinit_vulkan();
-    deinit_sdl();
+    if(opt.preview_window)
+        deinit_sdl();
 }
 
 bool openxr::init_frame()
@@ -145,8 +153,11 @@ void openxr::recreate_swapchains()
     device& dev_data = get_display_device();
     dev_data.logical.waitIdle();
 
-    deinit_window_swapchain();
-    init_window_swapchain();
+    if(opt.preview_window)
+    {
+        deinit_window_swapchain();
+        init_window_swapchain();
+    }
 }
 
 void openxr::setup_xr_surroundings(
@@ -197,9 +208,12 @@ uint32_t openxr::prepare_next_image(uint32_t frame_index)
         {}
     );
 
-    window_swapchain_index = d.logical.acquireNextImageKHR(
-        window_swapchain, UINT64_MAX, window_frame_available[frame_index], {}
-    ).value;
+    if(opt.preview_window)
+    {
+        window_swapchain_index = d.logical.acquireNextImageKHR(
+            window_swapchain, UINT64_MAX, window_frame_available[frame_index], {}
+        ).value;
+    }
 
     return swapchain_index;
 }
@@ -209,16 +223,24 @@ void openxr::finish_image(uint32_t frame_index, uint32_t swapchain_index, bool)
     blit_images(frame_index, swapchain_index);
 
     device& d = get_display_device();
-    (void)d.present_queue.presentKHR({
-        1, window_frame_finished[frame_index],
-        1, &window_swapchain,
-        &window_swapchain_index
-    });
+    if(opt.preview_window)
+    {
+        (void)d.present_queue.presentKHR({
+            1, window_frame_finished[frame_index],
+            1, &window_swapchain,
+            &window_swapchain_index
+        });
+    }
 
     // TODO: Do we just wait for it orrr...??? Why can't OpenXR just take
     // semaphores...
-    //(void)d.dev.waitForFences(*finish_fence, true, UINT64_MAX);
-    //d.dev.resetFences(*finish_fence);
+    /*
+    if(!opt.preview_window)
+    {
+        (void)d.logical.waitForFences(*finish_fence, true, UINT64_MAX);
+        d.logical.resetFences(*finish_fence);
+    }
+    */
 
     XrSwapchainImageReleaseInfo release_info = {
         XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO,
@@ -244,11 +266,15 @@ bool openxr::queue_can_present(
 ){
     if(props.queueFlags & vk::QueueFlagBits::eGraphics)
     {
-        return
-            (VkPhysicalDevice)device == get_xr_device() &&
-            device.getSurfaceSupportKHR(queue_index, vk::SurfaceKHR(surface)) &&
-            device.getSurfaceFormatsKHR(surface).size() > 0 &&
-            device.getSurfacePresentModesKHR(surface).size() > 0;
+        if(opt.preview_window)
+        {
+            return
+                (VkPhysicalDevice)device == get_xr_device() &&
+                device.getSurfaceSupportKHR(queue_index, vk::SurfaceKHR(surface)) &&
+                device.getSurfaceFormatsKHR(surface).size() > 0 &&
+                device.getSurfacePresentModesKHR(surface).size() > 0;
+        }
+        else return (VkPhysicalDevice)device == get_xr_device();
     }
     return false;
 }
@@ -287,7 +313,7 @@ vk::Device openxr::create_device(
             nullptr,
             system_id,
             0,
-            (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr(),
+            opt.preview_window ? (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr() : vkGetInstanceProcAddr,
             xr_device,
             &(const VkDeviceCreateInfo&)info,
             nullptr
@@ -311,31 +337,35 @@ void openxr::init_sdl()
     if(SDL_Init(subsystems))
         throw std::runtime_error(SDL_GetError());
 
-    win = SDL_CreateWindow(
-        "Tauray",
-        SDL_WINDOWPOS_UNDEFINED,
-        SDL_WINDOWPOS_UNDEFINED,
-        opt.size.x,
-        opt.size.y,
-        SDL_WINDOW_VULKAN | (opt.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0)
-    );
-    if(!win) throw std::runtime_error(SDL_GetError());
-    SDL_GetWindowSize(win, (int*)&opt.size.x, (int*)&opt.size.y);
-    SDL_SetWindowGrab(win, (SDL_bool)true);
-    SDL_SetRelativeMouseMode((SDL_bool)true);
+    if(opt.preview_window)
+    {
+        win = SDL_CreateWindow(
+            "Tauray",
+            SDL_WINDOWPOS_UNDEFINED,
+            SDL_WINDOWPOS_UNDEFINED,
+            opt.size.x,
+            opt.size.y,
+            SDL_WINDOW_VULKAN | (opt.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0)
+        );
+        if(!win) throw std::runtime_error(SDL_GetError());
+        SDL_GetWindowSize(win, (int*)&opt.size.x, (int*)&opt.size.y);
+        SDL_SetWindowGrab(win, (SDL_bool)true);
+        SDL_SetRelativeMouseMode((SDL_bool)true);
 
-    unsigned count = 0;
-    if(!SDL_Vulkan_GetInstanceExtensions(win, &count, nullptr))
-        throw std::runtime_error(SDL_GetError());
+        unsigned count = 0;
+        if(!SDL_Vulkan_GetInstanceExtensions(win, &count, nullptr))
+            throw std::runtime_error(SDL_GetError());
 
-    extensions.resize(count);
-    if(!SDL_Vulkan_GetInstanceExtensions(win, &count, extensions.data()))
-        throw std::runtime_error(SDL_GetError());
+        extensions.resize(count);
+        if(!SDL_Vulkan_GetInstanceExtensions(win, &count, extensions.data()))
+            throw std::runtime_error(SDL_GetError());
+    }
 }
 
 void openxr::deinit_sdl()
 {
-    SDL_DestroyWindow(win);
+    if(opt.preview_window)
+        SDL_DestroyWindow(win);
     SDL_Quit();
 }
 
@@ -867,12 +897,15 @@ void openxr::deinit_window_swapchain()
 void openxr::init_local_resources()
 {
     device& dev_data = get_display_device();
-    window_frame_available.resize(MAX_FRAMES_IN_FLIGHT);
-    window_frame_finished.resize(MAX_FRAMES_IN_FLIGHT);
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    if(opt.preview_window)
     {
-        window_frame_available[i] = create_binary_semaphore(dev_data);
-        window_frame_finished[i] = create_binary_semaphore(dev_data);
+        window_frame_available.resize(MAX_FRAMES_IN_FLIGHT);
+        window_frame_finished.resize(MAX_FRAMES_IN_FLIGHT);
+        for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            window_frame_available[i] = create_binary_semaphore(dev_data);
+            window_frame_finished[i] = create_binary_semaphore(dev_data);
+        }
     }
 
     finish_fence = vkm(dev_data, dev_data.logical.createFence({}));
@@ -892,13 +925,45 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
     cmd->begin(vk::CommandBufferBeginInfo{
         vk::CommandBufferUsageFlagBits::eOneTimeSubmit
     });
-    transition_image_layout(
-        *cmd,
-        *window_images[window_swapchain_index],
-        window_image_format,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eTransferDstOptimal
-    );
+
+    if(opt.preview_window)
+    {
+        transition_image_layout(
+            *cmd,
+            *window_images[window_swapchain_index],
+            window_image_format,
+            vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eTransferDstOptimal
+        );
+        for(size_t i = 0; i < image_array_layers; ++i)
+        {
+            cmd->blitImage(
+                images[swapchain_index],
+                vk::ImageLayout::eTransferSrcOptimal,
+                window_images[window_swapchain_index],
+                vk::ImageLayout::eTransferDstOptimal,
+                vk::ImageBlit{
+                    {vk::ImageAspectFlagBits::eColor, 0, (uint32_t)i, 1},
+                    {vk::Offset3D{0,0,0}, {(int)image_size.x, (int)image_size.y, 1}},
+                    {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                    {
+                        vk::Offset3D{(int)(opt.size.x/image_array_layers*i),0,0},
+                        {(int)(opt.size.x/image_array_layers*(i+1)), (int)opt.size.y, 1}
+                    }
+                },
+                vk::Filter::eLinear
+            );
+        }
+
+        transition_image_layout(
+            *cmd,
+            *window_images[window_swapchain_index],
+            window_image_format,
+            vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::ePresentSrcKHR
+        );
+    }
+
     transition_image_layout(
         *cmd,
         *xr_images[swapchain_index],
@@ -906,26 +971,6 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::eTransferDstOptimal
     );
-
-    for(size_t i = 0; i < image_array_layers; ++i)
-    {
-        cmd->blitImage(
-            images[swapchain_index],
-            vk::ImageLayout::eTransferSrcOptimal,
-            window_images[window_swapchain_index],
-            vk::ImageLayout::eTransferDstOptimal,
-            vk::ImageBlit{
-                {vk::ImageAspectFlagBits::eColor, 0, (uint32_t)i, 1},
-                {vk::Offset3D{0,0,0}, {(int)image_size.x, (int)image_size.y, 1}},
-                {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-                {
-                    vk::Offset3D{(int)(opt.size.x/image_array_layers*i),0,0},
-                    {(int)(opt.size.x/image_array_layers*(i+1)), (int)opt.size.y, 1}
-                }
-            },
-            vk::Filter::eLinear
-        );
-    }
 
     cmd->blitImage(
         images[swapchain_index],
@@ -943,13 +988,6 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
 
     transition_image_layout(
         *cmd,
-        *window_images[window_swapchain_index],
-        window_image_format,
-        vk::ImageLayout::eTransferDstOptimal,
-        vk::ImageLayout::ePresentSrcKHR
-    );
-    transition_image_layout(
-        *cmd,
         *xr_images[swapchain_index],
         image_format,
         vk::ImageLayout::eTransferDstOptimal,
@@ -962,17 +1000,32 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
         vk::PipelineStageFlagBits::eTopOfPipe
     };
     vk::Semaphore wait_semaphores[2] = {
-        window_frame_available[frame_index],
+        frame_finished[frame_index],
         frame_finished[frame_index]
     };
-    d.graphics_queue.submit(
-        vk::SubmitInfo(
-            2, wait_semaphores, wait_stages,
-            1, cmd.get(),
-            1, window_frame_finished[frame_index]
-        ),
-        {}//finish_fence
-    );
+    if(opt.preview_window)
+    {
+        wait_semaphores[1] = window_frame_available[frame_index];
+        d.graphics_queue.submit(
+            vk::SubmitInfo(
+                2, wait_semaphores, wait_stages,
+                1, cmd.get(),
+                1, window_frame_finished[frame_index]
+            ),
+            {}
+        );
+    }
+    else
+    {
+        d.graphics_queue.submit(
+            vk::SubmitInfo(
+                1, wait_semaphores, wait_stages,
+                1, cmd.get(),
+                0, {}
+            ),
+            {}//finish_fence
+        );
+    }
 }
 
 bool openxr::poll()

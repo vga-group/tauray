@@ -825,6 +825,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
     bool recreate_renderer = true;
     bool crash_on_exception = true;
     bool camera_moved = false;
+    bool has_events = SDL_WasInit(SDL_INIT_EVENTS);
 
     ivec3 camera_movement = ivec3(0);
     std::string command_line;
@@ -864,7 +865,8 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         }
 
         SDL_Event event;
-        while(SDL_PollEvent(&event)) switch(event.type)
+
+        while(has_events && SDL_PollEvent(&event)) switch(event.type)
         {
         case SDL_QUIT:
             opt.running = false;
