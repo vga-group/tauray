@@ -112,15 +112,14 @@ svgf_stage::svgf_stage(
         hit_dist_reconstruction_desc.add(src);
         hit_dist_reconstruction_comp.init(src, { &hit_dist_reconstruction_desc, &ss.get_descriptors() });
     }
+
+    init_resources();
 }
 
 void svgf_stage::update(uint32_t frame_index)
 {
     if(ss->check_update(scene_stage::ENVMAP, scene_state_counter))
-    {
-        init_resources();
         record_command_buffers();
-    }
 
     bool existing = jitter_history.size() != 0;
     size_t viewport_count = opt.active_viewport_count;
@@ -197,7 +196,6 @@ void svgf_stage::record_command_buffers()
         float tan_half_fovy = tanf(cam->get_vfov() * 0.5f);
         float unproject = 2.0 * tan_half_fovy / input_features.get_size().y;
         float min_rect_dim_mul_unproject = min((float)input_features.get_size().x, (float)input_features.get_size().y) * unproject;
-        TR_LOG("Unproject: ", unproject);
 
         uvec2 wg = (input_features.get_size()+15u) / 16u;
         push_constants control{};
