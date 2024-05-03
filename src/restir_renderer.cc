@@ -28,6 +28,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     if(!this->opt.restir_options.assume_unchanged_acceleration_structures)
         this->opt.scene_options.track_prev_tlas = true;
+    this->opt.scene_options.track_prev_tlas = false;
 
     gbuffer_spec gs;
     gs.color_present = true;
@@ -43,6 +44,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     gs.screen_motion_present = true;
     gs.flat_normal_present = true;
     gs.emission_present = true;
+    gs.temporal_gradient_present = true;
 
     vk::ImageUsageFlags img_usage =
         vk::ImageUsageFlagBits::eStorage|
@@ -109,16 +111,19 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         render_target color = cur.color;
         render_target diffuse = cur.diffuse;
         render_target reflection = cur.reflection;
+        render_target temporal_gradient = cur.temporal_gradient;
         if(!this->opt.restir_options.shade_all_explicit_lights)
             cur.color = render_target();
         cur.diffuse = render_target();
         cur.reflection = render_target();
+        cur.temporal_gradient = render_target();
 
         pv.gbuffer_rasterizer.emplace(devices[device_index], *scene_update, cur, raster_opt);
         if(!this->opt.restir_options.shade_all_explicit_lights)
             cur.color = color;
         cur.diffuse = diffuse;
         cur.reflection = reflection;
+        cur.temporal_gradient = temporal_gradient;
 
         cur.color.layout = vk::ImageLayout::eGeneral;
 
@@ -201,8 +206,10 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
         cur.color = render_target();
         cur.screen_motion = render_target();
+        cur.temporal_gradient = render_target();
         prev.color = render_target();
         prev.screen_motion = render_target();
+        prev.temporal_gradient = render_target();
 
         pv.copy.emplace(devices[device_index], cur, prev);
 
