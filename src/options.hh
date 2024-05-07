@@ -437,6 +437,10 @@
         TR_STRUCT_OPT_FLOAT(min_alpha_color, 0.02f, 0.001f, 1.0f) \
         TR_STRUCT_OPT_FLOAT(min_alpha_moments, 0.2f, 0.001f, 1.0f) \
     )\
+    TR_BOOL_OPT(svgf_color_contains_direct_light, \
+        "If set to true, SVGF output will be added to the contents of the color buffer instead of overwriting the color buffer.", \
+        false \
+    ) \
     TR_BOOL_OPT(accumulation, \
         "Whether to accumulate samples from multiple frames or not. " \
         "For interactive mode, samples are accumulated when the camera is " \

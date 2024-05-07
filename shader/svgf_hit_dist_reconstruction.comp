@@ -41,12 +41,12 @@ void main()
 
     float average_inv_hit_dist = center_spec.a;
     float w_sum = center_spec.a != 0.0 ? 1.0 : 0.0;
-    const int radius = 1;
     // if (p.xy == ivec2(640, 360))
     // {
     //     debugPrintfEXT("hit t: %f", center_spec.a != 0.0 ? 1.0 / center_spec.a : 1e6);
     // }
 #if HIT_DIST_RECONSTRUCTION_ENABLED == 1
+    const int radius = 2;
     if (center_spec.a == 0.0)
     {
         for (int y = -radius; y <= radius; ++y)

@@ -509,6 +509,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     svgf_opt.sigma_z = opt.svgf_params.sigma_z;
                     svgf_opt.temporal_alpha_color = opt.svgf_params.min_alpha_color;
                     svgf_opt.temporal_alpha_moments = opt.svgf_params.min_alpha_moments;
+                    svgf_opt.color_buffer_contains_direct_light = opt.svgf_color_contains_direct_light;
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
                 }
                 else if (opt.denoiser == options::denoiser_type::BMFR)
@@ -667,6 +668,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     svgf_opt.sigma_z = opt.svgf_params.sigma_z;
                     svgf_opt.temporal_alpha_color = opt.svgf_params.min_alpha_color;
                     svgf_opt.temporal_alpha_moments = opt.svgf_params.min_alpha_moments;
+                    svgf_opt.color_buffer_contains_direct_light = opt.svgf_color_contains_direct_light;
                     re_opt.svgf_options = svgf_opt;
                 }
 

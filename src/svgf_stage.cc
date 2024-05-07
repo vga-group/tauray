@@ -68,7 +68,9 @@ svgf_stage::svgf_stage(
     )
 {
     {
-        shader_source src("shader/svgf_atrous.comp");
+        std::map<std::string, std::string> defines;
+        if (opt.color_buffer_contains_direct_light) defines["COLOR_IS_ADDITIVE"] = "";
+        shader_source src("shader/svgf_atrous.comp", defines);
         atrous_desc.add(src);
         atrous_comp.init(src, { &atrous_desc,  &ss.get_descriptors() });
     }
