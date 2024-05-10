@@ -16,6 +16,8 @@ struct demo_scene_data
     std::unique_ptr<scene> real_world;
 
     std::vector<entity> frame_entities;
+
+    entity spotlight_entity = INVALID_ENTITY;
 };
 
 demo_scene_data load_demo_scenes(context& ctx, const options& opt)
@@ -83,6 +85,62 @@ demo_scene_data load_demo_scenes(context& ctx, const options& opt)
     return data;
 }
 
+void setup_demo_mode(demo_scene_data& sd, options& opt, int demo_mode)
+{
+    // Move all directional lights, spotlights and envmaps into shadow realm
+    TR_LOG("Moving lights to shadow");
+    sd.real_world->foreach([&](entity id, directional_light&){
+        sd.shadow_realm->copy(*sd.real_world, id);
+        sd.real_world->remove(id);
+    });
+    sd.real_world->foreach([&](entity id, environment_map&){
+        sd.shadow_realm->copy(*sd.real_world, id);
+        sd.real_world->remove(id);
+    });
+    sd.real_world->foreach([&](entity id, spotlight&){
+        sd.shadow_realm->copy(*sd.real_world, id);
+        sd.real_world->remove(id);
+    });
+    sd.spotlight_entity = INVALID_ENTITY;
+
+    switch(demo_mode)
+    {
+    case 0: // Sun + envmap
+        sd.shadow_realm->foreach([&](entity id, directional_light&){
+            sd.real_world->copy(*sd.shadow_realm, id);
+            sd.shadow_realm->remove(id);
+        });
+        sd.shadow_realm->foreach([&](entity id, environment_map&){
+            sd.real_world->copy(*sd.shadow_realm, id);
+            sd.shadow_realm->remove(id);
+        });
+        opt.dshgi_temporal_ratio = 0.01;
+        break;
+    case 1: // Spotlight
+        opt.dshgi_temporal_ratio = 0.05;
+        sd.shadow_realm->foreach([&](entity id, spotlight&){
+            sd.spotlight_entity = sd.real_world->copy(*sd.shadow_realm, id);
+            sd.shadow_realm->remove(id);
+        });
+
+        if(sd.spotlight_entity == INVALID_ENTITY)
+        { // Scene had no spotlight, so we should add one.
+            TR_LOG("Setting up spotlight");
+            sd.spotlight_entity = sd.real_world->add(
+                spotlight(
+                    vec3(200.0),
+                    30,
+                    1,
+                    0.01f
+                ),
+                transformable(vec3(0,1,0), vec3(1), vec3(0,0,1)),
+                point_shadow_map{uvec2(512)}
+            );
+        }
+        break;
+    }
+}
+
 void run_demo(context& ctx, demo_scene_data& sd, options& opt)
 {
     scene& s = *sd.real_world;
@@ -126,6 +184,9 @@ void run_demo(context& ctx, demo_scene_data& sd, options& opt)
     bool camera_moved = false;
 
     int last_update_frame = 0;
+    int demo_mode = opt.demo;
+    setup_demo_mode(sd, opt, demo_mode);
+
     entity last_anim_entity = INVALID_ENTITY;
     constexpr float frame_duration = 1.0f/25.0f;
 
@@ -138,6 +199,12 @@ void run_demo(context& ctx, demo_scene_data& sd, options& opt)
         {
             if(parse_command(command_line.c_str(), opt))
             {
+                if(demo_mode != opt.demo)
+                {
+                    // Mode transition!
+                    demo_mode = opt.demo;
+                    setup_demo_mode(sd, opt, demo_mode);
+                }
                 recreate_renderer = true;
                 camera_moved = true;
             }
@@ -274,6 +341,13 @@ void run_demo(context& ctx, demo_scene_data& sd, options& opt)
                 camera_moved = true;
             cam->translate_local(vec3(camera_movement)*delta*speed);
             cam->set_orientation(pitch, yaw, roll);
+        }
+
+        transformable* spotlight_t = sd.real_world->get<transformable>(sd.spotlight_entity);
+        if(spotlight_t)
+        {
+            // TODO: Track controller!
+            spotlight_t->set_direction(normalize(vec3(sin(total_time), cos(total_time*1.618), 1.5)));
         }
 
         if(camera_moved || !opt.accumulation)

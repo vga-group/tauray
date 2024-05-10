@@ -554,6 +554,12 @@
         TR_STRUCT_OPT_FLOAT(search_radius, 32, 0, 500) \
         TR_STRUCT_OPT_BOOL(shared_visibility, false) \
         TR_STRUCT_OPT_BOOL(sample_visibility, false) \
+    ) \
+    TR_ENUM_OPT(demo, int, \
+        "Selects the demo type.", \
+        0, \
+        {"sun", 0}, \
+        {"flashlight", 1} \
     )
 //==============================================================================
 // END OF OPTIONS
