@@ -85,20 +85,21 @@ demo_scene_data load_demo_scenes(context& ctx, const options& opt)
     return data;
 }
 
-void setup_demo_mode(demo_scene_data& sd, options& opt, int demo_mode)
+void setup_demo_mode(context& ctx, demo_scene_data& sd, options& opt, int demo_mode)
 {
+    device_mask dev = device_mask::all(ctx);
+
     // Move all directional lights, spotlights and envmaps into shadow realm
     TR_LOG("Moving lights to shadow");
     sd.real_world->foreach([&](entity id, directional_light&){
         sd.shadow_realm->copy(*sd.real_world, id);
         sd.real_world->remove(id);
     });
-    sd.real_world->foreach([&](entity id, environment_map&){
+    sd.real_world->foreach([&](entity id, spotlight&){
         sd.shadow_realm->copy(*sd.real_world, id);
         sd.real_world->remove(id);
     });
-    sd.real_world->foreach([&](entity id, spotlight&){
-        sd.shadow_realm->copy(*sd.real_world, id);
+    sd.real_world->foreach([&](entity id, environment_map&){
         sd.real_world->remove(id);
     });
     sd.spotlight_entity = INVALID_ENTITY;
@@ -110,10 +111,11 @@ void setup_demo_mode(demo_scene_data& sd, options& opt, int demo_mode)
             sd.real_world->copy(*sd.shadow_realm, id);
             sd.shadow_realm->remove(id);
         });
-        sd.shadow_realm->foreach([&](entity id, environment_map&){
-            sd.real_world->copy(*sd.shadow_realm, id);
-            sd.shadow_realm->remove(id);
-        });
+        if(opt.envmap.size())
+        {
+            entity id = sd.real_world->add();
+            sd.real_world->emplace<environment_map>(id, dev, opt.envmap);
+        }
         opt.dshgi_temporal_ratio = 0.01;
         break;
     case 1: // Spotlight
@@ -185,7 +187,7 @@ void run_demo(context& ctx, demo_scene_data& sd, options& opt)
 
     int last_update_frame = 0;
     int demo_mode = opt.demo;
-    setup_demo_mode(sd, opt, demo_mode);
+    setup_demo_mode(ctx, sd, opt, demo_mode);
 
     entity last_anim_entity = INVALID_ENTITY;
     constexpr float frame_duration = 1.0f/25.0f;
@@ -203,7 +205,7 @@ void run_demo(context& ctx, demo_scene_data& sd, options& opt)
                 {
                     // Mode transition!
                     demo_mode = opt.demo;
-                    setup_demo_mode(sd, opt, demo_mode);
+                    setup_demo_mode(ctx, sd, opt, demo_mode);
                 }
                 recreate_renderer = true;
                 camera_moved = true;
