@@ -24,6 +24,8 @@
     TR_GBUFFER_ENTRY(reflection, vk::Format::eR16G16B16A16Sfloat)\
     /* RG: diffuse and specular temporal gradients. */\
     TR_GBUFFER_ENTRY(temporal_gradient, vk::Format::eR8G8Unorm)\
+    /* RG: diffuse and specular confidence. */\
+    TR_GBUFFER_ENTRY(confidence, vk::Format::eR16G16Sfloat)\
     /* RGB: Material albedo in linear color space. */\
     TR_GBUFFER_ENTRY(albedo, vk::Format::eR16G16B16A16Sfloat)\
     /* R: Metallicness, G: Roughness, B: IOR, A: transmittance */\

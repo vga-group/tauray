@@ -303,6 +303,8 @@ restir_stage::restir_stage(
 
     if(c.temporal_gradient)
         defines["TEMPORAL_GRADIENTS"];
+    if(c.confidence)
+        defines["OUTPUT_CONFIDENCE"];
 
     if(this->opt.shade_all_explicit_lights)
     {
@@ -374,6 +376,7 @@ restir_stage::restir_stage(
     set.set_binding_params("out_reflection", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_length", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_temporal_gradients", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
+    set.set_binding_params("out_confidence", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("spatial_selection", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("spatial_candidates", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("mis_data", 1, vk::DescriptorBindingFlagBits::ePartiallyBound);
@@ -959,6 +962,8 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         {
             spatial_gather_set.set_image(dev->id, "out_reflection", {{{}, current_buffers.color.view, vk::ImageLayout::eGeneral}});
         }
+        if(current_buffers.confidence)
+            spatial_gather_set.set_image(dev->id, "out_confidence", {{{}, current_buffers.confidence.view, vk::ImageLayout::eGeneral}});
 
         auto& set = spatial_gather_set;
         BIND_RESERVOIRS

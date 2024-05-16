@@ -33,10 +33,34 @@ layout(binding = 18, rg32ui) readonly uniform uimage2D spatial_selection;
 layout(binding = 19, rgba32f) readonly uniform image2DArray mis_data;
 layout(binding = 20, rgba32f) readonly uniform image2DArray spatial_candidates;
 layout(binding = 21, rgba32f) readonly uniform image2D in_color;
+layout(binding = 22, rg32f) uniform image2D out_confidence;
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 #include "restir_core.glsl"
+
+void finish_output_color(ivec2 p, reservoir r, vec4 out_value, sum_contribution sc)
+{
+    write_reservoir(r, p, pc.display_size);
+    if(pc.update_sample_color != 0)
+        imageStore(out_diffuse, p, out_value);
+    else
+    {
+#ifdef DEMODULATE_OUTPUT
+        vec2 ray_lengths = imageLoad(out_reflection, p).rg;
+        imageStore(out_diffuse, p, vec4(sc.diffuse, ray_lengths.r));
+        imageStore(out_reflection, p, vec4(sc.reflection, ray_lengths.g));
+#elif defined(SHADE_ALL_EXPLICIT_LIGHTS)
+        vec4 value = imageLoad(out_reflection, p);
+        imageStore(out_reflection, p, vec4(value.rgb + sc.diffuse, 1.0f));
+#else
+        imageStore(out_reflection, p, vec4(sc.diffuse, 1.0f));
+#endif
+    }
+#ifdef OUTPUT_CONFIDENCE
+    imageStore(out_confidence, p, vec4(sc.confidence, 0, 0));
+#endif
+}
 
 void main()
 {
@@ -88,7 +112,7 @@ void main()
     if(MAX_SPATIAL_SAMPLES == 0)
     {
         add_contribution(sc, canonical_pixel, canonical_value, max(canonical_pixel.ucw, 0.0f));
-        finish_output_color(p, canonical_pixel, out_value, sc, pc.display_size);
+        finish_output_color(p, canonical_pixel, out_value, sc);
         return;
     }
 
@@ -159,5 +183,5 @@ void main()
     if(r.target_function_value > 0)
         r.ucw = r.sum_weight/r.target_function_value;
 
-    finish_output_color(p, r, out_value, sc, pc.display_size);
+    finish_output_color(p, r, out_value, sc);
 }

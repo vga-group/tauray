@@ -330,12 +330,20 @@ vec3 get_bounce_throughput(
 struct sum_contribution
 {
     vec3 diffuse;
+#ifdef DEMODULATE_OUTPUT
     vec3 reflection;
+#endif
+#ifdef OUTPUT_CONFIDENCE
+    vec2 confidence;
+#endif
 };
 
 sum_contribution init_sum_contribution(vec3 emission)
 {
     sum_contribution sc;
+#ifdef OUTPUT_CONFIDENCE
+    sc.confidence = vec2(0);
+#endif
 #ifdef DEMODULATE_OUTPUT
     sc.diffuse = vec3(0);
     sc.reflection = vec3(0);
@@ -354,42 +362,11 @@ void add_contribution(inout sum_contribution sc, reservoir r, vec4 contrib, floa
 #else
     sc.diffuse += contrib.rgb * weight;
 #endif
-}
-
-#ifdef DEMODULATE_OUTPUT
-#define finish_output_color(p, reservoir, out_value, sc, display_size) { \
-    write_reservoir(reservoir, p, display_size); \
-    if(pc.update_sample_color != 0) \
-        imageStore(out_diffuse, p, out_value); \
-    else \
-    { \
-        vec2 ray_lengths = imageLoad(out_reflection, p).rg; \
-        imageStore(out_diffuse, p, vec4(sc.diffuse, ray_lengths.r)); \
-        imageStore(out_reflection, p, vec4(sc.reflection, ray_lengths.g)); \
-    } \
-}
-#elif defined(SHADE_ALL_EXPLICIT_LIGHTS)
-#define finish_output_color(p, reservoir, out_value, sc, display_size) { \
-    write_reservoir(reservoir, p, display_size); \
-    if(pc.update_sample_color != 0) \
-    { \
-        imageStore(out_diffuse, p, out_value); \
-    } \
-    else \
-    { \
-        vec4 value = imageLoad(out_reflection, p); \
-        imageStore(out_reflection, p, vec4(value.rgb + sc.diffuse, 1.0f)); \
-    } \
-}
-#else
-#define finish_output_color(p, reservoir, out_value, sc, display_size) { \
-    write_reservoir(reservoir, p, display_size); \
-    if(pc.update_sample_color != 0) \
-        imageStore(out_diffuse, p, out_value); \
-    else \
-        imageStore(out_reflection, p, vec4(sc.diffuse, 1.0f)); \
-}
+#ifdef OUTPUT_CONFIDENCE
+    sc.confidence.r += r.confidence * (1.0f - contrib.a);
+    sc.confidence.g += r.confidence * contrib.a;
 #endif
+}
 
 #ifdef RAY_TRACING
 #ifdef SHADE_ALL_EXPLICIT_LIGHTS
