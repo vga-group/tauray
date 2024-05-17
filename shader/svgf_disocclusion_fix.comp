@@ -55,7 +55,7 @@ void main()
         vec2 center_material = imageLoad(in_material, p).xy;
         float center_roughness = center_material.y;
         
-        float frustum_size = control.min_rect_dim_mul_unproject * view_z;
+        float frustum_size = get_frustum_size(curr_camera, view_z);
         float inv_dist_to_point = 1.0 / frustum_size;
         vec3 X_cam_rel = center_pos - curr_camera.origin.xyz;
         //float NoX = abs(dot(X_cam_rel, center_normal)) * inv_dist_to_point;

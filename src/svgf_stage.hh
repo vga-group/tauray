@@ -55,10 +55,6 @@ private:
     compute_pipeline disocclusion_fix_comp;
     push_descriptor_set prefilter_variance_desc;
     compute_pipeline prefilter_variance_comp;    
-    push_descriptor_set preblur_desc;
-    compute_pipeline preblur_comp;    
-    push_descriptor_set demodulate_inputs_desc;
-    compute_pipeline demodulate_inputs_comp;
     push_descriptor_set hit_dist_reconstruction_desc;
     compute_pipeline hit_dist_reconstruction_comp;
     options opt;

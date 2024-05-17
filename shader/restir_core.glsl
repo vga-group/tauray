@@ -333,17 +333,11 @@ struct sum_contribution
 #ifdef DEMODULATE_OUTPUT
     vec3 reflection;
 #endif
-#ifdef OUTPUT_CONFIDENCE
-    vec2 confidence;
-#endif
 };
 
 sum_contribution init_sum_contribution(vec3 emission)
 {
     sum_contribution sc;
-#ifdef OUTPUT_CONFIDENCE
-    sc.confidence = vec2(0);
-#endif
 #ifdef DEMODULATE_OUTPUT
     sc.diffuse = vec3(0);
     sc.reflection = vec3(0);
@@ -361,10 +355,6 @@ void add_contribution(inout sum_contribution sc, reservoir r, vec4 contrib, floa
     sc.reflection += color * contrib.a;
 #else
     sc.diffuse += contrib.rgb * weight;
-#endif
-#ifdef OUTPUT_CONFIDENCE
-    sc.confidence.r += r.confidence * (1.0f - contrib.a);
-    sc.confidence.g += r.confidence * contrib.a;
 #endif
 }
 

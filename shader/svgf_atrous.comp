@@ -90,7 +90,7 @@ void main()
     float center_variance_spec = center_spec.a;
     float luminance_std_dev = sqrt(center_variance);
     float luminance_std_dev_spec = sqrt(center_variance_spec);
-    float frustum_size = control.min_rect_dim_mul_unproject * view_z;
+    float frustum_size = get_frustum_size(curr_camera, view_z);
     float inv_dist_to_point = 1.0 / frustum_size;
     const float plane_dist_sensitivity = 0.005;
     float plane_dist_scale = inv_dist_to_point / plane_dist_sensitivity;

@@ -77,6 +77,15 @@ float get_frustum_size(camera_data cam, vec3 pos)
     return frustum_size;
 }
 
+float get_frustum_size(camera_data cam, float view_z)
+{
+    float frustum_size = min(abs(cam.projection_info.z), abs(cam.projection_info.w));
+    if(cam.projection_info.x < 0) // Perspective
+        frustum_size *= abs(view_z);
+
+    return frustum_size;
+}
+
 #elif CAMERA_PROJECTION_TYPE == 2
 // Equirectangular cameras go here.
 struct camera_data

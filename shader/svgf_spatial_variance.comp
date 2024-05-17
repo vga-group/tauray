@@ -48,7 +48,7 @@ void main()
         vec3 center_pos = get_pos(curr_camera, view_pos);
 
         float center_luminance = rgb_to_luminance(out_color.rgb);
-        float frustum_size = control.min_rect_dim_mul_unproject * view_z;
+        float frustum_size = get_frustum_size(curr_camera, view_z);
         float inv_dist_to_point = 1.0 / frustum_size;
 
         vec4 color_sum = vec4(0.0);

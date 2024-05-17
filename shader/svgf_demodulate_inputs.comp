@@ -9,14 +9,11 @@
 
 #include "scene.glsl"
 
-layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray in_color;
 layout(binding = 1, set = 0, rgba32f) uniform readonly image2DArray in_diffuse;
 layout(binding = 2, set = 0, rgba32f) uniform readonly image2DArray in_specular;
 layout(binding = 3, set = 0, rgba32f) uniform readonly image2DArray in_material;
-layout(binding = 4, set = 0, rgba32f) uniform readonly image2DArray in_albedo;
 layout(binding = 5, set = 0) uniform sampler2DArray in_depth;
 layout(binding = 6, set = 0, rgba32f) uniform readonly image2DArray in_normal;
-layout(binding = 7, set = 0, rgba32f) uniform image2DArray out_emissive;
 layout(binding = 8, set = 0, rgba32f) uniform image2DArray out_diffuse;
 layout(binding = 9, set = 0, rgba32f) uniform image2DArray out_specular;
 
@@ -28,18 +25,11 @@ void main()
 
     vec4 diffuse = imageLoad(in_diffuse, p);
     vec4 specular = imageLoad(in_specular, p);
-
-    vec3 albedo = imageLoad(in_albedo, p).rgb;
     vec2 material = imageLoad(in_material, p).rg;
     float metallic = material.x;
     float roughness = material.y;
-    vec3 remodulated = albedo.rgb * mix(diffuse.rgb, specular.rgb, metallic) + specular.rgb * (1.0 - metallic);
 
-    vec3 color = imageLoad(in_color, p).rgb;
-    vec3 emissive = max(color - remodulated, vec3(0.0));
-
-    camera_pair cameras = camera.pairs[p.z];
-    camera_data curr_camera = cameras.current;
+    camera_data curr_camera = camera.pairs[p.z].current;
 
     vec3 pos;
     bool invalid = get_pos(in_depth, p, curr_camera, pos);
@@ -48,7 +38,7 @@ void main()
 #if DEMODULATION_USE_SPLIT_SUM_APPROXIMATION == 1
         vec3 V = normalize(curr_camera.origin.xyz - pos);
         vec3 N = unpack_gbuffer_normal(imageLoad(in_normal, p).rg);
-        float NoV = dot(N, V);
+        float NoV = max(dot(N, V), 0.0);
 
         // Our input already has f0 demodulated from metallics, but not dielectrics
         // Therefore the f0 used for demodulation with the environment split sum approximation
@@ -57,11 +47,10 @@ void main()
         float f0 = mix(0.04, 1.0, metallic);
         //vec3 specular_reflectance = specularGGXReflectanceApprox(f0, roughness, NoV);
         float specular_reflectance = environment_term_rtg(f0, NoV, roughness);
-        specular.rgb /= specular_reflectance;
+        //specular.rgb /= specular_reflectance;
 #endif
     }
 
     imageStore(out_diffuse, p, diffuse);
-    imageStore(out_specular, p, vec4(specular.rgb, specular.a));
-    imageStore(out_emissive, p, vec4(emissive, 1.0));
+    imageStore(out_specular, p, specular);
 }

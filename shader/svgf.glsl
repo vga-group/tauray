@@ -3,6 +3,7 @@
 
 #include "projection.glsl"
 #include "camera.glsl"
+#include "gbuffer.glsl"
 
 const float gaussian_kernel[2][2] = {
     { 1.0 / 4.0, 1.0 / 8.0  },
@@ -27,7 +28,6 @@ layout(push_constant) uniform push_constant_buffer
     float sigma_l;
     float temporal_alpha_color;
     float temporal_alpha_moments;
-    float min_rect_dim_mul_unproject;
 } control;
 
 bool is_in_screen(ivec2 p)
@@ -91,8 +91,8 @@ float specular_lobe_similarity(
     //float other = 1.0f - exp(-2.0f * dm);
     //return (2.0f * M_PI * expo * other) / dm;
     // Approximate
-    float sharpness1 = 0.533f / (roughness1 * roughness1 * max(ndotv1, 0.0001f));
-    float sharpness2 = 0.533f / (roughness2 * roughness2 * max(ndotv2, 0.0001f));
+    float sharpness1 = 0.533f / (roughness1 * roughness1);
+    float sharpness2 = 0.533f / (roughness2 * roughness2);
     float dm = length(sharpness1 * lobe_dir1 + sharpness2 * lobe_dir2);
     float expo = exp(dm - sharpness1 - sharpness2) * sqrt(sharpness1 * sharpness2);
     return clamp((2.0f * expo) / dm, 0.0f, 1.0f);
@@ -209,9 +209,113 @@ bool get_pos(sampler2DArray depth_sampler, ivec3 p, camera_data cam, out vec3 po
     return valid;
 }
 
-vec3 get_pos(camera_data cam, vec3 view_pos)
+vec3 get_world_pos(camera_data cam, vec3 view_pos)
 {
     return (cam.view_inverse * vec4(view_pos, 1.0)).xyz;
+}
+
+struct Bilinear 
+{ 
+    vec2 origin;
+    vec2 weights; 
+};
+
+Bilinear get_bilinear_filter( vec2 uv, vec2 tex_size )
+{
+    Bilinear result;
+    result.origin = floor( uv * tex_size - 0.5 );
+    result.weights = fract( uv * tex_size - 0.5 );
+    return result;
+}
+
+vec4 get_bilinear_weights(Bilinear bilinear)
+{
+    vec4 bilinear_weights = {
+        (1.0 - bilinear.weights.x) * (1.0 - bilinear.weights.y), (bilinear.weights.x) * (1.0 - bilinear.weights.y),
+        (1.0 - bilinear.weights.x) * (bilinear.weights.y), (bilinear.weights.x) * (bilinear.weights.y)
+    };
+
+    return bilinear_weights;
+}
+
+vec4 bicubic_filter(sampler2DArray tex, vec3 uv)
+{
+    vec2 texture_size = vec2(textureSize(tex, 0).xy);
+    vec4 size_params = vec4(1.0 / vec2(texture_size), vec2(texture_size));
+    vec2 pos = size_params.zw * uv.xy;
+    vec2 center_pos = floor(pos - 0.5) + 0.5;
+    vec2 f = pos - center_pos;
+    vec2 f2 = f * f;
+    vec2 f3 = f * f2;
+
+    float c = 0.5;
+    vec2 w0 =        -c  * f3 +  2.0 * c        * f2 - c * f;
+    vec2 w1 =  (2.0 - c) * f3 - (3.0 - c)       * f2         + 1.0;
+    vec2 w2 = -(2.0 - c) * f3 + (3.0 - 2.0 * c) * f2 + c * f;
+    vec2 w3 =         c  * f3 -               c * f2;
+
+    vec2 w12 = w1 + w2;
+    vec2 tc12 = size_params.xy * (center_pos + w2 / w12);
+    vec4 center_color = texture(tex, vec3(tc12.x, tc12.y, uv.z));
+
+    vec2 tc0 = size_params.xy * (center_pos - 1.0);
+    vec2 tc3 = size_params.xy * (center_pos + 2.0);
+    vec4 color = texture(tex, vec3(tc12.x, tc0.y, uv.z)) * (w12.x * w0.y) + 
+        texture(tex, vec3(tc0.x, tc12.y, uv.z)) * (w0.x * w12.y) +
+        center_color * (w12.x * w12.y) + 
+        texture(tex, vec3(tc3.x, tc12.y, uv.z)) * (w3.x * w12.y) +
+        texture(tex, vec3(tc12.x, tc3.y, uv.z)) * (w12.x * w3.y);
+
+    float total_w =  (w12.x * w0.y) + (w0.x * w12.y) + (w12.x * w12.y) + (w3.x * w12.y) + (w12.x * w3.y);
+
+    return color / total_w;
+}
+
+vec3 sample_gbuffer_normal(sampler2DArray normal_tex, Bilinear bilinear_filter, float layer)
+{
+    vec3 n00 = unpack_gbuffer_normal(texelFetch(normal_tex, ivec3(bilinear_filter.origin + vec2(0, 0), layer), 0).xy);
+    vec3 n10 = unpack_gbuffer_normal(texelFetch(normal_tex, ivec3(bilinear_filter.origin + vec2(1, 0), layer), 0).xy);
+    vec3 n01 = unpack_gbuffer_normal(texelFetch(normal_tex, ivec3(bilinear_filter.origin + vec2(0, 1), layer), 0).xy);
+    vec3 n11 = unpack_gbuffer_normal(texelFetch(normal_tex, ivec3(bilinear_filter.origin + vec2(1, 1), layer), 0).xy);
+
+    vec4 weights = get_bilinear_weights(bilinear_filter);
+    vec3 normal = n00 * weights.x + n10 * weights.y + n01 * weights.z + n11 * weights.w;
+
+    return normalize(normal);
+}
+
+vec4 sample_bilinear_with_custom_weights(sampler2DArray tex, Bilinear bilinear, float layer, vec4 weights)
+{
+    vec4 s00 = texelFetch(tex, ivec3(bilinear.origin + vec2(0, 0), layer), 0);
+    vec4 s10 = texelFetch(tex, ivec3(bilinear.origin + vec2(1, 0), layer), 0);
+    vec4 s01 = texelFetch(tex, ivec3(bilinear.origin + vec2(0, 1), layer), 0);
+    vec4 s11 = texelFetch(tex, ivec3(bilinear.origin + vec2(1, 1), layer), 0);
+
+    if (any(isnan(s00))) s00 = vec4(0.0);
+    if (any(isnan(s10))) s10 = vec4(0.0);
+    if (any(isnan(s01))) s01 = vec4(0.0);
+    if (any(isnan(s11))) s11 = vec4(0.0);
+
+    vec4 s = s00 * weights.x + s10 * weights.y + s01 * weights.z + s11 * weights.w;
+
+    float w_sum = dot(weights, vec4(1.0));
+    s = w_sum < 1e-4 ? vec4(0.0) : s / w_sum;
+
+    return s;    
+}
+
+vec3 demodulate_specular(vec3 specular, vec3 V, vec3 N, float metallic, float roughness)
+{
+    float NoV = max(dot(N, V), 0.0);
+
+    // Our input already has f0 demodulated from metallics, but not dielectrics
+    // Therefore the f0 used for demodulation with the environment split sum approximation
+    // is 1.0 for metallics and for dielectrics it depends on the ior which we no longer have access to
+    // dielectric_f0 = 0.04 is a reasonable approximation for most common materials.
+    float f0 = mix(0.04, 1.0, metallic);
+    //vec3 specular_reflectance = specularGGXReflectanceApprox(f0, roughness, NoV);
+    float specular_reflectance = environment_term_rtg(f0, NoV, roughness);
+    return specular.rgb / specular_reflectance;
 }
 
 //====================================================================================
@@ -220,7 +324,7 @@ vec3 get_pos(camera_data cam, vec3 view_pos)
 
 // Base blur radius in pixels, actually blur radius is scaled by frustum size
 #define PREPASS_DIFFUSE_BLUR_RADIUS 30.0
-#define PREPASS_SPECULAR_BLUR_RADIUS 50.0
+#define PREPASS_SPECULAR_BLUR_RADIUS 30.0
 
 #define TEMPORAL_ACCUMULATION_USE_BICUBIC_FILTER 1
 #define TEMPORAL_ACCUMULATION_USE_SPEC_MIN_DIST_3X3 0
@@ -243,20 +347,18 @@ vec3 get_pos(camera_data cam, vec3 view_pos)
 
 #define HIT_DIST_RECONSTRUCTION_ENABLED 1
 
-#define PREPASS_ENABLED 1
+#define TEMPORAL_ACCUMULATION_ENABLED 0
 
-#define TEMPORAL_ACCUMULATION_ENABLED 1
-
-#define DISOCCLUSION_FIX_ENABLED 1
+#define DISOCCLUSION_FIX_ENABLED 0
 #define DISOCCLUSION_FIX_USE_EDGE_STOPPERS 1
 
-#define FIREFLY_SUPPRESSION_ENABLED 1
+#define FIREFLY_SUPPRESSION_ENABLED 0
 
-#define SPATIAL_VARIANCE_ESTIMATE_ENABLED 1
+#define SPATIAL_VARIANCE_ESTIMATE_ENABLED 0
 
-#define PREFILTER_VARIANCE_ENABLED 1
+#define PREFILTER_VARIANCE_ENABLED 0
 
-#define ATROUS_ENABLED 1
+#define ATROUS_ENABLED 0
 
 #endif
 
@@ -274,7 +376,7 @@ vec3 get_pos(camera_data cam, vec3 view_pos)
 #define OUTPUT_RAW_INPUT 11
 #define OUTPUT_SPECULAR_HIT_DIST 12
 
-#define FINAL_OUTPUT 6
+#define FINAL_OUTPUT 5
 
 #define MAX_ACCUMULATED_FRAMES 30
 //#define MAX_ACCUMULATED_FRAMES 100
