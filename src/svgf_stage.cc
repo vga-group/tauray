@@ -147,8 +147,8 @@ void svgf_stage::init_resources()
     svgf_spec_hist                  = render_target_texture[rt_index++]->get_array_render_target(dev->id);
     atrous_diffuse_pingpong[0]      = render_target_texture[rt_index++]->get_array_render_target(dev->id);
     atrous_diffuse_pingpong[1]      = render_target_texture[rt_index++]->get_array_render_target(dev->id);
-    specular_hit_distance_history   = render_target_texture[rt_index++]->get_array_render_target(dev->id);
-    accumulated_specular_hit_distance = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    specular_hit_distance[0]        = render_target_texture[rt_index++]->get_array_render_target(dev->id);
+    specular_hit_distance[1]        = render_target_texture[rt_index++]->get_array_render_target(dev->id);
 }
 
 void svgf_stage::record_command_buffers()
@@ -220,11 +220,12 @@ void svgf_stage::record_command_buffers()
         temporal_desc.set_image(dev->id, "previous_specular", {{my_sampler.get_sampler(dev->id), svgf_spec_hist.view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "in_material", {{{}, input_features.material.view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "in_depth", { {my_sampler.get_sampler(dev->id), input_features.depth.view, vk::ImageLayout::eGeneral} });
-        temporal_desc.set_image(dev->id, "specular_hit_distance_history", { {my_sampler.get_sampler(dev->id), specular_hit_distance_history.view, vk::ImageLayout::eGeneral} });
-        temporal_desc.set_image(dev->id, "out_specular_hit_distance", { {{}, accumulated_specular_hit_distance.view, vk::ImageLayout::eGeneral} });
+        temporal_desc.set_image(dev->id, "specular_hit_distance_history", { {my_sampler.get_sampler(dev->id), specular_hit_distance[i].view, vk::ImageLayout::eGeneral}});
+        temporal_desc.set_image(dev->id, "out_specular_hit_distance", { {{}, specular_hit_distance[1 - i].view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "previous_material", { {my_sampler.get_sampler(dev->id), prev_features.material.view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_buffer("uniforms_buffer", uniforms);
         temporal_desc.set_image(dev->id, "in_confidence", { {{}, input_features.confidence.view, vk::ImageLayout::eGeneral} });
+        temporal_desc.set_image(dev->id, "in_flat_normal", { {{}, input_features.flat_normal.view, vk::ImageLayout::eGeneral} });
         temporal_comp.push_descriptors(cb, temporal_desc, 0);
         temporal_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
         temporal_comp.push_constants(cb, control);
@@ -306,7 +307,7 @@ void svgf_stage::record_command_buffers()
             atrous_desc.set_image(dev->id, "in_depth", { {my_sampler.get_sampler(dev->id), input_features.depth.view, vk::ImageLayout::eGeneral} });
             atrous_desc.set_image(dev->id, "raw_diffuse", { {{}, input_features.diffuse.view, vk::ImageLayout::eGeneral} });
             atrous_desc.set_buffer("uniforms_buffer", uniforms);
-            atrous_desc.set_image(dev->id, "specular_hit_dist", { {{}, specular_hit_distance_history.view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "specular_hit_dist", { {{}, specular_hit_distance[1 - i].view, vk::ImageLayout::eGeneral}});
             
             atrous_comp.push_descriptors(cb, atrous_desc, 0);
             atrous_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);

@@ -61,8 +61,7 @@ private:
     render_target history_length[2]; // R: diffuse history length, G: diffuse alpha, G: specular history length A: specular alpha
     render_target svgf_color_hist;
     render_target svgf_spec_hist;
-    render_target specular_hit_distance_history;
-    render_target accumulated_specular_hit_distance;
+    render_target specular_hit_distance[2];
     static constexpr uint32_t render_target_count = 10;
     std::unique_ptr<texture> render_target_texture[render_target_count];
     timer svgf_timer;
