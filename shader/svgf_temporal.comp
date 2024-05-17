@@ -18,8 +18,8 @@ layout(binding = 5, set = 0, rg32f) uniform readonly image2DArray in_screen_moti
 layout(binding = 6, set = 0) uniform sampler2DArray previous_color;
 layout(binding = 7, set = 0, rgba32f) uniform image2DArray out_color;
 layout(binding = 9, set = 0) uniform sampler2DArray in_prev_depth;
-layout(binding = 10, set = 0) uniform sampler2DArray previous_moments;
-layout(binding = 11, set = 0, rgba32f) uniform image2DArray out_moments;
+layout(binding = 10, set = 0) uniform sampler2DArray prev_history_length;
+layout(binding = 11, set = 0, rgba32f) uniform image2DArray out_history_length;
 layout(binding = 12, set = 0, rgba32f) uniform readonly image2DArray in_diffuse;
 layout(binding = 13, set = 0) uniform sampler2DArray previous_specular;
 layout(binding = 14, set = 0, rgba32f) uniform image2DArray out_specular;
@@ -32,13 +32,11 @@ layout(binding = 17, set = 0) uniform sampler2DArray in_depth;
 layout(binding = 18, set = 0) uniform sampler2DArray specular_hit_distance_history;
 layout(binding = 20, set = 0, rgba32f) uniform image2DArray out_specular_hit_distance;
 layout(binding = 21, set = 0) uniform sampler2DArray previous_material;
-layout(binding = 22, set = 0) uniform sampler2DArray previous_moments_specular;
-layout(binding = 23, set = 0, rgba32f) uniform image2DArray out_moments_specular;
-layout(binding = 24) buffer uniforms
+layout(binding = 22) buffer uniforms
 {
     uint frame_index;
 } uniforms_buffer;
-layout(binding = 25, set = 0, rgba32f) uniform image2DArray in_confidence;
+layout(binding = 23, set = 0, rgba32f) uniform image2DArray in_confidence;
 
 
 vec3 get_x_virtual(vec3 X, vec3 V, float NoV, float roughness, float hit_dist)
@@ -77,10 +75,9 @@ void main()
     current_specular.rgb = demodulate_specular(current_specular.rgb, V, normal, metallic_roughness.r, metallic_roughness.g);  
 
     float diffuse_luminance = rgb_to_luminance(current_diffuse.rgb);
-    vec3 diffuse_moments_hist_len = vec3(diffuse_luminance, diffuse_luminance * diffuse_luminance, 1.0);
-
     float specular_luminance = rgb_to_luminance(current_specular.rgb);
-    vec3 specular_moments_hist_len = vec3(specular_luminance, specular_luminance * specular_luminance, 1.0);
+
+    float confidence = imageLoad(in_confidence, p).r;
 
     // Early out on first frame to avoid reading garbage from potentially uninitialized buffers
     // Note Tauray frame counter starts from 1
@@ -88,8 +85,7 @@ void main()
     {
         imageStore(out_color, p, vec4(current_diffuse.rgb, 0.0f));
         imageStore(out_specular, p, vec4(current_specular.rgb, 0.0f));
-        imageStore(out_moments, p, vec4(diffuse_moments_hist_len, 1.0));
-        imageStore(out_moments_specular, p, vec4(specular_moments_hist_len, 1.0));
+        imageStore(out_history_length, p, vec4(confidence, 1.0, confidence, 1.0));
         imageStore(out_specular_hit_distance, p, vec4(vec3(current_specular.a), 1.0));
         return;
     }
@@ -171,9 +167,11 @@ void main()
     vec4 valids = vec4(valid00.z, valid10.y, valid01.y, valid11.x);
     vec4 occlusion_weights = bilinear_weights * valids;
 
-    // Reproject diffuse color and moments
+    // Reproject diffuse color, surface motino based specular and surface motion based history 
     vec4 prev_diffuse = vec4(0.0);
-    vec3 prev_moments = vec3(0.0);
+    vec4 prev_specular_surface = vec4(0.0);
+    vec4 prev_history = vec4(0.0);
+    float prev_specular_hit_dist = 0.0;
 
 #if TEMPORAL_ACCUMULATION_USE_BICUBIC_FILTER == 1
     if (allow_bicubic)
@@ -181,19 +179,31 @@ void main()
         prev_diffuse = bicubic_filter(previous_color, prev_uv);
         prev_diffuse = max(vec4(0.0), prev_diffuse);
 
-        prev_moments = bicubic_filter(previous_moments, prev_uv).xyz;
-        prev_moments = max(vec3(0.0), prev_moments);
+        prev_specular_surface = bicubic_filter(previous_specular, prev_uv);
+        prev_specular_surface = max(vec4(0.0), prev_specular_surface);
+
+        prev_history = bicubic_filter(prev_history_length, prev_uv);
+        prev_history = max(vec4(0.0), prev_history);
     }
     else
 #endif
     { // Fall back to bilinear
         prev_diffuse = sample_bilinear_with_custom_weights(previous_color, bilinear, p.z, occlusion_weights);
-        prev_moments = sample_bilinear_with_custom_weights(previous_moments, bilinear, p.z, occlusion_weights).rgb;
+        prev_specular_surface = sample_bilinear_with_custom_weights(previous_specular, bilinear, p.z, occlusion_weights);
+        prev_history = sample_bilinear_with_custom_weights(prev_history_length, bilinear, p.z, occlusion_weights);
     }
 
-    float confidence = imageLoad(in_confidence, p).r;
-    float history_length = prev_moments.z;
-    history_length += confidence; // check if this work or swap to Hasse mode
+    prev_specular_hit_dist = sample_bilinear_with_custom_weights(specular_hit_distance_history, bilinear, p.z, occlusion_weights).r;
+
+    float prev_diffuse_luminance = rgb_to_luminance(prev_diffuse.rgb);
+    float prev_specular_luminance_surface = rgb_to_luminance(prev_specular_surface.rgb);
+
+    float history_length_diffuse = prev_history.r;
+    float history_length_specular_surface = prev_history.b;
+    float history_length_specular_virtual = prev_history.b;
+    history_length_diffuse += confidence; // check if this work or swap to Hasse mode
+    history_length_specular_surface += confidence;
+    history_length_specular_virtual += confidence;
 
     // Reduce the amount of glancing angle speed stripes
     {
@@ -212,93 +222,55 @@ void main()
 
         if (footprint_quality < 1.0)
         {
-            history_length *= sqrt(footprint_quality);
-            history_length = max(history_length, 1.0);
+            history_length_diffuse *= sqrt(footprint_quality);
+            history_length_diffuse = max(history_length_diffuse, 1.0);
+            history_length_specular_surface *= sqrt(footprint_quality);
+            history_length_specular_surface = max(history_length_specular_surface, 1.0);
         }
     }
 
-
-    // Accumulate diffuse color and moments
-    float alpha = confidence / history_length;
-    float alpha_moments = confidence / history_length;
-
-
+    // Accumulate diffuse color and variance
+    float alpha_diffuse = confidence / history_length_diffuse;
 #if TEMPORAL_ACCUMULATION_ENABLED == 0
-    alpha = 1.0;
-    alpha_moments = 1.0;
+    alpha_diffuse = 1.0;
 #endif
+    alpha_diffuse = clamp(alpha_diffuse, 1.0 / MAX_ACCUMULATED_FRAMES, 1.0);
 
-    alpha = clamp(alpha, 1.0 / MAX_ACCUMULATED_FRAMES, 1.0);
-    alpha_moments = clamp(alpha_moments, 1.0 / MAX_ACCUMULATED_FRAMES, 1.0);
+    history_length_diffuse = confidence / alpha_diffuse;
 
-    history_length = confidence / alpha;
+    float delta_luminance = prev_diffuse_luminance - diffuse_luminance;
+    float variance_diffuse = prev_diffuse.a + alpha_diffuse * delta_luminance * delta_luminance;
+    variance_diffuse *= (1.0 - alpha_diffuse);
 
-    vec2 moments = mix(prev_moments.xy, diffuse_moments_hist_len.xy, alpha);
-    float variance = max(1e-8, moments.y - moments.x * moments.x);
+    vec3 out_diffuse = mix(prev_diffuse.rgb, current_diffuse.rgb, alpha_diffuse);
 
-    vec3 out_diffuse = mix(prev_diffuse.rgb, current_diffuse.rgb, alpha);
-
-    // TODO: Accumulate specular color, moments and ray distance
-
-    // Reproject surface motion based specular
-    vec4 prev_specular_surface_motion = vec4(0.0);
-    vec3 prev_specular_moments_hist_len = vec3(0.0);
-
-    #if TEMPORAL_ACCUMULATION_USE_BICUBIC_FILTER == 1
-    if (allow_bicubic)
-    {
-        prev_specular_surface_motion = bicubic_filter(previous_specular, prev_uv);
-        prev_specular_surface_motion = max(vec4(0.0), prev_specular_surface_motion);
-
-        prev_specular_moments_hist_len = bicubic_filter(previous_moments_specular, prev_uv).xyz;
-        prev_specular_moments_hist_len = max(vec3(0.0), prev_specular_moments_hist_len);
-    }
-    else
-#endif
-    { // Fall back to bilinear
-        prev_specular_surface_motion = sample_bilinear_with_custom_weights(previous_specular, bilinear, p.z, occlusion_weights);
-        prev_specular_moments_hist_len = sample_bilinear_with_custom_weights(previous_moments_specular, bilinear, p.z, occlusion_weights).rgb;
-    }
-
-    float specular_history_length_surface_motion = prev_specular_moments_hist_len.z;
-    specular_history_length_surface_motion += confidence;
-
-    float alpha_specular = confidence / specular_history_length_surface_motion;
-    alpha_specular = clamp(alpha_specular, 1.0 / MAX_ACCUMULATED_FRAMES, 1.0);
-
+    // Acculate specular surface color and variance
+    float alpha_specular_surface = confidence / history_length_specular_surface;
 #if TEMPORAL_ACCUMULATION_ENABLED == 0
-    alpha_specular = 1.0;
+    alpha_specular_surface = 1.0;
 #endif
+    alpha_specular_surface = clamp(alpha_specular_surface, 1.0 / MAX_ACCUMULATED_FRAMES, 1.0);
 
-    specular_history_length_surface_motion = confidence == 0 ? specular_history_length_surface_motion : confidence / alpha_specular;
+    delta_luminance = prev_specular_luminance_surface - specular_luminance;
+    float variance_specular_surface = prev_specular_surface.a + alpha_specular_surface * delta_luminance * delta_luminance;
+    variance_specular_surface *= (1.0 - alpha_specular_surface);
 
-    vec4 out_spec = mix(prev_specular_surface_motion, current_specular, alpha_specular);
+    history_length_specular_surface = confidence / alpha_specular_surface;
+    vec3 out_spec = mix(prev_specular_surface.rgb, current_specular.rgb, alpha_specular_surface);
 
+    float specular_hit_distance_surface = mix(prev_specular_hit_dist, current_specular.a, alpha_specular_surface);
+    
     if (p.xy == ivec2(640, 360))
     {
-        debugPrintfEXT("conf: %f, hist len: %f, alpha %f\n", confidence, specular_history_length_surface_motion, alpha_specular);
+        debugPrintfEXT("conf: %f, hist len: %f, alpha %f\n", confidence, history_length_specular_surface, alpha_specular_surface);
     }
-
-    // if (p.xy == ivec2(640, 360))
-    // {
-    //     debugPrintfEXT("%f %f\n", confidence, confidence);
-    // }
-
-    vec2 moments_specular;
-    moments_specular.x = rgb_to_luminance(current_specular.rgb);
-    moments_specular.y = moments_specular.x * moments_specular.x;
-    float specular_variance = max(1e-8, moments_specular.y - moments_specular.x * moments_specular.x);
-
-    vec2 out_moments_spec = moments_specular;
-    float specular_history_length = specular_history_length_surface_motion;
 
     //===========================================================
     // Write outputs
     //=========================================================== 
 
-    imageStore(out_color, p, vec4(out_diffuse, variance));
-    imageStore(out_specular, p, vec4(out_spec.rgb, specular_variance));
-    imageStore(out_moments, p, vec4(moments.xy, history_length, 0.0));
-    imageStore(out_moments_specular, p, vec4(out_moments_spec.xy, specular_history_length, 1.0));
-    imageStore(out_specular_hit_distance, p, vec4(vec3(out_spec.a), 1.0));
+    imageStore(out_color, p, vec4(out_diffuse, variance_diffuse));
+    imageStore(out_specular, p, vec4(out_spec, variance_specular_surface));
+    imageStore(out_specular_hit_distance, p, vec4(specular_hit_distance_surface));
+    imageStore(out_history_length, p, vec4(history_length_diffuse, alpha_diffuse, history_length_specular_surface, alpha_specular_surface));
 }

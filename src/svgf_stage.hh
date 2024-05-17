@@ -47,14 +47,10 @@ private:
     compute_pipeline atrous_comp;
     push_descriptor_set temporal_desc;
     compute_pipeline temporal_comp;
-    push_descriptor_set estimate_variance_desc;
-    compute_pipeline estimate_variance_comp;
     push_descriptor_set firefly_suppression_desc;
     compute_pipeline firefly_suppression_comp;
     push_descriptor_set disocclusion_fix_desc;
     compute_pipeline disocclusion_fix_comp;
-    push_descriptor_set prefilter_variance_desc;
-    compute_pipeline prefilter_variance_comp;    
     push_descriptor_set hit_dist_reconstruction_desc;
     compute_pipeline hit_dist_reconstruction_comp;
     options opt;
@@ -62,15 +58,12 @@ private:
     gbuffer_target prev_features;
     render_target atrous_diffuse_pingpong[2];
     render_target atrous_specular_pingpong[2];
-    render_target moments_history[2];
-    render_target moments_history_specular[2];
+    render_target history_length[2]; // R: diffuse history length, G: diffuse alpha, G: specular history length A: specular alpha
     render_target svgf_color_hist;
     render_target svgf_spec_hist;
     render_target specular_hit_distance_history;
     render_target accumulated_specular_hit_distance;
-    render_target emissive; // Needed to store emissive for reconstruction later, since diffuse and specular don't have it and path tracer doesn't store it separately.
-    render_target hit_dist_reconst_temp;
-    static constexpr uint32_t render_target_count = 14;
+    static constexpr uint32_t render_target_count = 10;
     std::unique_ptr<texture> render_target_texture[render_target_count];
     timer svgf_timer;
 

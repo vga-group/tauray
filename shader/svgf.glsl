@@ -5,17 +5,6 @@
 #include "camera.glsl"
 #include "gbuffer.glsl"
 
-const float gaussian_kernel[2][2] = {
-    { 1.0 / 4.0, 1.0 / 8.0  },
-    { 1.0 / 8.0, 1.0 / 16.0 }
-};
-
-const float gaussian_kernel_5x5[3][3] = {
-    {9.0f / 64.0f, 3.0f / 32.0f, 3.0f / 128.0f},
-    {3.0f / 32.0f, 1.0f / 16.0f, 1.0f / 64.0f},
-    {3.0f / 128.0f, 1.0f / 64.0f, 1.0f / 256.0f},
-};
-
 layout(push_constant) uniform push_constant_buffer
 {
     ivec2 size;
@@ -318,6 +307,13 @@ vec3 demodulate_specular(vec3 specular, vec3 V, vec3 N, float metallic, float ro
     return specular.rgb / specular_reflectance;
 }
 
+float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float frustum_size)
+{
+    const float plane_dist_sensitivity = 0.005;
+    float plane_dist = abs(dot((X - Xref), N));
+    return step(plane_dist / frustum_size, plane_dist_sensitivity);
+}
+
 //====================================================================================
 // Configurable params
 //====================================================================================
@@ -347,18 +343,14 @@ vec3 demodulate_specular(vec3 specular, vec3 V, vec3 N, float metallic, float ro
 
 #define HIT_DIST_RECONSTRUCTION_ENABLED 1
 
-#define TEMPORAL_ACCUMULATION_ENABLED 0
+#define TEMPORAL_ACCUMULATION_ENABLED 1
 
-#define DISOCCLUSION_FIX_ENABLED 0
+#define DISOCCLUSION_FIX_ENABLED 1
 #define DISOCCLUSION_FIX_USE_EDGE_STOPPERS 1
 
-#define FIREFLY_SUPPRESSION_ENABLED 0
+#define FIREFLY_SUPPRESSION_ENABLED 1
 
-#define SPATIAL_VARIANCE_ESTIMATE_ENABLED 0
-
-#define PREFILTER_VARIANCE_ENABLED 0
-
-#define ATROUS_ENABLED 0
+#define ATROUS_ENABLED 1
 
 #endif
 
@@ -376,7 +368,7 @@ vec3 demodulate_specular(vec3 specular, vec3 V, vec3 N, float metallic, float ro
 #define OUTPUT_RAW_INPUT 11
 #define OUTPUT_SPECULAR_HIT_DIST 12
 
-#define FINAL_OUTPUT 5
+#define FINAL_OUTPUT 0
 
 #define MAX_ACCUMULATED_FRAMES 30
 //#define MAX_ACCUMULATED_FRAMES 100
