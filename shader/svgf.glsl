@@ -329,7 +329,7 @@ float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float frustum_size)
 #define ATROUS_RADIUS 1 
 
 // Randomly offset sample positions to mitigate "ringing"
-#define ATROUS_RANDOM_OFFSET 1
+#define ATROUS_RANDOM_OFFSET 0
 
 #define DEMODULATION_USE_SPLIT_SUM_APPROXIMATION 1
 
@@ -368,7 +368,7 @@ float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float frustum_size)
 #define OUTPUT_RAW_INPUT 11
 #define OUTPUT_SPECULAR_HIT_DIST 12
 
-#define FINAL_OUTPUT 5
+#define FINAL_OUTPUT 6
 
 #define MAX_ACCUMULATED_FRAMES 30
 //#define MAX_ACCUMULATED_FRAMES 100

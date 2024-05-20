@@ -153,12 +153,16 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
             cur = data.current_gbuffer.get_render_target(devices[device_index].id, view);
             prev = data.prev_gbuffer.get_render_target(devices[device_index].id, view);
 
+            this->opt.svgf_options->color_buffer_contains_direct_light = true;
+            this->opt.svgf_options->atrous_kernel_radius = 1;
+            this->opt.svgf_options->atrous_diffuse_iters = 4;
+
             pv.svgf.emplace(
                 devices[device_index],
                 *scene_update,
                 cur,
                 prev,
-                *opt.svgf_options
+                *this->opt.svgf_options
             );
         }
 

@@ -35,7 +35,9 @@ void main()
     float sum_2nd_moment_diffuse = sum_diffuse.a + diffuse_luminance * diffuse_luminance;
     float sum_2nd_moment_specular = sum_specular.a + specular_luminance * specular_luminance;
 #if DISOCCLUSION_FIX_ENABLED == 1
-    if (history_length.g > 0.25f || history_length.a > 0.25f)
+    bool diffuse_disocclusion = history_length.g > 0.25f;
+    bool specular_disocclusion = history_length.a > 0.25f;
+    if (diffuse_disocclusion || specular_disocclusion)
     {
         vec3 view_pos;
         if (get_view_pos(in_depth, p, curr_camera, view_pos)) return;
@@ -68,8 +70,8 @@ void main()
                 ivec3 q = ivec3(p.xy + ivec2(x, y) * stride, p.z);
                 if (!is_in_screen(q.xy)) continue;
 
-                vec4 diff = imageLoad(accumulated_diffuse, q);
-                vec4 spec = imageLoad(accumulated_specular, q);
+                vec4 diff = diffuse_disocclusion ? imageLoad(accumulated_diffuse, q) : vec4(0);
+                vec4 spec = specular_disocclusion ? imageLoad(accumulated_specular, q) : vec4(0);
                 if (any(isnan(diff)) || any(isnan(spec))) continue;
 
                 vec3 sample_view_pos;
@@ -100,24 +102,30 @@ void main()
 
                 vec3 sample_view = normalize(curr_camera.origin.xyz - X);
                 float lobe_similarity = specular_lobe_similarity(V, center_normal, center_roughness, sample_view, Ns, sample_roughness);
-                float lobe_weight = pow(lobe_similarity, 16.0);
+                float lobe_weight = lobe_similarity;
                 w_spec *= lobe_weight;
 
     #endif
                 // Moments
-                float l_diff = rgb_to_luminance(diff.rgb);
-                float second_moment_diff = diff.a + l_diff * l_diff;
+                if(diffuse_disocclusion)
+                {
+                    float l_diff = rgb_to_luminance(diff.rgb);
+                    float second_moment_diff = diff.a + l_diff * l_diff;
 
-                float l_spec = rgb_to_luminance(spec.rgb);
-                float second_moment_spec = spec.a + l_spec * l_spec;
+                    sum_diffuse.rgb += diff.rgb * w;
+                    sum_2nd_moment_diffuse += second_moment_diff * w;
+                    w_sum += w;
+                }
 
-                sum_diffuse.rgb += diff.rgb * w;
-                sum_2nd_moment_diffuse += second_moment_diff * w;
-                w_sum += w;
+                if(specular_disocclusion)
+                {
+                    float l_spec = rgb_to_luminance(spec.rgb);
+                    float second_moment_spec = spec.a + l_spec * l_spec;
 
-                sum_specular.rgb += spec.rgb * w_spec;
-                sum_2nd_moment_specular += second_moment_spec * w_spec;
-                w_sum_spec += w_spec;
+                    sum_specular.rgb += spec.rgb * w_spec;
+                    sum_2nd_moment_specular += second_moment_spec * w_spec;
+                    w_sum_spec += w_spec;
+                }
             }
         }
 

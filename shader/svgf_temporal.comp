@@ -229,6 +229,16 @@ void main()
         }
     }
 
+    // Test how good surface tracking should be with the current parallax.
+    // That's used to switch between virtual motion and surface motion.
+    // I have no justification for squaring the roughness other than that
+    // it looked good in Sponza.
+    float surface_tracking_similarity = specular_lobe_similarity(
+        V, flat_normal, metallic_roughness.g * metallic_roughness.g,
+        normalize(prev_camera.origin.xyz - X_prev), flat_normal, metallic_roughness.g * metallic_roughness.g
+    );
+    history_length_specular_surface *= surface_tracking_similarity;
+
     // Accumulate diffuse color and variance
     float alpha_diffuse = confidence / history_length_diffuse;
 #if TEMPORAL_ACCUMULATION_ENABLED == 0
@@ -258,7 +268,8 @@ void main()
     history_length_specular_surface = confidence / alpha_specular_surface;
     vec3 accumulated_specular_surface = mix(prev_specular_surface.rgb, current_specular.rgb, alpha_specular_surface);
 
-    float specular_hit_distance_surface = mix(prev_specular_hit_dist, current_specular.a, alpha_specular_surface);
+    //float specular_hit_distance_surface = mix(prev_specular_hit_dist, current_specular.a, alpha_specular_surface);
+    float specular_hit_distance_surface = current_specular.a;
 
     // Virtual motion based specular
     float hit_dist_for_reprojection = specular_hit_distance_surface != 0.0 ? 1.0 / specular_hit_distance_surface : 1e6;
@@ -292,7 +303,7 @@ void main()
     float roughness = max(0.01, metallic_roughness.g);
     float prev_roughness = max(0.01, prev_mat.g);
     float lobe_similarity_virt = specular_lobe_similarity(V, normal, roughness, corr_view, prev_normal_virt, prev_roughness);
-    float virtual_motion_confidence = pow(lobe_similarity_virt, 16.0);
+    float virtual_motion_confidence = pow(lobe_similarity_virt, 32.0);
 
     // Accumulate virtual motion based specular color, variance and hit distance
     float history_length_specular_virtual = prev_history_virtual.b;
@@ -310,20 +321,9 @@ void main()
     float specular_hit_distance_virtual = mix(prev_hit_distance_virtual, current_specular.a, alpha_specular_virtual);
 
     // Combine surface motion based specular and virtual motion based specular
-
-    // Test how good surface tracking should be with the current parallax.
-    // That's used to switch between virtual motion and surface motion.
-    // I have no justification for squaring the roughness other than that
-    // it looked good in Sponza.
-    //vec3 virtual_view = normalize(get_camera_origin(cam) - (prev_world_pos - normalize(get_camera_prev_origin(cam) - prev_world_pos) * ray_length));
-    float similarity = specular_lobe_similarity(
-        V, flat_normal, roughness * roughness,
-        normalize(prev_camera.origin.xyz - X_prev), flat_normal, roughness * roughness
-    );
-    float virtual_motion_amount = clamp((1-similarity) * 100.0f, 0, 1);
+    float virtual_motion_amount = clamp((1-surface_tracking_similarity) * 100.0f, 0, 1);
     // Make it "more decisive" but keeping it still smooth.
     virtual_motion_amount = smoothstep(0, 1, virtual_motion_amount);
-    //virtual_motion_amount = 1.0;
 
     vec3 out_spec = mix(accumulated_specular_surface, accumulated_specular_virtual, virtual_motion_amount);
     float out_hit_dist = mix(specular_hit_distance_surface, specular_hit_distance_virtual, virtual_motion_amount);
@@ -348,9 +348,18 @@ void main()
     //===========================================================
     // Write outputs
     //=========================================================== 
+    if(any(isnan(out_diffuse))) out_diffuse = vec3(0);
+    if(any(isnan(out_spec))) out_spec = vec3(0);
+    if(isnan(variance_diffuse)) variance_diffuse = 0;
+    if(isnan(variance_specular)) variance_specular = 0;
+    if(isnan(specular_hit_distance_surface)) specular_hit_distance_surface = 0;
+    if(isnan(history_length_diffuse)) history_length_diffuse = 0;
+    if(isnan(alpha_diffuse)) alpha_diffuse = 0;
+    if(isnan(specular_history_length)) specular_history_length = 0;
+    if(isnan(alpha_specular)) alpha_specular = 0;
 
     imageStore(out_color, p, vec4(out_diffuse, variance_diffuse));
     imageStore(out_specular, p, vec4(out_spec, variance_specular));
-    imageStore(out_specular_hit_distance, p, vec4(specular_hit_distance_surface));
+    imageStore(out_specular_hit_distance, p, vec4(out_hit_dist));
     imageStore(out_history_length, p, vec4(history_length_diffuse, alpha_diffuse, specular_history_length, alpha_specular));
 }
