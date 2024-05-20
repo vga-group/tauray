@@ -368,7 +368,7 @@ float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float frustum_size)
 #define OUTPUT_RAW_INPUT 11
 #define OUTPUT_SPECULAR_HIT_DIST 12
 
-#define FINAL_OUTPUT 6
+#define FINAL_OUTPUT 5
 
 #define MAX_ACCUMULATED_FRAMES 30
 //#define MAX_ACCUMULATED_FRAMES 100

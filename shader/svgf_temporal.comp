@@ -46,6 +46,61 @@ vec3 get_x_virtual(vec3 X, vec3 V, float NoV, float roughness, float hit_dist)
     return X - V * hit_dist;
 }
 
+vec4 get_specular_mask(vec3 uv, vec3 V, vec3 prev_V, vec3 normal, float roughness, camera_data curr_camera, camera_data prev_camera)
+{
+    vec4 prev_depths = textureGather(in_prev_depth, uv, 0).wzxy;
+    vec4 prev_ray_lengths = textureGather(specular_hit_distance_history, uv, 0).wzxy;
+    prev_ray_lengths.x = prev_ray_lengths.x != 0.0 ? 1.0 / prev_ray_lengths.x : 1e6;
+    prev_ray_lengths.y = prev_ray_lengths.y != 0.0 ? 1.0 / prev_ray_lengths.y : 1e6;
+    prev_ray_lengths.z = prev_ray_lengths.z != 0.0 ? 1.0 / prev_ray_lengths.z : 1e6;
+    prev_ray_lengths.w = prev_ray_lengths.w != 0.0 ? 1.0 / prev_ray_lengths.w : 1e6;
+    vec4 prev_roughness = textureGather(previous_material, uv, 1).wzxy;
+    vec4 linear_depths = linearize_depth(prev_depths * 2.0 - 1.0, prev_camera.projection_info);
+
+    if (linear_depths.x > 0.0) debugPrintfEXT("Help");
+
+    vec4 nx = textureGather(previous_normal, uv, 0).wzxy;
+    vec4 ny = textureGather(previous_normal, uv, 1).wzxy;
+
+    vec3 prev_normal0 = unpack_gbuffer_normal(vec2(nx.x, ny.x));
+    vec3 prev_normal1 = unpack_gbuffer_normal(vec2(nx.y, ny.y));
+    vec3 prev_normal2 = unpack_gbuffer_normal(vec2(nx.z, ny.z));
+    vec3 prev_normal3 = unpack_gbuffer_normal(vec2(nx.w, ny.w));
+
+    vec3 X_view_prev0 = unproject_position(linear_depths.x, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info);
+    vec3 X_view_prev1 = unproject_position(linear_depths.y, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info);
+    vec3 X_view_prev2 = unproject_position(linear_depths.z, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info);
+    vec3 X_view_prev3 = unproject_position(linear_depths.w, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info);
+
+    // float currd = texelFetch(in_depth, ivec3(gl_GlobalInvocationID.xyz), 0).r;
+    // if (ivec2(gl_GlobalInvocationID.xy) == ivec2(640, 540))
+    // {
+    //     debugPrintfEXT("%f %f %f d: %f, curr d: %f", X_view_prev0.x, X_view_prev0.y, X_view_prev0.z, prev_depths.x, currd);
+    // }
+
+    vec3 X_prev_virt0 = prev_camera.origin.xyz - prev_V * (length(X_view_prev0) + prev_ray_lengths.x);
+    vec3 X_prev_virt1 = prev_camera.origin.xyz - prev_V * (length(X_view_prev1) + prev_ray_lengths.y);
+    vec3 X_prev_virt2 = prev_camera.origin.xyz - prev_V * (length(X_view_prev2) + prev_ray_lengths.z);
+    vec3 X_prev_virt3 = prev_camera.origin.xyz - prev_V * (length(X_view_prev3) + prev_ray_lengths.w);
+
+    vec3 corr_view0 = normalize(curr_camera.origin.xyz - X_prev_virt0);
+    vec3 corr_view1 = normalize(curr_camera.origin.xyz - X_prev_virt1);
+    vec3 corr_view2 = normalize(curr_camera.origin.xyz - X_prev_virt2);
+    vec3 corr_view3 = normalize(curr_camera.origin.xyz - X_prev_virt3);
+
+    roughness = max(0.01, roughness);
+    prev_roughness = max(vec4(0.01), prev_roughness);
+
+    vec4 lobe_mask = pow(vec4(
+        specular_lobe_similarity(V, normal, roughness, corr_view0, prev_normal0, prev_roughness[0]),
+        specular_lobe_similarity(V, normal, roughness, corr_view1, prev_normal1, prev_roughness[1]),
+        specular_lobe_similarity(V, normal, roughness, corr_view2, prev_normal2, prev_roughness[2]),
+        specular_lobe_similarity(V, normal, roughness, corr_view3, prev_normal3, prev_roughness[3])
+    ), vec4(32.0f));
+
+    return lobe_mask;
+}
+
 void main()
 {
     const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
@@ -268,8 +323,8 @@ void main()
     history_length_specular_surface = confidence / alpha_specular_surface;
     vec3 accumulated_specular_surface = mix(prev_specular_surface.rgb, current_specular.rgb, alpha_specular_surface);
 
-    //float specular_hit_distance_surface = mix(prev_specular_hit_dist, current_specular.a, alpha_specular_surface);
-    float specular_hit_distance_surface = current_specular.a;
+    float specular_hit_distance_surface = mix(prev_specular_hit_dist, current_specular.a, alpha_specular_surface);
+    //float specular_hit_distance_surface = current_specular.a;
 
     // Virtual motion based specular
     float hit_dist_for_reprojection = specular_hit_distance_surface != 0.0 ? 1.0 / specular_hit_distance_surface : 1e6;
@@ -282,6 +337,16 @@ void main()
     vec3 prev_uv_virt = vec3(X_virt_clip_prev.x, 1.0 - X_virt_clip_prev.y, p.z);
     Bilinear bilinear_virt = get_bilinear_filter(prev_uv_virt.xy, vec2(control.size));
     vec4 bilinear_weights_virt = get_bilinear_weights(bilinear_virt);
+    vec4 specular_mask = get_specular_mask(prev_uv_virt.xyz, V, normalize(prev_camera.origin.xyz - X_virt), normal, metallic_roughness.g, curr_camera, prev_camera);
+    // if (p.xy == ivec2(640, 540))
+    // {
+    //     debugPrintfEXT("%d  %d", ivec2(prev_uv_virt.xy * control.size));
+    //     float ws = dot(bilinear_weights_virt, specular_mask);
+    //     debugPrintfEXT("spec mask: %f %f %f %f, conf: %f, X %f %f %f", specular_mask.x, specular_mask.y, specular_mask.z, specular_mask.w, ws, view_pos.x, view_pos.y, view_pos.z);
+    // }
+    //specular_mask = vec4(1.0);
+    float virtual_motion_confidence = dot(bilinear_weights_virt, specular_mask);
+    bilinear_weights_virt *= specular_mask;
 
     // Reproject data
     float virtual_in_screen = float(saturate(prev_uv_virt.xy) == prev_uv_virt.xy);
@@ -296,6 +361,7 @@ void main()
     vec2 prev_mat = sample_bilinear_with_custom_weights(previous_material, bilinear_virt, p.z, bilinear_weights_virt).rg;
 
     // Estimate virtual motion confidence
+#if 0
     vec3 prev_view_virt = normalize(prev_camera.origin.xyz - X_virt);
     float prev_ray_len_virt = prev_hit_distance_virtual != 0.0 ? 1.0 / prev_hit_distance_virtual : 1e6;
     vec3 prev_virtual_pos = prev_camera.origin.xyz - prev_view_virt * (length(prev_view_pos_virt) + prev_ray_len_virt);
@@ -303,7 +369,8 @@ void main()
     float roughness = max(0.01, metallic_roughness.g);
     float prev_roughness = max(0.01, prev_mat.g);
     float lobe_similarity_virt = specular_lobe_similarity(V, normal, roughness, corr_view, prev_normal_virt, prev_roughness);
-    float virtual_motion_confidence = pow(lobe_similarity_virt, 32.0);
+    virtual_motion_confidence = pow(lobe_similarity_virt, 32.0);
+#endif
 
     // Accumulate virtual motion based specular color, variance and hit distance
     float history_length_specular_virtual = prev_history_virtual.b;
@@ -340,8 +407,8 @@ void main()
     //     debugPrintfEXT("conf: %f, hist len: %f, alpha %f\n", confidence, history_length_specular_surface, alpha_specular_surface);
     // }
 
-    // if (p.xy == ivec2(640, 360))
-    // {
+    // if (p.xy == ivec2(640, 680))
+    //
     //     debugPrintfEXT("hist len %f, a: %f, v conf: %f, amnt: %f", specular_history_length, alpha_specular_virtual, virtual_motion_confidence, virtual_motion_amount);
     // }
 
