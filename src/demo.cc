@@ -38,9 +38,9 @@ demo_scene_data load_demo_scenes(context& ctx, const options& opt)
             data.frame_entities.push_back(id);
 
             t.set_static(false);
-            t.set_scaling(vec3(0.0014));
+            t.set_scaling(vec3(0.0011));
             t.set_orientation(90, vec3(0,1,0));
-            t.set_position(vec3(0.45,0.2,6));
+            t.set_position(vec3(0,0,4.5));
 
             // Shadow realm is for the transient people.
             for(auto& vg: model)
