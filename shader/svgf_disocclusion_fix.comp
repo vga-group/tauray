@@ -102,7 +102,7 @@ void main()
 
                 vec3 sample_view = normalize(curr_camera.origin.xyz - X);
                 float lobe_similarity = specular_lobe_similarity(V, center_normal, center_roughness, sample_view, Ns, sample_roughness);
-                float lobe_weight = lobe_similarity;
+                float lobe_weight = pow(lobe_similarity, 8.0f);
                 w_spec *= lobe_weight;
 
     #endif

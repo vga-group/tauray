@@ -29,6 +29,10 @@ vec2 saturate(vec2 x) {return clamp(x, 0.0, 1.0);}
 vec3 saturate(vec3 x) {return clamp(x, 0.0, 1.0);}
 vec4 saturate(vec4 x) {return clamp(x, 0.0, 1.0);}
 
+float sum(vec2 v) { return dot(v, vec2(1.0)); }
+float sum(vec3 v) { return dot(v, vec3(1.0)); }
+float sum(vec4 v) { return dot(v, vec4(1.0)); }
+
 vec3 viridis_quintic( float x )
 {
 	x = saturate( x );
@@ -71,20 +75,20 @@ float specular_lobe_similarity(
     vec3 lobe_dir2, float ndotv2, float roughness2
 ){
     // Exact
-    //float sharpness1 = 0.533f / (roughness1 * roughness1 * max(ndotv1, 0.0001f));
-    //float sharpness2 = 0.533f / (roughness2 * roughness2 * max(ndotv2, 0.0001f));
-    //float amplitude1 = sqrt(sharpness1 / (M_PI * (1.0f - exp(-4.0f * sharpness1))));
-    //float amplitude2 = sqrt(sharpness2 / (M_PI * (1.0f - exp(-4.0f * sharpness2))));
-    //float dm = length(sharpness1 * lobe_dir1 + sharpness2 * lobe_dir2);
-    //float expo = exp(dm - sharpness1 - sharpness2) * amplitude1 * amplitude2;
-    //float other = 1.0f - exp(-2.0f * dm);
-    //return (2.0f * M_PI * expo * other) / dm;
-    // Approximate
     float sharpness1 = 0.533f / (roughness1 * roughness1);
     float sharpness2 = 0.533f / (roughness2 * roughness2);
+    float amplitude1 = sqrt(sharpness1 / (M_PI * (1.0f - exp(-4.0f * sharpness1))));
+    float amplitude2 = sqrt(sharpness2 / (M_PI * (1.0f - exp(-4.0f * sharpness2))));
     float dm = length(sharpness1 * lobe_dir1 + sharpness2 * lobe_dir2);
-    float expo = exp(dm - sharpness1 - sharpness2) * sqrt(sharpness1 * sharpness2);
-    return clamp((2.0f * expo) / dm, 0.0f, 1.0f);
+    float expo = exp(dm - sharpness1 - sharpness2) * amplitude1 * amplitude2;
+    float other = 1.0f - exp(-2.0f * dm);
+    return clamp((2.0f * M_PI * expo * other) / dm, 0.0f, 1.0f);
+    // Approximate
+    //float sharpness1 = 0.533f / (roughness1 * roughness1);
+    //float sharpness2 = 0.533f / (roughness2 * roughness2);
+    //float dm = length(sharpness1 * lobe_dir1 + sharpness2 * lobe_dir2);
+    //float expo = exp(dm - sharpness1 - sharpness2) * sqrt(sharpness1 * sharpness2);
+    //return clamp((2.0f * expo) / dm, 0.0f, 1.0f);
 }
 // View points away from surface.
 float specular_lobe_similarity(
@@ -95,7 +99,7 @@ float specular_lobe_similarity(
     vec3 axis2 = get_specular_dominant_dir(view2, normal2, roughness2);
     return specular_lobe_similarity(
         axis1, dot(view1, normal1), roughness1,
-        axis2, dot(view2, normal2), roughness1
+        axis2, dot(view2, normal2), roughness2
     );
 }
 
@@ -314,6 +318,8 @@ float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float frustum_size)
     return step(plane_dist / frustum_size, plane_dist_sensitivity);
 }
 
+
+
 //====================================================================================
 // Configurable params
 //====================================================================================
@@ -356,7 +362,7 @@ float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float frustum_size)
 
 #define OUTPUT_DENOISED_DIFFUSE 0
 #define OUTPUT_VARIANCE 1
-#define OUTPUT_HIST_LENGTH 2
+#define OUTPUT_HIST_LENGTH_DIFFUSE 2
 #define OUTPUT_UNFILTERED_VARIANCE 3
 #define OUTPUT_REMODULATED_DENOISED_DIFFUSE 4
 #define OUTPUT_DENOISED_SPECULAR 5
@@ -367,8 +373,11 @@ float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float frustum_size)
 #define OUTPUT_REMODULATED_DENOISED_SPECULAR 10
 #define OUTPUT_RAW_INPUT 11
 #define OUTPUT_SPECULAR_HIT_DIST 12
+#define OUTPUT_HIST_LENGTH_SPECULAR 13
+#define OUTPUT_TEMPORAL_GRADIENT_DIFFUSE 14
+#define OUTPUT_TEMPORAL_GRADIENT_SPECULAR 15
 
-#define FINAL_OUTPUT 5
+#define FINAL_OUTPUT 6
 
 #define MAX_ACCUMULATED_FRAMES 30
 //#define MAX_ACCUMULATED_FRAMES 100

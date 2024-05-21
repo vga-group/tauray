@@ -155,7 +155,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
             this->opt.svgf_options->color_buffer_contains_direct_light = true;
             this->opt.svgf_options->atrous_kernel_radius = 1;
-            this->opt.svgf_options->atrous_diffuse_iters = 4;
+            this->opt.svgf_options->atrous_diffuse_iters = 5;
 
             pv.svgf.emplace(
                 devices[device_index],

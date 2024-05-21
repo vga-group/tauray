@@ -38,6 +38,7 @@ layout(binding = 22) buffer uniforms
 } uniforms_buffer;
 layout(binding = 23, set = 0, rgba32f) uniform image2DArray in_confidence;
 layout(binding = 24, set = 0, rgba32f) uniform image2DArray in_flat_normal;
+layout(binding = 25, set = 0) uniform sampler2DArray in_temporal_gradient;
 
 
 vec3 get_x_virtual(vec3 X, vec3 V, float NoV, float roughness, float hit_dist)
@@ -57,8 +58,6 @@ vec4 get_specular_mask(vec3 uv, vec3 V, vec3 prev_V, vec3 normal, float roughnes
     vec4 prev_roughness = textureGather(previous_material, uv, 1).wzxy;
     vec4 linear_depths = linearize_depth(prev_depths * 2.0 - 1.0, prev_camera.projection_info);
 
-    if (linear_depths.x > 0.0) debugPrintfEXT("Help");
-
     vec4 nx = textureGather(previous_normal, uv, 0).wzxy;
     vec4 ny = textureGather(previous_normal, uv, 1).wzxy;
 
@@ -67,10 +66,10 @@ vec4 get_specular_mask(vec3 uv, vec3 V, vec3 prev_V, vec3 normal, float roughnes
     vec3 prev_normal2 = unpack_gbuffer_normal(vec2(nx.z, ny.z));
     vec3 prev_normal3 = unpack_gbuffer_normal(vec2(nx.w, ny.w));
 
-    vec3 X_view_prev0 = unproject_position(linear_depths.x, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info);
-    vec3 X_view_prev1 = unproject_position(linear_depths.y, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info);
-    vec3 X_view_prev2 = unproject_position(linear_depths.z, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info);
-    vec3 X_view_prev3 = unproject_position(linear_depths.w, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info);
+    vec3 X_view_prev0 = unproject_position(linear_depths.x, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info, prev_camera.pan.xy);
+    vec3 X_view_prev1 = unproject_position(linear_depths.y, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info, prev_camera.pan.xy);
+    vec3 X_view_prev2 = unproject_position(linear_depths.z, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info, prev_camera.pan.xy);
+    vec3 X_view_prev3 = unproject_position(linear_depths.w, vec2(uv.x, 1.0 - uv.y), prev_camera.projection_info, prev_camera.pan.xy);
 
     // float currd = texelFetch(in_depth, ivec3(gl_GlobalInvocationID.xyz), 0).r;
     // if (ivec2(gl_GlobalInvocationID.xy) == ivec2(640, 540))
@@ -96,9 +95,81 @@ vec4 get_specular_mask(vec3 uv, vec3 V, vec3 prev_V, vec3 normal, float roughnes
         specular_lobe_similarity(V, normal, roughness, corr_view1, prev_normal1, prev_roughness[1]),
         specular_lobe_similarity(V, normal, roughness, corr_view2, prev_normal2, prev_roughness[2]),
         specular_lobe_similarity(V, normal, roughness, corr_view3, prev_normal3, prev_roughness[3])
-    ), vec4(32.0f));
+    ), vec4(1.0f));
 
     return lobe_mask;
+}
+
+vec2 gather_temporal_gradients_5x5(ivec3 p, vec3 world_pos, vec3 view_pos, vec3 normal, camera_data camera, float frustum_size)
+{
+    vec2 g1 = (vec2(p.xy + 0.5) + vec2( 1.5f,  0.5f)) / vec2(control.size);
+    vec2 g2 = (vec2(p.xy + 0.5) + vec2(-0.5f,  1.5f)) / vec2(control.size);
+    vec2 g3 = (vec2(p.xy + 0.5) + vec2(-1.5f, -0.5f)) / vec2(control.size);
+    vec2 g4 = (vec2(p.xy + 0.5) + vec2( 0.5f, -1.5f)) / vec2(control.size);
+
+    vec4 diffuse[4] = {
+        textureGather(in_temporal_gradient, vec3(g1, p.z), 0),
+        textureGather(in_temporal_gradient, vec3(g2, p.z), 0),
+        textureGather(in_temporal_gradient, vec3(g3, p.z), 0),
+        textureGather(in_temporal_gradient, vec3(g4, p.z), 0)
+    };
+    vec4 reflection[4] = {
+        textureGather(in_temporal_gradient, vec3(g1, p.z), 1),
+        textureGather(in_temporal_gradient, vec3(g2, p.z), 1),
+        textureGather(in_temporal_gradient, vec3(g3, p.z), 1),
+        textureGather(in_temporal_gradient, vec3(g4, p.z), 1)
+    };
+    vec4 depth[4] = {
+        textureGather(in_depth, vec3(g1, p.z), 0),
+        textureGather(in_depth, vec3(g2, p.z), 0),
+        textureGather(in_depth, vec3(g3, p.z), 0),
+        textureGather(in_depth, vec3(g4, p.z), 0)
+    };
+
+    float view_z = abs(view_pos.z);
+
+    depth[0] = abs(linearize_depth(depth[0] * 2.0 - 1.0, camera.projection_info));
+    depth[1] = abs(linearize_depth(depth[1] * 2.0 - 1.0, camera.projection_info));
+    depth[2] = abs(linearize_depth(depth[2] * 2.0 - 1.0, camera.projection_info));
+    depth[3] = abs(linearize_depth(depth[3] * 2.0 - 1.0, camera.projection_info));
+
+    vec3 X_cam_rel = world_pos - camera.origin.xyz;
+    float NoX = abs(dot(X_cam_rel, normal)) / frustum_size;
+    float NoV = NoX / view_z;
+
+    vec4 plane_dists[4] = {
+        abs(NoV * depth[0] - NoX),
+        abs(NoV * depth[1] - NoX),
+        abs(NoV * depth[2] - NoX),
+        abs(NoV * depth[3] - NoX),
+    };
+
+    const float occlusion_threshold = 0.005;
+    float threshold = occlusion_threshold;
+
+    vec4 masks[4] = {
+        step(plane_dists[0], vec4(threshold)),
+        step(plane_dists[1], vec4(threshold)),
+        step(plane_dists[2], vec4(threshold)),
+        step(plane_dists[3], vec4(threshold)),
+    };
+
+    vec2 center = texelFetch(in_temporal_gradient, p, 0).rg;
+
+    center.x +=
+        dot(diffuse[0], masks[0]) + 
+        dot(diffuse[1], masks[1]) + 
+        dot(diffuse[2], masks[2]) + 
+        dot(diffuse[3], masks[3]);
+    center.y +=
+        dot(reflection[0], masks[0]) + 
+        dot(reflection[1], masks[1]) + 
+        dot(reflection[2], masks[2]) + 
+        dot(reflection[3], masks[3]);
+
+    float w_sum = 1 + sum(masks[0]) + sum(masks[1]) + sum(masks[2]) + sum(masks[3]);
+    center /= w_sum;
+    return center;
 }
 
 void main()
@@ -124,6 +195,8 @@ void main()
     if (get_view_pos(in_depth, p, curr_camera, view_pos)) return;
     float view_z = abs(view_pos.z);
     vec3 world_pos = get_world_pos(curr_camera, view_pos);
+    float frustum_size = get_frustum_size(prev_camera, view_z);
+    float inv_dist_to_point = 1.0 / frustum_size;
     
     // Load material info
     vec3 V = normalize(curr_camera.origin.xyz - world_pos);
@@ -135,6 +208,10 @@ void main()
     float specular_luminance = rgb_to_luminance(current_specular.rgb);
 
     float confidence = imageLoad(in_confidence, p).r;
+    vec2 temporal_gradient = gather_temporal_gradients_5x5(p, world_pos, view_pos, flat_normal, curr_camera, frustum_size);
+    //vec2 temporal_gradient = texelFetch(in_temporal_gradient, p, 0).rg;
+    //temporal_gradient *= temporal_gradient;
+    //temporal_gradient = vec2(1.0);
 
     // Early out on first frame to avoid reading garbage from potentially uninitialized buffers
     // Note Tauray frame counter starts from 1
@@ -172,8 +249,7 @@ void main()
     float prev_view_z = full_motion.z;
     prev_view_z = max(1e-6, prev_view_z);
 
-    float frustum_size = get_frustum_size(prev_camera, view_z);
-    float inv_dist_to_point = 1.0 / frustum_size;
+
     const float occlusion_threshold = 0.005;
 
     float threshold = prev_uv == clamp(prev_uv, 0.0, 1.0) ? occlusion_threshold : -1.0;
@@ -204,12 +280,6 @@ void main()
     vec3 plane_dist10 = abs(NoVprev * prev_depths10.xzw - NoXprev);
     vec3 plane_dist01 = abs(NoVprev * prev_depths01.xyw - NoXprev);
     vec3 plane_dist11 = abs(NoVprev * prev_depths11.xyz - NoXprev);
-
-    // Account for NaNs in inputs
-    if (any(isnan(plane_dist00))) plane_dist00 = vec3(1.0);
-    if (any(isnan(plane_dist10))) plane_dist10 = vec3(1.0);
-    if (any(isnan(plane_dist01))) plane_dist01 = vec3(1.0);
-    if (any(isnan(plane_dist11))) plane_dist11 = vec3(1.0);
 
     // Apply threshold
     vec3 valid00 = step(plane_dist00, vec3(threshold));
@@ -257,8 +327,12 @@ void main()
 
     float history_length_diffuse = prev_history.r;
     float history_length_specular_surface = prev_history.b;
+    history_length_diffuse *= temporal_gradient.r;
+    history_length_specular_surface *= temporal_gradient.g;
     history_length_diffuse += confidence; // check if this work or swap to Hasse mode
     history_length_specular_surface += confidence;
+
+
 
     // Reduce the amount of glancing angle speed stripes
     {
@@ -284,15 +358,16 @@ void main()
         }
     }
 
+
     // Test how good surface tracking should be with the current parallax.
     // That's used to switch between virtual motion and surface motion.
     // I have no justification for squaring the roughness other than that
     // it looked good in Sponza.
     float surface_tracking_similarity = specular_lobe_similarity(
-        V, flat_normal, metallic_roughness.g * metallic_roughness.g,
-        normalize(prev_camera.origin.xyz - X_prev), flat_normal, metallic_roughness.g * metallic_roughness.g
+        V, flat_normal, max(metallic_roughness.g * metallic_roughness.g, 1e-2),
+        normalize(prev_camera.origin.xyz - X_prev), flat_normal, max(metallic_roughness.g * metallic_roughness.g, 1e-2)
     );
-    history_length_specular_surface *= surface_tracking_similarity;
+    //surface_tracking_similarity = 1.0;
 
     // Accumulate diffuse color and variance
     float alpha_diffuse = confidence / history_length_diffuse;
@@ -323,7 +398,7 @@ void main()
     history_length_specular_surface = confidence / alpha_specular_surface;
     vec3 accumulated_specular_surface = mix(prev_specular_surface.rgb, current_specular.rgb, alpha_specular_surface);
 
-    float specular_hit_distance_surface = mix(prev_specular_hit_dist, current_specular.a, alpha_specular_surface);
+    float specular_hit_distance_surface = mix(prev_specular_hit_dist, current_specular.a, mix(alpha_specular_surface, 1, 1.0 - surface_tracking_similarity));
     //float specular_hit_distance_surface = current_specular.a;
 
     // Virtual motion based specular
@@ -356,12 +431,12 @@ void main()
     float prev_specular_luminance_virtual = rgb_to_luminance(prev_specular_virtual.rgb);
     vec3 prev_normal_virt = sample_gbuffer_normal(previous_normal, bilinear_virt, p.z);
     vec3 prev_view_pos_virt;
-    get_view_pos(in_prev_depth, ivec3(X_virt_clip_prev.xy * control.size, p.z), prev_camera, prev_view_pos_virt);
+    get_view_pos(in_prev_depth, ivec3(prev_uv_virt.xy * control.size, p.z), prev_camera, prev_view_pos_virt);
     vec3 prev_world_pos_virt = get_world_pos(prev_camera, prev_view_pos_virt);
     vec2 prev_mat = sample_bilinear_with_custom_weights(previous_material, bilinear_virt, p.z, bilinear_weights_virt).rg;
 
     // Estimate virtual motion confidence
-#if 0
+#if 1
     vec3 prev_view_virt = normalize(prev_camera.origin.xyz - X_virt);
     float prev_ray_len_virt = prev_hit_distance_virtual != 0.0 ? 1.0 / prev_hit_distance_virtual : 1e6;
     vec3 prev_virtual_pos = prev_camera.origin.xyz - prev_view_virt * (length(prev_view_pos_virt) + prev_ray_len_virt);
@@ -369,14 +444,17 @@ void main()
     float roughness = max(0.01, metallic_roughness.g);
     float prev_roughness = max(0.01, prev_mat.g);
     float lobe_similarity_virt = specular_lobe_similarity(V, normal, roughness, corr_view, prev_normal_virt, prev_roughness);
-    virtual_motion_confidence = pow(lobe_similarity_virt, 32.0);
+    float lobe_sim_no_roughness = specular_lobe_similarity(V, normal, roughness, corr_view, prev_normal_virt, roughness);
+    //virtual_motion_confidence = pow(lobe_similarity_virt, 1.0);
 #endif
 
     // Accumulate virtual motion based specular color, variance and hit distance
     float history_length_specular_virtual = prev_history_virtual.b;
+    history_length_specular_virtual *= temporal_gradient.g;
+    history_length_specular_virtual *= virtual_motion_confidence;
     history_length_specular_virtual += confidence;
     float alpha_specular_virtual = confidence / history_length_specular_virtual;
-    alpha_specular_virtual = max(alpha_specular_virtual, 1.0 - virtual_motion_confidence);
+    //alpha_specular_virtual = max(alpha_specular_virtual, 1.0 - virtual_motion_confidence);
     alpha_specular_virtual = clamp(alpha_specular_virtual, 1.0 / MAX_ACCUMULATED_FRAMES, 1.0);
 
     delta_luminance = prev_specular_luminance_virtual - specular_luminance;
@@ -402,15 +480,6 @@ void main()
         + delta * delta * virtual_motion_amount * (1-virtual_motion_amount);
 
     float alpha_specular = mix(alpha_specular_surface, alpha_specular_virtual, virtual_motion_amount);
-    // if (p.xy == ivec2(640, 360))
-    // {
-    //     debugPrintfEXT("conf: %f, hist len: %f, alpha %f\n", confidence, history_length_specular_surface, alpha_specular_surface);
-    // }
-
-    // if (p.xy == ivec2(640, 680))
-    //
-    //     debugPrintfEXT("hist len %f, a: %f, v conf: %f, amnt: %f", specular_history_length, alpha_specular_virtual, virtual_motion_confidence, virtual_motion_amount);
-    // }
 
     //===========================================================
     // Write outputs

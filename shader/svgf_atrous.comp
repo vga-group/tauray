@@ -27,6 +27,8 @@ layout(binding = 13) buffer uniforms
 layout(binding = 14, set = 0, rgba32f) uniform image2DArray raw_diffuse;
 layout(binding = 16, set = 0, rgba32f) uniform image2DArray in_emissive;
 layout(binding = 17, set = 0, rgba32f) uniform image2DArray specular_hit_dist;
+layout(binding = 18, set = 0, rgba32f) uniform image2DArray history_length;
+layout(binding = 19, set = 0, rgba32f) uniform image2DArray temporal_gradient;
 
 void main()
 {
@@ -82,8 +84,9 @@ void main()
         variance_spec /= w_sum;
     }*/
 
-    if(variance_diff == 0 && control.iteration <= 1) variance_diff = 1e30;
-    if(variance_spec == 0 && control.iteration <= 1) variance_spec = 1e30;
+    if(variance_diff <= 1e-5 && control.iteration <= 1) variance_diff = 1e30;
+    if(variance_spec <= 1e-5 && control.iteration <= 1) variance_spec = 1e30;
+    //variance_diff = variance_spec = 1e30;
 
     float luminance_std_dev_diff = sqrt(variance_diff);
     float luminance_std_dev_spec = sqrt(variance_spec);
@@ -189,8 +192,16 @@ void main()
         imageStore(final_output, p, vec4(out_color.rgb, 1.0));
 #elif FINAL_OUTPUT == OUTPUT_VARIANCE
         imageStore(final_output, p, vec4(vec3(out_color.a), 1.0));
-#elif FINAL_OUTPUT == OUTPUT_HIST_LENGTH
-        imageStore(final_output, p, vec4(viridis_quintic(moments.z / MAX_ACCUMULATED_FRAMES), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_HIST_LENGTH_DIFFUSE
+        vec4 hist_len = imageLoad(history_length, p);
+        if (p.xy == ivec2(640, 360))
+        {
+            //debugPrintfEXT("len: %f a: %f", hist_len.x, hist_len.y);
+        }
+        imageStore(final_output, p, vec4(viridis_quintic((1.0 / hist_len.y) / MAX_ACCUMULATED_FRAMES), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_HIST_LENGTH_SPECULAR
+        vec4 hist_len = imageLoad(history_length, p);
+        imageStore(final_output, p, vec4(viridis_quintic((1.0 / hist_len.w) / MAX_ACCUMULATED_FRAMES), 1.0));
 #elif FINAL_OUTPUT == OUTPUT_UNFILTERED_VARIANCE
         float variance = moments.y - moments.x * moments.x;
         imageStore(final_output, p, vec4(vec3(variance), 1.0));
@@ -259,6 +270,12 @@ void main()
         //     debugPrintfEXT("hit t: %f", hitdist != 0.0 ? 1.0 / hitdist : 1e6);
         // }
         imageStore(final_output, p, vec4(vec3(hitdist), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_TEMPORAL_GRADIENT_DIFFUSE
+        vec2 gradient = imageLoad(temporal_gradient, p).rg;
+        imageStore(final_output, p, vec4(vec3(gradient.x), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_TEMPORAL_GRADIENT_SPECULAR
+        vec2 gradient = imageLoad(temporal_gradient, p).rg;
+        imageStore(final_output, p, vec4(vec3(gradient.y), 1.0));
 #elif FINAL_OUTPUT == OUTPUT_RAW_INPUT
 
 #endif  

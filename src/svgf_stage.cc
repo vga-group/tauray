@@ -226,6 +226,7 @@ void svgf_stage::record_command_buffers()
         temporal_desc.set_buffer("uniforms_buffer", uniforms);
         temporal_desc.set_image(dev->id, "in_confidence", { {{}, input_features.confidence.view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_image(dev->id, "in_flat_normal", { {{}, input_features.flat_normal.view, vk::ImageLayout::eGeneral} });
+        temporal_desc.set_image(dev->id, "in_temporal_gradient", { {my_sampler.get_sampler(dev->id), input_features.temporal_gradient.view, vk::ImageLayout::eGeneral} });
         temporal_comp.push_descriptors(cb, temporal_desc, 0);
         temporal_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
         temporal_comp.push_constants(cb, control);
@@ -308,6 +309,8 @@ void svgf_stage::record_command_buffers()
             atrous_desc.set_image(dev->id, "raw_diffuse", { {{}, input_features.diffuse.view, vk::ImageLayout::eGeneral} });
             atrous_desc.set_buffer("uniforms_buffer", uniforms);
             atrous_desc.set_image(dev->id, "specular_hit_dist", { {{}, specular_hit_distance[1 - i].view, vk::ImageLayout::eGeneral}});
+            atrous_desc.set_image(dev->id, "history_length", { {{}, history_length[1 - i].view, vk::ImageLayout::eGeneral} });
+            atrous_desc.set_image(dev->id, "temporal_gradient", { {{}, input_features.temporal_gradient.view, vk::ImageLayout::eGeneral}});
             
             atrous_comp.push_descriptors(cb, atrous_desc, 0);
             atrous_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
