@@ -83,7 +83,7 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
 
     // If we assume unchanged temporal visibility, we still need to check
     // for disocclusions.
-    vec3 expected_prev_pos = unproject_position(motion.z, vec2(motion.x, 1.0f-motion.y), prev_cam.projection_info);
+    vec3 expected_prev_pos = unproject_position(motion.z, vec2(motion.x, 1.0f-motion.y), prev_cam.projection_info, prev_cam.pan.xy);
     expected_prev_pos = (prev_cam.view_inverse * vec4(expected_prev_pos, 1)).xyz;
 
     if(do_temporal_visibility_test && TEMPORAL_REUSE_ATTEMPTS > 0)

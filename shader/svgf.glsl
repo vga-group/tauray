@@ -187,7 +187,7 @@ bool get_view_pos(sampler2DArray depth_sampler, ivec3 p, camera_data cam, out ve
     float linear_depth = linearize_depth(depth * 2.0f - 1.0f, cam.projection_info);
 
     vec2 uv = (vec2(p.xy)+0.5f)/vec2(size);
-    pos = unproject_position(linear_depth, vec2(uv.x, 1-uv.y), cam.projection_info);
+    pos = unproject_position(linear_depth, vec2(uv.x, 1-uv.y), cam.projection_info, cam.pan.xy);
     return depth == 1.0f;
 }
 

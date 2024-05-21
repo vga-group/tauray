@@ -2,14 +2,14 @@
 #define PROJECTION_GLSL
 #include "math.glsl"
 
-vec3 unproject_position(float linear_depth, vec2 uv, vec4 projection_info)
+vec3 unproject_position(float linear_depth, vec2 uv, vec4 projection_info, vec2 pan)
 {
-    return vec3((0.5f-uv) * projection_info.zw * linear_depth, linear_depth);
+    return vec3((0.5f-uv-0.5f*pan) * projection_info.zw * linear_depth, linear_depth);
 }
 
-vec2 project_position(vec3 pos, vec4 projection_info)
+vec2 project_position(vec3 pos, vec4 projection_info, vec2 pan)
 {
-    return 0.5f - pos.xy / (projection_info.zw * pos.z);
+    return 0.5f - pos.xy / (projection_info.zw * pos.z) - 0.5f * pan;
 }
 
 // Note that this assumes that depth is -1 to 1, depth buffer has them at 0 to

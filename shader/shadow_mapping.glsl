@@ -118,7 +118,7 @@ void calc_perspective_shadow_map_pos(
     // We do the projection manually so that bias can easily be applied to
     // linear depth.
     float bias = max(sm.max_bias * (1.0f - ndotl), sm.min_bias);
-    uv = project_position(p, sm.projection_info);
+    uv = project_position(p, sm.projection_info, vec2(0));
     depth = hyperbolic_depth((1-bias)*p.z, sm.projection_info) * 0.5f + 0.5f;
 }
 

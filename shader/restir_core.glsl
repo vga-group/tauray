@@ -76,7 +76,7 @@ bool get_pos(ivec2 p, camera_data cam, out vec3 pos)
     float linear_depth = linearize_depth(depth * 2.0f - 1.0f, cam.projection_info);
 
     vec2 uv = (vec2(p)+0.5f)/vec2(size);
-    pos = (cam.view_inverse * vec4(unproject_position(linear_depth, vec2(uv.x, 1-uv.y), cam.projection_info), 1)).xyz;
+    pos = (cam.view_inverse * vec4(unproject_position(linear_depth, vec2(uv.x, 1-uv.y), cam.projection_info, cam.pan.xy), 1)).xyz;
     return depth == 1.0f;
 #endif
 }
@@ -126,7 +126,7 @@ bool get_prev_pos(ivec2 p, camera_data cam, out vec3 pos)
     float linear_depth = linearize_depth(depth * 2.0f - 1.0f, cam.projection_info);
 
     vec2 uv = (vec2(p)+0.5f)/vec2(size);
-    pos = (cam.view_inverse * vec4(unproject_position(linear_depth, vec2(uv.x, 1-uv.y), cam.projection_info), 1)).xyz;
+    pos = (cam.view_inverse * vec4(unproject_position(linear_depth, vec2(uv.x, 1-uv.y), cam.projection_info, cam.pan.xy), 1)).xyz;
     return depth == 1.0f;
 #endif
 }
@@ -1785,7 +1785,7 @@ struct spatial_candidate_sampler
     vec3 view_pos;
     vec3 view_tangent;
     vec3 view_bitangent;
-    vec2 proj_info;
+    vec4 proj_info;
 };
 
 spatial_candidate_sampler init_spatial_candidate_sampler(
@@ -1795,8 +1795,9 @@ spatial_candidate_sampler init_spatial_candidate_sampler(
     scs.view_pos = (cam.view * vec4(pos, 1)).xyz;
     scs.view_tangent = (mat3(cam.view) * tbn[0]) * max_plane_dist * 2.0f;
     scs.view_bitangent = (mat3(cam.view) * tbn[1]) * max_plane_dist * 2.0f;
-    scs.proj_info = cam.projection_info.zw;
+    scs.proj_info.xy = cam.projection_info.zw;
     scs.proj_info.y = -scs.proj_info.y;
+    scs.proj_info.zw = cam.pan.xy;
     return scs;
 }
 
@@ -1820,7 +1821,7 @@ ivec2 spatial_candidate_pos(
     );
     vec2 s = sample_ring(u, range.x, range.y);
     vec3 q = scs.view_pos + scs.view_tangent * s.x + scs.view_bitangent * s.y;
-    q.xy = (0.5 - q.xy / (scs.proj_info * q.z)) * size;
+    q.xy = (0.5 - q.xy / (scs.proj_info.xy * q.z) - 0.5f * scs.proj_info.zw) * size;
     return ivec2(mirror_wrap(round(q.xy), vec2(0), vec2(size)-0.01f));
 #else
     vec2 range = vec2(

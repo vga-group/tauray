@@ -19,7 +19,7 @@ struct camera_data
     vec4 origin;
     vec4 dof_params;
     vec4 projection_info;
-    vec4 pad;
+    vec4 pan;
 };
 
 void get_camera_ray(

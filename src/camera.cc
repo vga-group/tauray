@@ -403,7 +403,7 @@ struct matrix_camera_data_buffer
     pvec4 origin;
     pvec4 dof_params;
     pvec4 projection_info;
-    pvec4 pad;
+    pvec4 pan;
 };
 
 struct equirectangular_camera_data_buffer
@@ -449,6 +449,7 @@ void camera::write_uniform_buffer(transformable& self, void* data) const
             buf.origin = origin;
             buf.dof_params = type == PERSPECTIVE ? pd.perspective.focus : vec4(0);
             buf.projection_info = get_projection_info();
+            buf.pan = type == PERSPECTIVE ? vec4(pd.perspective.fov_offset, 0, 0) : vec4(0);
         }
         break;
     case EQUIRECTANGULAR:

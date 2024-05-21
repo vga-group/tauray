@@ -123,7 +123,7 @@ void main()
 
     float threshold = prev_uv == clamp(prev_uv, 0.0, 1.0) ? occlusion_threshold : -1.0;
 
-    vec3 Xv_prev = unproject_position(-prev_view_z, unjittered_motion.xy, prev_camera.projection_info);
+    vec3 Xv_prev = unproject_position(-prev_view_z, unjittered_motion.xy, prev_camera.projection_info, prev_camera.pan.xy);
     vec3 X_prev = (prev_camera.view_inverse * vec4(Xv_prev, 1.0)).xyz;
     vec3 X_prev_cam_rel = (X_prev - curr_camera.origin.xyz);
 
