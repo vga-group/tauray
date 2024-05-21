@@ -1,4 +1,5 @@
 #include "gbuffer_copy_stage.hh"
+#include "misc.hh"
 
 namespace tr
 {
@@ -6,7 +7,9 @@ namespace tr
 gbuffer_copy_stage::gbuffer_copy_stage(
     device& dev,
     gbuffer_target& in,
-    gbuffer_target& out
+    gbuffer_target& out,
+    int force_input_layer,
+    int force_output_layer
 ): single_device_stage(dev), copy_timer(dev, "copy gbuffer")
 {
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -32,9 +35,15 @@ gbuffer_copy_stage::gbuffer_copy_stage(
                 out[j].image,
                 vk::ImageLayout::eTransferDstOptimal,
                 vk::ImageCopy(
-                    in[j].get_layers(),
+                    force_input_layer >= 0 ? vk::ImageSubresourceLayers(
+                        deduce_aspect_mask(in[j].format),
+                        0, force_input_layer, 1
+                    ) : in[j].get_layers(),
                     {0,0,0},
-                    out[j].get_layers(),
+                    force_output_layer >= 0 ? vk::ImageSubresourceLayers(
+                        deduce_aspect_mask(out[j].format),
+                        0, force_output_layer, 1
+                    ) : out[j].get_layers(),
                     {0,0,0},
                     {size.x, size.y, size.z}
                 )

@@ -167,6 +167,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         }
 
         cur = data.current_gbuffer.get_array_target(devices[device_index].id);
+        prev = data.prev_gbuffer.get_array_target(devices[device_index].id);
 
         std::vector<render_target> display = ctx.get_array_render_target();
         if(is_display_device)
@@ -219,7 +220,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         prev.screen_motion = render_target();
         prev.temporal_gradient = render_target();
 
-        pv.copy.emplace(devices[device_index], cur, prev);
+        pv.copy.emplace(devices[device_index], cur, prev, layer_index, layer_index);
 
         if(!is_display_device)
         {

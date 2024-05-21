@@ -15,7 +15,9 @@ public:
     gbuffer_copy_stage(
         device& dev,
         gbuffer_target& in,
-        gbuffer_target& out
+        gbuffer_target& out,
+        int force_input_layer = -1,
+        int force_output_layer = -1
     );
 
 private:
