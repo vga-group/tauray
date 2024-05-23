@@ -149,7 +149,7 @@ float target_function(vec4 primary_bsdf, vec3 radiance)
 {
     vec3 value = radiance;
 #ifdef DEMODULATE_OUTPUT
-    value *= primary_bsdf.rgb;
+    //value *= primary_bsdf.rgb;
 #endif
     return rgb_to_luminance(value);
 }
