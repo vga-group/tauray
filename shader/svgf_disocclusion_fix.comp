@@ -35,8 +35,14 @@ void main()
     float sum_2nd_moment_diffuse = sum_diffuse.a + diffuse_luminance * diffuse_luminance;
     float sum_2nd_moment_specular = sum_specular.a + specular_luminance * specular_luminance;
 #if DISOCCLUSION_FIX_ENABLED == 1
+    vec2 center_material = imageLoad(in_material, p).xy;
+
     bool diffuse_disocclusion = history_length.g > 0.25f;
     bool specular_disocclusion = history_length.a > 0.25f;
+
+    if(center_material.r == 1 && center_material.g == 0)
+        diffuse_disocclusion = specular_disocclusion = false;
+
     if (diffuse_disocclusion || specular_disocclusion)
     {
         vec3 view_pos;
@@ -46,7 +52,6 @@ void main()
 
         vec3 center_normal = unpack_gbuffer_normal(imageLoad(normal, p).rg);
         vec3 center_pos = get_world_pos(curr_camera, view_pos);
-        vec2 center_material = imageLoad(in_material, p).xy;
         float center_roughness = max(0.01, center_material.y);
 
         vec3 V = normalize(curr_camera.origin.xyz - center_pos);
@@ -142,8 +147,6 @@ void main()
         sum_specular.a = max(sum_2nd_moment_specular - sum_spec_luminance * sum_spec_luminance, 0);
     }
 #endif
-
-
 
     imageStore(filtered_diffuse, p, sum_diffuse);
     imageStore(filtered_specular, p, sum_specular);

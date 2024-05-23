@@ -88,6 +88,9 @@ void main()
     if(variance_spec <= 1e-5 && control.iteration <= 1) variance_spec = 1e30;
     //variance_diff = variance_spec = 1e30;
 
+    if(metallic_roughness.r == 1 && metallic_roughness.g == 0)
+        variance_diff = variance_spec = 0;
+
     float luminance_std_dev_diff = sqrt(variance_diff);
     float luminance_std_dev_spec = sqrt(variance_spec);
 
