@@ -121,6 +121,20 @@ void svgf_stage::update(uint32_t frame_index)
 
 void svgf_stage::init_resources()
 {
+    vk::Format formats[svgf_stage::render_target_count] =
+    {
+        vk::Format::eR16G16B16A16Sfloat,
+        vk::Format::eR16G16B16A16Sfloat,
+        vk::Format::eR16G16B16A16Sfloat,
+        vk::Format::eR16G16B16A16Sfloat,
+        vk::Format::eR16G16B16A16Sfloat,
+        vk::Format::eR16G16B16A16Sfloat,
+        vk::Format::eR16G16B16A16Sfloat,
+        vk::Format::eR16G16B16A16Sfloat,
+        vk::Format::eR16Sfloat,
+        vk::Format::eR16Sfloat,
+    };
+
     for (int i = 0; i < svgf_stage::render_target_count; ++i)
     {
         vk::Format format = vk::Format::eR32G32B32A32Sfloat;
@@ -128,8 +142,8 @@ void svgf_stage::init_resources()
             *dev,
             input_features.color.size,
             input_features.get_layer_count(),
-            vk::Format::eR16G16B16A16Sfloat,
-            //format,
+            //vk::Format::eR16G16B16A16Sfloat,
+            formats[i],
             0, nullptr,
             vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc,

@@ -43,7 +43,7 @@ void main()
     float w_sum = center_spec.a != 0.0 ? 1.0 : 0.0;
     
 #if HIT_DIST_RECONSTRUCTION_ENABLED == 1
-    const int radius = 2;
+    const int radius = 1;
     if (center_spec.a == 0.0)
     {
         for (int y = -radius; y <= radius; ++y)

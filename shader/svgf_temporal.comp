@@ -249,9 +249,7 @@ void main()
     float prev_view_z = full_motion.z;
     prev_view_z = max(1e-6, prev_view_z);
 
-
     const float occlusion_threshold = 0.005;
-
     float threshold = prev_uv == clamp(prev_uv, 0.0, 1.0) ? occlusion_threshold : -1.0;
 
     vec3 Xv_prev = unproject_position(-prev_view_z, unjittered_motion.xy, prev_camera.projection_info, prev_camera.pan.xy);
@@ -413,13 +411,7 @@ void main()
     Bilinear bilinear_virt = get_bilinear_filter(prev_uv_virt.xy, vec2(control.size));
     vec4 bilinear_weights_virt = get_bilinear_weights(bilinear_virt);
     vec4 specular_mask = get_specular_mask(prev_uv_virt.xyz, V, normalize(prev_camera.origin.xyz - X_virt), normal, metallic_roughness.g, curr_camera, prev_camera);
-    // if (p.xy == ivec2(640, 540))
-    // {
-    //     debugPrintfEXT("%d  %d", ivec2(prev_uv_virt.xy * control.size));
-    //     float ws = dot(bilinear_weights_virt, specular_mask);
-    //     debugPrintfEXT("spec mask: %f %f %f %f, conf: %f, X %f %f %f", specular_mask.x, specular_mask.y, specular_mask.z, specular_mask.w, ws, view_pos.x, view_pos.y, view_pos.z);
-    // }
-    //specular_mask = vec4(1.0);
+    
     float virtual_motion_confidence = dot(bilinear_weights_virt, specular_mask);
     bilinear_weights_virt *= specular_mask;
 
@@ -486,8 +478,8 @@ void main()
     //=========================================================== 
     if(any(isnan(out_diffuse))) out_diffuse = vec3(0);
     if(any(isnan(out_spec))) out_spec = vec3(0);
-    if(isnan(variance_diffuse)) variance_diffuse = 0;
-    if(isnan(variance_specular)) variance_specular = 0;
+    if(isnan(variance_diffuse) || isinf(variance_diffuse)) variance_diffuse = 0;
+    if(isnan(variance_specular) || isinf(variance_specular)) variance_specular = 0;
     if(isnan(specular_hit_distance_surface)) specular_hit_distance_surface = 0;
     if(isnan(history_length_diffuse)) history_length_diffuse = 0;
     if(isnan(alpha_diffuse)) alpha_diffuse = 0;
