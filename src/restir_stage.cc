@@ -5,6 +5,10 @@
 #include "misc.hh"
 #include "rt_common.hh"
 
+#define DISPATCH_WIDTH 16
+#define DISPATCH_HEIGHT 16
+#define DISPATCH_SIZE uvec2(DISPATCH_WIDTH, DISPATCH_HEIGHT)
+
 namespace
 {
 using namespace tr;
@@ -12,6 +16,7 @@ using namespace tr;
 struct restir_config
 {
     gpu_shadow_mapping_parameters sm_params;
+    puvec2 display_size;
 
     float min_ray_dist;
     float max_ray_dist;
@@ -102,6 +107,7 @@ restir_config get_restir_config(restir_stage::options& opt, gbuffer_target& outp
     uvec2 size = output.albedo.size;
     restir_config config;
     config.sm_params = create_shadow_mapping_parameters(opt.sm_filter, ss);
+    config.display_size = output.get_size();
     config.max_ray_dist = opt.max_ray_dist;
     config.min_ray_dist = opt.min_ray_dist;
     config.reconnection_scale = opt.reconnection_scale * opt.max_spatial_search_radius / size.x;
@@ -267,6 +273,8 @@ restir_stage::restir_stage(
     uint32_t ray_mask = 0xFF;
     if(opt.shade_all_explicit_lights) ray_mask ^= 0x02;
 
+    defines["DISPATCH_WIDTH"] = std::to_string(DISPATCH_WIDTH);
+    defines["DISPATCH_HEIGHT"] = std::to_string(DISPATCH_HEIGHT);
     defines["VISIBILITY_RAY_MASK"] = std::to_string(visibility_ray_mask);
     defines["RAY_MASK"] = std::to_string(ray_mask);
     defines["MAX_BOUNCES"] = std::to_string(opt.max_bounces);
@@ -326,37 +334,6 @@ restir_stage::restir_stage(
         break;
     }
 
-    rt_shader_sources shader;
-    shader_source pl_rint("shader/rt_common_point_light.rint");
-    shader_source shadow_chit("shader/rt_common_shadow.rchit");
-    shader.rmiss = {{
-        {"shader/rt_common.rmiss", defines},
-        {"shader/rt_common_shadow.rmiss", defines}
-    }};
-    shader.rhit = {
-        {
-            vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-            {"shader/rt_common.rchit", defines},
-            {"shader/rt_common.rahit", defines}
-        },
-        {
-            vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-            shadow_chit,
-            {"shader/rt_common_shadow.rahit", defines}
-        },
-        {
-            vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-            {"shader/rt_common_point_light.rchit", defines},
-            {},
-            pl_rint
-        },
-        {
-            vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-            shadow_chit,
-            {},
-            pl_rint
-        }
-    };
 #define SET_BINDING_PARAMS(set) \
     set.add(shader); \
     set.set_binding_params("envmap_alias_table", 1, vk::DescriptorBindingFlagBits::ePartiallyBound);\
@@ -382,7 +359,7 @@ restir_stage::restir_stage(
     set.set_binding_params("mis_data", 1, vk::DescriptorBindingFlagBits::ePartiallyBound);
 
     { // CANONICAL
-        shader.rgen = {"shader/restir_canonical.rgen", defines};
+        shader_source shader = {"shader/restir_canonical.comp", defines};
         SET_BINDING_PARAMS(canonical_set);
         canonical.init(
             shader,
@@ -395,7 +372,7 @@ restir_stage::restir_stage(
     }
 
     { // TEMPORAL
-        shader.rgen = shader_source("shader/restir_temporal.rgen", defines);
+        shader_source shader = {"shader/restir_temporal.comp", defines};
         SET_BINDING_PARAMS(temporal_set);
         temporal.init(
             shader,
@@ -461,7 +438,7 @@ restir_stage::restir_stage(
 
     if(opt.spatial_samples > 0)
     { // SPATIAL TRACE
-        shader.rgen = {"shader/restir_spatial_trace.rgen", defines};
+        shader_source shader = {"shader/restir_spatial_trace.comp", defines};
         SET_BINDING_PARAMS(spatial_trace_set);
         spatial_trace.init(
             shader,
@@ -806,7 +783,8 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
         pc.first_pass = pass_index == 0;
 
         canonical.push_constants(cmd, pc);
-        canonical.trace_rays(cmd, uvec3(size, 1));
+        uvec3 wg = uvec3((size+DISPATCH_SIZE-1u)/DISPATCH_SIZE, 1);
+        cmd.dispatch(wg.x, wg.y, wg.z);
 
         reservoir_barrier(
             out_reservoir_data,
@@ -852,7 +830,8 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
         pc.permutation = opt.temporal_permutation;
 
         temporal.push_constants(cmd, pc);
-        temporal.trace_rays(cmd, uvec3(size, 1));
+        uvec3 wg = uvec3((size+DISPATCH_SIZE-1u)/DISPATCH_SIZE, 1);
+        cmd.dispatch(wg.x, wg.y, wg.z);
 
         reservoir_barrier(
             out_reservoir_data,
@@ -926,7 +905,8 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         pc.sample_index = dev->ctx->get_frame_counter() * opt.passes + pass_index;
 
         spatial_trace.push_constants(cmd, pc);
-        spatial_trace.trace_rays(cmd, uvec3(size, opt.spatial_samples));
+        uvec3 wg = uvec3((size+DISPATCH_SIZE-1u)/DISPATCH_SIZE, opt.spatial_samples);
+        cmd.dispatch(wg.x, wg.y, wg.z);
     }
 
     if(opt.spatial_samples > 0)

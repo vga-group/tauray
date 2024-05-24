@@ -140,6 +140,7 @@ void shadow_terminator_fix(inout vec3 contrib, float cos_l, in sampled_material 
 #endif
 }
 
+#ifdef DISTRIBUTION_DATA_BINDING
 camera_data get_camera()
 {
     return camera.pairs[gl_LaunchIDEXT.z].current;
@@ -150,7 +151,6 @@ camera_data get_prev_camera()
     return camera.pairs[gl_LaunchIDEXT.z].previous;
 }
 
-#ifdef DISTRIBUTION_DATA_BINDING
 #if DISTRIBUTION_STRATEGY == 2
 //Permute region for the pixel i
 uint permute_region_id(uint i)
