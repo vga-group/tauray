@@ -386,6 +386,7 @@ void context::init_devices()
         required_device_extensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
         required_device_extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
         required_device_extensions.push_back(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+        required_device_extensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
     }
 
     bool use_distribution =
@@ -432,13 +433,16 @@ void context::init_devices()
             vk::PhysicalDeviceVulkan12Features,
             // The rest are needed for ray tracing
             vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
-            vk::PhysicalDeviceAccelerationStructureFeaturesKHR
+            vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+            vk::PhysicalDeviceRayQueryFeaturesKHR
         >();
         auto& feats = feats_pack.get<vk::PhysicalDeviceFeatures2>();
         auto& vulkan_11_feats = feats_pack.get<vk::PhysicalDeviceVulkan11Features>();
         auto& vulkan_12_feats = feats_pack.get<vk::PhysicalDeviceVulkan12Features>();
         auto& rt_feats =
             feats_pack.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+        auto& rq_feats =
+            feats_pack.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
         auto& as_feats =
             feats_pack.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
 
@@ -595,6 +599,7 @@ void context::init_devices()
             dev_data.rt_props =
                 props2.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
             dev_data.rt_feats = rt_feats;
+            dev_data.rq_feats = rq_feats;
             dev_data.as_props = props2.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
             dev_data.as_feats = as_feats;
             dev_data.mv_props = props2.get<vk::PhysicalDeviceMultiviewProperties>();

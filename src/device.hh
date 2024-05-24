@@ -24,6 +24,7 @@ struct device
     vk::PhysicalDeviceExternalMemoryHostPropertiesEXT ext_mem_props;
     vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rt_props;
     vk::PhysicalDeviceRayTracingPipelineFeaturesKHR rt_feats;
+    vk::PhysicalDeviceRayQueryFeaturesKHR rq_feats;
     vk::PhysicalDeviceAccelerationStructurePropertiesKHR as_props;
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR as_feats;
     vk::PhysicalDeviceMultiviewProperties mv_props;

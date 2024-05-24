@@ -1,5 +1,7 @@
 #ifndef RESTIR_GLSL
 #define RESTIR_GLSL
+#define USE_RAY_QUERIES
+#extension GL_EXT_ray_query : enable
 
 // This ReSTIR implementation follows the SIGGRAPH 2023 course "A Gentle
 // Introduction to ReSTIR". I've tried to comment ReSTIR-specific math with
@@ -16,7 +18,6 @@
 #define SCENE_RASTER_SET 2
 #ifdef RAY_TRACING
 #include "rt.glsl"
-#include "rt_common_payload.glsl"
 #else
 #include "scene.glsl"
 #endif

@@ -359,6 +359,8 @@ void add_contribution(inout sum_contribution sc, reservoir r, vec4 contrib, floa
 }
 
 #ifdef RAY_TRACING
+#include "rt_common.glsl"
+
 #ifdef SHADE_ALL_EXPLICIT_LIGHTS
 #define SHADOW_MAPPING_SCREEN_COORD vec2(gl_LaunchIDEXT.xy)
 #include "shadow_mapping.glsl"
@@ -456,11 +458,10 @@ vec3 shade_explicit_lights(
 }
 #endif
 
-int test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
+float test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
 {
-    payload.random_seed = seed;
-
-    traceRayEXT(
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq,
         tlas,
 #ifdef STOCHASTIC_ALPHA_BLENDING
         gl_RayFlagsTerminateOnFirstHitEXT,
@@ -468,47 +469,51 @@ int test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
         gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
 #endif
         VISIBILITY_RAY_MASK,
-        0, 0, 0,
         pos,
         TR_RESTIR.min_ray_dist,
         dir,
-        dist-TR_RESTIR.min_ray_dist*2,
-        0
+        dist-TR_RESTIR.min_ray_dist*2
     );
-    return payload.instance_id < 0 ? 1 : 0;
+
+    return trace_ray_query_visibility(rq);
 }
 
 #ifdef RESTIR_TEMPORAL
-int test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
+float test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
 {
-    payload.random_seed = seed;
+    rayQueryEXT rq;
 
 #ifdef ASSUME_UNCHANGED_ACCELERATION_STRUCTURES
-    traceRayEXT(
+    rayQueryInitializeEXT(rq,
         tlas,
-        gl_RayFlagsCullNoOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+#ifdef STOCHASTIC_ALPHA_BLENDING
+        gl_RayFlagsTerminateOnFirstHitEXT,
+#else
+        gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+#endif
         VISIBILITY_RAY_MASK,
-        0, 0, 0,
         pos,
         TR_RESTIR.min_ray_dist,
         dir,
-        dist-TR_RESTIR.min_ray_dist*2,
-        0
+        dist-TR_RESTIR.min_ray_dist*2
     );
 #else
-    traceRayEXT(
+    rayQueryInitializeEXT(rq,
         prev_tlas,
-        gl_RayFlagsCullNoOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+#ifdef STOCHASTIC_ALPHA_BLENDING
+        gl_RayFlagsTerminateOnFirstHitEXT,
+#else
+        gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+#endif
         VISIBILITY_RAY_MASK,
-        0, 0, 0,
         pos,
         TR_RESTIR.min_ray_dist,
         dir,
-        dist-TR_RESTIR.min_ray_dist*2,
-        0
+        dist-TR_RESTIR.min_ray_dist*2
     );
 #endif
-    return payload.instance_id < 0 ? 1 : 0;
+
+    return trace_ray_query_visibility_prev(rq);
 }
 #endif
 
@@ -736,7 +741,7 @@ bool allow_reconnection(
 bool get_intersection_info(
     vec3 ray_origin,
     vec3 ray_direction,
-    hit_payload payload,
+    hit_info payload,
     uint bounce_index,
     bool in_past,
     float regularization,
@@ -880,13 +885,13 @@ bool get_intersection_info(
     }
 }
 
-void trace_ray(
+hit_info trace_ray(
     uint seed,
     vec3 origin,
     vec3 dir
 ){
-    payload.random_seed = seed;
-    traceRayEXT(
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq,
         tlas,
 #ifdef STOCHASTIC_ALPHA_BLENDING
         gl_RayFlagsNoneEXT,
@@ -894,26 +899,25 @@ void trace_ray(
         gl_RayFlagsOpaqueEXT,
 #endif
         RAY_MASK,
-        0,
-        0,
-        0,
         origin,
         TR_RESTIR.min_ray_dist,
         dir,
-        TR_RESTIR.max_ray_dist,
-        0
+        TR_RESTIR.max_ray_dist
     );
+
+    return trace_ray_query(rq, seed);
 }
 
 #ifdef RESTIR_TEMPORAL
-void trace_prev_ray(
+hit_info trace_prev_ray(
     uint seed,
     vec3 origin,
     vec3 dir
 ){
-    payload.random_seed = seed;
+    rayQueryEXT rq;
+
 #ifdef ASSUME_UNCHANGED_ACCELERATION_STRUCTURES
-    traceRayEXT(
+    rayQueryInitializeEXT(rq,
         tlas,
 #ifdef STOCHASTIC_ALPHA_BLENDING
         gl_RayFlagsNoneEXT,
@@ -921,29 +925,27 @@ void trace_prev_ray(
         gl_RayFlagsOpaqueEXT,
 #endif
         RAY_MASK,
-        0,
-        0,
-        0,
         origin,
         TR_RESTIR.min_ray_dist,
         dir,
-        TR_RESTIR.max_ray_dist,
-        0
+        TR_RESTIR.max_ray_dist
     );
+    return trace_ray_query(rq, seed);
 #else
-    traceRayEXT(
+    rayQueryInitializeEXT(rq,
         prev_tlas,
+#ifdef STOCHASTIC_ALPHA_BLENDING
+        gl_RayFlagsNoneEXT,
+#else
         gl_RayFlagsOpaqueEXT,
+#endif
         RAY_MASK,
-        0,
-        0,
-        0,
         origin,
         TR_RESTIR.min_ray_dist,
         dir,
-        TR_RESTIR.max_ray_dist,
-        0
+        TR_RESTIR.max_ray_dist
     );
+    return trace_ray_query_prev(rq, seed);
 #endif
 }
 #endif
@@ -1149,18 +1151,19 @@ bool generate_bsdf_vertex(
     out float nee_pdf
 ){
     intersection_info info;
+    hit_info hi;
 #ifdef RESTIR_TEMPORAL
-    if(in_past) trace_prev_ray(rand32.w, cur_domain.pos, dir);
+    if(in_past) hi = trace_prev_ray(rand32.w, cur_domain.pos, dir);
     else
 #endif
-        trace_ray(rand32.w, cur_domain.pos, dir);
+        hi = trace_ray(rand32.w, cur_domain.pos, dir);
 
 #if !defined(ASSUME_UNCHANGED_ACCELERATION_STRUCTURES) && defined(RESTIR_TEMPORAL)
     const bool get_in_past = in_past;
 #else
     const bool get_in_past = false;
 #endif
-    bool bounces = get_intersection_info(cur_domain.pos, dir, payload, bounce_index, get_in_past, regularization, info, vertex);
+    bool bounces = get_intersection_info(cur_domain.pos, dir, hi, bounce_index, get_in_past, regularization, info, vertex);
 
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_ENVMAP)
     nee_pdf = calculate_light_pdf(
