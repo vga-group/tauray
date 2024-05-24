@@ -44,6 +44,7 @@
 struct restir_config
 {
     shadow_mapping_parameters sm_params;
+    uvec2 display_size;
     float min_ray_dist;
     float max_ray_dist;
     //float regularization_gamma;

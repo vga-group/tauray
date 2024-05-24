@@ -6,6 +6,8 @@
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_debug_printf : enable
 
+layout(local_size_x = DISPATCH_WIDTH, local_size_y = DISPATCH_HEIGHT) in;
+
 #define RAY_TRACING
 #include "restir.glsl"
 
@@ -24,13 +26,15 @@ layout(binding = 20, rgba32f) writeonly uniform image2DArray mis_data;
 
 void main()
 {
-    camera_data cam = camera.pairs[pc.camera_index].current;
-    const ivec2 p = ivec2(gl_LaunchIDEXT.xy);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(p, ivec2(pc.config.display_size))))
+        return;
 
+    camera_data cam = camera.pairs[pc.camera_index].current;
     domain canonical_domain;
     bool canonical_miss = read_domain(cam, p, canonical_domain);
 
-    const uint neighbor_index = gl_LaunchIDEXT.z;
+    const uint neighbor_index = gl_GlobalInvocationID.z;
 
     uvec4 seed = uvec4(p, pc.camera_index, pc.sample_index);
     pcg4d(seed);
@@ -46,20 +50,20 @@ void main()
         cam, canonical_domain.pos, flat_tbn, max_plane_dist
     );
     ivec2 neighbor_p = spatial_candidate_pos(
-        candidate_key, p, ivec2(gl_LaunchSizeEXT.xy), scs,
+        candidate_key, p, ivec2(pc.config.display_size.xy), scs,
         pc.camera_index, pc.sample_index, neighbor_index
     );
 
     // Shift selected neighbor to own pixel and write the data we need later on.
-    reservoir candidate = read_reservoir(neighbor_p, gl_LaunchSizeEXT.xy); // X_i
+    reservoir candidate = read_reservoir(neighbor_p, pc.config.display_size.xy); // X_i
     vec3 candidate_pos_unused;
     bool candidate_miss = get_pos(neighbor_p, cam, candidate_pos_unused);
 
     if(candidate_miss || canonical_miss || candidate.confidence == 0)
     {
         // No candidate found, so write a failed shift.
-        imageStore(spatial_candidates, ivec3(p, gl_LaunchIDEXT.z), vec4(0,0,0,-1.0f));
-        imageStore(mis_data, ivec3(p, gl_LaunchIDEXT.z), vec4(0));
+        imageStore(spatial_candidates, ivec3(p, gl_GlobalInvocationID.z), vec4(0,0,0,-1.0f));
+        imageStore(mis_data, ivec3(p, gl_GlobalInvocationID.z), vec4(0));
         return;
     }
 
@@ -73,9 +77,9 @@ void main()
     );
 
     float target_function_value = target_function(primary_bsdf, value);
-    imageStore(spatial_candidates, ivec3(p, gl_LaunchIDEXT.z), output_color_function(primary_bsdf, value));
+    imageStore(spatial_candidates, ivec3(p, gl_GlobalInvocationID.z), output_color_function(primary_bsdf, value));
 
-    reservoir canonical_pixel = read_reservoir(p, gl_LaunchSizeEXT.xy);
+    reservoir canonical_pixel = read_reservoir(p, pc.config.display_size.xy);
     domain candidate_domain;
     read_domain(cam, neighbor_p, candidate_domain);
 
@@ -97,6 +101,6 @@ void main()
         canonical_in_other_target_function_value,
         jacobian_canonical_to_candidate
     );
-    imageStore(mis_data, ivec3(p, gl_LaunchIDEXT.z), vec4(canonical_resampling_mis_weight, candidate.output_sample.base_path_jacobian_part, target_function_value, 0));
+    imageStore(mis_data, ivec3(p, gl_GlobalInvocationID.z), vec4(canonical_resampling_mis_weight, candidate.output_sample.base_path_jacobian_part, target_function_value, 0));
 }
 

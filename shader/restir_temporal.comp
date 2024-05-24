@@ -6,6 +6,8 @@
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_debug_printf : enable
 
+layout(local_size_x = DISPATCH_WIDTH, local_size_y = DISPATCH_HEIGHT) in;
+
 #define RESTIR_TEMPORAL
 #define RAY_TRACING
 #include "restir.glsl"
@@ -66,9 +68,9 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
     motion.y = 1.0f - motion.y;
 
     vec4 u = generate_single_uniform_random(seed);
-    ivec2 unclamped_prev_p = ivec2(floor(motion.xy * gl_LaunchSizeEXT.xy + pc.jitter));
+    ivec2 unclamped_prev_p = ivec2(floor(motion.xy * pc.config.display_size.xy + pc.jitter));
     unclamped_prev_p ^= pc.permutation;
-    ivec2 prev_p = clamp(unclamped_prev_p, ivec2(0), ivec2(gl_LaunchSizeEXT.xy-1));
+    ivec2 prev_p = clamp(unclamped_prev_p, ivec2(0), ivec2(pc.config.display_size.xy-1));
 
     if(prev_p != unclamped_prev_p)
     {
@@ -77,7 +79,7 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
 
         prev_p = mirror_wrap(
             p + ivec2(round(sample_concentric_disk(u.zw) * pc.search_base_radius * pc.search_widening)),
-            ivec2(0), ivec2(gl_LaunchSizeEXT.xy-1)
+            ivec2(0), ivec2(pc.config.display_size.xy-1)
         );
     }
 
@@ -102,7 +104,7 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
             u = generate_single_uniform_random(seed);
             ivec2 p = mirror_wrap(
                 prev_p + ivec2(round(sample_ring(u.xy, prev_search_radius, search_radius - prev_search_radius))),
-                ivec2(0), ivec2(gl_LaunchSizeEXT.xy-1)
+                ivec2(0), ivec2(pc.config.display_size.xy-1)
             );
             prev_search_radius = search_radius;
             search_radius *= pc.search_widening;
@@ -118,7 +120,7 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
         prev_p = best_p;
     }
 
-    reservoir prev_pixel = read_reservoir(prev_p, gl_LaunchSizeEXT.xy);
+    reservoir prev_pixel = read_reservoir(prev_p, pc.config.display_size.xy);
     float ucw = prev_pixel.ucw; // W_i
     if(prev_pixel.confidence == 0) // No invalid reprojections pls
         return vec2(0);
@@ -232,19 +234,21 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
 
 void main()
 {
-    ivec2 p = ivec2(gl_LaunchIDEXT.xy);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(p, ivec2(pc.config.display_size))))
+        return;
     uvec4 seed = uvec4(0xFFFFFFFFu, pc.camera_index, p.yx)+pc.sample_index+1234567u;
     pcg4d(seed);
 
     camera_data cam = camera.pairs[pc.camera_index].current;
-    reservoir r = read_out_reservoir(p, gl_LaunchSizeEXT.xy);
+    reservoir r = read_out_reservoir(p, pc.config.display_size.xy);
     domain cur_domain;
     read_domain(cam, p, cur_domain);
 
     if(r.confidence != 0)
     {
         vec2 gradients = temporal_reuse(seed, p, r, cur_domain);
-        write_reservoir(r, p, gl_LaunchSizeEXT.xy);
+        write_reservoir(r, p, pc.config.display_size.xy);
 
 #ifdef TEMPORAL_GRADIENTS
         imageStore(out_temporal_gradients, p, vec4(gradients, 0, 0));

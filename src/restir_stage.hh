@@ -193,11 +193,11 @@ private:
     scene_stage* scene_data;
 
     // Generates one canonical path per frame.
-    rt_pipeline canonical;
+    compute_pipeline canonical;
     push_descriptor_set canonical_set;
 
     // Merges the canonical path with temporal history.
-    rt_pipeline temporal;
+    compute_pipeline temporal;
     push_descriptor_set temporal_set;
 
     // Selects the spatial samples and calculates their total confidence.
@@ -206,7 +206,7 @@ private:
     int selection_tile_size;
 
     // Traces rays for spatial reuse candidates & calculates MIS weights.
-    rt_pipeline spatial_trace;
+    compute_pipeline spatial_trace;
     push_descriptor_set spatial_trace_set;
 
     // Gathers spatial samples and writes the final shade.

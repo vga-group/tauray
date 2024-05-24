@@ -18,6 +18,8 @@ layout(push_constant) uniform push_constant_buffer
     uint first_pass;
 } pc;
 
+layout(local_size_x = DISPATCH_WIDTH, local_size_y = DISPATCH_HEIGHT) in;
+
 layout(binding = 16, rgba32f) writeonly uniform image2D out_color;
 layout(binding = 17, rg32f) writeonly uniform image2D out_length;
 
@@ -160,7 +162,7 @@ bool sample_path_bsdf_bounce(
         int self_intersect = self_shadow(-src.view, src.flat_normal, dir, src.mat);
         float inv_len = 1.0f / distance(src.pos, dst.pos) * self_intersect;
         vec2 lengths = sampled_lobe == MATERIAL_LOBE_DIFFUSE ? vec2(inv_len, 0) : vec2(0, inv_len);
-        imageStore(out_length, ivec2(gl_LaunchIDEXT.xy), vec4(lengths, 0, 0));
+        imageStore(out_length, ivec2(gl_GlobalInvocationID.xy), vec4(lengths, 0, 0));
     }
 #endif
 
@@ -283,7 +285,10 @@ void sample_path(
 
 void main()
 {
-    ivec2 p = ivec2(gl_LaunchIDEXT.xy);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(p, ivec2(pc.config.display_size))))
+        return;
+
     uvec4 seed = uvec4(p, pc.camera_index, 0xFFFFFFFFu)+pc.sample_index;
     pcg4d(seed);
 
@@ -299,7 +304,7 @@ void main()
         // Missed scene, so we don't have any data. Write something so that the
         // spatial reuse knows to skip this pixel. Zero confidence shouldn't
         // ever happen any other way than this.
-        write_reservoir(r, p, gl_LaunchSizeEXT.xy);
+        write_reservoir(r, p, pc.config.display_size.xy);
         return;
     }
 
@@ -359,7 +364,7 @@ void main()
     bool keep_old_value = false;
     if(pc.first_pass == 0)
     { // Pass through temporal stuff without reprojection.
-        reservoir prev_pixel = read_reservoir(p, gl_LaunchSizeEXT.xy);
+        reservoir prev_pixel = read_reservoir(p, pc.config.display_size.xy);
         r.sum_weight *= r.confidence / (r.confidence + prev_pixel.confidence);
 
         float resampling_mis_weight = prev_pixel.confidence / (prev_pixel.confidence + r.confidence);
@@ -380,7 +385,7 @@ void main()
     if(r.target_function_value > 0)
         r.ucw = r.sum_weight/r.target_function_value;
 
-    write_reservoir(r, p, gl_LaunchSizeEXT.xy);
+    write_reservoir(r, p, pc.config.display_size.xy);
     if(!keep_old_value)
         imageStore(out_color, p, out_value);
 }

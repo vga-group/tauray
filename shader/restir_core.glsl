@@ -362,7 +362,9 @@ void add_contribution(inout sum_contribution sc, reservoir r, vec4 contrib, floa
 #include "rt_common.glsl"
 
 #ifdef SHADE_ALL_EXPLICIT_LIGHTS
-#define SHADOW_MAPPING_SCREEN_COORD vec2(gl_LaunchIDEXT.xy)
+// TODO: Swap back to gl_GlobalInvocationID.xy after compute shader porting is done
+//#define SHADOW_MAPPING_SCREEN_COORD vec2(gl_LaunchIDEXT.xy)
+#define SHADOW_MAPPING_SCREEN_COORD vec2(0)
 #include "shadow_mapping.glsl"
 vec3 shade_explicit_lights(
     int instance_id,
