@@ -156,6 +156,7 @@ void shadow_map_stage::update(uint32_t frame_index)
         });
     }
 
+    bool first = scene_state_counter == 0;
     if(ss->check_update(scene_stage::GEOMETRY, scene_state_counter))
     {
         clear_commands();
@@ -227,9 +228,11 @@ void shadow_map_stage::update(uint32_t frame_index)
             for(scene_stage::shadow_map_instance& info: shadow_maps)
             {
                 unsigned atlas_index = info.atlas_index;
+                if(!info.never_update || first) // DEMO HACK
                 for(size_t face_index = 0; face_index < info.faces.size(); ++face_index)
                     render_cam(atlas_index, face_index, info.faces.size());
                 atlas_index++;
+                if(!info.never_update || first) // DEMO HACK
                 for(size_t cascade = 0; cascade < info.cascades.size(); ++cascade)
                     render_cam(atlas_index++, 0, 1);
             }

@@ -234,6 +234,7 @@ void run_demo(context& ctx, demo_scene_data& sd, options& opt)
             {
                 set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
                 rr.reset(create_renderer(ctx, opt, s));
+                track_shadow_maps(s);
                 rr->set_scene(&s);
                 ctx.set_displaying(false);
                 for(int i = 0; i < opt.warmup_frames; ++i)

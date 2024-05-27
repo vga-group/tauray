@@ -88,6 +88,7 @@ public:
         float min_bias;
         float max_bias;
         vec2 radius;
+        bool never_update; // DEMO HACK
         struct cam_transform
         {
             camera cam;

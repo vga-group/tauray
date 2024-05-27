@@ -544,6 +544,7 @@ bool scene_stage::update_shadow_map_params()
             spec.depth_range.x, spec.depth_range.y
         );
         sm->faces = {{face_cam, transform}};
+        sm->never_update = true;
 
         float cascade_scale = 2.0f;
         for(size_t i = 1; i < spec.cascades.size(); ++i)
@@ -594,6 +595,7 @@ bool scene_stage::update_shadow_map_params()
         sm->min_bias = spec.min_bias;
         sm->max_bias = spec.max_bias;
         sm->radius = vec2(pl.get_radius()); // TODO: Radius scaling for PCF?
+        sm->never_update = false;
 
         // Omnidirectional
         sm->faces.clear();
@@ -618,6 +620,7 @@ bool scene_stage::update_shadow_map_params()
         mat4 transform = t.get_global_transform();
         shadow_map_indices[&sl] = shadow_maps.size();
         shadow_map_instance* sm = &shadow_maps.emplace_back();
+        sm->never_update = false;
 
         // Perspective shadow map, if cutoff angle is small enough.
         if(sl.get_cutoff_angle() < 60)
@@ -829,7 +832,7 @@ void scene_stage::ensure_blas()
 {
     if(!get_context()->is_ray_tracing_supported())
         return;
-    bool built_one = false;
+    //bool built_one = false;
     // Goes through all groups and ensures they have valid BLASes.
     size_t offset = 0;
     std::vector<bottom_level_acceleration_structure::entry> entries;
@@ -842,10 +845,10 @@ void scene_stage::ensure_blas()
             continue;
         }
 
-        if(!built_one)
-            TR_LOG("Building acceleration structures");
+        //if(!built_one)
+        //    TR_LOG("Building acceleration structures");
 
-        built_one = true;
+        //built_one = true;
 
         entries.clear();
         bool double_sided = false;
@@ -871,8 +874,8 @@ void scene_stage::ensure_blas()
             )
         );
     }
-    if(built_one)
-        TR_LOG("Finished building acceleration structures");
+    //if(built_one)
+    //    TR_LOG("Finished building acceleration structures");
 }
 
 void scene_stage::assign_group_cache(
@@ -1048,7 +1051,8 @@ void scene_stage::update(uint32_t frame_index)
     }
 
     geometry_outdated |= refresh_instance_cache();
-    track_shadow_maps(*cur_scene);
+    // DEMO HACK: No tracking here.
+    //track_shadow_maps(*cur_scene);
 
     uint64_t frame_counter = get_context()->get_frame_counter();
     cur_scene->foreach([&](model& mod){
