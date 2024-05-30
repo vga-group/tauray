@@ -35,8 +35,9 @@ void main()
     float sum_2nd_moment_diffuse = sum_diffuse.a + diffuse_luminance * diffuse_luminance;
     float sum_2nd_moment_specular = sum_specular.a + specular_luminance * specular_luminance;
 #if DISOCCLUSION_FIX_ENABLED == 1
-    bool diffuse_disocclusion = history_length.g > 0.25f;
-    bool specular_disocclusion = history_length.a > 0.25f;
+    bool diffuse_disocclusion = history_length.g > 0.5f;
+    bool specular_disocclusion = history_length.a > 0.5f;
+
     if (diffuse_disocclusion || specular_disocclusion)
     {
         vec3 view_pos;

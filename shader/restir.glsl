@@ -86,6 +86,7 @@ struct restir_sample
     uint tail_length; // Number of vertices after reconnection
     bool nee_terminal; // true if terminal vertex is NEE.
     float base_path_jacobian_part; // J
+    float radiance_luminance; // Used for temporal gradients.
 };
 
 struct reservoir
@@ -112,6 +113,7 @@ void init_restir_sample(out restir_sample s, uint path_seed)
     s.tail_length = 0;
     s.nee_terminal = false;
     s.base_path_jacobian_part = 1.0f;
+    s.radiance_luminance = 0;
 }
 
 void init_reservoir(out reservoir r)
@@ -151,7 +153,7 @@ float target_function(vec4 primary_bsdf, vec3 radiance)
 {
     vec3 value = radiance;
 #ifdef DEMODULATE_OUTPUT
-    //value *= primary_bsdf.rgb;
+    value *= primary_bsdf.rgb;
 #endif
     return rgb_to_luminance(value);
 }
@@ -161,7 +163,8 @@ float target_function(vec4 primary_bsdf, vec3 radiance)
 vec4 output_color_function(vec4 primary_bsdf, vec3 radiance)
 {
 #ifdef DEMODULATE_OUTPUT
-    return vec4(radiance, primary_bsdf.a);
+    return vec4(primary_bsdf.rgb * radiance, primary_bsdf.a);
+    //return vec4(radiance, primary_bsdf.a);
 #else
     return vec4(radiance, 0);
 #endif

@@ -209,9 +209,7 @@ void main()
 
     float confidence = imageLoad(in_confidence, p).r;
     vec2 temporal_gradient = gather_temporal_gradients_5x5(p, world_pos, view_pos, flat_normal, curr_camera, frustum_size);
-    //vec2 temporal_gradient = texelFetch(in_temporal_gradient, p, 0).rg;
-    //temporal_gradient *= temporal_gradient;
-    //temporal_gradient = vec2(1.0);
+    temporal_gradient = pow(temporal_gradient, vec2(8.0f, 1.0f));
 
     // Early out on first frame to avoid reading garbage from potentially uninitialized buffers
     // Note Tauray frame counter starts from 1

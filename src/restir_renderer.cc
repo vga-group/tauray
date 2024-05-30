@@ -28,7 +28,6 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     if(!this->opt.restir_options.assume_unchanged_acceleration_structures)
         this->opt.scene_options.track_prev_tlas = true;
-    this->opt.scene_options.track_prev_tlas = false;
 
     gbuffer_spec gs;
     gs.color_present = true;

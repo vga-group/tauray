@@ -32,8 +32,6 @@
 namespace tr
 {
 
-// TODO: This is currently just a clone of tr::window with hacky fake-VR.
-// Make it actually use OpenXR.
 class openxr: public context
 {
 public:

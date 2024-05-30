@@ -259,6 +259,7 @@ private:
 
         // Present unless shift_map == RANDOM_REPLAY_SHIFT
         // float3 radiance_estimate
+        // float luminance_estimate
         std::optional<texture> reconnection_radiance;
 
         // Present unless max_bounces == 1 and shift_map == RECONNECTION_SHIFT

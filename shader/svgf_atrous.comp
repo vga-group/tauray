@@ -137,7 +137,7 @@ void main()
             float ndotn = saturate(dot(N, center_normal));
             float w_normal = pow(ndotn, 32.0);
 
-            const float sigma_l = 4.0f;
+            const float sigma_l = 8.0f;
             float sample_luminance = rgb_to_luminance(color_q.rgb);
             float w_lum = abs(sample_luminance - center_luminance_diff) / (sigma_l * luminance_std_dev_diff + 1e-7);
             w_lum = exp(-w_lum);
@@ -271,7 +271,7 @@ void main()
         // }
         imageStore(final_output, p, vec4(vec3(hitdist), 1.0));
 #elif FINAL_OUTPUT == OUTPUT_TEMPORAL_GRADIENT_DIFFUSE
-        vec2 gradient = imageLoad(temporal_gradient, p).rg;
+        vec2 gradient = pow(imageLoad(temporal_gradient, p).rg, vec2(8.0f));
         imageStore(final_output, p, vec4(vec3(gradient.x), 1.0));
 #elif FINAL_OUTPUT == OUTPUT_TEMPORAL_GRADIENT_SPECULAR
         vec2 gradient = imageLoad(temporal_gradient, p).rg;

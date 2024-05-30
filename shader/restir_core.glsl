@@ -187,6 +187,7 @@ reservoir unpack_reservoir(
     r.output_sample.vertex.primitive_id = reconnection_data[3];
 
     r.output_sample.vertex.radiance_estimate = reconnection_radiance.rgb;
+    r.output_sample.radiance_luminance = reconnection_radiance.a;
 
     vec2 incident_dir = vec2(
         uintBitsToFloat(rng_seeds[2]),
@@ -263,7 +264,7 @@ void write_reservoir(reservoir r, ivec2 p, uvec2 size)
         );
         imageStore(out_reservoir_reconnection_data_tex, p, reconnection_data);
         imageStore(out_reservoir_reconnection_radiance_tex, p, vec4(
-            r.output_sample.vertex.radiance_estimate, 0
+            r.output_sample.vertex.radiance_estimate, r.output_sample.radiance_luminance
         ));
     }
 
@@ -319,9 +320,10 @@ vec3 get_bounce_throughput(
         float reflection = lobes.dielectric_reflection + lobes.metallic_reflection;
         float scale = transmission + reflection;
         float inv_scale = scale == 0 ? 0 : 1.0f / scale;
-        primary_bsdf.rgb = bsdf * inv_scale;
+
+        primary_bsdf.rgb = vec3(scale);
         primary_bsdf.a = scale <= 0 ? 0 : reflection * inv_scale;
-        bsdf = vec3(scale);
+        bsdf = vec3(1.0f);
     }
 #endif
     return bsdf * self_shadow(-src.view, src.flat_normal, dir, src.mat);
@@ -362,9 +364,7 @@ void add_contribution(inout sum_contribution sc, reservoir r, vec4 contrib, floa
 #include "rt_common.glsl"
 
 #ifdef SHADE_ALL_EXPLICIT_LIGHTS
-// TODO: Swap back to gl_GlobalInvocationID.xy after compute shader porting is done
-//#define SHADOW_MAPPING_SCREEN_COORD vec2(gl_LaunchIDEXT.xy)
-#define SHADOW_MAPPING_SCREEN_COORD vec2(0)
+#define SHADOW_MAPPING_SCREEN_COORD vec2(gl_GlobalInvocationID.xy)
 #include "shadow_mapping.glsl"
 vec3 shade_explicit_lights(
     int instance_id,
@@ -1517,7 +1517,11 @@ bool reconnection_shift_map(
     jacobian = half_jacobian / rs.base_path_jacobian_part;
     if(isinf(jacobian) || isnan(jacobian)) jacobian = 0;
 
-    if(update_sample) rs.base_path_jacobian_part = half_jacobian;
+    if(update_sample)
+    {
+        rs.base_path_jacobian_part = half_jacobian;
+        rs.radiance_luminance = rgb_to_luminance(contribution);
+    }
     return true;
 }
 
@@ -1568,6 +1572,8 @@ bool random_replay_shift_map(
         return false;
     }
     contribution = throughput * to_domain.mat.emission;
+    if(update_sample)
+        rs.radiance_luminance = rgb_to_luminance(contribution);
     return true;
 }
 
@@ -1622,6 +1628,8 @@ bool hybrid_shift_map(
             if(replay_status == 2) // Failed to replay path
                 return false;
             contribution = throughput * to_domain.mat.emission;
+            if(update_sample)
+                rs.radiance_luminance = rgb_to_luminance(contribution);
             return true;
         }
         else if(replay_status != 0) // Failed to replay path
@@ -1733,7 +1741,10 @@ bool hybrid_shift_map(
         jacobian = 0;
 
     if(update_sample)
+    {
         rs.base_path_jacobian_part = half_jacobian;
+        rs.radiance_luminance = rgb_to_luminance(contribution);
+    }
     return true;
 }
 
