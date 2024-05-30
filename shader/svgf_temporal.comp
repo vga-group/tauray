@@ -209,11 +209,11 @@ void main()
 
     float confidence = imageLoad(in_confidence, p).r;
     vec2 temporal_gradient = gather_temporal_gradients_5x5(p, world_pos, view_pos, flat_normal, curr_camera, frustum_size);
-    //vec2 temporal_gradient = texelFetch(in_temporal_gradient, p, 0).rg;
-    temporal_gradient = pow(temporal_gradient, vec2(8.0f));
-    //temporal_gradient = vec2(1.0);
-    if(metallic_roughness.r == 1 && metallic_roughness.g == 0)
+    temporal_gradient = pow(temporal_gradient, vec2(8.0f, 1.0f));
+    if(metallic_roughness.r == 1 && metallic_roughness.g == 0) // DEMO HACK
         temporal_gradient = vec2(0);
+    else if(metallic_roughness.r == 1 && metallic_roughness.g < 0.2f) // DEMO HACK
+        temporal_gradient = vec2(1.0);
 
     // Early out on first frame to avoid reading garbage from potentially uninitialized buffers
     // Note Tauray frame counter starts from 1

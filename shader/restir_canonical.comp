@@ -106,6 +106,8 @@ void sample_path_nee_leaf(
     vec3 value = total_throughput * vertex.radiance_estimate;
     float target_function_value = target_function(primary_bsdf, value); // p^(X_i)
 
+    candidate.radiance_luminance = rgb_to_luminance(value);
+
     float resampling_mis_weight = nee_pdf / (CANONICAL_SAMPLES * bsdf_pdf + CANONICAL_SAMPLES * nee_pdf); // m_i(X_i)
 #ifdef USE_PRIMARY_SAMPLE_SPACE
     float ucw = 1.0f;
@@ -212,6 +214,8 @@ bool sample_path_bsdf_bounce(
 
     vec3 value = total_throughput * vertex.radiance_estimate;
     float target_function_value = target_function(primary_bsdf, value); // p^(X_i)
+
+    candidate.radiance_luminance = rgb_to_luminance(value);
 
     float resampling_mis_weight = bsdf_pdf / (CANONICAL_SAMPLES * bsdf_pdf + CANONICAL_SAMPLES * nee_pdf); // m_i(X_i)
 #ifdef USE_PRIMARY_SAMPLE_SPACE
