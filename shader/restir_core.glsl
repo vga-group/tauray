@@ -349,7 +349,7 @@ sum_contribution init_sum_contribution(vec3 emission)
     return sc;
 }
 
-void add_contribution(inout sum_contribution sc, reservoir r, vec4 contrib, float weight)
+void add_contribution(inout sum_contribution sc, vec4 contrib, float weight)
 {
 #ifdef DEMODULATE_OUTPUT
     vec3 color = contrib.rgb * weight;
@@ -390,20 +390,14 @@ vec3 shade_explicit_lights(
         {
             sh_grid sg = sh_grids.grids[sh_grid_index];
             vec3 sample_pos = (sg.pos_from_world * vec4(vd.pos, 1)).xyz;
-            vec3 sample_normal = normalize((sg.normal_from_world * vec4(vd.smooth_normal, 0)).xyz);
+            vec3 sh_normal = normalize((mat3(sg.normal_from_world) * vd.mapped_normal).xyz);
+            vec3 sh_ref = normalize((mat3(sg.normal_from_world) * ref_dir).xyz);
 
-            sh_probe sh = sample_sh_grid(
+            sample_and_filter_sh_grid(
                 sh_grid_data[nonuniformEXT(sh_grid_index)], sg.grid_clamp,
-                sample_pos, sample_normal
+                sample_pos, sh_normal, sh_ref, sqrt(mat.roughness),
+                incoming_diffuse, incoming_reflection
             );
-
-            vec3 sh_normal = normalize((sg.normal_from_world * vec4(vd.mapped_normal, 0)).xyz);
-            incoming_diffuse = calc_sh_irradiance(sh, sh_normal);
-
-            vec3 sh_ref = normalize((sg.normal_from_world * vec4(ref_dir, 0)).xyz);
-            // The GGX specular function was fitted for squared roughness, so we'll
-            // have to make sure we don't square it twice!
-            incoming_reflection = calc_sh_ggx_specular(sh, sh_ref, sqrt(mat.roughness));
         }
         float cos_v = max(dot(vd.mapped_normal, -view), 0.0f);
 
@@ -414,7 +408,6 @@ vec3 shade_explicit_lights(
         float kd = (1.0f - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
         contrib += kd * incoming_diffuse * mat.albedo.rgb;
 
-        // have to make sure we don't square it twice!
         vec2 bi = texture(brdf_integration, vec2(cos_v, sqrt(mat.roughness))).xy;
         contrib += incoming_reflection * mix(vec3(mat.f0 * bi.x + bi.y), mat.albedo.rgb, mat.metallic);
     }

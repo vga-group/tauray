@@ -143,8 +143,6 @@ restir_stage::restir_stage(
     canonical_set(dev),
     temporal(dev),
     temporal_set(dev),
-    selection(dev),
-    selection_set(dev),
     spatial_trace(dev),
     spatial_trace_set(dev),
     spatial_gather(dev),
@@ -159,7 +157,11 @@ restir_stage::restir_stage(
         0, true, false, false, 0
     ),
     opt(opt),
-    stage_timer(dev, "restir")
+    stage_timer(dev, "restir"),
+    canonical_timer(dev, "restir canonical"),
+    temporal_timer(dev, "restir temporal"),
+    trace_timer(dev, "restir trace"),
+    gather_timer(dev, "restir gather")
 {
     reservoir_data_parity = 0,
     accumulated_samples = 0;
@@ -283,7 +285,7 @@ restir_stage::restir_stage(
     defines["MAX_SPATIAL_SAMPLES"] = std::to_string(opt.spatial_samples);
     if(opt.spatial_samples > 0)
     {
-        selection_tile_size = max(next_power_of_two(sqrt(256/opt.spatial_samples)), 1u);
+        selection_tile_size = max(next_power_of_two(sqrt(128/opt.spatial_samples)), 1u);
         defines["SELECTION_TILE_SIZE"] = std::to_string(selection_tile_size);
     }
     if(c.pos) defines["USE_POSITION"];
@@ -419,20 +421,6 @@ restir_stage::restir_stage(
             vk::ImageUsageFlagBits::eStorage,
             vk::ImageLayout::eGeneral,
             vk::SampleCountFlagBits::e1
-        );
-    }
-
-    if(opt.spatial_samples > 0)
-    { // SPATIAL SELECTION
-        shader_source shader = {"shader/restir_spatial_selection.comp", defines};
-        SET_BINDING_PARAMS(selection_set);
-        selection.init(
-            shader,
-            {
-                &selection_set,
-                &ss.get_descriptors(),
-                &ss.get_raster_descriptors()
-            }
         );
     }
 
@@ -755,7 +743,7 @@ void restir_stage::update(uint32_t frame_index)
     if(in_reservoir_data.rng_seeds.has_value()) \
         set.set_image("in_reservoir_rng_seeds_tex", *in_reservoir_data.rng_seeds); \
 
-void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame_index*/, int pass_index)
+void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_index, int pass_index)
 {
     restir_config config = get_restir_config(opt, current_buffers, *scene_data);
     reservoir_textures& in_reservoir_data = reservoir_data[reservoir_data_parity];
@@ -763,6 +751,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
 
     uvec2 size = current_buffers.albedo.size;
 
+    canonical_timer.begin(cmd, dev->id, frame_index);
     { // CANONICAL
         canonical_set.set_image("out_color", *cached_sample_color);
         if(opt.demodulated_output)
@@ -796,8 +785,10 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
             vk::AccessFlagBits::eShaderRead|vk::AccessFlagBits::eShaderWrite
         );
     }
+    canonical_timer.end(cmd, dev->id, frame_index);
 
     uint64_t frame_counter = dev->ctx->get_frame_counter();
+    temporal_timer.begin(cmd, dev->id, frame_index);
     if(pass_index == 0 && opt.temporal_reuse && valid_history_frame+1 == frame_counter ? 1 : 0)
     { // TEMPORAL
         temporal_set.set_image(dev->id, "motion_tex", {{gbuf_sampler.get_sampler(dev->id), current_buffers.screen_motion.view, vk::ImageLayout::eShaderReadOnlyOptimal}});
@@ -843,11 +834,12 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t /*frame
             vk::AccessFlagBits::eShaderRead|vk::AccessFlagBits::eShaderWrite
         );
     }
+    temporal_timer.end(cmd, dev->id, frame_index);
 
     reservoir_data_parity = 1-reservoir_data_parity;
 }
 
-void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_index*/, bool /*final_pass*/, int pass_index)
+void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t frame_index, bool /*final_pass*/, int pass_index)
 {
     restir_config config = get_restir_config(opt, current_buffers, *scene_data);
     reservoir_textures& in_reservoir_data = reservoir_data[reservoir_data_parity];
@@ -855,35 +847,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
 
     uvec2 size = current_buffers.albedo.size;
 
-    if(opt.spatial_samples > 0)
-    {
-        selection_set.set_image("spatial_selection", *selection_data);
-
-        auto& set = selection_set;
-        BIND_RESERVOIRS
-        USED_BUFFERS
-
-        selection.bind(cmd);
-        selection.push_descriptors(cmd, selection_set, 0);
-        selection.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
-        selection.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
-
-        selection_push_constant_buffer pc;
-        pc.config = config;
-        pc.camera_index = opt.camera_index;
-        pc.sample_index = dev->ctx->get_frame_counter() * opt.passes + pass_index;
-        pc.display_size = size;
-
-        selection.push_constants(cmd, pc);
-        uvec3 wg = uvec3((ivec2(pc.display_size) + selection_tile_size-1) / selection_tile_size, 1);
-        cmd.dispatch(wg.x, wg.y, wg.z);
-        image_barrier(
-            cmd, selection_data,
-            vk::AccessFlagBits::eShaderWrite,
-            vk::AccessFlagBits::eShaderRead
-        );
-    }
-
+    trace_timer.begin(cmd, dev->id, frame_index);
     if(opt.spatial_samples > 0)
     {
         spatial_trace_set.set_image("spatial_selection", *selection_data);
@@ -905,7 +869,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         pc.sample_index = dev->ctx->get_frame_counter() * opt.passes + pass_index;
 
         spatial_trace.push_constants(cmd, pc);
-        uvec3 wg = uvec3((size+DISPATCH_SIZE-1u)/DISPATCH_SIZE, opt.spatial_samples);
+        uvec3 wg = uvec3((ivec2(size) + selection_tile_size-1) / selection_tile_size, 1);
         cmd.dispatch(wg.x, wg.y, wg.z);
     }
 
@@ -921,8 +885,15 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
             vk::AccessFlagBits::eShaderWrite,
             vk::AccessFlagBits::eShaderRead
         );
+        image_barrier(
+            cmd, selection_data,
+            vk::AccessFlagBits::eShaderWrite,
+            vk::AccessFlagBits::eShaderRead
+        );
     }
+    trace_timer.end(cmd, dev->id, frame_index);
 
+    gather_timer.begin(cmd, dev->id, frame_index);
     {
         if(opt.spatial_samples > 0)
         {
@@ -968,6 +939,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t /*frame_i
         uvec3 wg = uvec3((size+15u)/16u, 1);
         cmd.dispatch(wg.x, wg.y, wg.z);
     }
+    gather_timer.end(cmd, dev->id, frame_index);
 
     reservoir_data_parity = 1-reservoir_data_parity;
 

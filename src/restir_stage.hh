@@ -200,14 +200,10 @@ private:
     compute_pipeline temporal;
     push_descriptor_set temporal_set;
 
-    // Selects the spatial samples and calculates their total confidence.
-    compute_pipeline selection;
-    push_descriptor_set selection_set;
-    int selection_tile_size;
-
     // Traces rays for spatial reuse candidates & calculates MIS weights.
     compute_pipeline spatial_trace;
     push_descriptor_set spatial_trace_set;
+    int selection_tile_size;
 
     // Gathers spatial samples and writes the final shade.
     compute_pipeline spatial_gather;
@@ -281,6 +277,10 @@ private:
     unsigned accumulated_samples;
     uint64_t valid_history_frame;
     timer stage_timer;
+    timer canonical_timer;
+    timer temporal_timer;
+    timer trace_timer;
+    timer gather_timer;
 };
 
 }
