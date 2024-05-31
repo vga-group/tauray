@@ -88,6 +88,7 @@ void main()
 
     // Shift selected neighbor to own pixel and write the data we need later on.
     reservoir candidate = read_reservoir(local_s, pc.config.display_size);
+    reservoir canonical_pixel = read_reservoir(p, pc.config.display_size);
 
     local_key <<= candidate_index * 2;
     shared_selection_key[gl_LocalInvocationID.x][gl_LocalInvocationID.y][candidate_index] = local_key;
@@ -106,7 +107,6 @@ void main()
 
     barrier();
 
-    reservoir canonical_pixel = read_reservoir(p, pc.config.display_size);
     total_confidence += canonical_pixel.confidence;
 
     if(candidate_miss || candidate.confidence == 0)

@@ -127,6 +127,7 @@ namespace tr
     X(pos) \
     X(normal) \
     X(flat_normal) \
+    X(curvature) \
     X(albedo) \
     X(emission) \
     X(material)
@@ -177,7 +178,7 @@ restir_stage::restir_stage(
     assert(c.albedo);
     assert(c.material);
     assert(c.screen_motion);
-    assert((c.emission && p.emission));
+    assert(c.curvature && p.curvature);
 
     if((c.albedo && !p.albedo) || (c.material && !p.material))
     {
@@ -201,6 +202,7 @@ restir_stage::restir_stage(
         );
         this->opt.assume_unchanged_acceleration_structures = true;
     }
+    assert(this->opt.demodulated_output || (c.emission && p.emission));
 
     uvec2 size = current_buffers.color.size;
     cached_sample_color.emplace(
@@ -461,18 +463,12 @@ restir_stage::restir_stage(
     if(current_buffers.temporal_gradient)
         current_buffers.temporal_gradient.layout = vk::ImageLayout::eGeneral;
 
-#define BUF(name) \
+#define X(name) \
     if(c.name) c.name.layout = vk::ImageLayout::eGeneral; \
     if(p.name) p.name.layout = vk::ImageLayout::eGeneral;
 
-    BUF(depth)
-    BUF(pos)
-    BUF(normal)
-    BUF(flat_normal)
-    BUF(albedo)
-    BUF(emission)
-    BUF(material)
-#undef OPT_BUF
+    USED_BUFFERS
+#undef X
     c.screen_motion.layout = vk::ImageLayout::eGeneral;
 }
 

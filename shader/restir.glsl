@@ -16,6 +16,8 @@
 
 #define SCENE_SET 1
 #define SCENE_RASTER_SET 2
+#define USE_EXPLICIT_GRADIENTS
+#define CALC_TRIANGLE_CORNERS
 #ifdef RAY_TRACING
 #include "rt.glsl"
 #else

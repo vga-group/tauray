@@ -38,6 +38,7 @@ void sample_path_nee_leaf(
     inout vec4 primary_bsdf,
     inout reservoir r
 ){
+    ray_cone_apply_roughness(src.mat.roughness, src.rc);
     vec3 candidate_dir = vec3(0);
     vec3 candidate_normal = vec3(0);
     float candidate_dist = 0.0f;
@@ -149,6 +150,7 @@ bool sample_path_bsdf_bounce(
     vec3 dir = src.tbn * tdir;
 
     update_regularization(bsdf_pdf, regularization);
+    ray_cone_apply_roughness(sampled_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : src.mat.roughness, src.rc);
 
     vec3 throughput = get_bounce_throughput(
         candidate.head_length + candidate.tail_length, src, dir, lobes, primary_bsdf

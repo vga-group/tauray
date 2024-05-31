@@ -137,12 +137,10 @@ void svgf_stage::init_resources()
 
     for (int i = 0; i < svgf_stage::render_target_count; ++i)
     {
-        vk::Format format = vk::Format::eR32G32B32A32Sfloat;
         render_target_texture[i].reset(new texture(
             *dev,
             input_features.color.size,
             input_features.get_layer_count(),
-            //vk::Format::eR16G16B16A16Sfloat,
             formats[i],
             0, nullptr,
             vk::ImageTiling::eOptimal,
@@ -179,7 +177,6 @@ void svgf_stage::record_command_buffers()
 
         scene* cur_scene = ss->get_scene();
         std::vector<entity> cameras = get_sorted_cameras(*cur_scene);
-        camera* cam = cur_scene->get<camera>(cameras[0]);
 
         uvec2 wg = (input_features.get_size()+15u) / 16u;
         push_constants control{};
@@ -241,6 +238,7 @@ void svgf_stage::record_command_buffers()
         temporal_desc.set_image(dev->id, "in_confidence", { {{}, input_features.confidence.view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_image(dev->id, "in_flat_normal", { {{}, input_features.flat_normal.view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_image(dev->id, "in_temporal_gradient", { {my_sampler.get_sampler(dev->id), input_features.temporal_gradient.view, vk::ImageLayout::eGeneral} });
+        temporal_desc.set_image(dev->id, "in_curvature", {{{}, input_features.curvature.view, vk::ImageLayout::eGeneral}});
         temporal_comp.push_descriptors(cb, temporal_desc, 0);
         temporal_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
         temporal_comp.push_constants(cb, control);

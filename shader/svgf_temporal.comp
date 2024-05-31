@@ -39,6 +39,7 @@ layout(binding = 22) buffer uniforms
 layout(binding = 23, set = 0, rgba32f) uniform image2DArray in_confidence;
 layout(binding = 24, set = 0, rgba32f) uniform image2DArray in_flat_normal;
 layout(binding = 25, set = 0) uniform sampler2DArray in_temporal_gradient;
+layout(binding = 26, set = 0, r32f) uniform readonly image2DArray in_curvature;
 
 
 vec3 get_x_virtual(vec3 X, vec3 V, float NoV, float roughness, float hit_dist)
@@ -208,6 +209,7 @@ void main()
     float specular_luminance = rgb_to_luminance(current_specular.rgb);
 
     float confidence = imageLoad(in_confidence, p).r;
+    float curvature = abs(imageLoad(in_curvature, p).r);
     vec2 temporal_gradient = gather_temporal_gradients_5x5(p, world_pos, view_pos, flat_normal, curr_camera, frustum_size);
     temporal_gradient = pow(temporal_gradient, vec2(8.0f, 1.0f));
 
@@ -457,6 +459,7 @@ void main()
 
     // Combine surface motion based specular and virtual motion based specular
     float virtual_motion_amount = clamp((1-surface_tracking_similarity) * 100.0f, 0, 1);
+    virtual_motion_amount *= clamp(pow(1.0f - curvature, 2.0f), 0.0f, 1.0f);
     // Make it "more decisive" but keeping it still smooth.
     virtual_motion_amount = smoothstep(0, 1, virtual_motion_amount);
 
