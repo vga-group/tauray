@@ -163,6 +163,18 @@ void main()
     eval_indirect_light(view, mat, v, diffuse, reflection);
 #endif
 
+    // From: "Improved Shader and Texture Level of Detail Using Ray Cones"
+    vec3 dndx = dFdxFine(v.mapped_normal);
+    vec3 dndy = dFdyFine(v.mapped_normal);
+    float beta_x = atan(length(dndx));
+    float beta_y = atan(length(dndy));
+    vec3 r = dFdxFine(view);
+    vec3 u = dFdyFine(view);
+    float s_x = sign(dot(r, dndx));
+    float s_y = sign(dot(u, dndy));
+    float s = beta_x >= beta_y ? s_x : s_y;
+    float curvature = 2 * s * sqrt(beta_x * beta_x + beta_y * beta_y);
+
     write_gbuffer_color(vec4(modulate_color(mat, diffuse, reflection) + mat.emission, mat.albedo.a));
     write_gbuffer_diffuse(vec4(diffuse, mat.albedo.a));
     write_gbuffer_reflection(vec4(reflection, mat.albedo.a));
@@ -174,5 +186,6 @@ void main()
     write_gbuffer_instance_id(int(control.instance_id));
     write_gbuffer_linear_depth();
     write_gbuffer_flat_normal(normalize(cross(dFdy(v.pos), dFdx(v.pos))));
+    write_gbuffer_curvature(curvature);
     write_gbuffer_emission(mat.emission);
 }

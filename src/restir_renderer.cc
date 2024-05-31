@@ -42,7 +42,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     gs.normal_present = true;
     gs.screen_motion_present = true;
     gs.flat_normal_present = true;
-    gs.emission_present = true;
+    gs.curvature_present = true;
     gs.temporal_gradient_present = true;
     gs.confidence_present = true;
 
@@ -215,9 +215,11 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         cur.color = render_target();
         cur.screen_motion = render_target();
         cur.temporal_gradient = render_target();
+        cur.emission = render_target();
         prev.color = render_target();
         prev.screen_motion = render_target();
         prev.temporal_gradient = render_target();
+        prev.emission = render_target();
 
         pv.copy.emplace(devices[device_index], cur, prev, layer_index, layer_index);
 

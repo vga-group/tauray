@@ -218,6 +218,38 @@ vec3 sample_gbuffer_emission(sampler2D tex, ivec2 p)
 }
 
 //==============================================================================
+// Curvature
+//==============================================================================
+
+#ifdef CURVATURE_TARGET_BINDING
+layout(binding = CURVATURE_TARGET_BINDING, set = 0, r32f) uniform image2DArray curvature_target;
+
+void write_gbuffer_curvature(float curvature, ivec3 pos) { imageStore(curvature_target, pos, vec4(curvature)); }
+float read_gbuffer_curvature(ivec3 pos) { return imageLoad(curvature_target, pos).x; }
+
+#elif defined(CURVATURE_TARGET_LOCATION)
+
+layout(location = CURVATURE_TARGET_LOCATION) out float curvature_target;
+
+void write_gbuffer_curvature(float curvature)
+{
+    curvature_target = curvature;
+}
+
+#else
+
+void write_gbuffer_curvature(float curvature, ivec3 pos) {}
+void write_gbuffer_curvature(float curvature) {}
+float read_gbuffer_curvature(ivec3 pos) { return 0; }
+
+#endif
+
+float sample_gbuffer_curvature(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0).r;
+}
+
+//==============================================================================
 // Material
 //==============================================================================
 
@@ -285,6 +317,18 @@ sampled_material sample_gbuffer_material(
         texelFetch(material, p, 0),
         sample_gbuffer_albedo(albedo, p),
         sample_gbuffer_emission(emission, p)
+    );
+}
+
+sampled_material sample_gbuffer_material(
+    sampler2D albedo,
+    sampler2D material,
+    ivec2 p
+){
+    return unpack_gbuffer_material(
+        texelFetch(material, p, 0),
+        sample_gbuffer_albedo(albedo, p),
+        vec3(0)
     );
 }
 

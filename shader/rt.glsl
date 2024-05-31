@@ -48,6 +48,14 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
 
     vec4 model_pos = vec4(v0.pos * b.x + v1.pos * b.y + v2.pos * b.z, 1);
     interp.pos = TRANSFORM_MAT(o.model, model_pos).xyz;
+#ifdef CALC_TRIANGLE_CORNERS
+    interp.triangle_pos[0] = TRANSFORM_MAT(o.model, vec4(v0.pos, 1)).xyz;
+    interp.triangle_pos[1] = TRANSFORM_MAT(o.model, vec4(v1.pos, 1)).xyz;
+    interp.triangle_pos[2] = TRANSFORM_MAT(o.model, vec4(v2.pos, 1)).xyz;
+    interp.triangle_uv[0] = v0.uv;
+    interp.triangle_uv[1] = v1.uv;
+    interp.triangle_uv[2] = v2.uv;
+#endif
 
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
     if(o.light_base_id >= 0)
@@ -108,11 +116,19 @@ void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id
     uv = v0.uv * b.x + v1.uv * b.y + v2.uv * b.z;
 }
 
+#ifdef USE_EXPLICIT_GRADIENTS
+sampled_material sample_material(int instance_id, inout vertex_data v, vec2 duvdx, vec2 duvdy)
+#else
 sampled_material sample_material(int instance_id, inout vertex_data v)
+#endif
 {
     instance o = instances.o[instance_id];
     material mat = o.mat;
+#ifdef USE_EXPLICIT_GRADIENTS
+    sampled_material res = sample_material(mat, v, duvdx, duvdy);
+#else
     sampled_material res = sample_material(mat, v);
+#endif
     res.shadow_terminator_mul = o.shadow_terminator_mul;
     return res;
 }
