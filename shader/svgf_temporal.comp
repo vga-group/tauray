@@ -220,7 +220,7 @@ void main()
         imageStore(out_color, p, vec4(current_diffuse.rgb, 0.0f));
         imageStore(out_specular, p, vec4(current_specular.rgb, 0.0f));
         imageStore(out_history_length, p, vec4(confidence, 1.0, confidence, 1.0));
-        imageStore(out_specular_hit_distance, p, vec4(vec3(current_specular.a), 1.0));
+        imageStore(out_specular_hit_distance, p, vec4(current_specular.a));
         return;
     }
 

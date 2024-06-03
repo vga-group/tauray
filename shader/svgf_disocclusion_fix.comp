@@ -53,6 +53,7 @@ void main()
         vec3 V = normalize(curr_camera.origin.xyz - center_pos);
         
         float frustum_size = get_frustum_size(curr_camera, view_z);
+        float inv_frustum_size = 1.0f / frustum_size;
         const float plane_dist_sensitivity = 0.005;
 
         const float spec_half_angle = get_specular_lobe_half_angle(0.75, 1.0);
@@ -86,7 +87,7 @@ void main()
                 vec2 sample_material = imageLoad(in_material, q).xy;
                 float sample_roughness = max(0.01, sample_material.y);
 
-                float plane_dist_weight = get_plane_distance_weight(center_pos, X, center_normal, frustum_size);
+                float plane_dist_weight = get_plane_distance_weight(center_pos, X, center_normal, inv_frustum_size);
 
                 float ndotn = saturate(dot(Ns, center_normal));
                 float angle = acos(ndotn);

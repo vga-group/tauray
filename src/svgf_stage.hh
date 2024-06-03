@@ -66,6 +66,12 @@ private:
     std::unique_ptr<texture> render_target_texture[render_target_count];
     timer svgf_timer;
 
+    timer reconstruction_timer;
+    timer disocclusion_timer;
+    timer firefly_timer;
+    timer temporal_timer;
+    timer atrous_timer;
+
     sampler my_sampler;
 
     std::vector<vec4> jitter_history;
