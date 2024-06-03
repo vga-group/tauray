@@ -1,5 +1,6 @@
 #version 460
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
 #include "svgf.glsl"
 #include "projection.glsl"
 #include "gbuffer.glsl"
@@ -95,10 +96,10 @@ void main()
     float luminance_std_dev_spec = sqrt(variance_spec);
 
     float frustum_size = get_frustum_size(curr_camera, view_z);
+    float inv_frustum_size = 1.0f / frustum_size;
 
     vec3 V = normalize(curr_camera.origin.xyz - center_pos);
 
-    const int radius = ATROUS_RADIUS;
     const int stride = int(1u << control.iteration);
 
     float center_roughness = max(0.01, metallic_roughness.g);
@@ -117,9 +118,9 @@ void main()
     float w_sum_spec = 1;
     vec4 color_sum = center_color;
     vec4 specular_sum = center_spec;
-    for (int y = -radius; y <= radius; ++y)
+    [[unroll]] for (int y = -ATROUS_RADIUS; y <= ATROUS_RADIUS; ++y)
     {
-        for (int x = -radius; x <= radius; ++x)
+        [[unroll]] for (int x = -ATROUS_RADIUS; x <= ATROUS_RADIUS; ++x)
         {
             if (y == 0 && x == 0) continue;
 
@@ -135,7 +136,7 @@ void main()
             vec3 N = unpack_gbuffer_normal(imageLoad(in_normal, q).rg);
             vec2 material = imageLoad(in_material, q).rg;
             float sample_roughness = max(0.01, material.g);
-            float w_geom = get_plane_distance_weight(center_pos, X, center_normal, frustum_size);
+            float w_geom = get_plane_distance_weight(center_pos, X, center_normal, inv_frustum_size);
 
             float ndotn = saturate(dot(N, center_normal));
             float w_normal = pow(ndotn, 32.0);
@@ -144,7 +145,7 @@ void main()
             float sample_luminance = rgb_to_luminance(color_q.rgb);
             float w_lum = abs(sample_luminance - center_luminance_diff) / (sigma_l * luminance_std_dev_diff + 1e-7);
             w_lum = exp(-w_lum);
-            
+
             float w = 1.0;
             w *= w_geom;
             w *= w_normal;
@@ -153,9 +154,9 @@ void main()
             color_sum += vec4(color_q.rgb * w, color_q.a * w * w);
             w_sum += w;
 
-            vec3 Vs = normalize(camera.pairs[p.z].current.origin.xyz - X);
+            vec3 Vs = normalize(curr_camera.origin.xyz - X);
             float lobe_similarity = specular_lobe_similarity(V, center_normal, center_roughness, Vs, N, sample_roughness);
-            float lobe_weight = pow(lobe_similarity, 16.0);
+            float lobe_weight = pow(lobe_similarity, 16.0f);
 
             float sample_l_spec = rgb_to_luminance(spec_q.rgb);
             float w_lum_spec = abs(sample_l_spec - center_luminance_spec) / (sigma_l * luminance_std_dev_spec + 1e-7);
@@ -281,7 +282,7 @@ void main()
         imageStore(final_output, p, vec4(vec3(gradient.y), 1.0));
 #elif FINAL_OUTPUT == OUTPUT_RAW_INPUT
 
-#endif  
+#endif
     }
     else
     {

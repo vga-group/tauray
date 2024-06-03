@@ -1,5 +1,6 @@
 #version 460
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
 
 #include "svgf.glsl"
 #include "color.glsl"
@@ -24,19 +25,19 @@ void main()
     vec4 out_specular = imageLoad(accumulated_specular, p);
 
 #if FIREFLY_SUPPRESSION_ENABLED == 1
-    int radius = 1;
+    const int radius = 1;
     float max_luminance_diff = -1.0;
     float max_luminance_spec = -1.0;
-    for (int y = -radius; y <= radius; ++y)
+    [[unroll]] for (int y = -radius; y <= radius; ++y)
     {
-        for (int x = -radius; x <= radius; ++x)
+        [[unroll]] for (int x = -radius; x <= radius; ++x)
         {
             if (x == 0 && y == 0) // Ignore center
                 continue;
 
             ivec3 q = p + ivec3(x, y, 0);
             if (!is_in_screen(q.xy)) continue;
-            
+
             vec4 diff = imageLoad(accumulated_diffuse, q);
             vec4 spec = imageLoad(accumulated_specular, q);
 
@@ -70,7 +71,7 @@ void main()
 
     imageStore(diffuse_hist, p, out_diffuse);
     imageStore(specular_hist, p, out_specular);
-    
+
     vec4 history = imageLoad(history_length, p);
     //out_diffuse.a *= history.g;
     //out_specular.a *= history.a;

@@ -44,6 +44,11 @@ svgf_stage::svgf_stage(
     input_features(input_features),
     prev_features(prev_features),
     svgf_timer(dev, "svgf (" + std::to_string(input_features.get_layer_count()) + " viewports)"),
+    reconstruction_timer(dev, "svgf hit distance reconstruction"),
+    disocclusion_timer(dev, "svgf disocclusion fix"),
+    firefly_timer(dev, "svgf firefly suppression"),
+    temporal_timer(dev, "svgf temporal"),
+    atrous_timer(dev, "svgf atrous"),
     jitter_buffer(dev, sizeof(pvec4) * 1, vk::BufferUsageFlagBits::eStorageBuffer),
     uniforms(dev, sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer),
     ss(&ss),
@@ -195,6 +200,7 @@ void svgf_stage::record_command_buffers()
             vk::AccessFlagBits::eShaderRead
         };
 
+        reconstruction_timer.begin(cb, dev->id, i);
         // Hit dist reconstruction
         hit_dist_reconstruction_comp.bind(cb);
         hit_dist_reconstruction_desc.set_image(dev->id, "in_specular", { {{}, input_features.reflection.view, vk::ImageLayout::eGeneral} });
@@ -212,7 +218,9 @@ void svgf_stage::record_command_buffers()
             vk::PipelineStageFlagBits::eComputeShader,
             {}, barrier, {}, {}
         );
+        reconstruction_timer.end(cb, dev->id, i);
 
+        temporal_timer.begin(cb, dev->id, i);
         temporal_comp.bind(cb);
         temporal_desc.set_image(dev->id, "in_color", {{{}, input_features.color.view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "in_diffuse", {{{}, input_features.diffuse.view, vk::ImageLayout::eGeneral}});
@@ -250,7 +258,9 @@ void svgf_stage::record_command_buffers()
             vk::PipelineStageFlagBits::eComputeShader,
             {}, barrier, {}, {}
         );
+        temporal_timer.end(cb, dev->id, i);
 
+        disocclusion_timer.begin(cb, dev->id, i);
         disocclusion_fix_comp.bind(cb);
         disocclusion_fix_desc.set_image(dev->id, "accumulated_diffuse", { {{}, atrous_diffuse_pingpong[1].view, vk::ImageLayout::eGeneral} });
         disocclusion_fix_desc.set_image(dev->id, "filtered_diffuse", { {{}, atrous_diffuse_pingpong[0].view, vk::ImageLayout::eGeneral} });
@@ -271,7 +281,9 @@ void svgf_stage::record_command_buffers()
             vk::PipelineStageFlagBits::eComputeShader,
             {}, barrier, {}, {}
         );
+        disocclusion_timer.end(cb, dev->id, i);
 
+        firefly_timer.begin(cb, dev->id, i);
         firefly_suppression_comp.bind(cb);
         firefly_suppression_desc.set_image(dev->id, "accumulated_diffuse", { {{}, atrous_diffuse_pingpong[0].view, vk::ImageLayout::eGeneral} });
         firefly_suppression_desc.set_image(dev->id, "filtered_diffuse", { {{}, atrous_diffuse_pingpong[1].view, vk::ImageLayout::eGeneral} });
@@ -290,7 +302,9 @@ void svgf_stage::record_command_buffers()
             vk::PipelineStageFlagBits::eComputeShader,
             {}, barrier, {}, {}
         );
+        firefly_timer.end(cb, dev->id, i);
 
+        atrous_timer.begin(cb, dev->id, i);
         atrous_comp.bind(cb);
 
         const int iteration_count = opt.atrous_diffuse_iters;
@@ -323,7 +337,7 @@ void svgf_stage::record_command_buffers()
             atrous_desc.set_image(dev->id, "specular_hit_dist", { {{}, specular_hit_distance[1 - i].view, vk::ImageLayout::eGeneral}});
             atrous_desc.set_image(dev->id, "history_length", { {{}, history_length[1 - i].view, vk::ImageLayout::eGeneral} });
             atrous_desc.set_image(dev->id, "temporal_gradient", { {{}, input_features.temporal_gradient.view, vk::ImageLayout::eGeneral}});
-            
+
             atrous_comp.push_descriptors(cb, atrous_desc, 0);
             atrous_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
 
@@ -337,6 +351,7 @@ void svgf_stage::record_command_buffers()
             vk::PipelineStageFlagBits::eComputeShader,
             {}, barrier, {}, {}
         );
+        atrous_timer.end(cb, dev->id, i);
 
         svgf_timer.end(cb, dev->id, i);
         end_compute(cb, i);

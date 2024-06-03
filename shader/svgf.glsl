@@ -35,13 +35,13 @@ float sum(vec4 v) { return dot(v, vec4(1.0)); }
 
 vec3 viridis_quintic( float x )
 {
-	x = saturate( x );
-	vec4 x1 = vec4( 1.0, x, x * x, x * x * x ); // 1 x x2 x3
-	vec4 x2 = x1 * x1.w * x; // x4 x5 x6 x7
-	return vec3(
-		dot( x1.xyzw, vec4( +0.280268003, -0.143510503, +2.225793877, -14.815088879 ) ) + dot( x2.xy, vec2( +25.212752309, -11.772589584 ) ),
-		dot( x1.xyzw, vec4( -0.002117546, +1.617109353, -1.909305070, +2.701152864 ) ) + dot( x2.xy, vec2( -1.685288385, +0.178738871 ) ),
-		dot( x1.xyzw, vec4( +0.300805501, +2.614650302, -12.019139090, +28.933559110 ) ) + dot( x2.xy, vec2( -33.491294770, +13.762053843 ) ) );
+    x = saturate( x );
+    vec4 x1 = vec4( 1.0, x, x * x, x * x * x ); // 1 x x2 x3
+    vec4 x2 = x1 * x1.w * x; // x4 x5 x6 x7
+    return vec3(
+        dot( x1.xyzw, vec4( +0.280268003, -0.143510503, +2.225793877, -14.815088879 ) ) + dot( x2.xy, vec2( +25.212752309, -11.772589584 ) ),
+        dot( x1.xyzw, vec4( -0.002117546, +1.617109353, -1.909305070, +2.701152864 ) ) + dot( x2.xy, vec2( -1.685288385, +0.178738871 ) ),
+        dot( x1.xyzw, vec4( +0.300805501, +2.614650302, -12.019139090, +28.933559110 ) ) + dot( x2.xy, vec2( -33.491294770, +13.762053843 ) ) );
 }
 
 float get_specular_dominant_factor(float n_dot_v, float roughness)
@@ -75,31 +75,40 @@ float specular_lobe_similarity(
     vec3 lobe_dir2, float ndotv2, float roughness2
 ){
     // Exact
-    float sharpness1 = 0.533f / (roughness1 * roughness1);
-    float sharpness2 = 0.533f / (roughness2 * roughness2);
-    float amplitude1 = sqrt(sharpness1 / (M_PI * (1.0f - exp(-4.0f * sharpness1))));
-    float amplitude2 = sqrt(sharpness2 / (M_PI * (1.0f - exp(-4.0f * sharpness2))));
-    float dm = length(sharpness1 * lobe_dir1 + sharpness2 * lobe_dir2);
-    float expo = exp(dm - sharpness1 - sharpness2) * amplitude1 * amplitude2;
-    float other = 1.0f - exp(-2.0f * dm);
-    return clamp((2.0f * M_PI * expo * other) / dm, 0.0f, 1.0f);
-    // Approximate
     //float sharpness1 = 0.533f / (roughness1 * roughness1);
     //float sharpness2 = 0.533f / (roughness2 * roughness2);
+    //float amplitude1 = sqrt(sharpness1 / (M_PI * (1.0f - exp(-4.0f * sharpness1))));
+    //float amplitude2 = sqrt(sharpness2 / (M_PI * (1.0f - exp(-4.0f * sharpness2))));
     //float dm = length(sharpness1 * lobe_dir1 + sharpness2 * lobe_dir2);
-    //float expo = exp(dm - sharpness1 - sharpness2) * sqrt(sharpness1 * sharpness2);
-    //return clamp((2.0f * expo) / dm, 0.0f, 1.0f);
+    //float expo = exp(dm - sharpness1 - sharpness2) * amplitude1 * amplitude2;
+    //float other = 1.0f - exp(-2.0f * dm);
+    //return clamp((2.0f * M_PI * expo * other) / dm, 0.0f, 1.0f);
+    // Approximate
+    float inv_r1 = 1.0f / roughness1;
+    float inv_r2 = 1.0f / roughness2;
+    float sharpness1 = inv_r1 * inv_r1;
+    float sharpness2 = inv_r2 * inv_r2;
+    float dm2 = 2.0f * sharpness1 * sharpness2 * dot(lobe_dir1, lobe_dir2);
+    dm2 = fma(sharpness2, sharpness2, dm2);
+    dm2 = fma(sharpness1, sharpness1, dm2);
+    float inv_dm = inversesqrt(dm2);
+    float dm = 1.0f / inv_dm;
+    return clamp(exp2(fma(0.7689564567938175f, dm - sharpness1 - sharpness2, 1.0f)) * inv_r1 * inv_r2 * inv_dm, 0.0f, 1.0f);
 }
+
 // View points away from surface.
 float specular_lobe_similarity(
     vec3 view1, vec3 normal1, float roughness1,
     vec3 view2, vec3 normal2, float roughness2
 ){
-    vec3 axis1 = get_specular_dominant_dir(view1, normal1, roughness1);
-    vec3 axis2 = get_specular_dominant_dir(view2, normal2, roughness2);
+    //vec3 axis1 = get_specular_dominant_dir(view1, normal1, roughness1);
+    //vec3 axis2 = get_specular_dominant_dir(view2, normal2, roughness2);
+    vec3 axis1 = reflect(view1, normal1);
+    vec3 axis2 = reflect(view2, normal2);
+
     return specular_lobe_similarity(
-        axis1, dot(view1, normal1), roughness1,
-        axis2, dot(view2, normal2), roughness2
+        axis1, dot(normal1, view1), roughness1,
+        axis2, dot(normal2, view2), roughness2
     );
 }
 
@@ -113,46 +122,46 @@ float get_specular_lobe_half_angle(float percentage_of_energy, float roughness)
 // Source: "Accurate Real-Time Specular Reflections with Radiance Caching" in Ray Tracing Gems by Hirvonen et al.
 vec3 specularGGXReflectanceApprox(vec3 specular_f0, float alpha, float NdotV)
 {
-	const mat2 A = transpose(mat2(
-		0.995367f, -1.38839f,
-		-0.24751f, 1.97442f
-	));
+    const mat2 A = transpose(mat2(
+        0.995367f, -1.38839f,
+        -0.24751f, 1.97442f
+    ));
 
-	const mat3 B = transpose(mat3(
-		1.0f, 2.68132f, 52.366f,
-		16.0932f, -3.98452f, 59.3013f,
-		-5.18731f, 255.259f, 2544.07f
-	));
+    const mat3 B = transpose(mat3(
+        1.0f, 2.68132f, 52.366f,
+        16.0932f, -3.98452f, 59.3013f,
+        -5.18731f, 255.259f, 2544.07f
+    ));
 
-	const mat2 C = transpose(mat2(
-		-0.0564526f, 3.82901f,
-		16.91f, -11.0303f
-	));
+    const mat2 C = transpose(mat2(
+        -0.0564526f, 3.82901f,
+        16.91f, -11.0303f
+    ));
 
-	const mat3 D = transpose(mat3(
-		1.0f, 4.11118f, -1.37886f,
-		19.3254f, -28.9947f, 16.9514f,
-		0.545386f, 96.0994f, -79.4492f
-	));
+    const mat3 D = transpose(mat3(
+        1.0f, 4.11118f, -1.37886f,
+        19.3254f, -28.9947f, 16.9514f,
+        0.545386f, 96.0994f, -79.4492f
+    ));
 
-	const float alpha2 = alpha * alpha;
-	const float alpha3 = alpha * alpha2;
-	const float NdotV2 = NdotV * NdotV;
-	const float NdotV3 = NdotV * NdotV2;
+    const float alpha2 = alpha * alpha;
+    const float alpha3 = alpha * alpha2;
+    const float NdotV2 = NdotV * NdotV;
+    const float NdotV3 = NdotV * NdotV2;
 
-	const float E = dot(A * vec2(1.0f, NdotV), vec2(1.0f, alpha));
-	const float F = dot(B * vec3(1.0f, NdotV, NdotV3), vec3(1.0f, alpha, alpha3));
+    const float E = dot(A * vec2(1.0f, NdotV), vec2(1.0f, alpha));
+    const float F = dot(B * vec3(1.0f, NdotV, NdotV3), vec3(1.0f, alpha, alpha3));
 
-	const float G = dot(C * vec2(1.0f, NdotV), vec2(1.0f, alpha));
-	const float H = dot(D * vec3(1.0f, NdotV2, NdotV3), vec3(1.0f, alpha, alpha3));
+    const float G = dot(C * vec2(1.0f, NdotV), vec2(1.0f, alpha));
+    const float H = dot(D * vec3(1.0f, NdotV2, NdotV3), vec3(1.0f, alpha, alpha3));
 
-	// Turn the bias off for near-zero specular 
-	const float biasModifier = saturate(dot(specular_f0, vec3(0.333333f, 0.333333f, 0.333333f)) * 50.0f);
+    // Turn the bias off for near-zero specular
+    const float biasModifier = saturate(dot(specular_f0, vec3(0.333333f, 0.333333f, 0.333333f)) * 50.0f);
 
-	const float bias = max(0.0f, (E / F)) * biasModifier;
-	const float scale = max(0.0f, (G / H));
+    const float bias = max(0.0f, (E / F)) * biasModifier;
+    const float scale = max(0.0f, (G / H));
 
-	return vec3(bias, bias, bias) + vec3(scale, scale, scale) * specular_f0;
+    return vec3(bias, bias, bias) + vec3(scale, scale, scale) * specular_f0;
 }
 
 // f0 converted to float for clarity, since colors have already been demodulated from our ipnuts
@@ -207,10 +216,10 @@ vec3 get_world_pos(camera_data cam, vec3 view_pos)
     return (cam.view_inverse * vec4(view_pos, 1.0)).xyz;
 }
 
-struct Bilinear 
-{ 
+struct Bilinear
+{
     vec2 origin;
-    vec2 weights; 
+    vec2 weights;
 };
 
 Bilinear get_bilinear_filter( vec2 uv, vec2 tex_size )
@@ -253,9 +262,9 @@ vec4 bicubic_filter(sampler2DArray tex, vec3 uv)
 
     vec2 tc0 = size_params.xy * (center_pos - 1.0);
     vec2 tc3 = size_params.xy * (center_pos + 2.0);
-    vec4 color = texture(tex, vec3(tc12.x, tc0.y, uv.z)) * (w12.x * w0.y) + 
+    vec4 color = texture(tex, vec3(tc12.x, tc0.y, uv.z)) * (w12.x * w0.y) +
         texture(tex, vec3(tc0.x, tc12.y, uv.z)) * (w0.x * w12.y) +
-        center_color * (w12.x * w12.y) + 
+        center_color * (w12.x * w12.y) +
         texture(tex, vec3(tc3.x, tc12.y, uv.z)) * (w3.x * w12.y) +
         texture(tex, vec3(tc12.x, tc3.y, uv.z)) * (w12.x * w3.y);
 
@@ -294,7 +303,7 @@ vec4 sample_bilinear_with_custom_weights(sampler2DArray tex, Bilinear bilinear, 
     float w_sum = dot(weights, vec4(1.0));
     s = w_sum < 1e-4 ? vec4(0.0) : s / w_sum;
 
-    return s;    
+    return s;
 }
 
 vec3 demodulate_specular(vec3 specular, vec3 V, vec3 N, float metallic, float roughness)
@@ -311,14 +320,12 @@ vec3 demodulate_specular(vec3 specular, vec3 V, vec3 N, float metallic, float ro
     return specular.rgb / specular_reflectance;
 }
 
-float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float frustum_size)
+float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float inv_frustum_size)
 {
     const float plane_dist_sensitivity = 0.005;
-    float plane_dist = abs(dot((X - Xref), N));
-    return step(plane_dist / frustum_size, plane_dist_sensitivity);
+    float plane_dist = abs(dot(X - Xref, N));
+    return step(plane_dist * inv_frustum_size, plane_dist_sensitivity);
 }
-
-
 
 //====================================================================================
 // Configurable params
@@ -332,7 +339,7 @@ float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float frustum_size)
 #define TEMPORAL_ACCUMULATION_USE_SPEC_MIN_DIST_3X3 0
 
 #define ATROUS_ITERATIONS 5
-#define ATROUS_RADIUS 1 
+#define ATROUS_RADIUS 1
 
 // Randomly offset sample positions to mitigate "ringing"
 #define ATROUS_RANDOM_OFFSET 0
