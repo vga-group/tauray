@@ -349,8 +349,21 @@ void run_demo(context& ctx, demo_scene_data& sd, options& opt)
         transformable* spotlight_t = sd.real_world->get<transformable>(sd.spotlight_entity);
         if(spotlight_t)
         {
-            // TODO: Track controller!
-            spotlight_t->set_direction(normalize(vec3(sin(total_time), cos(total_time*1.618), 1.5)));
+            spotlight_t->set_parent();
+            s.foreach([&](transformable& t, openxr_controller& c){
+                if(c.connected)
+                    spotlight_t->set_parent(&t);
+            });
+            if(!spotlight_t->get_parent())
+            {
+                spotlight_t->set_direction(normalize(vec3(sin(total_time), cos(total_time*1.618), 1.5)));
+                spotlight_t->set_position(vec3(0,1,0));
+            }
+            else
+            {
+                spotlight_t->set_direction(vec3(0,0,-1));
+                spotlight_t->set_position(vec3(0,0,0));
+            }
         }
 
         if(camera_moved || !opt.accumulation)

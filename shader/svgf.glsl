@@ -386,7 +386,7 @@ float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float inv_frustum_siz
 
 #define FINAL_OUTPUT 6
 
-#define MAX_ACCUMULATED_FRAMES 30
+#define MAX_ACCUMULATED_FRAMES 8
 //#define MAX_ACCUMULATED_FRAMES 100
 
 #endif // SVGF_GLSL

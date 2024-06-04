@@ -32,6 +32,10 @@
 namespace tr
 {
 
+// Controller component in the ECS, attached to the same entity that has the
+// controller transform. Transform should be ignored if connected == false.
+struct openxr_controller { bool left; bool connected; bool clicked; bool pressed; };
+
 class openxr: public context
 {
 public:
@@ -106,6 +110,7 @@ private:
 
     bool poll();
     void update_xr_views();
+    void update_xr_controllers();
 
     VkPhysicalDevice get_xr_device();
 
@@ -125,6 +130,12 @@ private:
     XrFrameState frame_state;
     XrSessionState session_state;
     XrCompositionLayerProjection projection_layer;
+
+    XrActionSet action_set;
+    XrAction grip_pose_action[2]; // LR
+    XrAction click_action[2]; // LR
+    XrSpace grip_pose_space[2]; // Why can't this stuff just be in XrActionStatePose ffs...
+
     std::vector<XrCompositionLayerProjectionView> projection_layer_views;
     std::vector<XrCompositionLayerBaseHeader*> projection_layer_headers;
     vkm<vk::Fence> finish_fence;
@@ -145,6 +156,8 @@ private:
     std::vector<vkm<vk::Semaphore>> window_frame_finished;
     std::vector<camera*> cameras;
     std::vector<transformable*> camera_transforms;
+    std::vector<openxr_controller*> controllers;
+    std::vector<transformable*> controller_transforms;
 };
 
 }
