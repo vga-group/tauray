@@ -19,6 +19,8 @@ public:
     struct options
     {
         size_t active_viewport_count = 1;
+        int base_camera_index = 0;
+        int output_layer = 0;
 
         // Set this to 2.2 if running TAA after gamma/srgb correction.
         // Optimally, you'd run TAA after tonemapping but before gamma/srgb
@@ -67,6 +69,8 @@ private:
 
     render_target src, motion, depth;
     std::vector<render_target> dst;
+
+    bool first_frame;
 
     std::optional<texture> color_history[2];
     compute_pipeline pipeline;

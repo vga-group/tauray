@@ -651,7 +651,7 @@ void openxr::init_session()
         XR_TYPE_ACTION_CREATE_INFO,
         nullptr,
         "leftcontrollerclick",
-        XR_ACTION_TYPE_POSE_INPUT,
+        XR_ACTION_TYPE_BOOLEAN_INPUT,
         0, nullptr,
         "Left controller click"
     };

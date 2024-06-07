@@ -29,6 +29,8 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     if(!this->opt.restir_options.assume_unchanged_acceleration_structures)
         this->opt.scene_options.track_prev_tlas = true;
 
+    bool has_taa = this->opt.taa_options.has_value();
+
     gbuffer_spec gs;
     gs.color_present = true;
     if(opt.svgf_options)
@@ -36,6 +38,8 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         gs.diffuse_present = true;
         gs.reflection_present = true;
     }
+    else
+        gs.emission_present = true;
     gs.depth_present = true;
     gs.albedo_present = true;
     gs.material_present = true;
@@ -95,6 +99,20 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
         per_view_stages& pv = per_view[i];
         pv.envmap.emplace(devices[device_index], *scene_update, cur.color, i);
+        if(has_taa)
+        {
+            pv.taa_input_target.emplace(
+                devices[device_index],
+                ctx.get_size(),
+                1,
+                vk::Format::eR16G16B16A16Sfloat,
+                0, nullptr,
+                vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eStorage|vk::ImageUsageFlagBits::eTransferSrc|vk::ImageUsageFlagBits::eSampled,
+                vk::ImageLayout::eGeneral,
+                vk::SampleCountFlagBits::e1
+            );
+        }
 
         raster_stage::options raster_opt;
         raster_opt.clear_color = false;
@@ -139,6 +157,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         this->opt.restir_options.shift_map = restir_stage::RECONNECTION_SHIFT;
         this->opt.restir_options.demodulated_output = opt.svgf_options.has_value();
         this->opt.restir_options.camera_index = i;
+        this->opt.restir_options.expect_taa_jitter = has_taa;
         //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
         pv.restir.emplace(devices[device_index], *scene_update, cur, prev, this->opt.restir_options);
 
@@ -171,15 +190,47 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         std::vector<render_target> display = ctx.get_array_render_target();
         if(is_display_device)
         {
-            this->opt.tonemap_options.limit_to_input_layer = layer_index;
-            this->opt.tonemap_options.limit_to_output_layer = i;
-            this->opt.tonemap_options.transition_output_layout = true;
-            pv.tonemap.emplace(
-                devices[device_index],
-                cur.color,
-                display,
-                this->opt.tonemap_options
-            );
+            if(has_taa)
+            {
+                render_target taa_target = pv.taa_input_target->get_array_render_target(devices[device_index].id);
+                this->opt.tonemap_options.limit_to_input_layer = layer_index;
+                this->opt.tonemap_options.limit_to_output_layer = 0;
+                this->opt.tonemap_options.transition_output_layout = true;
+                pv.tonemap.emplace(
+                    devices[device_index],
+                    cur.color,
+                    taa_target,
+                    this->opt.tonemap_options
+                );
+                this->opt.taa_options->gamma = 2.2f;
+                this->opt.taa_options->base_camera_index = i;
+                this->opt.taa_options->active_viewport_count = 1;
+                this->opt.taa_options->output_layer = i;
+
+                gbuffer_target single = data.current_gbuffer.get_render_target(devices[device_index].id, view);
+                pv.taa.emplace(
+                    devices[device_index],
+                    *scene_update,
+                    taa_target,
+                    single.screen_motion,
+                    single.depth,
+                    display,
+                    *this->opt.taa_options
+                );
+                cur.depth.layout = single.depth.layout;
+            }
+            else
+            {
+                this->opt.tonemap_options.limit_to_input_layer = layer_index;
+                this->opt.tonemap_options.limit_to_output_layer = i;
+                this->opt.tonemap_options.transition_output_layout = true;
+                pv.tonemap.emplace(
+                    devices[device_index],
+                    cur.color,
+                    display,
+                    this->opt.tonemap_options
+                );
+            }
         }
         else
         {
@@ -194,20 +245,54 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
                 vk::ImageLayout::eGeneral,
                 vk::SampleCountFlagBits::e1
             );
+            if(has_taa)
+            {
+                render_target taa_target = pv.taa_input_target->get_array_render_target(devices[device_index].id);
+                this->opt.tonemap_options.transition_output_layout = true;
+                this->opt.tonemap_options.limit_to_input_layer = 0;
+                this->opt.tonemap_options.limit_to_output_layer = 0;
+                this->opt.tonemap_options.output_image_layout = vk::ImageLayout::eTransferSrcOptimal;
+                pv.tonemap.emplace(
+                    devices[device_index],
+                    cur.color,
+                    taa_target,
+                    this->opt.tonemap_options
+                );
 
-            this->opt.tonemap_options.transition_output_layout = true;
-            this->opt.tonemap_options.limit_to_input_layer = 0;
-            this->opt.tonemap_options.limit_to_output_layer = 0;
-            this->opt.tonemap_options.output_image_layout = vk::ImageLayout::eTransferSrcOptimal;
-            std::vector<render_target> output_frames;
-            output_frames.resize(display.size(), pv.tmp_compressed_output_img->get_array_render_target(devices[i].id));
-            pv.tonemap.emplace(
-                devices[device_index],
-                cur.color,
-                output_frames,
-                this->opt.tonemap_options
-            );
+                render_target compressed_target = pv.tmp_compressed_output_img->get_array_render_target(devices[i].id);
+                this->opt.taa_options->gamma = 2.2f;
+                this->opt.taa_options->base_camera_index = i;
+                this->opt.taa_options->active_viewport_count = 1;
+                this->opt.taa_options->output_layer = 0;
+
+                gbuffer_target single = data.current_gbuffer.get_render_target(devices[device_index].id, view);
+                pv.taa.emplace(
+                    devices[device_index],
+                    *scene_update,
+                    taa_target,
+                    single.screen_motion,
+                    single.depth,
+                    compressed_target,
+                    *this->opt.taa_options
+                );
+                cur.depth.layout = single.depth.layout;
+            }
+            else
+            {
+                this->opt.tonemap_options.transition_output_layout = true;
+                this->opt.tonemap_options.limit_to_input_layer = 0;
+                this->opt.tonemap_options.limit_to_output_layer = 0;
+                this->opt.tonemap_options.output_image_layout = vk::ImageLayout::eTransferSrcOptimal;
+                render_target compressed_target = pv.tmp_compressed_output_img->get_array_render_target(devices[i].id);
+                pv.tonemap.emplace(
+                    devices[device_index],
+                    cur.color,
+                    compressed_target,
+                    this->opt.tonemap_options
+                );
+            }
         }
+
 
         // Take out the things we don't need in the previous G-Buffer before
         // copying stuff over.
@@ -285,6 +370,7 @@ void restir_renderer::render()
         deps = pv.restir->run(deps);
         if(pv.svgf) deps = pv.svgf->run(deps);
         deps = pv.tonemap->run(deps);
+        if(pv.taa) deps = pv.taa->run(deps);
         deps = pv.copy->run(deps);
     }
 

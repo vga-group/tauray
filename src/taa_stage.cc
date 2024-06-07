@@ -1,6 +1,7 @@
 #include "taa_stage.hh"
 #include "misc.hh"
 #include "camera.hh"
+#include "log.hh"
 
 namespace
 {
@@ -9,6 +10,8 @@ using namespace tr;
 struct push_constant_buffer
 {
     pivec2 size;
+    int base_camera_index;
+    int output_layer;
     float rounding;
     float gamma;
     float alpha;
@@ -94,6 +97,7 @@ taa_stage::taa_stage(
 
 void taa_stage::init()
 {
+    first_frame = true;
     uvec2 size = src.size;
     for(int i = 0; i < 2; ++i)
         color_history[i].emplace(
@@ -151,9 +155,11 @@ void taa_stage::update(uint32_t frame_index)
 
     push_constant_buffer pc;
     pc.size = src.size;
+    pc.base_camera_index = opt.base_camera_index;
+    pc.output_layer = opt.output_layer;
     pc.rounding = r1_noise(dev->ctx->get_frame_counter());
     pc.gamma = opt.gamma;
-    pc.alpha = opt.alpha;
+    pc.alpha = first_frame ? 1.0f : opt.alpha;
 
     pipeline.push_constants(cb, pc);
     uvec2 wg = (src.size+15u)/16u;
@@ -171,6 +177,7 @@ void taa_stage::update(uint32_t frame_index)
 
     stage_timer.end(cb, dev->id, frame_index);
     end_compute(cb, frame_index);
+    first_frame = false;
 }
 
 }
