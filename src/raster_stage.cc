@@ -16,9 +16,11 @@ using namespace tr;
 // This must match the push_constant_buffer in shader/forward.glsl
 struct push_constant_buffer
 {
+    pivec2 size;
     uint32_t instance_id;
     int32_t base_camera_index;
-    int32_t pad[2];
+    int32_t frame_index;
+    int32_t pad[3];
     gpu_shadow_mapping_parameters sm_params;
     pvec3 ambient_color;
 };
@@ -34,6 +36,8 @@ raster_shader_sources load_sources(const raster_stage::options& opt, const gbuff
     );
     if(!opt.use_probe_visibility)
         defines["SH_INTERPOLATION_TRILINEAR"];
+    if(opt.unjitter_textures)
+        defines["UNJITTER_TEXTURES"];
     gbuf.get_location_defines(defines);
     return {
         {"shader/forward.vert"},
@@ -200,9 +204,11 @@ void raster_stage::update(uint32_t)
 
             const std::vector<scene_stage::instance>& instances = ss->get_instances();
             push_constant_buffer control;
+            control.size = gfx->get_state().output_size;
             control.sm_params = create_shadow_mapping_parameters(opt.filter, *ss);
             control.ambient_color = ss->get_ambient();
             control.base_camera_index = j;
+            control.frame_index = dev->ctx->get_frame_counter();
 
             for(size_t i = 0; i < instances.size(); ++i)
             {

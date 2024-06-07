@@ -94,10 +94,10 @@ dependencies post_processing_renderer::render(dependencies deps)
     if (bmfr)
         deps = bmfr->run(deps);
 
+    dependencies out_deps = tonemap->run(deps);
+
     if(taa)
         deps = taa->run(deps);
-
-    dependencies out_deps = tonemap->run(deps);
 
     if(delay)
         delay_deps[frame_index] = delay->run(deps);
@@ -149,6 +149,7 @@ void post_processing_renderer::init_pipelines()
 
     bool need_pingpong =
         opt.svgf_denoiser.has_value() ||
+        opt.taa.has_value() ||
         /* Add your new post processing pipeline check here */need_temporal;
     int pingpong_index = 0;
 
@@ -163,7 +164,7 @@ void post_processing_renderer::init_pipelines()
                 vk::Format::eR16G16B16A16Sfloat,
                 0, nullptr,
                 vk::ImageTiling::eOptimal,
-                vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc,
+                vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled,
                 vk::ImageLayout::eGeneral,
                 msaa
             ));
@@ -175,7 +176,6 @@ void post_processing_renderer::init_pipelines()
         pingpong_index = 0;
     }
 
-    /*
     auto swap_pingpong = [&](){
         if(!need_pingpong)
             throw std::runtime_error("You did need pingpong...");
@@ -188,7 +188,6 @@ void post_processing_renderer::init_pipelines()
         }
         pingpong_index++;
     };
-    */
 
     // Add the new post processing pipelines here, don't forget to set
     // need_pingpong above to true when the stage is present.
@@ -215,26 +214,40 @@ void post_processing_renderer::init_pipelines()
 
     if(opt.taa.has_value())
     {
+        opt.tonemap.input_msaa = (int)msaa;
+        opt.tonemap.transition_output_layout = true;
+        tonemap.reset(new tonemap_stage(
+            *dev,
+            in_color,
+            out_color,
+            opt.tonemap
+        ));
+
         opt.taa->active_viewport_count = dev->ctx->get_display_count();
-        gbuffer_target tmp = input_target;
-        tmp.color = in_color;
+        std::vector<render_target> display = dev->ctx->get_array_render_target();
+        opt.taa->gamma = opt.tonemap.gamma;
         taa.reset(new taa_stage(
             *dev,
             *ss,
-            tmp,
+            out_color,
+            input_target.screen_motion,
+            input_target.depth,
+            display,
             opt.taa.value()
         ));
     }
-
-    opt.tonemap.input_msaa = (int)msaa;
-    opt.tonemap.transition_output_layout = true;
-    std::vector<render_target> display = dev->ctx->get_array_render_target();
-    tonemap.reset(new tonemap_stage(
-        *dev,
-        in_color,
-        display,
-        opt.tonemap
-    ));
+    else
+    {
+        opt.tonemap.input_msaa = (int)msaa;
+        opt.tonemap.transition_output_layout = true;
+        std::vector<render_target> display = dev->ctx->get_array_render_target();
+        tonemap.reset(new tonemap_stage(
+            *dev,
+            in_color,
+            display,
+            opt.tonemap
+        ));
+    }
 }
 
 void post_processing_renderer::deinit_pipelines()

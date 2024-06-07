@@ -1,139 +1,232 @@
 #version 460
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
-#include "projection.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0) uniform sampler2DArray src_tex;
+layout(binding = 1) uniform sampler2DArray history_tex;
+layout(binding = 2, rgba32f) writeonly uniform image2DArray dst_img;
+layout(binding = 3, rgba32f) writeonly uniform image2DArray history_out_img;
+layout(binding = 4) uniform sampler2DArray motion_tex;
+#ifdef EDGE_DILATION
+layout(binding = 5) uniform sampler2DArray depth_tex;
+#endif
+
+#include "math.glsl"
 #include "color.glsl"
-
-layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
-
-layout(binding = 0, rgba16f) uniform image2DArray current_color;
-layout(binding = 1, rg32f) uniform readonly image2DArray current_screen_motion;
-layout(binding = 2) uniform sampler2DArray previous_color;
-
-layout(binding = 3) buffer jitter_info_buffer
-{
-    vec4 jitter[];
-} jitter_info;
+#include "scene.glsl"
 
 layout(push_constant) uniform push_constant_buffer
 {
     ivec2 size;
-    float blending_ratio;
-} control;
+    float rounding;
+    float gamma;
+    float alpha;
+} pc;
 
-void color_aabb(
-    ivec3 p,
-    vec4 center_color,
-    out vec4 color_min,
-    out vec4 color_max,
-    out vec4 clip_against_color
-){
-    const int count = 9;
-    vec4[count] nbh = vec4[count](
-        imageLoad(current_color, p + ivec3(-1,  1, 0)),
-        imageLoad(current_color, p + ivec3( 0,  1, 0)),
-        imageLoad(current_color, p + ivec3( 1,  1, 0)),
-        imageLoad(current_color, p + ivec3(-1,  0, 0)),
-        center_color,
-        imageLoad(current_color, p + ivec3( 1,  0, 0)),
-        imageLoad(current_color, p + ivec3(-1, -1, 0)),
-        imageLoad(current_color, p + ivec3( 0, -1, 0)),
-        imageLoad(current_color, p + ivec3( 1, -1, 0))
-    );
-    const float[count] nbh_weights = float[count](
-        0.07142857f, 0.14285714f, 0.07142857f,
-        0.14285714f, 0.14285714f, 0.14285714f,
-        0.07142857f, 0.14285714f, 0.07142857f
-    );
+// Just to prevent numerical issues in corner cases.
+const float kdop_dilation = 0.001f;
 
-    // Use variance clipping to find min, max and color to clip towards
-    vec4 mean = vec4(0);
-    vec4 m = vec4(0);
-    [[unroll]] for(int i = 0; i < count; ++i)
+const int axis_count = 7;
+const vec3 axes[] = vec3[](
+    // 14-DOP
+    vec3(1,0,0),
+    vec3(0,1,0),
+    vec3(0,0,1),
+    vec3(0.577350, 0.577350, 0.577350),
+    vec3(-0.577350, 0.577350, 0.577350),
+    vec3(0.577350, -0.577350, 0.577350),
+    vec3(-0.577350, -0.577350, 0.577350)
+    // 22-DOP
+    /*
+    vec3(1.000000, 0.000000, 0.000000),
+    vec3(-0.098489, 0.184576, -0.977871),
+    vec3(0.752374, -0.312087, 0.580116),
+    vec3(-0.098489, -0.969577, -0.224098),
+    vec3(0.330653, 0.717910, -0.612596),
+    vec3(0.752374, 0.656636, -0.052553),
+    vec3(0.591354, 0.440953, 0.675174),
+    vec3(0.698983, -0.670755, -0.248014),
+    vec3(0.176950, -0.538181, -0.824045),
+    vec3(-0.698983, -0.042551, 0.713871),
+    vec3(0.330652, -0.849517, 0.411084)
+    */
+
+    //18-DOP
+    /*
+    vec3(1.000000, 0.000000, 0.000000),
+    vec3(0.645065, -0.740873, 0.187075),
+    vec3(-0.035771, -0.876620, -0.479852),
+    vec3(-0.035771, 0.805214, -0.591904),
+    vec3(-0.645065, -0.759143, -0.087137),
+    vec3(0.644718, -0.462937, -0.608299),
+    vec3(-0.011445, 0.066473, 0.997723),
+    vec3(0.674651, 0.049069, 0.736504),
+    vec3(0.644718, 0.378148, -0.664336)
+    */
+);
+
+vec4 map_color(vec3 color)
+{
+    vec4 result = vec4(color, 1);
+    result.rgb = pow(result.rgb, vec3(pc.gamma));
+#ifdef ANTI_SHIMMER
+    result.r = result.r > 1e-5f ? log(result.r) : -10;
+    result.g = result.g > 1e-5f ? log(result.g) : -10;
+    result.b = result.b > 1e-5f ? log(result.b) : -10;
+#endif
+    return result;
+}
+
+vec3 unmap_color(vec3 color)
+{
+#ifdef ANTI_SHIMMER
+    color = exp(color);
+#endif
+    return pow(color, vec3(1.0f/pc.gamma));
+}
+
+float kdop_intersection(vec3 pos, vec3 dir, vec2 axis_ranges[axis_count])
+{
+    float near = -1e9f;
+    float far = 1e9;
+    [[unroll]] for(int a = 0; a < axis_count; ++a)
     {
-        mean += nbh[i] * nbh_weights[i];
-        m += nbh[i] * nbh[i] * nbh_weights[i];
+        vec2 range = axis_ranges[a];
+        float inv_dir = 1.0f / dot(dir, axes[a]);
+        float proj_pos = dot(pos, axes[a]);
+        float t0 = (range.x - proj_pos) * inv_dir;
+        float t1 = (range.y - proj_pos) * inv_dir;
+
+        float t_min = min(t0, t1);
+        float t_max = max(t0, t1);
+
+        near = max(near, t_min);
+        far = min(far, t_max);
     }
-    vec4 variance = sqrt(max(vec4(0), m - mean * mean));
-    color_min = mean - variance;
-    color_max = mean + variance;
-    clip_against_color = mean;
+    if(near <= far && (near > 0 || far > 0))
+        return near > 0 ? near : far;
+    else return -1;
 }
 
-float intersect_aabb(
-    in vec4 orig,
-    in vec4 dir,
-    in vec4 aabb
-){
-    vec4 reciprocal_dir = 1.0f / dir;
-    vec4 pos = ((-aabb) - orig) * reciprocal_dir;
-    vec4 neg = (aabb - orig) * reciprocal_dir;
+vec4 bicubic_filter(sampler2DArray tex, vec3 uv)
+{
+    vec2 texture_size = vec2(textureSize(tex, 0).xy);
+    vec4 size_params = vec4(1.0 / vec2(texture_size), vec2(texture_size));
+    vec2 pos = size_params.zw * uv.xy;
+    vec2 center_pos = floor(pos - 0.5) + 0.5;
+    vec2 f = pos - center_pos;
+    vec2 f2 = f * f;
+    vec2 f3 = f * f2;
 
-    float min_x = min(neg.x, pos.x);
-    float min_y = min(neg.y, pos.y);
-    float min_z = min(neg.z, pos.z);
+    float c = 0.5;
+    vec2 w0 =        -c  * f3 +  2.0 * c        * f2 - c * f;
+    vec2 w1 =  (2.0 - c) * f3 - (3.0 - c)       * f2         + 1.0;
+    vec2 w2 = -(2.0 - c) * f3 + (3.0 - 2.0 * c) * f2 + c * f;
+    vec2 w3 =         c  * f3 -               c * f2;
 
-    return max(max(min_x, min_y), min_z);
-}
+    vec2 w12 = w1 + w2;
+    vec2 tc12 = size_params.xy * (center_pos + w2 / w12);
+    vec4 center_color = texture(tex, vec3(tc12.x, tc12.y, uv.z));
 
-vec4 color_aabb_clamp(
-    vec4 aabb_min,
-    vec4 aabb_max,
-    vec4 clip_against_color,
-    vec4 color
-){
-    vec4 aabb_center = (aabb_min + aabb_max) * 0.5f;
-    vec4 dir = clip_against_color - color;
-    vec4 orig = color - aabb_center;
-    vec4 scale = aabb_max - aabb_center;
-    float clamp_blend_factor = clamp(intersect_aabb(orig, dir, scale), 0.0, 1.0);
+    vec2 tc0 = size_params.xy * (center_pos - 1.0);
+    vec2 tc3 = size_params.xy * (center_pos + 2.0);
+    vec4 color = texture(tex, vec3(tc12.x, tc0.y, uv.z)) * (w12.x * w0.y) +
+        texture(tex, vec3(tc0.x, tc12.y, uv.z)) * (w0.x * w12.y) +
+        center_color * (w12.x * w12.y) +
+        texture(tex, vec3(tc3.x, tc12.y, uv.z)) * (w3.x * w12.y) +
+        texture(tex, vec3(tc12.x, tc3.y, uv.z)) * (w12.x * w3.y);
 
-    return mix(color, clip_against_color, clamp_blend_factor);
+    float total_w =  (w12.x * w0.y) + (w0.x * w12.y) + (w12.x * w12.y) + (w3.x * w12.y) + (w12.x * w3.y);
+
+    return color / total_w;
 }
 
 void main()
 {
     ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
-    if(all(lessThan(p.xy, control.size)))
+    if(any(greaterThanEqual(p.xy, pc.size)))
+        return;
+
+    // Read current color
+    vec4 col = texelFetch(src_tex, p, 0);
+    vec4 mapped_col = map_color(col.rgb);
+
+    // Read 3x3 neighbor window and look for color ranges
+    vec2 axis_ranges[axis_count];
+    [[unroll]] for(int a = 0; a < axis_count; ++a)
+        axis_ranges[a] = vec2(dot(mapped_col.rgb, axes[a])) + vec2(-kdop_dilation, kdop_dilation);
+
+    float closest_depth = 1;
+    ivec2 closest_offset = ivec2(0);
+
+    for(int x = -1; x <= 1; ++x)
+    for(int y = -1; y <= 1; ++y)
     {
-        vec4 cur_col = imageLoad(current_color, p);
-        vec4 color_aabb_min = cur_col;
-        vec4 color_aabb_max = cur_col;
-        vec4 clip_against_color = cur_col;
-        color_aabb(p, cur_col, color_aabb_min, color_aabb_max, clip_against_color);
+        vec3 q = vec3(p.x + 0.5f + x, p.y + 0.5f + y, p.z);
+        q.xy /= pc.size;
 
-        vec4 jitter_history = jitter_info.jitter[p.z];
-        vec2 cur_jitter = jitter_history.xy;
-        vec2 prev_jitter = jitter_history.zw;
-
-        if(all(equal(cur_jitter, prev_jitter)))
-            return;
-
-        vec2 motion = vec2(imageLoad(current_screen_motion, p));
-        motion -= (cur_jitter - prev_jitter)*0.5f;
-        motion.y = 1.f - motion.y;
-
-        ivec2 p_motion = ivec2(motion * vec2(control.size));
-
-        if(all(lessThan(motion, vec2(1))) && all(greaterThan(motion, vec2(0))))
+#ifdef EDGE_DILATION
+        // Find closest depth in neighborhood
+        float d = textureLod(depth_tex, q, 0).r;
+        if(d < closest_depth)
         {
-            vec4 prev_col = texture(previous_color, vec3(motion, p.z));
-            vec4 clamped_prev_col = color_aabb_clamp(color_aabb_min, color_aabb_max, clip_against_color, prev_col);
-
-            float blending_ratio = control.blending_ratio;
-
-            //Anti-flicker: reduce blending when near clamping
-            float color_min_lum  = rgb_to_luminance(color_aabb_min.rgb);
-            float color_max_lum  = rgb_to_luminance(color_aabb_max.rgb);
-            float prev_lum = rgb_to_luminance(prev_col.rgb);
-
-            float distance_to_edge = length(vec2(color_min_lum - prev_lum, color_max_lum - prev_lum));
-            float factor = distance_to_edge / (distance_to_edge + color_max_lum - color_min_lum);
-            blending_ratio = 1.0f - clamp((1.0f-blending_ratio) * factor, 0.0f, 1.0f);
-
-            if(!any(isnan(clamped_prev_col)))
-                cur_col = mix(cur_col, clamped_prev_col, blending_ratio);
+            closest_depth = d;
+            closest_offset = ivec2(x, y);
         }
-        imageStore(current_color, p, cur_col);
+#endif
+
+        if(x == 0 && y == 0) continue;
+
+        vec4 c = textureLod(src_tex, q, 0);
+        vec4 mc = map_color(c.rgb);
+
+        // Find ranges in k-DOP axes.
+        [[unroll]] for(int a = 0; a < axis_count; ++a)
+        {
+            float r = dot(mc.rgb, axes[a]);
+            axis_ranges[a].x = min(r-kdop_dilation, axis_ranges[a].x);
+            axis_ranges[a].y = max(r+kdop_dilation, axis_ranges[a].y);
+        }
     }
+
+    // Get motion vector and remove jittering.
+    vec2 motion = texelFetch(motion_tex, ivec3(p.xy + closest_offset, p.z), 0).xy;
+    camera_pair cams = camera.pairs[p.z];
+    if(any(isnan(motion.xy)))
+    { // Hit envmap
+        vec2 uv = p.xy + 0.5f;
+        uv.y = pc.size.y - uv.y;
+
+        vec3 origin, dir;
+        get_camera_ray(cams.current, uv, vec2(pc.size), vec2(0), origin, dir);
+        motion.xy = get_camera_projected_direction(cams.previous, dir).xy;
+    }
+    motion.xy += (cams.previous.pan.zw - cams.current.pan.zw) * 0.5f;
+    vec2 pixel_size = 1.0f / pc.size;
+    vec2 motion_uv = vec2(motion.x, 1.0f-motion.y) - vec2(closest_offset) * pixel_size;
+
+    if(motion_uv.x < 0 || motion_uv.y < 0 || motion_uv.x > 1 + 2.0f * pixel_size.x || motion_uv.y > 1 + 2.0f * pixel_size.y)
+    {
+        imageStore(dst_img, p, col);
+        imageStore(history_out_img, p, col);
+        return;
+    }
+
+    // Reconstruct previous color for this pixel
+    vec4 prev_col = max(bicubic_filter(history_tex, vec3(motion_uv, p.z)), vec4(0));
+    vec4 mapped_prev_col = map_color(prev_col.rgb);
+
+    // Clip previous color to min/max range
+    vec3 delta = mapped_prev_col.rgb - mapped_col.rgb;
+    float len = clamp(kdop_intersection(mapped_col.rgb, delta, axis_ranges), 0, 1);
+    mapped_prev_col.rgb = mapped_col.rgb + len * delta;
+
+    // Mix history with current frame
+    mapped_col.rgb = mix(mapped_prev_col.rgb, mapped_col.rgb, pc.alpha);
+    col.rgb = unmap_color(mapped_col.rgb);
+
+    imageStore(dst_img, p, col);
+    imageStore(history_out_img, p, col);
 }

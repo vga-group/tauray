@@ -79,7 +79,8 @@ void raster_renderer::init_common_resources()
 
     spec.set_all_usage(img_usage);
     post_processing->set_gbuffer_spec(spec);
-    spec.depth_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
+    spec.depth_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment|
+        vk::ImageUsageFlagBits::eSampled;
 
     gbuffer = gbuffer_texture(
         d,

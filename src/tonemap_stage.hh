@@ -41,13 +41,20 @@ public:
     };
 
     tonemap_stage(
-        device& dev, 
+        device& dev,
         render_target& input,
         std::vector<render_target>& output_frames,
         const options& opt
     );
 
+    tonemap_stage(
+        device& dev,
+        render_target& input,
+        render_target& output,
+        const options& opt
+    );
 private:
+    void init(std::vector<render_target>& output_frames);
     void update(uint32_t frame_index) override;
 
     descriptor_set desc;
