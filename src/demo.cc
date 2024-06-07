@@ -209,11 +209,21 @@ void run_demo(context& ctx, demo_scene_data& sd, options& opt)
                 }
                 recreate_renderer = true;
                 camera_moved = true;
+                if(opt.fov)
+                    s.get<camera>(cam_id)->set_fov(opt.fov);
             }
         }
 
         const int frame_index = (int)(total_time / frame_duration) % sd.frame_entities.size();
-        if(frame_index != last_update_frame)
+        if(!opt.show_dude)
+        {
+            if(last_anim_entity != INVALID_ENTITY)
+            {
+                s.remove(last_anim_entity);
+                last_anim_entity = INVALID_ENTITY;
+            }
+        }
+        else if(frame_index != last_update_frame)
         {
             entity new_ent = sd.frame_entities[frame_index];
 
@@ -259,7 +269,7 @@ void run_demo(context& ctx, demo_scene_data& sd, options& opt)
         case SDL_KEYUP:
             if(event.type == SDL_KEYDOWN)
             {
-                if(event.key.keysym.sym == SDLK_ESCAPE) opt.running = false;
+                //if(event.key.keysym.sym == SDLK_ESCAPE) opt.running = false;
                 if(event.key.keysym.sym == SDLK_RETURN) paused = !paused;
                 if(event.key.keysym.sym == SDLK_PAGEUP)
                 {

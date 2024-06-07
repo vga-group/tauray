@@ -560,6 +560,10 @@
         0, \
         {"sun", 0}, \
         {"flashlight", 1} \
+    ) \
+    TR_BOOL_OPT(show_dude, \
+        "Show 3d scanned dude", \
+        true \
     )
 //==============================================================================
 // END OF OPTIONS

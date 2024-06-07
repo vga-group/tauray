@@ -450,7 +450,7 @@ void evaluate_ray(
             else
             {
                 primary_lobes = lobes;
-#ifndef INDIRECT_CLAMP_FIRST_BOUNCE
+#ifdef INDIRECT_CLAMP_FIRST_BOUNCE
                 radiance *= clamp_contribution_mul(radiance);
 #endif
             }
