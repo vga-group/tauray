@@ -11,6 +11,7 @@
 #include "shadow_map_stage.hh"
 #include "gbuffer_copy_stage.hh"
 #include "svgf_stage.hh"
+#include "taa_stage.hh"
 #include "device_transfer.hh"
 #include "sh_renderer.hh"
 #include <variant>
@@ -29,6 +30,7 @@ public:
         // DDISH-GI rendering is used.
         restir_stage::options restir_options;
         std::optional<svgf_stage::options> svgf_options;
+        std::optional<taa_stage::options> taa_options;
         tonemap_stage::options tonemap_options;
         sh_renderer::options sh_options; // For raster hybrid
         shadow_map_filter sm_filter; // For raster hybrid
@@ -63,6 +65,7 @@ private:
 
     struct per_view_stages
     {
+        std::optional<texture> taa_input_target;
         std::optional<texture> tmp_compressed_output_img;
 
         std::optional<envmap_stage> envmap;
@@ -71,6 +74,7 @@ private:
         std::optional<svgf_stage> svgf;
         std::vector<std::unique_ptr<device_transfer_interface>> transfer;
         std::optional<tonemap_stage> tonemap;
+        std::optional<taa_stage> taa;
         std::optional<gbuffer_copy_stage> copy;
     };
 

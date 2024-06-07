@@ -21,13 +21,16 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
         return false;
     if(data->messageIdNumber == 0x912ddde2) // FIXME: Timer ID error on windows
         return false;
+    if(data->messageIdNumber == 0x211e533b) // Caused by Monado OpenXR driver
+        return false;
+
     (void)severity;
     (void)type;
     (void)pUserData;
     TR_ERR(data->pMessage);
 
     // Handy assert for debugging where validation errors happen
-    //assert(severity != VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
+    assert(severity != VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
     return false;
 }
 

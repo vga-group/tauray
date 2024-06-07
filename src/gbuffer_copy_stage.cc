@@ -18,11 +18,20 @@ gbuffer_copy_stage::gbuffer_copy_stage(
         copy_timer.begin(cb, dev.id, i);
 
         in.visit([&](render_target& target){
-            target.transition_layout_temporary(cb, vk::ImageLayout::eTransferSrcOptimal, true, true);
+            transition_image_layout(
+                cb, target.image, target.format, target.layout, vk::ImageLayout::eTransferSrcOptimal, 0, 1,
+                force_input_layer >= 0 ? force_input_layer : target.base_layer,
+                force_input_layer >= 0 ? 1 : target.layer_count,
+                true, true
+            );
         });
         out.visit([&](render_target& target){
-            target.layout = vk::ImageLayout::eUndefined;
-            target.transition_layout_temporary(cb, vk::ImageLayout::eTransferDstOptimal, true, true);
+            transition_image_layout(
+                cb, target.image, target.format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 0, 1,
+                force_output_layer >= 0 ? force_output_layer : target.base_layer,
+                force_output_layer >= 0 ? 1 : target.layer_count,
+                true, true
+            );
         });
 
         for(size_t j = 0; j < MAX_GBUFFER_ENTRIES; ++j)
@@ -51,16 +60,20 @@ gbuffer_copy_stage::gbuffer_copy_stage(
         }
 
         in.visit([&](render_target& target){
-            vk::ImageLayout old_layout = target.layout;
-            target.layout = vk::ImageLayout::eTransferSrcOptimal;
-            target.transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true, true);
-            target.layout = old_layout;
+            transition_image_layout(
+                cb, target.image, target.format, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eGeneral, 0, 1,
+                force_input_layer >= 0 ? force_input_layer : target.base_layer,
+                force_input_layer >= 0 ? 1 : target.layer_count,
+                true, true
+            );
         });
         out.visit([&](render_target& target){
-            vk::ImageLayout old_layout = target.layout;
-            target.layout = vk::ImageLayout::eTransferDstOptimal;
-            target.transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true, true);
-            target.layout = old_layout;
+            transition_image_layout(
+                cb, target.image, target.format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eGeneral, 0, 1,
+                force_output_layer >= 0 ? force_output_layer : target.base_layer,
+                force_output_layer >= 0 ? 1 : target.layer_count,
+                true, true
+            );
         });
 
         copy_timer.end(cb, dev.id, i);

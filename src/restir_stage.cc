@@ -312,6 +312,8 @@ restir_stage::restir_stage(
         defines["DEMODULATE_OUTPUT"];
     if(this->opt.regularization_gamma > 0)
         defines["PATH_SPACE_REGULARIZATION"] = std::to_string(this->opt.regularization_gamma);
+    if(this->opt.expect_taa_jitter)
+        defines["CANCEL_TAA_JITTER"];
 
     if(c.temporal_gradient)
         defines["TEMPORAL_GRADIENTS"];
@@ -809,11 +811,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_i
         pc.camera_index = opt.camera_index;
         pc.sample_index = frame_counter * opt.passes + pass_index;
 
-        uint32_t tmp_seed = pc.sample_index;
-        pc.jitter = clamp(vec2(
-            generate_uniform_random(tmp_seed),
-            generate_uniform_random(tmp_seed)
-        ), vec2(0.05f), vec2(0.95f))-0.5f;
+        pc.jitter = clamp(r2_noise(vec2(pc.sample_index)), vec2(0.05f), vec2(0.95f))-0.5f;
         pc.permutation = opt.temporal_permutation;
 
         temporal.push_constants(cmd, pc);

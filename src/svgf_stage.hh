@@ -73,9 +73,6 @@ private:
     timer atrous_timer;
 
     sampler my_sampler;
-
-    std::vector<vec4> jitter_history;
-    gpu_buffer jitter_buffer;
     scene_stage* ss;
     uint32_t scene_state_counter;
 

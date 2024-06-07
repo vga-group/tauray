@@ -1,5 +1,6 @@
 #include "tonemap_stage.hh"
 #include "misc.hh"
+#include "log.hh"
 #include <numeric>
 
 namespace
@@ -61,11 +62,11 @@ tonemap_stage::tonemap_stage(
 }
 
 tonemap_stage::tonemap_stage(
-    device& dev, 
+    device& dev,
     render_target& input,
     render_target& output,
     const options& opt
-):  single_device_stage(dev, single_device_stage::COMMAND_BUFFER_PER_FRAME),
+):  single_device_stage(dev),
     desc(dev),
     comp(dev),
     opt(opt),

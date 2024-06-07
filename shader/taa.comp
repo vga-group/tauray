@@ -20,13 +20,15 @@ layout(binding = 5) uniform sampler2DArray depth_tex;
 layout(push_constant) uniform push_constant_buffer
 {
     ivec2 size;
+    int base_camera_index;
+    int output_layer;
     float rounding;
     float gamma;
     float alpha;
 } pc;
 
 // Just to prevent numerical issues in corner cases.
-const float kdop_dilation = 0.001f;
+const float kdop_dilation = 0.00001f;
 
 const int axis_count = 7;
 const vec3 axes[] = vec3[](
@@ -193,7 +195,7 @@ void main()
 
     // Get motion vector and remove jittering.
     vec2 motion = texelFetch(motion_tex, ivec3(p.xy + closest_offset, p.z), 0).xy;
-    camera_pair cams = camera.pairs[p.z];
+    camera_pair cams = camera.pairs[pc.base_camera_index + p.z];
     if(any(isnan(motion.xy)))
     { // Hit envmap
         vec2 uv = p.xy + 0.5f;
@@ -209,7 +211,7 @@ void main()
 
     if(motion_uv.x < 0 || motion_uv.y < 0 || motion_uv.x > 1 + 2.0f * pixel_size.x || motion_uv.y > 1 + 2.0f * pixel_size.y)
     {
-        imageStore(dst_img, p, col);
+        imageStore(dst_img, ivec3(p.xy, p.z + pc.output_layer), col);
         imageStore(history_out_img, p, col);
         return;
     }
@@ -227,6 +229,6 @@ void main()
     mapped_col.rgb = mix(mapped_prev_col.rgb, mapped_col.rgb, pc.alpha);
     col.rgb = unmap_color(mapped_col.rgb);
 
-    imageStore(dst_img, p, col);
+    imageStore(dst_img, ivec3(p.xy, p.z + pc.output_layer), col);
     imageStore(history_out_img, p, col);
 }

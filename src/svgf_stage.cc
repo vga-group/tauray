@@ -49,7 +49,6 @@ svgf_stage::svgf_stage(
     firefly_timer(dev, "svgf firefly suppression"),
     temporal_timer(dev, "svgf temporal"),
     atrous_timer(dev, "svgf atrous"),
-    jitter_buffer(dev, sizeof(pvec4) * 1, vk::BufferUsageFlagBits::eStorageBuffer),
     uniforms(dev, sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer),
     ss(&ss),
     scene_state_counter(0),
@@ -102,23 +101,6 @@ void svgf_stage::update(uint32_t frame_index)
 {
     if(ss->check_update(scene_stage::ENVMAP, scene_state_counter))
         record_command_buffers();
-
-    bool existing = jitter_history.size() != 0;
-    size_t viewport_count = opt.active_viewport_count;
-    jitter_history.resize(viewport_count);
-
-    scene* cur_scene = ss->get_scene();
-    std::vector<entity> cameras = get_sorted_cameras(*cur_scene);
-    for (size_t i = 0; i < viewport_count; ++i)
-    {
-        vec4& v = jitter_history[i];
-        vec2 cur_jitter = cur_scene->get<camera>(cameras[i])->get_jitter();
-        vec2 prev_jitter = v;
-        if (!existing) prev_jitter = cur_jitter;
-        v = vec4(cur_jitter, prev_jitter);
-    }
-
-    jitter_buffer.update(frame_index, jitter_history.data());
 
     uint32_t frame_counter = dev->ctx->get_frame_counter();
     uniforms.update(frame_index, &frame_counter, 0, sizeof(uint32_t));
@@ -177,7 +159,6 @@ void svgf_stage::record_command_buffers()
 
         svgf_timer.begin(cb, dev->id, i);
 
-        jitter_buffer.upload(dev->id, i, cb);
         uniforms.upload(dev->id, i, cb);
 
         scene* cur_scene = ss->get_scene();
@@ -235,7 +216,6 @@ void svgf_stage::record_command_buffers()
         temporal_desc.set_image(dev->id, "out_color", {{{}, atrous_diffuse_pingpong[1].view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "out_specular", {{{}, atrous_specular_pingpong[1].view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_image(dev->id, "in_prev_depth", {{my_sampler.get_sampler(dev->id), prev_features.depth.view, vk::ImageLayout::eGeneral}});
-        temporal_desc.set_buffer("jitter_info", jitter_buffer);
         temporal_desc.set_image(dev->id, "previous_specular", {{my_sampler.get_sampler(dev->id), svgf_spec_hist.view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "in_material", {{{}, input_features.material.view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "in_depth", { {my_sampler.get_sampler(dev->id), input_features.depth.view, vk::ImageLayout::eGeneral} });

@@ -662,6 +662,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if(re_opt.restir_options.shade_fake_indirect)
                     re_opt.scene_options.alloc_sh_grids = true;
 
+                if(opt.taa.sequence_length > 1)
+                    re_opt.taa_options = taa;
+
                 if (opt.denoiser == options::denoiser_type::SVGF)
                 {
                     svgf_stage::options svgf_opt{};
