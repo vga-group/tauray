@@ -38,6 +38,9 @@ public:
         vk::ImageLayout output_layout = vk::ImageLayout::eColorAttachmentOptimal;
 
         unsigned base_camera_index = 0;
+
+        // Attempts to undo TAA jitter for textures, increasing their clarity.
+        bool unjitter_textures = false;
     };
 
     raster_stage(

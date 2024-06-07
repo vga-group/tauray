@@ -159,6 +159,11 @@ std::vector<vec2> get_camera_jitter_sequence(
 
 size_t hash_combine(size_t a, size_t b);
 
+
+float r1_noise(float x);
+vec2 r2_noise(vec2 x);
+vec3 r3_noise(vec3 x);
+
 }
 
 #include "math.tcc"

@@ -4,6 +4,9 @@
 
 #define CALC_PREV_VERTEX_POS
 #include "forward.glsl"
+
+#define SHADOW_MAPPING_SCREEN_COORD (ivec2(gl_FragCoord.xy) + camera.pairs[control.base_camera_index + gl_ViewIndex].current.pan.zw * control.size * 128.0f)
+
 #include "ggx.glsl"
 #include "spherical_harmonics.glsl"
 #include "gbuffer.glsl"
@@ -31,6 +34,13 @@ vertex_data get_vertex_data()
     v.smooth_normal = normalize(in_normal);
     v.mapped_normal = v.smooth_normal;
     v.uv = in_uv;
+
+#ifdef UNJITTER_TEXTURES
+    vec2 jitter = camera.pairs[control.base_camera_index + gl_ViewIndex].current.pan.zw;
+    jitter = jitter * 0.5f * vec2(control.size);
+    v.uv.xy = v.uv.xy - dFdxFine(v.uv.xy) * jitter.x + dFdyFine(v.uv.xy) * jitter.y;
+#endif
+
     v.tangent = in_tangent;
     v.bitangent = in_bitangent;
     v.back_facing = !gl_FrontFacing;

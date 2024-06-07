@@ -56,15 +56,39 @@ tonemap_stage::tonemap_stage(
     index_data(dev, sizeof(tonemap_info_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
     tonemap_timer(dev, "tonemap (" + std::to_string(input.layer_count) + " viewports)")
 {
+    tonemap_stage::init(output_frames);
+    input.layout = vk::ImageLayout::eGeneral;
+}
+
+tonemap_stage::tonemap_stage(
+    device& dev, 
+    render_target& input,
+    render_target& output,
+    const options& opt
+):  single_device_stage(dev, single_device_stage::COMMAND_BUFFER_PER_FRAME),
+    desc(dev),
+    comp(dev),
+    opt(opt),
+    input_target(input),
+    index_data(dev, sizeof(tonemap_info_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
+    tonemap_timer(dev, "tonemap (" + std::to_string(input.layer_count) + " viewports)")
+{
+    std::vector<render_target> output_frames{output};
+    tonemap_stage::init(output_frames);
+    input.layout = vk::ImageLayout::eGeneral;
+    output.layout = output_frames[0].layout;
+}
+
+void tonemap_stage::init(std::vector<render_target>& output_frames)
+{
     shader_source src = load_shader_source(opt);
     desc.add(src);
-    desc.reset(dev.id, MAX_FRAMES_IN_FLIGHT * (uint32_t)output_frames.size());
+    desc.reset(dev->id, MAX_FRAMES_IN_FLIGHT * (uint32_t)output_frames.size());
     comp.init(src, {&desc});
-    input.layout = vk::ImageLayout::eGeneral;
 
-    if(this->opt.reorder.size() != input.layer_count)
+    if(this->opt.reorder.size() != input_target.layer_count)
     {
-        this->opt.reorder.resize(input.layer_count);
+        this->opt.reorder.resize(input_target.layer_count);
         std::iota(this->opt.reorder.begin(), this->opt.reorder.end(), 0);
 
         if(opt.limit_to_input_layer >= 0)
@@ -75,11 +99,11 @@ tonemap_stage::tonemap_stage(
         {}, this->opt.reorder.size() * sizeof(uint32_t),
         vk::BufferUsageFlagBits::eStorageBuffer, vk::SharingMode::eExclusive
     );
-    output_reorder_buf = create_buffer(dev, info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, this->opt.reorder.data());
+    output_reorder_buf = create_buffer(*dev, info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, this->opt.reorder.data());
 
     this->opt.output_image_layout =
         opt.output_image_layout == vk::ImageLayout::eUndefined ?
-        dev.ctx->get_expected_display_layout() : opt.output_image_layout;
+        dev->ctx->get_expected_display_layout() : opt.output_image_layout;
 
     for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     for(uint32_t j = 0; j < output_frames.size(); ++j)
@@ -90,9 +114,9 @@ tonemap_stage::tonemap_stage(
 
         uint32_t cb_index = get_command_buffer_index(i, j);
         desc.set_buffer(cb_index, "info", index_data);
-        desc.set_image(dev.id, cb_index, "in_color", {{{}, input_target.view, vk::ImageLayout::eGeneral}});
-        desc.set_image(dev.id, cb_index, "out_color", {{{}, output.view, vk::ImageLayout::eGeneral}});
-        desc.set_buffer(dev.id, cb_index, "output_reorder", {{output_reorder_buf, 0, VK_WHOLE_SIZE}});
+        desc.set_image(dev->id, cb_index, "in_color", {{{}, input_target.view, vk::ImageLayout::eGeneral}});
+        desc.set_image(dev->id, cb_index, "out_color", {{{}, output.view, vk::ImageLayout::eGeneral}});
+        desc.set_buffer(dev->id, cb_index, "output_reorder", {{output_reorder_buf, 0, VK_WHOLE_SIZE}});
 
         // Record command buffer
         vk::CommandBuffer cb = begin_compute();
@@ -104,9 +128,9 @@ tonemap_stage::tonemap_stage(
             output.transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true);
         }
 
-        index_data.upload(dev.id, i, cb);
+        index_data.upload(dev->id, i, cb);
         bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
-        tonemap_timer.begin(cb, dev.id, i);
+        tonemap_timer.begin(cb, dev->id, i);
 
         comp.bind(cb);
         comp.set_descriptors(cb, desc, cb_index, 0);
@@ -114,7 +138,7 @@ tonemap_stage::tonemap_stage(
         uvec2 wg = (output.size+15u)/16u;
         cb.dispatch(wg.x, wg.y, opt.limit_to_output_layer >= 0 ? 1 : input.layer_count);
 
-        tonemap_timer.end(cb, dev.id, i);
+        tonemap_timer.end(cb, dev->id, i);
         if(opt.transition_output_layout)
         {
             output.layout = vk::ImageLayout::eGeneral;
@@ -122,7 +146,6 @@ tonemap_stage::tonemap_stage(
         }
         end_compute(cb, cb_index);
     }
-    input.layout = vk::ImageLayout::eGeneral;
     for(render_target& out: output_frames)
         out.layout = opt.transition_output_layout ? this->opt.output_image_layout : vk::ImageLayout::eGeneral;
 }

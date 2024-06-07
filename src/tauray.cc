@@ -385,7 +385,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     scene_options.group_strategy = opt.as_strategy;
 
     taa_stage::options taa;
-    taa.blending_ratio = 1.0f - 1.0f/opt.taa.sequence_length;
+    taa.alpha = 1.0f/opt.taa.sequence_length;
+    taa.anti_shimmer = opt.taa.anti_shimmer;
+    taa.edge_dilation = opt.taa.edge_dilation;
 
     rt_camera_stage::options rc_opt;
     s.foreach([&](camera& cam){ rc_opt.projection = cam.get_projection_type(); });
@@ -570,7 +572,10 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rr_opt.msaa_samples = opt.samples_per_pixel;
                 rr_opt.sample_shading = opt.sample_shading;
                 if(opt.taa.sequence_length != 0)
+                {
                     rr_opt.post_process.taa = taa;
+                    rr_opt.unjitter_textures = true;
+                }
                 rr_opt.post_process.tonemap = tonemap;
                 rr_opt.filter = sm_filter;
                 rr_opt.z_pre_pass = opt.use_z_pre_pass;

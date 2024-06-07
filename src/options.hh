@@ -410,6 +410,8 @@
     TR_STRUCT_OPT(taa, \
         "Sets parameters for temporal antialiasing.", \
         TR_STRUCT_OPT_INT(sequence_length, 0, 1, INT_MAX) \
+        TR_STRUCT_OPT_BOOL(edge_dilation, true) \
+        TR_STRUCT_OPT_BOOL(anti_shimmer, false) \
     )\
     TR_ENUM_OPT(denoiser, options::denoiser_type, \
         "Selects the denoiser to use.", \

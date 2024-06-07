@@ -332,4 +332,19 @@ size_t hash_combine(size_t a, size_t b)
     return a ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
 }
 
+float r1_noise(float x)
+{
+    return fract(x * 0.6180339887498948);
+}
+
+vec2 r2_noise(vec2 x)
+{
+    return fract(x * vec2(0.754877669f, 0.569840296f));
+}
+
+vec3 r3_noise(vec3 x)
+{
+    return fract(x * vec3(0.819172513f, 0.671043606f, 0.549700478f));
+}
+
 }
