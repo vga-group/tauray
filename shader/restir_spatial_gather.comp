@@ -20,6 +20,8 @@ layout(push_constant) uniform push_constant_buffer
     uint update_sample_color;
 } pc;
 
+layout(binding = 14) uniform sampler2D emission_tex;
+
 // These buffers are SUPER overloaded.
 // These names are for demodulated output, but they also contain demodulated
 // input or non-demodulated input/output.
@@ -86,7 +88,8 @@ void main()
 
     float canonical_resampling_mis_weight = uintBitsToFloat(selection).g;
 
-    sum_contribution sc = init_sum_contribution(canonical_domain.mat.emission);
+    vec3 canonical_emission = sample_gbuffer_emission(emission_tex, p);
+    sum_contribution sc = init_sum_contribution(canonical_emission);
     vec4 canonical_value = imageLoad(in_color, p);
     vec4 out_value = canonical_value;
 

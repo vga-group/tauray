@@ -654,13 +654,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.restir_options.sampling_weights = sampling_weights;
                 re_opt.restir_options.max_bounces = opt.max_ray_depth-1;
                 re_opt.restir_options.regularization_gamma = opt.regularization;
-                re_opt.restir_options.shade_all_explicit_lights = true;
-                re_opt.restir_options.shade_fake_indirect = true;
-                if(!has_sh_grids)
-                    re_opt.restir_options.shade_fake_indirect = false;
-
-                if(re_opt.restir_options.shade_fake_indirect)
-                    re_opt.scene_options.alloc_sh_grids = true;
+                re_opt.restir_options.shade_all_explicit_lights = false;
+                re_opt.restir_options.shade_fake_indirect = false;
 
                 if(opt.taa.sequence_length > 1)
                     re_opt.taa_options = taa;

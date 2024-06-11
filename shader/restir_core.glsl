@@ -867,12 +867,11 @@ bool get_intersection_info(
                 candidate.radiance_estimate = vec3(0);
                 return false;
             }
-            payload.primitive_index = int(new_id);
+            payload.primitive_id = int(new_id);
         }
         else
 #endif
         pl = point_lights.lights[payload.primitive_id];
-
 
         vec3 hit_pos = ray_origin + ray_direction * payload.barycentrics.x;
         // No worries, radius cannot be zero -- we couldn't hit the light here

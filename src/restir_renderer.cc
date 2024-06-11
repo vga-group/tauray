@@ -38,8 +38,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         gs.diffuse_present = true;
         gs.reflection_present = true;
     }
-    else
-        gs.emission_present = true;
+    else gs.emission_present = true;
     gs.depth_present = true;
     gs.albedo_present = true;
     gs.material_present = true;
