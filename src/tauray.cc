@@ -654,6 +654,20 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.restir_options.sampling_weights = sampling_weights;
                 re_opt.restir_options.max_bounces = opt.max_ray_depth-1;
                 re_opt.restir_options.regularization_gamma = opt.regularization;
+                re_opt.restir_options.max_confidence = opt.restir.max_confidence;
+                re_opt.restir_options.temporal_reuse = opt.restir.temporal_reuse;
+                re_opt.restir_options.canonical_samples = opt.restir.canonical_samples;
+                re_opt.restir_options.spatial_samples = opt.restir.spatial_samples;
+                re_opt.restir_options.spatial_sample_oriented_disk = opt.restir.sample_spatial_disk;
+                re_opt.restir_options.shift_map = (restir_stage::shift_mapping_type)opt.restir.shift_mapping_type;
+                re_opt.restir_options.passes = opt.restir.passes;
+                re_opt.restir_options.reconnection_scale = opt.restir.reconnection_scale;
+                re_opt.restir_options.max_spatial_search_radius = opt.restir.max_search_radius;
+                re_opt.restir_options.min_spatial_search_radius = opt.restir.min_search_radius;
+                re_opt.restir_options.assume_unchanged_material = opt.restir.assume_unchanged_material;
+                re_opt.restir_options.assume_unchanged_acceleration_structures = opt.restir.assume_unchanged_acceleration_structures;
+                re_opt.restir_options.assume_unchanged_reconnection_radiance = opt.restir.assume_unchanged_reconnection_radiance;
+                re_opt.restir_options.assume_unchanged_temporal_visibility = opt.restir.assume_unchanged_temporal_visibility;
                 re_opt.restir_options.shade_all_explicit_lights = false;
                 re_opt.restir_options.shade_fake_indirect = false;
 

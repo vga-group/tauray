@@ -148,12 +148,6 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         cur.color.layout = vk::ImageLayout::eGeneral;
 
         this->opt.restir_options.max_bounces = max(this->opt.restir_options.max_bounces, 1u);
-        this->opt.restir_options.temporal_reuse = true;
-        this->opt.restir_options.spatial_sample_oriented_disk = false;
-        this->opt.restir_options.spatial_samples = 2;
-        this->opt.restir_options.assume_unchanged_reconnection_radiance = false;
-        this->opt.restir_options.assume_unchanged_temporal_visibility = false;
-        this->opt.restir_options.shift_map = restir_stage::RECONNECTION_SHIFT;
         this->opt.restir_options.demodulated_output = opt.svgf_options.has_value();
         this->opt.restir_options.camera_index = i;
         this->opt.restir_options.expect_taa_jitter = has_taa;

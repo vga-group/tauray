@@ -556,6 +556,23 @@
         TR_STRUCT_OPT_FLOAT(search_radius, 32, 0, 500) \
         TR_STRUCT_OPT_BOOL(shared_visibility, false) \
         TR_STRUCT_OPT_BOOL(sample_visibility, false) \
+    ) \
+    TR_STRUCT_OPT(restir, \
+        "Parameters for ReSTIR", \
+        TR_STRUCT_OPT_FLOAT(max_confidence, 16, 0, FLT_MAX) \
+        TR_STRUCT_OPT_BOOL(temporal_reuse, true) \
+        TR_STRUCT_OPT_INT(canonical_samples, 1, 1, INT_MAX) \
+        TR_STRUCT_OPT_INT(spatial_samples, 2, 0, 16) \
+        TR_STRUCT_OPT_INT(passes, 1, 0, INT_MAX) \
+        TR_STRUCT_OPT_BOOL(sample_spatial_disk, true) \
+        TR_STRUCT_OPT_INT(shift_mapping_type, 0, 0, 2) \
+        TR_STRUCT_OPT_FLOAT(reconnection_scale, 2, 0, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(max_search_radius, 32, 0, INT_MAX) \
+        TR_STRUCT_OPT_FLOAT(min_search_radius, 1, 0, INT_MAX) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_material, false) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_acceleration_structures, false) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_reconnection_radiance, false) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_temporal_visibility, false) \
     )
 //==============================================================================
 // END OF OPTIONS
