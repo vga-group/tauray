@@ -171,13 +171,52 @@ struct external_semaphore_host_buffer: public device_transfer_interface
                     t.info.extent
                 );
 
+                vk::ImageMemoryBarrier img_barrier(
+                    {}, vk::AccessFlagBits::eTransferRead,
+                    t.src_layout,
+                    vk::ImageLayout::eTransferSrcOptimal,
+                    VK_QUEUE_FAMILY_IGNORED,
+                    VK_QUEUE_FAMILY_IGNORED,
+                    t.dst,
+                    {
+                        t.info.srcSubresource.aspectMask,
+                        t.info.srcSubresource.mipLevel,
+                        1,
+                        t.info.srcSubresource.baseArrayLayer,
+                        t.info.srcSubresource.layerCount
+                    }
+                );
+
+                if(t.src_layout != vk::ImageLayout::eTransferSrcOptimal)
+                {
+                    f.host_to_dst_cb->pipelineBarrier(
+                        vk::PipelineStageFlagBits::eTopOfPipe,
+                        vk::PipelineStageFlagBits::eTransfer,
+                        {},
+                        {}, {},
+                        img_barrier
+                    );
+                }
+
                 f.src_to_host_cb->copyImageToBuffer(
                     t.src, vk::ImageLayout::eTransferSrcOptimal,
                     f.transfer.src_to_host, 1, &src_region
                 );
 
+                if(t.src_layout != vk::ImageLayout::eTransferSrcOptimal)
+                {
+                    std::swap(img_barrier.newLayout, img_barrier.oldLayout);
+                    f.host_to_dst_cb->pipelineBarrier(
+                        vk::PipelineStageFlagBits::eTransfer,
+                        vk::PipelineStageFlagBits::eBottomOfPipe,
+                        {},
+                        {}, {},
+                        img_barrier
+                    );
+                }
+
                 // HOST -> DST
-                vk::ImageMemoryBarrier img_barrier(
+                img_barrier = vk::ImageMemoryBarrier(
                     {}, vk::AccessFlagBits::eTransferWrite,
                     vk::ImageLayout::eUndefined,
                     vk::ImageLayout::eTransferDstOptimal,
@@ -217,7 +256,7 @@ struct external_semaphore_host_buffer: public device_transfer_interface
                 img_barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
                 img_barrier.dstAccessMask = {};
                 img_barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-                img_barrier.newLayout = vk::ImageLayout::eGeneral;
+                img_barrier.newLayout = t.dst_layout;
                 f.host_to_dst_cb->pipelineBarrier(
                     vk::PipelineStageFlagBits::eTransfer,
                     vk::PipelineStageFlagBits::eBottomOfPipe,

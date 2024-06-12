@@ -209,28 +209,31 @@ void rt_renderer<Pipeline>::init_resources()
     if(
         spec.present_count()
         - spec.color_present
-        - spec.direct_present
-        - spec.diffuse_present == 0
+        - spec.diffuse_present
+        - spec.reflection_present == 0
     ) use_raster_gbuffer = false;
 
     vk::ImageUsageFlags img_usage = vk::ImageUsageFlagBits::eStorage|vk::ImageUsageFlagBits::eTransferSrc;
     if(use_raster_gbuffer) img_usage |= vk::ImageUsageFlagBits::eColorAttachment;
 
     spec.set_all_usage(img_usage);
+    spec.set_all_usage(img_usage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst);
+
     spec.color_usage = vk::ImageUsageFlagBits::eStorage|
         vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eTransferSrc;
 
     if(use_raster_gbuffer)
     {
         spec.depth_present = true;
-        spec.depth_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment|
-            vk::ImageUsageFlagBits::eTransferSrc;
+        spec.depth_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
+            vk::ImageUsageFlagBits::eTransferSrc |
+            vk::ImageUsageFlagBits::eSampled;
         copy_spec.color_present = spec.color_present;
         copy_spec.color_format = spec.color_format;
         copy_spec.diffuse_present = spec.diffuse_present;
         copy_spec.diffuse_format = spec.diffuse_format;
-        copy_spec.direct_present = spec.direct_present;
-        copy_spec.direct_format = spec.direct_format;
+        copy_spec.reflection_present = spec.reflection_present;
+        copy_spec.reflection_format = spec.reflection_format;
     }
     else
         copy_spec = spec;
@@ -278,7 +281,7 @@ void rt_renderer<Pipeline>::init_resources()
             gbuffer_target limited_target;
             limited_target.color = transfer_target.color;
             limited_target.diffuse = transfer_target.diffuse;
-            limited_target.direct = transfer_target.direct;
+            limited_target.reflection = transfer_target.reflection;
             transfer_target = limited_target;
         }
         transfer_target.set_layout(is_display_device ?
@@ -307,7 +310,7 @@ void rt_renderer<Pipeline>::init_resources()
                 gbuffer_target limited_target;
                 limited_target.color = dimg.color;
                 limited_target.diffuse = dimg.diffuse;
-                limited_target.direct = dimg.direct;
+                limited_target.reflection = dimg.reflection;
                 dimg = limited_target;
             }
             dimgs.push_back(dimg);
@@ -332,8 +335,8 @@ void rt_renderer<Pipeline>::init_resources()
     if(use_raster_gbuffer)
     {
         raster_stage::options raster_opt;
-        raster_opt.pcf_samples = 0;
-        raster_opt.pcss_samples = 0;
+        raster_opt.filter.pcf_samples = 0;
+        raster_opt.filter.pcss_samples = 0;
         raster_opt.output_layout = vk::ImageLayout::eGeneral;
         raster_opt.force_alpha_to_coverage = opt.post_process.bmfr || opt.post_process.svgf_denoiser ? true : false;
 
@@ -344,7 +347,7 @@ void rt_renderer<Pipeline>::init_resources()
             gbuffer_target mv_target = gbuffer.get_multiview_block_target(display_device.id, i);
             mv_target.color = render_target();
             mv_target.diffuse = render_target();
-            mv_target.direct = render_target();
+            mv_target.reflection = render_target();
             gbuffer_block_targets.push_back(mv_target);
         }
 

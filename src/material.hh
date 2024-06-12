@@ -29,6 +29,9 @@ struct material
     float transmittance = 0.0f;
 
     bool double_sided = true;
+    // Flag to imply that the material / object it's attached to can change
+    // wildly between frames.
+    bool transient = false;
 
     std::string name = "";
 

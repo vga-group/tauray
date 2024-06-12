@@ -35,6 +35,7 @@ layout(binding = 3, scalar) buffer output_reorder_buffer
 void main()
 {
     ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    p.z += info.base_layer;
     if(all(lessThan(p.xy, info.size)))
     {
         vec4 col = read_tonemap(p);

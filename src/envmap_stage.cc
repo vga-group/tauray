@@ -31,6 +31,7 @@ envmap_stage::envmap_stage(
 ):  single_device_stage(dev),
     envmap_timer(dev, "envmap ("+ std::to_string(count_array_layers(color_arrays)) +" viewports)"),
     scene_state_counter(0),
+    base_camera_index(0),
     ss(&ss)
 {
     for(const render_target& target: color_arrays)
@@ -63,6 +64,45 @@ envmap_stage::envmap_stage(
     }
 }
 
+envmap_stage::envmap_stage(
+    device& dev,
+    scene_stage& ss,
+    render_target& color_target,
+    unsigned base_camera_index
+):  single_device_stage(dev),
+    envmap_timer(dev, "envmap"),
+    scene_state_counter(0),
+    base_camera_index(base_camera_index),
+    ss(&ss)
+{
+    array_pipelines.emplace_back(new raster_pipeline(dev));
+    array_pipelines.back()->init(raster_pipeline::pipeline_state{
+        color_target.size,
+        uvec4(0, 0, color_target.size),
+        {{"shader/envmap.vert"}, {"shader/envmap.frag"}},
+        {&ss.get_descriptors()},
+        {}, {},
+        {{
+            color_target,
+            {
+                {},
+                color_target.format,
+                color_target.msaa,
+                vk::AttachmentLoadOp::eDontCare,
+                vk::AttachmentStoreOp::eStore,
+                vk::AttachmentLoadOp::eDontCare,
+                vk::AttachmentStoreOp::eDontCare,
+                vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eColorAttachmentOptimal
+            }
+        }},
+        {},
+        false, false, true,
+        {}, false
+    });
+    color_target.layout = vk::ImageLayout::eColorAttachmentOptimal;
+}
+
 void envmap_stage::update(uint32_t)
 {
     if(!ss->check_update(scene_stage::ENVMAP, scene_state_counter))
@@ -89,7 +129,7 @@ void envmap_stage::update(uint32_t)
         vk::CommandBuffer cb = begin_graphics();
         envmap_timer.begin(cb, dev->id, i);
 
-        size_t j = 0;
+        size_t j = base_camera_index;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             gfx->begin_render_pass(cb, i);

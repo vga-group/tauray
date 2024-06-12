@@ -1,5 +1,6 @@
 #include "shadow_map.hh"
 #include "camera.hh"
+#include "scene_stage.hh"
 
 namespace
 {
@@ -105,6 +106,11 @@ void directional_shadow_map::track_cameras(
     if(cascades.size() == 0)
         cascades.push_back(vec2(0));
 
+    // TODO: Can't use the more accurate cascade placement with hybrid
+    // raster / RT techniques, since it doesn't consider covering anything
+    // outside of the frustum _by design_. It also doesn't work in multi-view
+    // cases.
+    /*
     if(cameras.size() == 1)
     {
         const camera& cam = *cameras[0];
@@ -142,6 +148,7 @@ void directional_shadow_map::track_cameras(
         }
     }
     else
+    */
     {
         vec2 cam_light_pos = vec2(0);
 
@@ -169,6 +176,18 @@ void directional_shadow_map::track_cameras(
             scale *= 2.0f;
         }
     }
+}
+
+gpu_shadow_mapping_parameters create_shadow_mapping_parameters(shadow_map_filter filter, scene_stage& ss)
+{
+    gpu_shadow_mapping_parameters params;
+    params.shadow_map_atlas_pixel_margin = ss.get_shadow_map_atlas_pixel_margin();
+    params.noise_scale = 1.0f;
+    params.pcss_minimum_radius = filter.pcss_minimum_radius;
+    params.pcf_samples = filter.pcf_samples;
+    params.omni_pcf_samples = filter.omni_pcf_samples;
+    params.pcss_samples = filter.pcss_samples;
+    return params;
 }
 
 }

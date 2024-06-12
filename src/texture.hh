@@ -5,6 +5,31 @@
 
 namespace tr
 {
+class texture;
+
+struct texture_view_params
+{
+    unsigned layer_index;
+    unsigned layer_count;
+    unsigned mipmap_index;
+    unsigned mipmap_count;
+    vk::ImageViewType type;
+
+    bool operator==(const texture_view_params& other) const;
+};
+
+}
+
+namespace std
+{
+    template<> struct hash<tr::texture_view_params>
+    {
+        size_t operator()(const tr::texture_view_params& v) const;
+    };
+}
+
+namespace tr
+{
 
 class texture
 {
@@ -53,6 +78,7 @@ public:
     render_target get_array_render_target(device_id id) const;
     render_target get_layer_render_target(device_id id, uint32_t layer_index) const;
     render_target get_multiview_block_render_target(device_id id, uint32_t block_index) const;
+    render_target get_render_target(device_id id, texture_view_params view) const;
     size_t get_multiview_block_count() const;
 
     device_mask get_mask() const;
@@ -66,9 +92,11 @@ private:
     // Also creates mip chain.
     void load_from_file(const std::string& path);
     void create(size_t data_size, void* data);
+    vk::ImageView get_mipmap_view(device_id id, texture_view_params params) const;
 
     uvec3 dim;
     unsigned array_layers;
+    unsigned mip_levels;
     vk::Format fmt;
     vk::ImageType type;
     vk::ImageTiling tiling;
@@ -81,9 +109,7 @@ private:
     struct buffer_data
     {
         vkm<vk::Image> img;
-        vkm<vk::ImageView> array_view;
-        std::vector<vkm<vk::ImageView>> layer_views;
-        std::vector<vkm<vk::ImageView>> multiview_block_views;
+        mutable std::unordered_map<texture_view_params, vkm<vk::ImageView>> views;
     };
     per_device<buffer_data> buffers;
 };

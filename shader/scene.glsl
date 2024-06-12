@@ -34,6 +34,10 @@ struct vertex_data
     bool back_facing;
     int instance_id;
     int primitive_id;
+#ifdef CALC_TRIANGLE_CORNERS
+    vec3 triangle_pos[3];
+    vec2 triangle_uv[3];
+#endif
 };
 
 struct instance
@@ -80,22 +84,27 @@ layout(binding = 5, set = SCENE_SET) buffer index_buffer
 
 layout(binding = 6, set = SCENE_SET) uniform sampler2D textures[];
 
+#ifdef USE_EXPLICIT_GRADIENTS
+sampled_material sample_material(material mat, inout vertex_data v, vec2 duvdx, vec2 duvdy)
+#define sample_texture(index, uv) \
+    textureGrad(textures[nonuniformEXT(index)], uv, duvdx, duvdy)
+#else
 sampled_material sample_material(material mat, inout vertex_data v)
+#define sample_texture(index, uv) texture(textures[nonuniformEXT(index)], uv)
+#endif
 {
     sampled_material res;
     res.albedo = mat.albedo_factor;
     if(mat.albedo_tex_id >= 0)
     {
-        vec4 tex_col = texture(textures[nonuniformEXT(mat.albedo_tex_id)], v.uv);
+        vec4 tex_col = sample_texture(mat.albedo_tex_id, v.uv);
         tex_col.rgb = inverse_srgb_correction(tex_col.rgb);
         res.albedo *= tex_col;
     }
 
     vec2 mr = mat.metallic_roughness_factor.xy;
     if(mat.metallic_roughness_tex_id >= 0)
-        mr *= texture(
-            textures[nonuniformEXT(mat.metallic_roughness_tex_id)], v.uv
-        ).bg;
+        mr *= sample_texture(mat.metallic_roughness_tex_id, v.uv).bg;
     res.metallic = mr.x;
     // Squaring the roughness is just a thing artists like for some reason,
     // which is why roughness textures are authored to expect that. Which is why
@@ -109,9 +118,7 @@ sampled_material sample_material(material mat, inout vertex_data v)
             v.bitangent,
             v.smooth_normal
         );
-        vec3 ts_normal = normalize(
-            texture(textures[nonuniformEXT(mat.normal_tex_id)], v.uv).xyz * 2.0f - 1.0f
-        );
+        vec3 ts_normal = normalize(sample_texture(mat.normal_tex_id, v.uv).xyz * 2.0f - 1.0f);
         v.mapped_normal = normalize(tbn * (ts_normal * vec3(mat.normal_factor, mat.normal_factor, 1.0f)));
         // Sometimes annoying stuff happens and the normal is broken. This isn't
         // usually fatal in rasterization, but is one source of NaN values in
@@ -120,10 +127,9 @@ sampled_material sample_material(material mat, inout vertex_data v)
             v.smooth_normal : v.mapped_normal;
     }
 
-    res.emission = mat.emission_factor_double_sided.rgb;
+    res.emission = mat.emission_factor.rgb;
     if(mat.emission_tex_id >= 0)
-        res.emission *=
-            texture(textures[nonuniformEXT(mat.emission_tex_id)], v.uv).rgb;
+        res.emission *= sample_texture(mat.emission_tex_id, v.uv).rgb;
 
     res.transmittance = mat.transmittance;
     if(v.back_facing && res.transmittance > 0.0001f)
@@ -140,7 +146,7 @@ sampled_material sample_material(material mat, inout vertex_data v)
     float f0 = (res.ior_out-res.ior_in)/(res.ior_out+res.ior_in);
     f0 *= f0;
     res.f0 = f0;
-    res.double_sided = mat.emission_factor_double_sided.a > 0.5f;
+    res.flags = mat.flags;
     res.shadow_terminator_mul = 1.0f;
     return res;
 }
@@ -155,11 +161,12 @@ layout(binding = 8, set = SCENE_SET) readonly buffer environment_map_alias_table
 
 layout(binding = 9, set = SCENE_SET, scalar) uniform scene_metadata_buffer
 {
+    uint instance_count;
     uint point_light_count;
     uint directional_light_count;
     uint tri_light_count;
-    int environment_proj;
     vec4 environment_factor;
+    int environment_proj;
 } scene_metadata;
 
 #define POINT_LIGHT_FOR_BEGIN(world_pos) \

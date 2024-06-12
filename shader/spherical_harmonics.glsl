@@ -1,5 +1,6 @@
 #ifndef SPHERICAL_HARMONICS_GLSL
 #define SPHERICAL_HARMONICS_GLSL
+#extension GL_EXT_control_flow_attributes : enable
 #include "math.glsl"
 
 // Using SH formulation from
@@ -71,50 +72,46 @@ sh_probe eval_sh_basis(vec3 dir, vec4 val)
 {
     sh_probe res;
     sh_lobe l = sh_basis(dir);
-    for(int i = 0; i < SH_COEF_COUNT; ++i)
+    [[unroll]] for(int i = 0; i < SH_COEF_COUNT; ++i)
         res.coef[i] = val * l.coef[i];
     return res;
 }
 
 sh_lobe get_sh_cosine_lobe(vec3 dir)
 {
-    const float cosine[6] = float[](
-        1.0f, 2.0f/3.0f, 1/4.0f, 0, -1/24.0f, 0
-    );
-
     sh_lobe res = sh_basis(dir);
-    res.coef[0] *= cosine[0];
+    res.coef[0] *= 1.0f;
 #if SH_ORDER >= 1
-    res.coef[1] *= cosine[1];
-    res.coef[2] *= cosine[1];
-    res.coef[3] *= cosine[1];
+    res.coef[1] *= 2.0f/3.0f;
+    res.coef[2] *= 2.0f/3.0f;
+    res.coef[3] *= 2.0f/3.0f;
 #endif
 #if SH_ORDER >= 2
-    res.coef[4] *= cosine[2];
-    res.coef[5] *= cosine[2];
-    res.coef[6] *= cosine[2];
-    res.coef[7] *= cosine[2];
-    res.coef[8] *= cosine[2];
+    res.coef[4] *= 1/4.0f;
+    res.coef[5] *= 1/4.0f;
+    res.coef[6] *= 1/4.0f;
+    res.coef[7] *= 1/4.0f;
+    res.coef[8] *= 1/4.0f;
 #endif
 #if SH_ORDER >= 3
-    res.coef[9]  *= cosine[3];
-    res.coef[10] *= cosine[3];
-    res.coef[11] *= cosine[3];
-    res.coef[12] *= cosine[3];
-    res.coef[13] *= cosine[3];
-    res.coef[14] *= cosine[3];
-    res.coef[15] *= cosine[3];
+    res.coef[9]  = vec3(0);
+    res.coef[10] = vec3(0);
+    res.coef[11] = vec3(0);
+    res.coef[12] = vec3(0);
+    res.coef[13] = vec3(0);
+    res.coef[14] = vec3(0);
+    res.coef[15] = vec3(0);
 #endif
 #if SH_ORDER >= 4
-    res.coef[16] *= cosine[4];
-    res.coef[17] *= cosine[4];
-    res.coef[18] *= cosine[4];
-    res.coef[19] *= cosine[4];
-    res.coef[20] *= cosine[4];
-    res.coef[21] *= cosine[4];
-    res.coef[22] *= cosine[4];
-    res.coef[23] *= cosine[4];
-    res.coef[24] *= cosine[4];
+    res.coef[16] *= -1/24.0f;
+    res.coef[17] *= -1/24.0f;
+    res.coef[18] *= -1/24.0f;
+    res.coef[19] *= -1/24.0f;
+    res.coef[20] *= -1/24.0f;
+    res.coef[21] *= -1/24.0f;
+    res.coef[22] *= -1/24.0f;
+    res.coef[23] *= -1/24.0f;
+    res.coef[24] *= -1/24.0f;
 #endif
 
     return res;
@@ -198,7 +195,7 @@ vec4 calc_sh_value(in sh_probe sh, vec3 dir)
 {
     sh_lobe bl = sh_basis(dir);
     vec4 res = vec4(0);
-    for(int i = 0; i < SH_COEF_COUNT; ++i)
+    [[unroll]] for(int i = 0; i < SH_COEF_COUNT; ++i)
         res += sh.coef[i] * bl.coef[i];
     return res;
 }
@@ -207,7 +204,7 @@ vec3 calc_sh_irradiance(in sh_probe sh, vec3 normal)
 {
     sh_lobe cl = get_sh_cosine_lobe(normal);
     vec3 irradiance = vec3(0);
-    for(int i = 0; i < SH_COEF_COUNT; ++i)
+    [[unroll]] for(int i = 0; i < SH_COEF_COUNT; ++i)
         irradiance += sh.coef[i].rgb * cl.coef[i];
     return max(irradiance, vec3(0));
 }
@@ -216,7 +213,7 @@ vec3 calc_sh_ggx_specular(in sh_probe sh, vec3 dir, float roughness)
 {
     sh_lobe cl = get_ggx_specular_lobe(dir, roughness);
     vec3 radiance = vec3(0);
-    for(int i = 0; i < SH_COEF_COUNT; ++i)
+    [[unroll]] for(int i = 0; i < SH_COEF_COUNT; ++i)
         radiance += sh.coef[i].rgb * cl.coef[i];
     return max(radiance, vec3(0));
 }
@@ -224,7 +221,7 @@ vec3 calc_sh_ggx_specular(in sh_probe sh, vec3 dir, float roughness)
 vec3 calc_sh_convolution(in sh_probe sh, in sh_lobe cl)
 {
     vec3 sum = vec3(0);
-    for(int i = 0; i < SH_COEF_COUNT; ++i)
+    [[unroll]] for(int i = 0; i < SH_COEF_COUNT; ++i)
         sum += sh.coef[i].rgb * cl.coef[i];
     return max(sum, vec3(0));
 }
@@ -242,7 +239,7 @@ sh_probe sample_sh_grid(
 #ifdef SH_INTERPOLATION_TRILINEAR
     grid_pos = clamp(grid_pos, grid_clamp.xyz, 1.0f - grid_clamp.xyz);
     grid_pos.y *= sh_layer_height;
-    for(int l = 0; l < SH_COEF_COUNT; ++l)
+    [[unroll]] for(int l = 0; l < SH_COEF_COUNT; ++l)
         pc.coef[l] = texture(grid, grid_pos + vec3(0, l*sh_layer_height, 0));
 #else
     for(int l = 0; l < SH_COEF_COUNT; ++l)
@@ -312,6 +309,41 @@ sh_probe sample_sh_grid(
 #endif
 
     return pc;
+}
+
+// Avoids temporary results and thus skips lots of registers (although, a wise
+// optimizer should be able to skip those too.)
+void sample_and_filter_sh_grid(
+    in sampler3D grid,
+    vec3 grid_clamp,
+    vec3 grid_pos,
+    vec3 sh_normal,
+    vec3 sh_ref,
+    float roughness,
+    out vec3 diffuse,
+    out vec3 reflection
+){
+    grid_pos = grid_pos*0.5f+0.5f;
+
+    diffuse = vec3(0);
+    reflection = vec3(0);
+
+    sh_probe pc;
+    grid_pos = clamp(grid_pos, grid_clamp.xyz, 1.0f - grid_clamp.xyz);
+    grid_pos.y *= sh_layer_height;
+
+    sh_lobe dl = get_sh_cosine_lobe(sh_normal);
+    sh_lobe rl = get_ggx_specular_lobe(sh_ref, roughness);
+
+    [[unroll]] for(int l = 0; l < SH_COEF_COUNT; ++l)
+    {
+        vec4 coef = texture(grid, grid_pos + vec3(0, l*sh_layer_height, 0));
+        diffuse += coef.rgb * dl.coef[l];
+        reflection += coef.rgb * rl.coef[l];
+    }
+
+    diffuse = max(diffuse, vec3(0));
+    reflection = max(reflection, vec3(0));
 }
 
 #endif

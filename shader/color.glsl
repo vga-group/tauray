@@ -16,4 +16,21 @@ float rgb_to_luminance(vec3 col)
     return dot(col, vec3(0.2126, 0.7152, 0.0722));
 }
 
+uint rgb_to_r9g9b9e5(vec3 color)
+{
+    ivec3 ex;
+    frexp(color, ex);
+    int e = clamp(max(ex.r, max(ex.g, ex.b)), -16, 15);
+    ivec3 icolor = clamp(ivec3(
+        floor(color * exp2(-e) * 512.0f)
+    ), ivec3(0), ivec3(511));
+    return icolor.r|(icolor.g<<9)|(icolor.b<<18)|((e+16)<<27);
+}
+
+vec3 r9g9b9e5_to_rgb(uint rgbe)
+{
+    ivec4 icolor = ivec4(rgbe, rgbe>>9, rgbe>>18, rgbe>>27) & 0x1FF;
+    return vec3(icolor) * (1.0f / 512.0f) * exp2(icolor.a-16);
+}
+
 #endif

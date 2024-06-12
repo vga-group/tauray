@@ -415,6 +415,23 @@ size_t top_level_acceleration_structure::get_updates_since_rebuild() const
     return updates_since_rebuild;
 }
 
+void top_level_acceleration_structure::copy(
+    device_id id,
+    top_level_acceleration_structure& other,
+    vk::CommandBuffer cmd
+){
+    if(other.instance_capacity != instance_capacity)
+        throw std::runtime_error("Attempting to copy between top level acceleration structures of different capacities!");
+    instance_count = other.instance_count;
+
+    vk::CopyAccelerationStructureInfoKHR copy_info = {
+        *other.buffers[id].tlas,
+        *buffers[id].tlas,
+        vk::CopyAccelerationStructureModeKHR::eClone
+    };
+    cmd.copyAccelerationStructureKHR(copy_info);
+}
+
 const vk::AccelerationStructureKHR* top_level_acceleration_structure::get_tlas_handle(device_id id) const
 {
     return buffers[id].tlas;

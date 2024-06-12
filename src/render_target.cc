@@ -35,6 +35,19 @@ void render_target::transition_layout_temporary(
     );
 }
 
+void render_target::transition_layout(
+    vk::CommandBuffer cb,
+    vk::ImageLayout from,
+    vk::ImageLayout to,
+    bool ignore_src_stage_mask,
+    bool ignore_dst_stage_mask
+){
+    transition_image_layout(
+        cb, image, format, from, to, 0, 1,
+        base_layer, layer_count, ignore_src_stage_mask, ignore_dst_stage_mask
+    );
+}
+
 vk::ImageSubresourceLayers render_target::get_layers() const
 {
     return {deduce_aspect_mask(format), 0, base_layer, layer_count};

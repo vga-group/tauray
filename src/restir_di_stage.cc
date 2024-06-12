@@ -9,143 +9,17 @@ namespace
 {
 using namespace tr;
 
-namespace restir_di
+struct push_constant_buffer
 {
-    rt_shader_sources load_sources(
-        restir_di_stage::options opt,
-        const gbuffer_target& gbuf
-    ){
-        shader_source pl_rint("shader/rt_common_point_light.rint");
-        shader_source shadow_chit("shader/rt_common_shadow.rchit");
-        std::map<std::string, std::string> defines;
-        defines["RIS_SAMPLE_COUNT"] = std::to_string(opt.ris_sample_count);
-        defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
+    uint32_t samples;
+    uint32_t previous_samples;
+    float min_ray_dist;
+    float max_confidence;
+    float search_radius;
+};
 
-        if(opt.temporal_reuse)
-            defines["TEMPORAL_REUSE"];
-        if(opt.shared_visibility)
-        {
-            defines["SHARED_VISIBILITY"];
-            if(opt.sample_visibility)
-                defines["SAMPLE_VISIBILITY"];
-        }
+static_assert(sizeof(push_constant_buffer) <= 128);
 
-#define TR_GBUFFER_ENTRY(name, ...)\
-        if(gbuf.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
-        TR_GBUFFER_ENTRIES
-#undef TR_GBUFFER_ENTRY
-
-        add_defines(opt.sampling_weights, defines);
-        add_defines(opt.tri_light_mode, defines);
-
-        rt_camera_stage::get_common_defines(defines, opt);
-
-        return {
-            {"shader/restir_di_canonical_and_temporal.rgen", defines},
-            {
-                { // Regular ray, triangle meshes
-                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/rt_common.rchit", defines},
-                    {"shader/rt_common.rahit", defines}
-                },
-                { // Shadow ray, triangle meshes
-                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    shadow_chit,
-                    {"shader/rt_common_shadow.rahit", defines}
-                },
-                { // Area light ray, sphere intersection
-                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/rt_common_point_light.rchit", defines},
-                    {},
-                    pl_rint
-                },
-                { // Area light shadow ray, sphere intersection
-                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    shadow_chit,
-                    {},
-                    pl_rint
-                }
-            },
-            {
-                {"shader/rt_common.rmiss", defines},
-                {"shader/rt_common_shadow.rmiss", defines}
-            }
-        };
-    }
-
-    rt_shader_sources load_spatial_reuse_resources(
-        restir_di_stage::options opt,
-        const gbuffer_target& gbuf
-    ){
-        shader_source pl_rint("shader/rt_common_point_light.rint");
-        shader_source shadow_chit("shader/rt_common_shadow.rchit");
-        std::map<std::string, std::string> defines;
-        defines["SPATIAL_SAMPLE_COUNT"] = std::to_string(opt.spatial_sample_count);
-        defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
-
-        if(opt.spatial_reuse)
-            defines["SPATIAL_REUSE"];
-        if(opt.shared_visibility)
-        {
-            defines["SHARED_VISIBILITY"];
-            if(opt.sample_visibility)
-                defines["SAMPLE_VISIBILITY"];
-        }
-
-#define TR_GBUFFER_ENTRY(name, ...)\
-        if(gbuf.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
-        TR_GBUFFER_ENTRIES
-#undef TR_GBUFFER_ENTRY
-
-        add_defines(opt.sampling_weights, defines);
-        add_defines(opt.tri_light_mode, defines);
-
-        rt_camera_stage::get_common_defines(defines, opt);
-
-        return {
-            {"shader/restir_di_spatial.rgen", defines},
-            {
-                { // Regular ray, triangle meshes
-                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/rt_common.rchit", defines},
-                    {"shader/rt_common.rahit", defines}
-                },
-                { // Shadow ray, triangle meshes
-                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    shadow_chit,
-                    {"shader/rt_cmomon_shadow.rahit", defines}
-                },
-                { // Area light ray, sphere intersection
-                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/rt_common_point_light.rchit", defines},
-                    {},
-                    pl_rint
-                },
-                { // Area light shadow ray, sphere intersection
-                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    shadow_chit,
-                    {},
-                    pl_rint
-                }
-            },
-            {
-                {"shader/rt_common.rmiss", defines},
-                {"shader/rt_common_shadow.rmiss", defines}
-            }
-        };
-    }
-
-    struct push_constant_buffer
-    {
-        uint32_t samples;
-        uint32_t previous_samples;
-        float min_ray_dist;
-        float max_confidence;
-        float search_radius;
-    };
-
-    static_assert(sizeof(push_constant_buffer) <= 128);
-}
 }
 
 namespace tr
@@ -208,14 +82,100 @@ restir_di_stage::restir_di_stage(
         vk::ImageUsageFlagBits::eStorage
     )
 {
+    shader_source pl_rint("shader/rt_common_point_light.rint");
+    shader_source shadow_chit("shader/rt_common_shadow.rchit");
+    std::map<std::string, std::string> defines;
+    defines["RIS_SAMPLE_COUNT"] = std::to_string(opt.ris_sample_count);
+    defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
+    defines["SPATIAL_SAMPLE_COUNT"] = std::to_string(opt.spatial_sample_count);
+
+    if(opt.temporal_reuse) defines["TEMPORAL_REUSE"];
+    if(opt.spatial_reuse) defines["SPATIAL_REUSE"];
+    if(opt.shared_visibility)
     {
-        rt_shader_sources src = restir_di::load_sources(opt, output_target);
+        defines["SHARED_VISIBILITY"];
+        if(opt.sample_visibility)
+            defines["SAMPLE_VISIBILITY"];
+    }
+
+#define TR_GBUFFER_ENTRY(name, ...)\
+    if(output_target.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
+    TR_GBUFFER_ENTRIES
+#undef TR_GBUFFER_ENTRY
+
+    add_defines(opt.sampling_weights, defines);
+    add_defines(opt.tri_light_mode, defines);
+
+    get_common_defines(defines);
+
+    {
+        rt_shader_sources src = {
+            {"shader/restir_di_canonical_and_temporal.rgen", defines},
+            {
+                { // Regular ray, triangle meshes
+                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+                    {"shader/rt_common.rchit", defines},
+                    {"shader/rt_common.rahit", defines}
+                },
+                { // Shadow ray, triangle meshes
+                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+                    shadow_chit,
+                    {"shader/rt_common_shadow.rahit", defines}
+                },
+                { // Area light ray, sphere intersection
+                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
+                    {"shader/rt_common_point_light.rchit", defines},
+                    {},
+                    pl_rint
+                },
+                { // Area light shadow ray, sphere intersection
+                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
+                    shadow_chit,
+                    {},
+                    pl_rint
+                }
+            },
+            {
+                {"shader/rt_common.rmiss", defines},
+                {"shader/rt_common_shadow.rmiss", defines}
+            }
+        };
         desc.add(src);
         gfx.init(src, {&desc, &ss.get_descriptors()});
     }
 
     {
-        rt_shader_sources src = restir_di::load_spatial_reuse_resources(opt, output_target);
+        rt_shader_sources src = {
+            {"shader/restir_di_spatial.rgen", defines},
+            {
+                { // Regular ray, triangle meshes
+                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+                    {"shader/rt_common.rchit", defines},
+                    {"shader/rt_common.rahit", defines}
+                },
+                { // Shadow ray, triangle meshes
+                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+                    shadow_chit,
+                    {"shader/rt_cmomon_shadow.rahit", defines}
+                },
+                { // Area light ray, sphere intersection
+                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
+                    {"shader/rt_common_point_light.rchit", defines},
+                    {},
+                    pl_rint
+                },
+                { // Area light shadow ray, sphere intersection
+                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
+                    shadow_chit,
+                    {},
+                    pl_rint
+                }
+            },
+            {
+                {"shader/rt_common.rmiss", defines},
+                {"shader/rt_common_shadow.rmiss", defines}
+            }
+        };
         spatial_desc.add(src);
         spatial_reuse.init(src, {&spatial_desc, &ss.get_descriptors()});
     }
@@ -238,7 +198,7 @@ void restir_di_stage::record_command_buffer_pass(
     uvec3 expected_dispatch_size,
     bool
 ){
-    restir_di::push_constant_buffer control;
+    push_constant_buffer control;
 
     param_buffer.upload(dev->id, frame_index, cb);
 
