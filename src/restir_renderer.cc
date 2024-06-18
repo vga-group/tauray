@@ -124,22 +124,18 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         raster_opt.force_alpha_to_coverage = true;
         raster_opt.base_camera_index = i;
         raster_opt.output_layout = vk::ImageLayout::eGeneral;
+        raster_opt.estimate_direct = this->opt.restir_options.shade_all_explicit_lights;
 
-        render_target color = cur.color;
         render_target diffuse = cur.diffuse;
         render_target reflection = cur.reflection;
         render_target temporal_gradient = cur.temporal_gradient;
         render_target confidence = cur.confidence;
-        if(!this->opt.restir_options.shade_all_explicit_lights)
-            cur.color = render_target();
         cur.diffuse = render_target();
         cur.reflection = render_target();
         cur.temporal_gradient = render_target();
         cur.confidence = render_target();
 
         pv.gbuffer_rasterizer.emplace(devices[device_index], *scene_update, cur, raster_opt);
-        if(!this->opt.restir_options.shade_all_explicit_lights)
-            cur.color = color;
         cur.diffuse = diffuse;
         cur.reflection = reflection;
         cur.temporal_gradient = temporal_gradient;

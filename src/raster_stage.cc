@@ -29,8 +29,8 @@ raster_shader_sources load_sources(const raster_stage::options& opt, const gbuff
 {
     std::map<std::string, std::string> defines;
     defines["SH_ORDER"] = std::to_string(opt.sh_order);
-    if(opt.estimate_indirect)
-        defines["ESTIMATE_INDIRECT"];
+    if(opt.estimate_indirect) defines["ESTIMATE_INDIRECT"];
+    if(opt.estimate_direct) defines["ESTIMATE_DIRECT"];
     defines["SH_COEF_COUNT"] = std::to_string(
         sh_grid::get_coef_count(opt.sh_order)
     );

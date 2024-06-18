@@ -31,6 +31,7 @@ public:
         bool use_probe_visibility = false;
         int sh_order = 2;
         bool estimate_indirect = true;
+        bool estimate_direct = true;
 
         // Required for some denoisers to drop albedo from transparent textures in the gbuffer
         bool force_alpha_to_coverage = false;

@@ -166,7 +166,7 @@ void main()
     vec3 shading_view = -view * tbn;
     vec3 diffuse = vec3(0);
     vec3 reflection = vec3(0);
-#if defined(COLOR_TARGET_LOCATION) || defined(REFLECTION_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION)
+#if defined(ESTIMATE_DIRECT) && (defined(COLOR_TARGET_LOCATION) || defined(REFLECTION_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION))
     eval_punctual_lights(tbn, shading_view, mat, v, diffuse, reflection);
 #endif
 #if defined(ESTIMATE_INDIRECT) && (defined(COLOR_TARGET_LOCATION) || defined(DIFFUSE_TARGET_LOCATION))
