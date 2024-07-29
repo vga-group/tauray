@@ -47,6 +47,9 @@ void sample_path_nee_leaf(
     reconnection_vertex vertex;
     bool extremity = generate_nee_vertex(rand32, src, vertex, candidate_normal, candidate_dir, candidate_dist, nee_pdf);
 
+    if(candidate.head_length + candidate.tail_length == 0)
+        bias_ray(src.pos, candidate_dir, candidate_dist, src);
+
     if(vertex.instance_id == NULL_INSTANCE_ID)
     {
         r.confidence += 1.0f;
@@ -148,6 +151,9 @@ bool sample_path_bsdf_bounce(
     float bsdf_pdf = 0;
     ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, sampled_lobe);
     vec3 dir = src.tbn * tdir;
+
+    if(candidate.head_length + candidate.tail_length == 0)
+        bias_ray_origin(src.pos, sampled_lobe == MATERIAL_LOBE_TRANSMISSION, src);
 
     update_regularization(bsdf_pdf, regularization);
     ray_cone_apply_roughness(sampled_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : src.mat.roughness, src.rc);
