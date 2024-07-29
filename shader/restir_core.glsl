@@ -1038,7 +1038,7 @@ light_sample sample_light(
         vec3 p = pos + ls.dir * ls.dist;
         ls.normal = normalize(p - pl.pos);
         ls.hit_info = octahedral_pack(ls.normal) * 0.5f + 0.5f;
-        if(local_pdf == 0.0f) ls.normal = vec3(0);
+        if(local_pdf <= 0.0f) ls.normal = vec3(0);
     }
     else if((u.x -= triangle_prob) < 0)
     { // triangle light
@@ -1130,7 +1130,7 @@ light_sample sample_light(
         ls.pdf = envmap_prob;
     }
 
-    ls.infinitesimal = local_pdf == 0;
+    ls.infinitesimal = local_pdf <= 0;
     if(!ls.infinitesimal) ls.pdf *= local_pdf;
 
     return ls;

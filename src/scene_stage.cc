@@ -990,7 +990,7 @@ void scene_stage::update_temporal_tables(uint32_t frame_index)
     for(uint32_t new_id = 0; new_id < backward_point_light_ids.size(); ++new_id)
     {
         uint32_t& prev_id = backward_point_light_ids[new_id];
-        if(prev_id < forward_instance_ids.size())
+        if(prev_id < forward_point_light_ids.size())
             forward_point_light_ids[prev_id] = new_id;
         else prev_id = 0xFFFFFFFFu;
     }
