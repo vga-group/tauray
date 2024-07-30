@@ -20,7 +20,8 @@ struct push_constant_buffer
     uint32_t instance_id;
     int32_t base_camera_index;
     int32_t frame_index;
-    int32_t pad[3];
+    int32_t flipped_winding_order;
+    int32_t pad[2];
     gpu_shadow_mapping_parameters sm_params;
     pvec3 ambient_color;
 };
@@ -222,6 +223,7 @@ void raster_stage::update(uint32_t)
                     0, vk::IndexType::eUint32
                 );
                 control.instance_id = i;
+                control.flipped_winding_order = inst.flip_winding_order;
 
                 gfx->push_constants(cb, control);
 

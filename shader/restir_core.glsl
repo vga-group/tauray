@@ -83,7 +83,7 @@ bool get_pos(ivec2 p, camera_data cam, out vec3 pos)
 #endif
 }
 
-bool read_domain(camera_data  cam, ivec2 p, out domain d)
+bool read_domain(camera_data cam, ivec2 p, out domain d)
 {
     vec3 origin = cam.origin.xyz;
 
@@ -100,18 +100,34 @@ bool read_domain(camera_data  cam, ivec2 p, out domain d)
     d.view = (d.pos - origin) / len;
     d.tview = view_to_tangent_space(d.view, d.tbn);
 
-    if(d.mat.transmittance == 0)
-    {
-        float s = sign(dot(d.view, d.flat_normal));
-        d.pos -= s * d.flat_normal * TR_RESTIR.min_ray_dist * len;
-    }
-
     float curvature = sample_gbuffer_curvature(curvature_tex, p);
     d.rc = init_pixel_ray_cone(cam.projection_info, p, ivec2(TR_RESTIR.display_size));
     ray_cone_apply_dist(len, d.rc);
     ray_cone_apply_curvature(curvature, d.rc);
 
     return miss;
+}
+
+// Used to correct for inaccurate depth buffer in the first bounce.
+void bias_ray_origin(inout vec3 pos, bool exit_below, in domain d)
+{
+#ifndef USE_POSITION
+    float s = sign(dot(d.view, d.flat_normal));
+    if(exit_below) s = -s;
+    camera_data cam = camera.pairs[pc.camera_index].current;
+    pos -= s * d.flat_normal * TR_RESTIR.min_ray_dist * distance(d.pos, cam.origin.xyz);
+#endif
+}
+
+void bias_ray(inout vec3 pos, inout vec3 dir, inout float len, in domain d)
+{
+#ifndef USE_POSITION
+    bool exit_below = dot(dir, d.flat_normal) < 0;
+    vec3 target = pos + dir * len;
+    bias_ray_origin(pos, exit_below, d);
+    len = distance(target, pos);
+    dir = (target - pos) / len;
+#endif
 }
 
 #ifdef RESTIR_TEMPORAL
@@ -160,12 +176,6 @@ bool read_prev_domain(camera_data cam, ivec2 p, domain cur_domain, out domain d)
     float len = length(d.pos - origin);
     d.view = (d.pos - origin) / len;
     d.tview = view_to_tangent_space(d.view, d.tbn);
-
-    if(d.mat.transmittance == 0)
-    {
-        float s = sign(dot(d.view, d.flat_normal));
-        d.pos -= s * d.flat_normal * TR_RESTIR.min_ray_dist * len;
-    }
 
     float curvature = sample_gbuffer_curvature(prev_curvature_tex, p);
     d.rc = init_pixel_ray_cone(cam.projection_info, p, ivec2(TR_RESTIR.display_size));
@@ -1268,6 +1278,9 @@ bool replay_path_nee_leaf(
     reconnection_vertex vertex;
     bool extremity = generate_nee_vertex(rand32, src, vertex, candidate_normal, candidate_dir, candidate_dist, nee_pdf);
 
+    if(bounce_index == 0)
+        bias_ray(src.pos, candidate_dir, candidate_dist, src);
+
     if(vertex.instance_id == NULL_INSTANCE_ID)
         return false;
 
@@ -1310,6 +1323,10 @@ bool replay_path_bsdf_bounce(
     uint sampled_lobe = 0;
     float bsdf_pdf = 0;
     ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, sampled_lobe);
+
+    if(bounce_index == 0)
+        bias_ray_origin(src.pos, sampled_lobe == MATERIAL_LOBE_TRANSMISSION, src);
+
     update_regularization(bsdf_pdf, regularization);
     ray_cone_apply_roughness(sampled_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : src.mat.roughness, src.rc);
     if(bsdf_pdf == 0) bsdf_pdf = 1;
@@ -1514,6 +1531,8 @@ bool reconnection_shift_map(
         // Failed to reconnect, vertex may have ceased to exist.
         return false;
     }
+
+    bias_ray(to_domain.pos, to.dir, to.dist, to_domain);
 
     vec3 emission = to.emission;
     if(rs.tail_length >= 1)
@@ -1729,6 +1748,9 @@ bool hybrid_shift_map(
         // Failed to reconnect, vertex may have ceased to exist.
         return false;
     }
+
+    if(rs.head_length == 0)
+        bias_ray(to_domain.pos, to.dir, to.dist, to_domain);
 
     float v0_pdf = to.bsdf_pdf;
     float v1_pdf = 1.0f;

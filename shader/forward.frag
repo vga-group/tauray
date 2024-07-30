@@ -44,6 +44,7 @@ vertex_data get_vertex_data()
     v.tangent = in_tangent;
     v.bitangent = in_bitangent;
     v.back_facing = !gl_FrontFacing;
+    if(control.flipped_winding_order != 0) v.back_facing = !v.back_facing;
     if(v.back_facing)
     {
         v.smooth_normal = -v.smooth_normal;
@@ -190,12 +191,12 @@ void main()
     write_gbuffer_reflection(vec4(reflection, mat.albedo.a));
     write_gbuffer_albedo(vec4(mat.albedo));
     write_gbuffer_material(mat);
-    write_gbuffer_normal(dot(view, v.hard_normal) > 0 ? -v.mapped_normal : v.mapped_normal);
+    write_gbuffer_normal(v.smooth_normal);
     write_gbuffer_pos(v.pos);
     write_gbuffer_screen_motion(get_camera_projection(camera.pairs[control.base_camera_index + gl_ViewIndex].previous, v.prev_pos));
     write_gbuffer_instance_id(int(control.instance_id));
     write_gbuffer_linear_depth();
-    write_gbuffer_flat_normal(normalize(cross(dFdy(v.pos), dFdx(v.pos))));
+    write_gbuffer_flat_normal(v.hard_normal);
     write_gbuffer_curvature(curvature);
     write_gbuffer_emission(mat.emission);
 }

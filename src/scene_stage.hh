@@ -69,6 +69,7 @@ public:
         const mesh* m;
         const model* mod;
         uint64_t last_refresh_frame;
+        bool flip_winding_order;
     };
     const std::vector<instance>& get_instances() const;
 

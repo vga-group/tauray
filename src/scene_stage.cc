@@ -726,6 +726,7 @@ bool scene_stage::refresh_instance_cache()
                 });
             }
 
+            bool flip_winding_order = flipped_winding_order(transform);
             for(const auto& vg: mod)
             {
                 bool is_static = !vg.m->is_skinned() && !vg.m->get_animation_source();
@@ -741,7 +742,8 @@ bool scene_stage::refresh_instance_cache()
                         nullptr,
                         nullptr,
                         nullptr,
-                        frame_counter
+                        frame_counter,
+                        flip_winding_order
                     });
                     scene_changed = true;
                 }
