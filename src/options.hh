@@ -565,7 +565,13 @@
         TR_STRUCT_OPT_INT(spatial_samples, 2, 0, 16) \
         TR_STRUCT_OPT_INT(passes, 1, 0, INT_MAX) \
         TR_STRUCT_OPT_BOOL(sample_spatial_disk, true) \
-        TR_STRUCT_OPT_INT(shift_mapping_type, 0, 0, 2) \
+        TR_STRUCT_OPT_ENUM(shift_mapping_type, \
+            restir_stage::shift_mapping_type, \
+            restir_stage::RECONNECTION_SHIFT, \
+            {"reconnection-shift", restir_stage::RECONNECTION_SHIFT}, \
+            {"random-replay-shift", restir_stage::RANDOM_REPLAY_SHIFT}, \
+            {"hybrid-shift", restir_stage::HYBRID_SHIFT} \
+        ) \
         TR_STRUCT_OPT_FLOAT(reconnection_scale, 2, 0, FLT_MAX) \
         TR_STRUCT_OPT_FLOAT(max_search_radius, 32, 0, INT_MAX) \
         TR_STRUCT_OPT_FLOAT(min_search_radius, 1, 0, INT_MAX) \
@@ -582,6 +588,7 @@
 #include "headless.hh"
 #include "tonemap_stage.hh"
 #include "path_tracer_stage.hh"
+#include "restir_stage.hh"
 #include "rt_renderer.hh"
 #include "rt_common.hh"
 #include "feature_stage.hh"
@@ -682,6 +689,7 @@ struct options
 #define TR_STRUCT_OPT_INT(name, default, min, max) int name = default;
 #define TR_STRUCT_OPT_FLOAT(name, default, min, max) float name = default;
 #define TR_STRUCT_OPT_BOOL(name, default) bool name = default;
+#define TR_STRUCT_OPT_ENUM(name, type, default, ...) type name = default;
     TR_OPTIONS
 #undef TR_BOOL_OPT
 #undef TR_BOOL_SOPT
@@ -698,6 +706,7 @@ struct options
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT_BOOL
+#undef TR_STRUCT_OPT_ENUM
 };
 
 void parse_command_line_options(char** argv, options& opt);

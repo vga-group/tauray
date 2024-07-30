@@ -318,6 +318,11 @@ void parse_command_line_options(char** argv, options& opt)
             s.member = parse_toggle(name_prefix+DASHIFY(member), arg, ','); \
             if(*arg == ',') arg++; \
         }
+#define TR_STRUCT_OPT_ENUM(member, type, default, ...) \
+        if(check_name ? (prefix(arg, DASHIFY(member)+"=")) : (*arg != '\0')) { \
+            enum_str(DASHIFY(member), s.member, arg, { __VA_ARGS__ }); \
+            if(*arg == ',') arg++; \
+        }
 #define TR_STRUCT_OPT(name, description, ...)\
         ELSEIF(prefix(arg, DASHIFY(name)+".") || prefix(arg, DASHIFY(name)+"=")) \
         {\
@@ -350,6 +355,7 @@ void parse_command_line_options(char** argv, options& opt)
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT_BOOL
+#undef TR_STRUCT_OPT_ENUM
 #undef TR_STRUCT_OPT
 #define TR_BOOL_OPT(...)
 #define TR_BOOL_SOPT(...)
@@ -573,6 +579,11 @@ bool parse_config_options(const char* config_str, fs::path relative_path, option
             s.member = parse_toggle(name_prefix+DASHIFY(member), arg, ','); \
             if(*arg == ',') arg++; \
         }
+#define TR_STRUCT_OPT_ENUM(member, type, default, ...) \
+        if(check_name ? (id == DASHIFY(member)) : (*arg != '\0')) { \
+            enum_str(DASHIFY(member), s.member, arg, { __VA_ARGS__ }); \
+            if(*arg == ',') arg++; \
+        }
 #define TR_STRUCT_OPT(name, description, ...)\
         else if(prefix(id, DASHIFY(name))) \
         {\
@@ -610,6 +621,7 @@ bool parse_config_options(const char* config_str, fs::path relative_path, option
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT_BOOL
+#undef TR_STRUCT_OPT_ENUM
 #undef TR_STRUCT_OPT
         else throw option_parse_error("Unknown option " + identifier);
         got_any = true;
@@ -671,6 +683,9 @@ void print_command_help(const std::string& command)
 #define TR_STRUCT_OPT_BOOL(name, default) \
     type_tag += DASHIFY(name) + ","; \
     default_str += DASHIFY(name) + " = " + (default ? "true" : "false") + ", ";
+#define TR_STRUCT_OPT_ENUM(name, type, default, ...) \
+    type_tag += DASHIFY(name) + ","; \
+    default_str += DASHIFY(name) + " = " + find_default_enum_string<type>(default, {__VA_ARGS__}) + ", ";
 #define TR_STRUCT_OPT(name, description, ...) \
     {\
         std::string type_tag = ""; \
@@ -695,6 +710,7 @@ void print_command_help(const std::string& command)
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT_BOOL
+#undef TR_STRUCT_OPT_ENUM
 #undef TR_STRUCT_OPT
 #undef opt
     std::cout << "Unknown command: " << command << std::endl;
@@ -754,6 +770,9 @@ Options:
 #define TR_STRUCT_OPT_BOOL(name, default) \
     type_tag += DASHIFY(name) + ","; \
     default_str += DASHIFY(name) + " = " + (default ? "true" : "false") + ", ";
+#define TR_STRUCT_OPT_ENUM(name, type, default, ...) \
+    type_tag += DASHIFY(name) + ","; \
+    default_str += DASHIFY(name) + " = " + find_default_enum_string<type>(default, {__VA_ARGS__}) + ", ";
 #define TR_STRUCT_OPT(name, description, ...) \
     {\
         std::string type_tag = ""; \
@@ -778,6 +797,7 @@ Options:
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT_BOOL
+#undef TR_STRUCT_OPT_ENUM
 #undef TR_STRUCT_OPT
 #undef lopt
 #undef sopt
@@ -858,6 +878,21 @@ void print_options(options& opt, bool full)
 #define TR_STRUCT_OPT_BOOL(name, default) \
     if(full || value.name != default) \
         std::cout << name_start+DASHIFY(name) << " " << value.name << std::endl;
+#define TR_STRUCT_OPT_ENUM(name, type, default, ...) \
+    if(full || value.name != default) \
+    { \
+        std::vector<std::pair<std::string, type>> options{__VA_ARGS__}; \
+        std::cout << name_start+DASHIFY(name) << " "; \
+        for(const auto& pair: options) \
+        { \
+            if(pair.second == value.name) \
+            { \
+                std::cout << pair.first; \
+                break; \
+            } \
+        } \
+        std::cout << std::endl; \
+    }
 #define TR_STRUCT_OPT(name, description, ...) \
     {\
         auto& value = opt.name; \
@@ -879,6 +914,7 @@ void print_options(options& opt, bool full)
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT_BOOL
+#undef TR_STRUCT_OPT_ENUM
 #undef TR_STRUCT_OPT
 #undef dump
 }

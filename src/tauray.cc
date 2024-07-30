@@ -659,7 +659,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.restir_options.canonical_samples = opt.restir.canonical_samples;
                 re_opt.restir_options.spatial_samples = opt.restir.spatial_samples;
                 re_opt.restir_options.spatial_sample_oriented_disk = opt.restir.sample_spatial_disk;
-                re_opt.restir_options.shift_map = (restir_stage::shift_mapping_type)opt.restir.shift_mapping_type;
+                re_opt.restir_options.shift_map = opt.restir.shift_mapping_type;
                 re_opt.restir_options.passes = opt.restir.passes;
                 re_opt.restir_options.reconnection_scale = opt.restir.reconnection_scale;
                 re_opt.restir_options.max_spatial_search_radius = opt.restir.max_search_radius;
