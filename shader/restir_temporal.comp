@@ -26,9 +26,6 @@ layout(push_constant) uniform push_constant_buffer
 #include "restir_core.glsl"
 
 layout(binding = 21, rgba32f) uniform image2D out_color;
-#ifdef TEMPORAL_GRADIENTS
-layout(binding = 22, rg8) uniform image2D out_temporal_gradients;
-#endif
 
 #ifdef ASSUME_UNCHANGED_TEMPORAL_VISIBILITY
 const bool do_temporal_visibility_test = false;
@@ -58,7 +55,7 @@ float estimate_temporal_coherence(float old_value, float new_value)
     return diff / div;
 }
 
-vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_domain)
+void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_domain)
 {
     camera_data cur_cam = camera.pairs[pc.camera_index].current;
     camera_data prev_cam = camera.pairs[pc.camera_index].previous;
@@ -74,7 +71,7 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
     if(prev_p != unclamped_prev_p)
     {
         if(!do_temporal_visibility_test)
-            return vec2(0);
+            return;
 
         prev_p = mirror_wrap(
             p + ivec2(round(sample_concentric_disk(u.zw) * pc.search_base_radius * pc.search_widening)),
@@ -128,12 +125,12 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
     reservoir prev_pixel = read_reservoir(prev_p, pc.config.display_size.xy);
     domain prev_domain;
     if(read_prev_domain(prev_cam, prev_p, cur_domain, prev_domain) || prev_pixel.confidence == 0)
-        return vec2(0);
+        return;
 
     float prev_frustum_size = get_frustum_size(prev_cam, prev_domain.pos);
     float inv_max_plane_dist = 1.0f / prev_frustum_size;
     bool disocclusion = disocclusion_detect(prev_domain.flat_normal, prev_domain.pos, expected_prev_pos, inv_max_plane_dist) < 0.99f;
-    if(!do_temporal_visibility_test && disocclusion) return vec2(0);
+    if(!do_temporal_visibility_test && disocclusion) return;
 
     float diffuse_temporal_coherence = 0.0f;
     float diffuse_temporal_count = 0;
@@ -151,19 +148,6 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
             jacobian, value_in_prev_domain, primary_bsdf
         );
         float target_value_in_prev_domain = target_function(primary_bsdf, value_in_prev_domain);
-
-        // Only check temporal coherence on successful shifts - shift failures
-        // don't tell much of the path's correctness.
-        if(shifted && !disocclusion)
-        {
-            float coherence = estimate_temporal_coherence(rgb_to_luminance(value_in_prev_domain), r.output_sample.radiance_luminance);
-            diffuse_temporal_coherence += coherence * (1.0f-primary_bsdf.a);
-            diffuse_temporal_count += (1.0f-primary_bsdf.a);
-
-            coherence = estimate_temporal_coherence(target_value_in_prev_domain, r.target_function_value);
-            reflection_temporal_coherence += coherence * primary_bsdf.a;
-            reflection_temporal_count += primary_bsdf.a;
-        }
 
         float resampling_mis_weight = r.confidence * r.target_function_value /
             (r.confidence * r.target_function_value + prev_pixel.confidence * target_value_in_prev_domain * jacobian);
@@ -189,16 +173,6 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
         );
 
         float target_function_value = target_function(primary_bsdf, value);
-        // I'm not sure why, but including prev->cur in temporal samples causes
-        // instability that is not present in cur->prev.
-        /*if(shifted && !disocclusion)
-        {
-            float coherence = estimate_temporal_coherence(prev_pixel.target_function_value, target_function_value);
-            diffuse_temporal_coherence += coherence * (1.0f-primary_bsdf.a);
-            diffuse_temporal_count += (1.0f-primary_bsdf.a);
-            reflection_temporal_coherence += coherence * primary_bsdf.a;
-            reflection_temporal_count += primary_bsdf.a;
-        }*/
 
         float resampling_mis_weight = prev_pixel.confidence * prev_pixel.target_function_value /
             (prev_pixel.confidence * prev_pixel.target_function_value + r.confidence * target_function_value * jacobian);
@@ -219,12 +193,6 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
     // Update UCW
     if(r.target_function_value > 0)
         r.ucw = r.sum_weight/r.target_function_value;
-
-    vec2 gradients = vec2(
-        diffuse_temporal_count == 0 ? 1.0f : 1.0f-diffuse_temporal_coherence / diffuse_temporal_count,
-        reflection_temporal_count == 0 ? 1.0f : 1.0f-reflection_temporal_coherence / reflection_temporal_count
-    );
-    return gradients;
 }
 
 void main()
@@ -242,17 +210,7 @@ void main()
 
     if(r.confidence != 0)
     {
-        vec2 gradients = temporal_reuse(seed, p, r, cur_domain);
+        temporal_reuse(seed, p, r, cur_domain);
         write_reservoir(r, p, pc.config.display_size.xy);
-
-#ifdef TEMPORAL_GRADIENTS
-        imageStore(out_temporal_gradients, p, vec4(gradients, 0, 0));
-#endif
-    }
-    else
-    {
-#ifdef TEMPORAL_GRADIENTS
-        imageStore(out_temporal_gradients, p, vec4(0));
-#endif
     }
 }

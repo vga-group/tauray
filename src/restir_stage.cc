@@ -306,11 +306,6 @@ restir_stage::restir_stage(
     if(this->opt.regularization_gamma > 0)
         defines["PATH_SPACE_REGULARIZATION"] = std::to_string(this->opt.regularization_gamma);
 
-    if(c.temporal_gradient)
-        defines["TEMPORAL_GRADIENTS"];
-    if(c.confidence)
-        defines["OUTPUT_CONFIDENCE"];
-
     add_defines(this->opt.sampling_weights, defines);
 
     switch(opt.shift_map)
@@ -343,8 +338,6 @@ restir_stage::restir_stage(
     set.set_binding_params("out_diffuse", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_reflection", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_length", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
-    set.set_binding_params("out_temporal_gradients", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
-    set.set_binding_params("out_confidence", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("spatial_selection", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("spatial_candidates", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("mis_data", 1, vk::DescriptorBindingFlagBits::ePartiallyBound);
@@ -443,9 +436,6 @@ restir_stage::restir_stage(
     }
     else current_buffers.color.layout = vk::ImageLayout::eGeneral;
 
-    if(current_buffers.temporal_gradient)
-        current_buffers.temporal_gradient.layout = vk::ImageLayout::eGeneral;
-
 #define X(name) \
     if(c.name) c.name.layout = vk::ImageLayout::eGeneral; \
     if(p.name) p.name.layout = vk::ImageLayout::eGeneral;
@@ -473,9 +463,6 @@ void restir_stage::update(uint32_t frame_index)
         current_buffers.reflection.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
     }
     else current_buffers.color.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
-
-    if(current_buffers.temporal_gradient)
-        current_buffers.temporal_gradient.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
 
 #define X(name) \
     if(current_buffers.name) \
@@ -771,8 +758,6 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_i
     { // TEMPORAL
         temporal_set.set_image(dev->id, "motion_tex", {{gbuf_sampler.get_sampler(dev->id), current_buffers.screen_motion.view, vk::ImageLayout::eShaderReadOnlyOptimal}});
         temporal_set.set_image("out_color", *cached_sample_color);
-        if(current_buffers.temporal_gradient)
-            temporal_set.set_image(dev->id, "out_temporal_gradients", {{{}, current_buffers.temporal_gradient.view, vk::ImageLayout::eGeneral}});
 
         auto& set = temporal_set;
         BIND_RESERVOIRS
@@ -885,8 +870,6 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t frame_ind
         {
             spatial_gather_set.set_image(dev->id, "out_reflection", {{{}, current_buffers.color.view, vk::ImageLayout::eGeneral}});
         }
-        if(current_buffers.confidence)
-            spatial_gather_set.set_image(dev->id, "out_confidence", {{{}, current_buffers.confidence.view, vk::ImageLayout::eGeneral}});
 
         auto& set = spatial_gather_set;
         BIND_RESERVOIRS
