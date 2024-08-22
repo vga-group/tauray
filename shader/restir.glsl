@@ -24,8 +24,6 @@
 #include "scene.glsl"
 #endif
 
-#define RESTIR_DI (MAX_BOUNCES == 1)
-
 #if defined(USE_RANDOM_REPLAY_SHIFT)
 #define RESTIR_HAS_RECONNECTION_DATA false
 #else

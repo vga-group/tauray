@@ -305,8 +305,6 @@ restir_stage::restir_stage(
         defines["DEMODULATE_OUTPUT"];
     if(this->opt.regularization_gamma > 0)
         defines["PATH_SPACE_REGULARIZATION"] = std::to_string(this->opt.regularization_gamma);
-    if(this->opt.expect_taa_jitter)
-        defines["CANCEL_TAA_JITTER"];
 
     if(c.temporal_gradient)
         defines["TEMPORAL_GRADIENTS"];

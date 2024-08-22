@@ -151,8 +151,6 @@ public:
 
         light_sampling_weights sampling_weights;
         int camera_index = 0;
-
-        bool expect_taa_jitter = false;
     };
 
     // TODO: Doesn't expect multi-view targets for now.

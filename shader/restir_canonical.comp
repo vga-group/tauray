@@ -296,55 +296,8 @@ void main()
     }
 
     vec4 out_value = vec4(0);
-    if(RESTIR_DI)
-    {
-        bool head_allows_reconnection = allow_initial_reconnection(cur_domain.mat);
-
-        // BSDF samples
-        for(int i = 0; i < CANONICAL_SAMPLES; ++i)
-        {
-            restir_sample base_sample;
-            init_restir_sample(base_sample, seed.x);
-            vec3 total_throughput = vec3(1);
-            vec3 tail_throughput = vec3(1);
-            float path_pdf = 1.0f;
-            bool tmp_head_allows_reconnection = head_allows_reconnection;
-
-            domain dst;
-            vec4 primary_bsdf = vec4(1);
-            float regularization = 1.0f;
-            sample_path_bsdf_bounce(
-                seed.x, seed.y, base_sample,
-                total_throughput, tail_throughput,
-                path_pdf, tmp_head_allows_reconnection, regularization,
-                cur_domain, dst, out_value, primary_bsdf, r
-            );
-        }
-
-        // NEE samples
-        for(int i = 0; i < CANONICAL_SAMPLES; ++i)
-        {
-            restir_sample base_sample;
-            init_restir_sample(base_sample, seed.x);
-            vec3 total_throughput = vec3(1);
-            vec3 tail_throughput = vec3(1);
-            float path_pdf = 1.0f;
-            bool tmp_head_allows_reconnection = head_allows_reconnection;
-
-            vec4 primary_bsdf = vec4(1);
-            sample_path_nee_leaf(
-                seed.x, seed.y, base_sample,
-                total_throughput, tail_throughput,
-                path_pdf, tmp_head_allows_reconnection,
-                cur_domain, out_value, primary_bsdf, r
-            );
-        }
-    }
-    else
-    {
-        for(int i = 0; i < CANONICAL_SAMPLES; ++i)
-            sample_path(seed.x, seed.y, cur_domain, out_value, r);
-    }
+    for(int i = 0; i < CANONICAL_SAMPLES; ++i)
+        sample_path(seed.x, seed.y, cur_domain, out_value, r);
 
     r.confidence = CANONICAL_SAMPLES;
 

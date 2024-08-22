@@ -1230,8 +1230,7 @@ int replay_path(
     for(int bounce = 0; bounce < min(end_nee ? path_length-1 : path_length, MAX_BOUNCES); ++bounce)
     {
         // Eat NEE sample
-        if(!RESTIR_DI)
-            pcg1to4(seed);
+        pcg1to4(seed);
 
         bool reconnected = false;
         bool bounces = replay_path_bsdf_bounce(bounce, seed, throughput, primary_bsdf, regularization, src, in_past, head_allows_reconnection, reconnected);

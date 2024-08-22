@@ -111,7 +111,6 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         this->opt.restir_options.max_bounces = max(this->opt.restir_options.max_bounces, 1u);
         this->opt.restir_options.demodulated_output = false;
         this->opt.restir_options.camera_index = i;
-        this->opt.restir_options.expect_taa_jitter = false;
         //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
         pv.restir.emplace(devices[device_index], *scene_update, cur, prev, this->opt.restir_options);
 

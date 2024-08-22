@@ -64,10 +64,6 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
     camera_data prev_cam = camera.pairs[pc.camera_index].previous;
 
     vec3 motion = texelFetch(motion_tex, ivec2(p), 0).xyz;
-#ifdef CANCEL_TAA_JITTER
-    motion.xy -= (cur_cam.pan.zw - prev_cam.pan.zw) * 0.5f;
-#endif
-
     motion.y = 1.0f - motion.y;
 
     vec4 u = generate_single_uniform_random(seed);
