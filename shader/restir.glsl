@@ -25,10 +25,6 @@
 #endif
 #include "scene_raster.glsl"
 
-#if !defined(USE_RECONNECTION_SHIFT)
-#define USE_PRIMARY_SAMPLE_SPACE
-#endif
-
 #define RESTIR_DI (MAX_BOUNCES == 1)
 
 #if defined(USE_RANDOM_REPLAY_SHIFT)

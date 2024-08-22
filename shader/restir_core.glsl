@@ -1438,9 +1438,7 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
         if(bounce != 0)
         {
             path_throughput *= modulate_bsdf(tail_domain.mat, lobes);
-#ifdef USE_PRIMARY_SAMPLE_SPACE
             path_throughput /= bsdf_pdf;
-#endif
         }
         //else tail_dir = tail_domain.tbn * tdir;
 
@@ -1485,9 +1483,7 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
             bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
             ggx_bsdf(tdir, tail_domain.tview, tail_domain.mat, lobes);
             path_throughput *= modulate_bsdf(tail_domain.mat, lobes);
-#ifdef USE_PRIMARY_SAMPLE_SPACE
             path_throughput /= nee_pdf;
-#endif
         }
         radiance = path_throughput * vertex.radiance_estimate;
 

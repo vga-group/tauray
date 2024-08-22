@@ -70,10 +70,7 @@ void sample_path_nee_leaf(
         src, candidate_dir, lobes, primary_bsdf
     );
 
-#ifdef USE_PRIMARY_SAMPLE_SPACE
     throughput /= nee_pdf;
-#endif
-
     throughput *= test_visibility(rand32.w, src.pos, candidate_dir, candidate_dist, src.flat_normal);
 
     total_throughput *= throughput;
@@ -88,19 +85,14 @@ void sample_path_nee_leaf(
             candidate_dist,
             candidate_normal
         );
-        candidate.base_path_jacobian_part = half_jacobian;
-#ifdef USE_PRIMARY_SAMPLE_SPACE
-        candidate.base_path_jacobian_part *= nee_pdf;
-#endif
+        candidate.base_path_jacobian_part = half_jacobian * nee_pdf;
         candidate.head_lobe = MATERIAL_LOBE_ALL;
     }
 
     if(candidate.vertex.instance_id != UNCONNECTED_PATH_ID && candidate.tail_length == 1)
     {
         candidate.vertex.incident_direction = candidate_dir;
-#ifdef USE_PRIMARY_SAMPLE_SPACE
         candidate.base_path_jacobian_part *= nee_pdf;
-#endif
         candidate.tail_lobe = MATERIAL_LOBE_ALL;
     }
 
@@ -113,12 +105,7 @@ void sample_path_nee_leaf(
     candidate.radiance_luminance = rgb_to_luminance(value);
 
     float resampling_mis_weight = nee_pdf / (CANONICAL_SAMPLES * bsdf_pdf + CANONICAL_SAMPLES * nee_pdf); // m_i(X_i)
-#ifdef USE_PRIMARY_SAMPLE_SPACE
-    float ucw = 1.0f;
-#else
-    float ucw = 1.0f / (path_pdf * nee_pdf);
-#endif
-    float resampling_weight = resampling_mis_weight * target_function_value * ucw; // w_i
+    float resampling_weight = resampling_mis_weight * target_function_value; // w_i
 
     if(update_reservoir(generate_single_uniform_random(ris_seed), r, target_function_value, resampling_weight, 1.0f))
     {
@@ -187,9 +174,7 @@ bool sample_path_bsdf_bounce(
 
     path_pdf *= bsdf_pdf;
 
-#ifdef USE_PRIMARY_SAMPLE_SPACE
     throughput /= bsdf_pdf;
-#endif
 
     total_throughput *= throughput;
     if(candidate.tail_length > 1)
@@ -201,19 +186,14 @@ bool sample_path_bsdf_bounce(
         float half_jacobian = reconnection_shift_half_jacobian(
             normalize(dst.pos-src.pos), length(dst.pos-src.pos), dst.flat_normal
         );
-        candidate.base_path_jacobian_part = half_jacobian;
-#ifdef USE_PRIMARY_SAMPLE_SPACE
-        candidate.base_path_jacobian_part *= bsdf_pdf;
-#endif
+        candidate.base_path_jacobian_part = half_jacobian * bsdf_pdf;
         candidate.head_lobe = sampled_lobe;
     }
 
     if(candidate.vertex.instance_id != UNCONNECTED_PATH_ID && candidate.tail_length == 1)
     {
         candidate.vertex.incident_direction = dst.view;
-#ifdef USE_PRIMARY_SAMPLE_SPACE
         candidate.base_path_jacobian_part *= bsdf_pdf;
-#endif
         candidate.tail_lobe = sampled_lobe;
     }
 
@@ -226,12 +206,7 @@ bool sample_path_bsdf_bounce(
     candidate.radiance_luminance = rgb_to_luminance(value);
 
     float resampling_mis_weight = bsdf_pdf / (CANONICAL_SAMPLES * bsdf_pdf + CANONICAL_SAMPLES * nee_pdf); // m_i(X_i)
-#ifdef USE_PRIMARY_SAMPLE_SPACE
-    float ucw = 1.0f;
-#else
-    float ucw = 1.0f / path_pdf;
-#endif
-    float resampling_weight = resampling_mis_weight * target_function_value * ucw; // w_i
+    float resampling_weight = resampling_mis_weight * target_function_value; // w_i
     if(isnan(resampling_weight)) resampling_weight = 0;
 
     if(update_reservoir(generate_single_uniform_random(ris_seed), r, target_function_value, resampling_weight, 1.0f))
