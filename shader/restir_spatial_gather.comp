@@ -25,36 +25,24 @@ layout(binding = 14) uniform sampler2D emission_tex;
 // These buffers are SUPER overloaded.
 // These names are for demodulated output, but they also contain demodulated
 // input or non-demodulated input/output.
-layout(binding = 16, rgba32f) uniform image2D out_diffuse;
-layout(binding = 17, rgba32f) uniform image2D out_reflection;
+layout(binding = 15, rgba32f) uniform image2D out_color;
 
-// These names are for accumulation-enabled non-demodulated output.
-#define out_color out_reflection
-
-layout(binding = 18, rg32ui) readonly uniform uimage2D spatial_selection;
-layout(binding = 19, rgba32f) readonly uniform image2DArray mis_data;
-layout(binding = 20, rgba32f) readonly uniform image2DArray spatial_candidates;
-layout(binding = 21, rgba32f) readonly uniform image2D in_color;
+layout(binding = 16, rg32ui) readonly uniform uimage2D spatial_selection;
+layout(binding = 17, rgba32f) readonly uniform image2DArray mis_data;
+layout(binding = 18, rgba32f) readonly uniform image2DArray spatial_candidates;
+layout(binding = 19, rgba32f) uniform image2D in_color;
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 #include "restir_core.glsl"
 
-void finish_output_color(ivec2 p, reservoir r, vec4 out_value, sum_contribution sc)
+void finish_output_color(ivec2 p, reservoir r, vec4 out_value, vec3 sc)
 {
     write_reservoir(r, p, pc.display_size);
     if(pc.update_sample_color != 0)
-        imageStore(out_diffuse, p, out_value);
+        imageStore(in_color, p, out_value);
     else
-    {
-#ifdef DEMODULATE_OUTPUT
-        vec2 ray_lengths = imageLoad(out_reflection, p).rg;
-        imageStore(out_diffuse, p, vec4(sc.diffuse, ray_lengths.r));
-        imageStore(out_reflection, p, vec4(sc.reflection, ray_lengths.g));
-#else
-        imageStore(out_reflection, p, vec4(sc.diffuse, 1.0f));
-#endif
-    }
+        imageStore(out_color, p, vec4(sc, 1.0f));
 }
 
 void main()
@@ -82,7 +70,7 @@ void main()
     float canonical_resampling_mis_weight = uintBitsToFloat(selection).g;
 
     vec3 canonical_emission = sample_gbuffer_emission(emission_tex, p);
-    sum_contribution sc = init_sum_contribution(canonical_emission);
+    vec3 sc = canonical_emission;
     vec4 canonical_value = imageLoad(in_color, p);
     vec4 out_value = canonical_value;
 
@@ -93,17 +81,13 @@ void main()
         // Missed scene, so mark invalid so that temporal reprojection skips
         // this pixel.
         write_reservoir(r, p, pc.display_size);
-#ifdef DEMODULATE_OUTPUT
-        imageStore(out_diffuse, p, vec4(canonical_domain.mat.emission, 0.0f));
-        imageStore(out_reflection, p, vec4(0));
-#endif
         return;
     }
 
     if(MAX_SPATIAL_SAMPLES == 0)
     {
         reservoir canonical_pixel = read_reservoir(p, pc.display_size);
-        add_contribution(sc, canonical_value, max(canonical_pixel.ucw, 0.0f));
+        sc += canonical_value.rgb * max(canonical_pixel.ucw, 0.0f);
         finish_output_color(p, canonical_pixel, out_value, sc);
         return;
     }
@@ -120,7 +104,7 @@ void main()
         float target_function_value = mis.a;
         float resampling_mis_weight = mis.g;
         float resampling_weight = resampling_mis_weight * target_function_value;
-        add_contribution(sc, value, resampling_mis_weight);
+        sc += value.rgb * resampling_mis_weight;
         if(update_reservoir(generate_single_uniform_random(seed.x), r, target_function_value, resampling_weight, confidence))
         {
             chosen_i = i;
@@ -135,7 +119,7 @@ void main()
     // canonical_resampling_mis_weight previously)
     float resampling_weight = canonical_resampling_mis_weight * canonical_pixel.target_function_value * max(canonical_pixel.ucw, 0); // w_i
 
-    add_contribution(sc, canonical_value, canonical_resampling_mis_weight * max(canonical_pixel.ucw, 0));
+    sc += canonical_value.rgb * canonical_resampling_mis_weight * max(canonical_pixel.ucw, 0);
 
     if(update_reservoir(
         generate_single_uniform_random(seed.x), r,

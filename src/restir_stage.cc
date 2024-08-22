@@ -183,13 +183,9 @@ restir_stage::restir_stage(
         this->opt.assume_unchanged_material = true;
     }
 
-    if(!c.color && !opt.demodulated_output)
+    if(!c.color)
     {
         throw std::runtime_error("Missing color output buffer!");
-    }
-    if((!c.diffuse || !c.reflection) && opt.demodulated_output)
-    {
-        throw std::runtime_error("Missing demodulated output buffers (diffuse, reflection)!");
     }
 
     if(!scene_data->has_prev_tlas() && !opt.assume_unchanged_acceleration_structures)
@@ -200,7 +196,7 @@ restir_stage::restir_stage(
         );
         this->opt.assume_unchanged_acceleration_structures = true;
     }
-    assert(this->opt.demodulated_output || (c.emission && p.emission));
+    assert(c.emission && p.emission);
 
     uvec2 size = current_buffers.color.size;
     cached_sample_color.emplace(
@@ -301,8 +297,6 @@ restir_stage::restir_stage(
         defines["ASSUME_UNCHANGED_ACCELERATION_STRUCTURES"];
     if(this->opt.spatial_sample_oriented_disk)
         defines["NEIGHBOR_SAMPLE_ORIENTED_DISKS"];
-    if(this->opt.demodulated_output)
-        defines["DEMODULATE_OUTPUT"];
     if(this->opt.regularization_gamma > 0)
         defines["PATH_SPACE_REGULARIZATION"] = std::to_string(this->opt.regularization_gamma);
 
@@ -429,12 +423,7 @@ restir_stage::restir_stage(
         );
     }
 
-    if(opt.demodulated_output)
-    {
-        current_buffers.diffuse.layout = vk::ImageLayout::eGeneral;
-        current_buffers.reflection.layout = vk::ImageLayout::eGeneral;
-    }
-    else current_buffers.color.layout = vk::ImageLayout::eGeneral;
+    current_buffers.color.layout = vk::ImageLayout::eGeneral;
 
 #define X(name) \
     if(c.name) c.name.layout = vk::ImageLayout::eGeneral; \
@@ -457,12 +446,7 @@ void restir_stage::update(uint32_t frame_index)
     vk::CommandBuffer cmd = begin_graphics(true);
     stage_timer.begin(cmd, dev->id, frame_index);
 
-    if(opt.demodulated_output)
-    {
-        current_buffers.diffuse.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
-        current_buffers.reflection.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
-    }
-    else current_buffers.color.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
+    current_buffers.color.transition_layout_temporary(cmd, vk::ImageLayout::eGeneral);
 
 #define X(name) \
     if(current_buffers.name) \
@@ -504,54 +488,20 @@ void restir_stage::update(uint32_t frame_index)
     { \
         vk::ImageMemoryBarrier barriers[3]; \
         uint32_t barrier_count = 0; \
-        if(!opt.demodulated_output) \
-        { \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
-                happens_before, \
-                happens_after, \
-                vk::ImageLayout::eGeneral, \
-                vk::ImageLayout::eGeneral, \
-                VK_QUEUE_FAMILY_IGNORED, \
-                VK_QUEUE_FAMILY_IGNORED, \
-                cached_sample_color->get_image(dev->id), \
-                { \
-                    vk::ImageAspectFlagBits::eColor, \
-                    0, VK_REMAINING_MIP_LEVELS, \
-                    0, VK_REMAINING_ARRAY_LAYERS \
-                } \
-            }; \
-        } \
-        else \
-        { \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
-                happens_before, \
-                happens_after, \
-                vk::ImageLayout::eGeneral, \
-                vk::ImageLayout::eGeneral, \
-                VK_QUEUE_FAMILY_IGNORED, \
-                VK_QUEUE_FAMILY_IGNORED, \
-                current_buffers.diffuse.image, \
-                { \
-                    vk::ImageAspectFlagBits::eColor, \
-                    0, VK_REMAINING_MIP_LEVELS, \
-                    0, VK_REMAINING_ARRAY_LAYERS \
-                } \
-            }; \
-            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
-                happens_before, \
-                happens_after, \
-                vk::ImageLayout::eGeneral, \
-                vk::ImageLayout::eGeneral, \
-                VK_QUEUE_FAMILY_IGNORED, \
-                VK_QUEUE_FAMILY_IGNORED, \
-                current_buffers.reflection.image, \
-                { \
-                    vk::ImageAspectFlagBits::eColor, \
-                    0, VK_REMAINING_MIP_LEVELS, \
-                    0, VK_REMAINING_ARRAY_LAYERS \
-                } \
-            }; \
-        } \
+        barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
+            happens_before, \
+            happens_after, \
+            vk::ImageLayout::eGeneral, \
+            vk::ImageLayout::eGeneral, \
+            VK_QUEUE_FAMILY_IGNORED, \
+            VK_QUEUE_FAMILY_IGNORED, \
+            cached_sample_color->get_image(dev->id), \
+            { \
+                vk::ImageAspectFlagBits::eColor, \
+                0, VK_REMAINING_MIP_LEVELS, \
+                0, VK_REMAINING_ARRAY_LAYERS \
+            } \
+        }; \
         cmd.pipelineBarrier( \
             vk::PipelineStageFlagBits::eAllCommands, \
             vk::PipelineStageFlagBits::eAllCommands, \
@@ -720,8 +670,6 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_i
     canonical_timer.begin(cmd, dev->id, frame_index);
     { // CANONICAL
         canonical_set.set_image("out_color", *cached_sample_color);
-        if(opt.demodulated_output)
-            canonical_set.set_image(dev->id, "out_length", {{{}, current_buffers.reflection.view, vk::ImageLayout::eGeneral}});
         auto& set = canonical_set;
         BIND_RESERVOIRS
         USED_BUFFERS
@@ -860,16 +808,7 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t frame_ind
         }
 
         spatial_gather_set.set_image("in_color", *cached_sample_color);
-
-        if(opt.demodulated_output)
-        {
-            spatial_gather_set.set_image(dev->id, "out_diffuse", {{{}, current_buffers.diffuse.view, vk::ImageLayout::eGeneral}});
-            spatial_gather_set.set_image(dev->id, "out_reflection", {{{}, current_buffers.reflection.view, vk::ImageLayout::eGeneral}});
-        }
-        else
-        {
-            spatial_gather_set.set_image(dev->id, "out_reflection", {{{}, current_buffers.color.view, vk::ImageLayout::eGeneral}});
-        }
+        spatial_gather_set.set_image(dev->id, "out_color", {{{}, current_buffers.color.view, vk::ImageLayout::eGeneral}});
 
         auto& set = spatial_gather_set;
         BIND_RESERVOIRS

@@ -138,10 +138,6 @@ public:
         // still converge just fine, but suboptimally.
         bool accumulate = false;
 
-        // Writes output to current gbuffer's demodulated colors if they are
-        // present. Accumulation is not supported with demodulation.
-        bool demodulated_output = false;
-
         // Whether to permute temporal samples or not. This increases noise,
         // but reduces temporal correlations, which can be very useful if you
         // intend to denoise the result.
@@ -198,8 +194,7 @@ private:
     std::optional<texture> spatial_candidate_color;
 
     // Present if accumulation is used. Otherwise, this data is placed
-    // temporarily in the gbuffer instead. Not supported with demodulation,
-    // which disables accumulation anyway.
+    // temporarily in the gbuffer instead.
     std::optional<texture> cached_sample_color;
 
     // Even though textures are a bit clumsy, we pack our reservoir data there

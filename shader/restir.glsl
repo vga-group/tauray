@@ -143,25 +143,9 @@ bool update_reservoir(
 // something else if you wanted to, but improvements are probably limited to
 // better approximations of luminance. Maybe you could take nonlinear
 // tonemapping into account?
-float target_function(vec4 primary_bsdf, vec3 radiance)
+float target_function(vec3 value)
 {
-    vec3 value = radiance;
-#ifdef DEMODULATE_OUTPUT
-    value *= primary_bsdf.rgb;
-#endif
     return rgb_to_luminance(value);
-}
-
-// Output color can be derived differently from the target function, which is
-// the case for demodulated output.
-vec4 output_color_function(vec4 primary_bsdf, vec3 radiance)
-{
-#ifdef DEMODULATE_OUTPUT
-    return vec4(primary_bsdf.rgb * radiance, primary_bsdf.a);
-    //return vec4(radiance, primary_bsdf.a);
-#else
-    return vec4(radiance, 0);
-#endif
 }
 
 struct intersection_info

@@ -326,59 +326,9 @@ void apply_regularization(float regularization, inout sampled_material mat)
 #endif
 }
 
-vec3 get_bounce_throughput(
-    uint bounce_index,
-    domain src,
-    vec3 dir,
-    bsdf_lobes lobes,
-    inout vec4 primary_bsdf
-){
-    vec3 bsdf = modulate_bsdf(src.mat, lobes);
-#ifdef DEMODULATE_OUTPUT
-    if(bounce_index == 0)
-    {
-        float transmission = lobes.transmission + lobes.diffuse;
-        float reflection = lobes.dielectric_reflection + lobes.metallic_reflection;
-        float scale = transmission + reflection;
-        float inv_scale = scale == 0 ? 0 : 1.0f / scale;
-
-        primary_bsdf.rgb = vec3(scale);
-        primary_bsdf.a = scale <= 0 ? 0 : reflection * inv_scale;
-        bsdf = vec3(1.0f);
-    }
-#endif
-    return bsdf * self_shadow(-src.view, src.flat_normal, dir, src.mat);
-}
-
-struct sum_contribution
+vec3 get_bounce_throughput(domain src, vec3 dir, bsdf_lobes lobes)
 {
-    vec3 diffuse;
-#ifdef DEMODULATE_OUTPUT
-    vec3 reflection;
-#endif
-};
-
-sum_contribution init_sum_contribution(vec3 emission)
-{
-    sum_contribution sc;
-#ifdef DEMODULATE_OUTPUT
-    sc.diffuse = vec3(0);
-    sc.reflection = vec3(0);
-#else
-    sc.diffuse = emission;
-#endif
-    return sc;
-}
-
-void add_contribution(inout sum_contribution sc, vec4 contrib, float weight)
-{
-#ifdef DEMODULATE_OUTPUT
-    vec3 color = contrib.rgb * weight;
-    sc.diffuse += color * (1.0f - contrib.a);
-    sc.reflection += color * contrib.a;
-#else
-    sc.diffuse += contrib.rgb * weight;
-#endif
+    return modulate_bsdf(src.mat, lobes) * self_shadow(-src.view, src.flat_normal, dir, src.mat);
 }
 
 #ifdef RAY_TRACING
@@ -1114,7 +1064,6 @@ bool replay_path_nee_leaf(
     int bounce_index,
     inout uint path_seed,
     inout vec3 path_throughput,
-    inout vec4 primary_bsdf,
     inout domain src,
     bool in_past,
     inout bool head_allows_reconnection,
@@ -1143,9 +1092,7 @@ bool replay_path_nee_leaf(
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     float bsdf_pdf = ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
 
-    path_throughput *= get_bounce_throughput(
-        bounce_index, src, candidate_dir, lobes, primary_bsdf
-    ) / nee_pdf;
+    path_throughput *= get_bounce_throughput(src, candidate_dir, lobes) / nee_pdf;
     path_throughput *=
 #ifdef RESTIR_TEMPORAL
         in_past ? test_prev_visibility(rand32.w, src.pos, candidate_dir, candidate_dist, src.flat_normal) :
@@ -1160,7 +1107,6 @@ bool replay_path_bsdf_bounce(
     int bounce_index,
     inout uint path_seed,
     inout vec3 path_throughput,
-    inout vec4 primary_bsdf,
     inout float regularization,
     inout domain src,
     bool in_past,
@@ -1184,9 +1130,7 @@ bool replay_path_bsdf_bounce(
     if(bsdf_pdf == 0) bsdf_pdf = 1;
     vec3 dir = src.tbn * tdir;
 
-    path_throughput *= get_bounce_throughput(
-        bounce_index, src, dir, lobes, primary_bsdf
-    ) / bsdf_pdf;
+    path_throughput *= get_bounce_throughput(src, dir, lobes) / bsdf_pdf;
 
     float nee_pdf;
     domain dst;
@@ -1218,11 +1162,9 @@ int replay_path(
     bool fail_on_last_unconnected,
     bool in_past,
     inout float regularization,
-    out vec3 throughput,
-    out vec4 primary_bsdf
+    out vec3 throughput
 ){
     throughput = vec3(1.0f);
-    primary_bsdf = vec4(0);
 
     int end_state = 0;
 
@@ -1233,7 +1175,7 @@ int replay_path(
         pcg1to4(seed);
 
         bool reconnected = false;
-        bool bounces = replay_path_bsdf_bounce(bounce, seed, throughput, primary_bsdf, regularization, src, in_past, head_allows_reconnection, reconnected);
+        bool bounces = replay_path_bsdf_bounce(bounce, seed, throughput, regularization, src, in_past, head_allows_reconnection, reconnected);
         apply_regularization(regularization, src.mat);
 
         if(fail_on_reconnect && reconnected)
@@ -1255,7 +1197,7 @@ int replay_path(
     {
         // NEE paths are always terminal.
         bool reconnected = false;
-        bool success = replay_path_nee_leaf(path_length-1, seed, throughput, primary_bsdf, src, in_past, head_allows_reconnection, reconnected);
+        bool success = replay_path_nee_leaf(path_length-1, seed, throughput, src, in_past, head_allows_reconnection, reconnected);
         if(!success || (fail_on_reconnect && reconnected))
             end_state = 2;
         else
@@ -1355,8 +1297,7 @@ bool reconnection_shift_map(
     bool do_visibility_test,
     bool update_sample,
     out float jacobian,
-    out vec3 contribution,
-    out vec4 primary_bsdf
+    out vec3 contribution
 ){
 #ifndef RESTIR_TEMPORAL
     const bool cur_to_prev = false;
@@ -1364,7 +1305,6 @@ bool reconnection_shift_map(
 
     jacobian = 1;
     contribution = vec3(0);
-    primary_bsdf = vec4(0);
 
     if(rs.vertex.instance_id == NULL_INSTANCE_ID || rs.vertex.instance_id == UNCONNECTED_PATH_ID)
         return false;
@@ -1446,8 +1386,7 @@ bool reconnection_shift_map(
         emission = bsdf * rs.vertex.radiance_estimate;
     }
 
-    contribution =
-        get_bounce_throughput(0, to_domain, to.dir, to.lobes, primary_bsdf) * emission;
+    contribution = get_bounce_throughput(to_domain, to.dir, to.lobes) * emission;
 
     if(do_visibility_test)
     {
@@ -1486,8 +1425,7 @@ bool random_replay_shift_map(
     domain to_domain,
     bool update_sample,
     out float jacobian,
-    out vec3 contribution,
-    out vec4 primary_bsdf
+    out vec3 contribution
 ){
 #ifndef RESTIR_TEMPORAL
     const bool cur_to_prev = false;
@@ -1495,7 +1433,6 @@ bool random_replay_shift_map(
 
     jacobian = 1;
     contribution = vec3(0);
-    primary_bsdf = vec4(0);
 
     if(rs.vertex.instance_id == NULL_INSTANCE_ID)
         return false;
@@ -1511,8 +1448,7 @@ bool random_replay_shift_map(
         false,
         cur_to_prev,
         regularization,
-        throughput,
-        primary_bsdf
+        throughput
     );
     if(replay_status == 2)
     {
@@ -1539,8 +1475,7 @@ bool hybrid_shift_map(
     bool do_visibility_test,
     bool update_sample,
     out float jacobian,
-    out vec3 contribution,
-    out vec4 primary_bsdf
+    out vec3 contribution
 ){
 #ifndef RESTIR_TEMPORAL
     const bool cur_to_prev = false;
@@ -1548,7 +1483,6 @@ bool hybrid_shift_map(
 
     jacobian = 1;
     contribution = vec3(0);
-    primary_bsdf = vec4(0);
 
     if(rs.vertex.instance_id == NULL_INSTANCE_ID)
         return false;
@@ -1567,8 +1501,7 @@ bool hybrid_shift_map(
             has_reconnection,
             cur_to_prev,
             regularization,
-            throughput,
-            primary_bsdf
+            throughput
         );
 
         if(!has_reconnection)
@@ -1687,7 +1620,7 @@ bool hybrid_shift_map(
             return false;
     }
 
-    contribution = throughput * get_bounce_throughput(rs.head_length, to_domain, to.dir, to.lobes, primary_bsdf) * emission;
+    contribution = throughput * get_bounce_throughput(to_domain, to.dir, to.lobes) * emission;
 
     if(isnan(v0_pdf) || isinf(v0_pdf) || v0_pdf == 0)
         contribution = vec3(0);
@@ -1732,8 +1665,7 @@ bool shift_map(
     bool do_visibility_test,
     bool update_sample,
     out float jacobian,
-    out vec3 contribution,
-    out vec4 primary_bsdf
+    out vec3 contribution
 ){
 #ifdef USE_RECONNECTION_SHIFT
     return reconnection_shift_map(
@@ -1742,7 +1674,7 @@ bool shift_map(
         cur_to_prev,
 #endif
         to_domain, do_visibility_test, update_sample,
-        jacobian, contribution, primary_bsdf
+        jacobian, contribution
     );
 #elif defined(USE_RANDOM_REPLAY_SHIFT)
     return random_replay_shift_map(
@@ -1751,7 +1683,7 @@ bool shift_map(
         cur_to_prev,
 #endif
         to_domain, update_sample,
-        jacobian, contribution, primary_bsdf
+        jacobian, contribution
     );
 #else
     return hybrid_shift_map(
@@ -1760,7 +1692,7 @@ bool shift_map(
         cur_to_prev,
 #endif
         to_domain, do_visibility_test, update_sample,
-        jacobian, contribution, primary_bsdf
+        jacobian, contribution
     );
 #endif
 }

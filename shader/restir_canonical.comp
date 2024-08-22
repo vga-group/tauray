@@ -21,7 +21,6 @@ layout(push_constant) uniform push_constant_buffer
 layout(local_size_x = DISPATCH_WIDTH, local_size_y = DISPATCH_HEIGHT) in;
 
 layout(binding = 16, rgba32f) writeonly uniform image2D out_color;
-layout(binding = 17, rg32f) writeonly uniform image2D out_length;
 
 #include "restir_core.glsl"
 
@@ -34,8 +33,7 @@ void sample_path_nee_leaf(
     float path_pdf,
     bool head_allows_reconnection,
     domain src,
-    inout vec4 out_value,
-    inout vec4 primary_bsdf,
+    inout vec3 out_value,
     inout reservoir r
 ){
     ray_cone_apply_roughness(src.mat.roughness, src.rc);
@@ -65,10 +63,7 @@ void sample_path_nee_leaf(
     // sampling to sample it. So the PDF is set to zero.
     if(extremity) bsdf_pdf = 0.0f;
 
-    vec3 throughput = get_bounce_throughput(
-        candidate.head_length + candidate.tail_length,
-        src, candidate_dir, lobes, primary_bsdf
-    );
+    vec3 throughput = get_bounce_throughput(src, candidate_dir, lobes);
 
     throughput /= nee_pdf;
     throughput *= test_visibility(rand32.w, src.pos, candidate_dir, candidate_dist, src.flat_normal);
@@ -100,7 +95,7 @@ void sample_path_nee_leaf(
     candidate.nee_terminal = true;
 
     vec3 value = total_throughput * vertex.radiance_estimate;
-    float target_function_value = target_function(primary_bsdf, value); // p^(X_i)
+    float target_function_value = target_function(value); // p^(X_i)
 
     candidate.radiance_luminance = rgb_to_luminance(value);
 
@@ -110,7 +105,7 @@ void sample_path_nee_leaf(
     if(update_reservoir(generate_single_uniform_random(ris_seed), r, target_function_value, resampling_weight, 1.0f))
     {
         r.output_sample = candidate;
-        out_value = output_color_function(primary_bsdf, value);
+        out_value = value;
     }
 }
 
@@ -125,8 +120,7 @@ bool sample_path_bsdf_bounce(
     inout float regularization,
     domain src,
     out domain dst,
-    inout vec4 out_value,
-    inout vec4 primary_bsdf,
+    inout vec3 out_value,
     inout reservoir r
 ){
     uvec4 rand32 = pcg1to4(path_seed);
@@ -145,23 +139,11 @@ bool sample_path_bsdf_bounce(
     update_regularization(bsdf_pdf, regularization);
     ray_cone_apply_roughness(sampled_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : src.mat.roughness, src.rc);
 
-    vec3 throughput = get_bounce_throughput(
-        candidate.head_length + candidate.tail_length, src, dir, lobes, primary_bsdf
-    );
+    vec3 throughput = get_bounce_throughput(src, dir, lobes);
 
     float nee_pdf;
     reconnection_vertex vertex;
     bool bounces = generate_bsdf_vertex(rand32, dir, false, src, candidate.head_length + candidate.tail_length, regularization, dst, vertex, nee_pdf);
-
-#ifdef DEMODULATE_OUTPUT
-    if(candidate.head_length + candidate.tail_length == 0)
-    {
-        int self_intersect = self_shadow(-src.view, src.flat_normal, dir, src.mat);
-        float inv_len = 1.0f / distance(src.pos, dst.pos) * self_intersect;
-        vec2 lengths = sampled_lobe == MATERIAL_LOBE_DIFFUSE ? vec2(inv_len, 0) : vec2(0, inv_len);
-        imageStore(out_length, ivec2(gl_GlobalInvocationID.xy), vec4(lengths, 0, 0));
-    }
-#endif
 
     // bsdf_pdf is set to zero for extremities, such as mirror-like
     // reflections. Those can never be sampled by NEE. In this case, the BSDF
@@ -201,7 +183,7 @@ bool sample_path_bsdf_bounce(
     candidate.nee_terminal = false;
 
     vec3 value = total_throughput * vertex.radiance_estimate;
-    float target_function_value = target_function(primary_bsdf, value); // p^(X_i)
+    float target_function_value = target_function(value); // p^(X_i)
 
     candidate.radiance_luminance = rgb_to_luminance(value);
 
@@ -212,7 +194,7 @@ bool sample_path_bsdf_bounce(
     if(update_reservoir(generate_single_uniform_random(ris_seed), r, target_function_value, resampling_weight, 1.0f))
     {
         r.output_sample = candidate;
-        out_value = output_color_function(primary_bsdf, value);
+        out_value = value;
     }
 
     return bounces;
@@ -222,7 +204,7 @@ void sample_path(
     inout uint path_seed,
     inout uint ris_seed,
     domain primary,
-    inout vec4 out_value,
+    inout vec3 out_value,
     inout reservoir r
 ){
     domain src = primary;
@@ -236,7 +218,6 @@ void sample_path(
 
     bool head_allows_reconnection = allow_initial_reconnection(src.mat);
 
-    vec4 primary_bsdf = vec4(1);
     float regularization = 1.0f;
     for(int bounce = 0; bounce < max(MAX_BOUNCES, 1); ++bounce)
     {
@@ -245,7 +226,7 @@ void sample_path(
             path_seed, ris_seed, base_sample,
             total_throughput, tail_throughput,
             path_pdf, head_allows_reconnection,
-            src, out_value, primary_bsdf, r
+            src, out_value, r
         );
 #endif
 
@@ -254,7 +235,7 @@ void sample_path(
             path_seed, ris_seed, base_sample,
             total_throughput, tail_throughput,
             path_pdf, head_allows_reconnection, regularization,
-            src, dst, out_value, primary_bsdf, r
+            src, dst, out_value, r
         )) break;
 
         src = dst;
@@ -295,7 +276,7 @@ void main()
         return;
     }
 
-    vec4 out_value = vec4(0);
+    vec3 out_value = vec3(0);
     for(int i = 0; i < CANONICAL_SAMPLES; ++i)
         sample_path(seed.x, seed.y, cur_domain, out_value, r);
 
@@ -327,5 +308,5 @@ void main()
 
     write_reservoir(r, p, pc.config.display_size.xy);
     if(!keep_old_value)
-        imageStore(out_color, p, out_value);
+        imageStore(out_color, p, vec4(out_value, 1));
 }
