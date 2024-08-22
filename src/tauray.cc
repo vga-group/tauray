@@ -648,9 +648,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 restir_renderer::options re_opt;
                 re_opt.scene_options = scene_options;
                 re_opt.tonemap_options = tonemap;
-                re_opt.sh_options = sh;
-                re_opt.sh_options.max_ray_depth = 4;
-                re_opt.sm_filter = sm_filter;
                 re_opt.restir_options.sampling_weights = sampling_weights;
                 re_opt.restir_options.max_bounces = opt.max_ray_depth-1;
                 re_opt.restir_options.regularization_gamma = opt.regularization;
@@ -668,26 +665,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.restir_options.assume_unchanged_acceleration_structures = opt.restir.assume_unchanged_acceleration_structures;
                 re_opt.restir_options.assume_unchanged_reconnection_radiance = opt.restir.assume_unchanged_reconnection_radiance;
                 re_opt.restir_options.assume_unchanged_temporal_visibility = opt.restir.assume_unchanged_temporal_visibility;
-                re_opt.restir_options.shade_all_explicit_lights = false;
-                re_opt.restir_options.shade_fake_indirect = false;
-
-                if(opt.taa.sequence_length > 1)
-                    re_opt.taa_options = taa;
-
-                if (opt.denoiser == options::denoiser_type::SVGF)
-                {
-                    svgf_stage::options svgf_opt{};
-                    svgf_opt.atrous_diffuse_iters = opt.svgf_params.atrous_diffuse_iter;
-                    svgf_opt.atrous_spec_iters = opt.svgf_params.atrous_spec_iter;
-                    svgf_opt.atrous_kernel_radius = opt.svgf_params.atrous_kernel_radius;
-                    svgf_opt.sigma_l = opt.svgf_params.sigma_l;
-                    svgf_opt.sigma_n = opt.svgf_params.sigma_n;
-                    svgf_opt.sigma_z = opt.svgf_params.sigma_z;
-                    svgf_opt.temporal_alpha_color = opt.svgf_params.min_alpha_color;
-                    svgf_opt.temporal_alpha_moments = opt.svgf_params.min_alpha_moments;
-                    svgf_opt.color_buffer_contains_direct_light = opt.svgf_color_contains_direct_light;
-                    re_opt.svgf_options = svgf_opt;
-                }
 
                 return new restir_renderer(ctx, re_opt);
             }

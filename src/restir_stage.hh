@@ -9,7 +9,6 @@
 #include "sampler.hh"
 #include "descriptor_set.hh"
 #include "environment_map.hh"
-#include "shadow_map.hh"
 #include "rt_common.hh"
 #include "timer.hh"
 
@@ -138,24 +137,6 @@ public:
         // Each accumulated sample is assumed to be at max_confidence. It'll
         // still converge just fine, but suboptimally.
         bool accumulate = false;
-
-        // Enables shading each hit with all explicit lights for indirect
-        // bounces, using their shadow maps. Currently, only bilinear
-        // interpolation is supported the shadow maps.
-        //
-        // This option also disables direct light from explicit lights: you are
-        // expected to render that separately using e.g. forward_stage, which
-        // gives you more control over how the shadow maps are rendered.
-        //
-        // Requires that binning_stage does not bin explicit lights.
-        bool shade_all_explicit_lights = false;
-
-        // Filter for shade_all_explicit_lights.
-        shadow_map_filter sm_filter = {0, 0, 0, 0};
-
-        // Enables using ambient light and light probes in indirect bounces.
-        // Should be used in conjunction with shade_all_explicit_lights.
-        bool shade_fake_indirect = false;
 
         // Writes output to current gbuffer's demodulated colors if they are
         // present. Accumulation is not supported with demodulation.

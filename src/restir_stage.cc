@@ -15,7 +15,6 @@ using namespace tr;
 
 struct restir_config
 {
-    gpu_shadow_mapping_parameters sm_params;
     puvec2 display_size;
 
     float min_ray_dist;
@@ -102,11 +101,10 @@ struct spatial_canonical_mis_data
     float mis_part;
 };
 
-restir_config get_restir_config(restir_stage::options& opt, gbuffer_target& output, scene_stage& ss)
+restir_config get_restir_config(restir_stage::options& opt, gbuffer_target& output)
 {
     uvec2 size = output.albedo.size;
     restir_config config;
-    config.sm_params = create_shadow_mapping_parameters(opt.sm_filter, ss);
     config.display_size = output.get_size();
     config.max_ray_dist = opt.max_ray_dist;
     config.min_ray_dist = opt.min_ray_dist;
@@ -275,7 +273,6 @@ restir_stage::restir_stage(
 
     uint32_t visibility_ray_mask = 0xFF ^ 0x02;
     uint32_t ray_mask = 0xFF;
-    if(opt.shade_all_explicit_lights) ray_mask ^= 0x02;
 
     defines["DISPATCH_WIDTH"] = std::to_string(DISPATCH_WIDTH);
     defines["DISPATCH_HEIGHT"] = std::to_string(DISPATCH_HEIGHT);
@@ -304,10 +301,6 @@ restir_stage::restir_stage(
         defines["ASSUME_UNCHANGED_ACCELERATION_STRUCTURES"];
     if(this->opt.spatial_sample_oriented_disk)
         defines["NEIGHBOR_SAMPLE_ORIENTED_DISKS"];
-    if(this->opt.shade_all_explicit_lights)
-        defines["SHADE_ALL_EXPLICIT_LIGHTS"];
-    if(this->opt.shade_fake_indirect)
-        defines["SHADE_FAKE_INDIRECT"];
     if(this->opt.demodulated_output)
         defines["DEMODULATE_OUTPUT"];
     if(this->opt.regularization_gamma > 0)
@@ -320,11 +313,6 @@ restir_stage::restir_stage(
     if(c.confidence)
         defines["OUTPUT_CONFIDENCE"];
 
-    if(this->opt.shade_all_explicit_lights)
-    {
-        this->opt.sampling_weights.directional_lights = 0;
-        this->opt.sampling_weights.point_lights = 0;
-    }
     add_defines(this->opt.sampling_weights, defines);
 
     switch(opt.shift_map)
@@ -370,8 +358,7 @@ restir_stage::restir_stage(
             shader,
             {
                 &canonical_set,
-                &ss.get_descriptors(),
-                &ss.get_raster_descriptors()
+                &ss.get_descriptors()
             }
         );
     }
@@ -384,7 +371,6 @@ restir_stage::restir_stage(
             {
                 &temporal_set,
                 &ss.get_descriptors(),
-                &ss.get_raster_descriptors(),
                 &ss.get_temporal_tables()
             }
         );
@@ -435,8 +421,7 @@ restir_stage::restir_stage(
             shader,
             {
                 &spatial_trace_set,
-                &ss.get_descriptors(),
-                &ss.get_raster_descriptors()
+                &ss.get_descriptors()
             }
         );
     }
@@ -448,8 +433,7 @@ restir_stage::restir_stage(
             shader,
             {
                 &spatial_gather_set,
-                &ss.get_descriptors(),
-                &ss.get_raster_descriptors()
+                &ss.get_descriptors()
             }
         );
     }
@@ -742,7 +726,7 @@ void restir_stage::update(uint32_t frame_index)
 
 void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_index, int pass_index)
 {
-    restir_config config = get_restir_config(opt, current_buffers, *scene_data);
+    restir_config config = get_restir_config(opt, current_buffers);
     reservoir_textures& in_reservoir_data = reservoir_data[reservoir_data_parity];
     reservoir_textures& out_reservoir_data = reservoir_data[1-reservoir_data_parity];
 
@@ -760,7 +744,6 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_i
         canonical.bind(cmd);
         canonical.push_descriptors(cmd, canonical_set, 0);
         canonical.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
-        canonical.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
 
         canonical_push_constant_buffer pc;
         pc.config = config;
@@ -800,8 +783,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_i
         temporal.bind(cmd);
         temporal.push_descriptors(cmd, temporal_set, 0);
         temporal.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
-        temporal.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
-        temporal.set_descriptors(cmd, scene_data->get_temporal_tables(), 0, 3);
+        temporal.set_descriptors(cmd, scene_data->get_temporal_tables(), 0, 2);
 
         temporal_push_constant_buffer pc;
         pc.config = config;
@@ -834,7 +816,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_i
 
 void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t frame_index, bool /*final_pass*/, int pass_index)
 {
-    restir_config config = get_restir_config(opt, current_buffers, *scene_data);
+    restir_config config = get_restir_config(opt, current_buffers);
     reservoir_textures& in_reservoir_data = reservoir_data[reservoir_data_parity];
     reservoir_textures& out_reservoir_data = reservoir_data[1-reservoir_data_parity];
 
@@ -854,7 +836,6 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t frame_ind
         spatial_trace.bind(cmd);
         spatial_trace.push_descriptors(cmd, spatial_trace_set, 0);
         spatial_trace.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
-        spatial_trace.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
 
         spatial_trace_push_constant_buffer pc;
         pc.config = config;
@@ -916,7 +897,6 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t frame_ind
         spatial_gather.bind(cmd);
         spatial_gather.push_descriptors(cmd, spatial_gather_set, 0);
         spatial_gather.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
-        spatial_gather.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
 
         spatial_gather_push_constant_buffer pc;
         pc.config = config;

@@ -5,8 +5,6 @@
 #define TR_RESTIR pc.config
 #endif
 
-#define SHADOW_MAPPING_PARAMS pc.config.sm_params
-
 layout(binding = 0) uniform sampler2D depth_or_position_tex;
 layout(binding = 1) uniform sampler2D normal_tex;
 layout(binding = 2) uniform sampler2D flat_normal_tex;
@@ -25,12 +23,10 @@ layout(binding = 11, rgba32ui) uniform uimage2D out_reservoir_reconnection_data_
 layout(binding = 12, rgba32f) uniform image2D out_reservoir_reconnection_radiance_tex;
 layout(binding = 13, rgba32ui) uniform uimage2D out_reservoir_rng_seeds_tex;
 
-#define SH_INTERPOLATION_TRILINEAR
 #include "alias_table.glsl"
 #include "math.glsl"
 #include "random_sampler.glsl"
 #include "ggx.glsl"
-#include "spherical_harmonics.glsl"
 #include "ray_cone.glsl"
 
 #ifdef RESTIR_TEMPORAL
@@ -388,96 +384,6 @@ void add_contribution(inout sum_contribution sc, vec4 contrib, float weight)
 #ifdef RAY_TRACING
 #include "rt_common.glsl"
 
-#ifdef SHADE_ALL_EXPLICIT_LIGHTS
-#define SHADOW_MAPPING_SCREEN_COORD vec2(gl_GlobalInvocationID.xy)
-#include "shadow_mapping.glsl"
-vec3 shade_explicit_lights(
-    int instance_id,
-    vec3 view,
-    vertex_data vd,
-    sampled_material mat,
-    uint bounce_index
-){
-    mat3 tbn = create_tangent_space(vd.mapped_normal);
-    vec3 tview = view_to_tangent_space(view, tbn);
-
-    vec3 contrib = vec3(0);
-#ifdef SHADE_FAKE_INDIRECT
-    // Only last bounce gets fake indirect light.
-    if(bounce_index == MAX_BOUNCES-1)
-    {
-        vec3 ref_dir = reflect(view, vd.mapped_normal);
-        vec3 incoming_diffuse = vec3(0);
-        vec3 incoming_reflection = vec3(0);
-
-        int sh_grid_index = instances.o[instance_id].sh_grid_index;
-        if(sh_grid_index >= 0)
-        {
-            sh_grid sg = sh_grids.grids[sh_grid_index];
-            vec3 sample_pos = (sg.pos_from_world * vec4(vd.pos, 1)).xyz;
-            vec3 sh_normal = normalize((mat3(sg.normal_from_world) * vd.mapped_normal).xyz);
-            vec3 sh_ref = normalize((mat3(sg.normal_from_world) * ref_dir).xyz);
-
-            sample_and_filter_sh_grid(
-                sh_grid_data[nonuniformEXT(sh_grid_index)], sg.grid_clamp,
-                sample_pos, sh_normal, sh_ref, sqrt(mat.roughness),
-                incoming_diffuse, incoming_reflection
-            );
-        }
-        float cos_v = max(dot(vd.mapped_normal, -view), 0.0f);
-
-        // The fresnel value must be attenuated, because we are actually integrating
-        // over all directions instead of just one specific direction here. This is
-        // an approximated function, though.
-        float fresnel = fresnel_schlick_attenuated(cos_v, mat.f0, mat.roughness);
-        float kd = (1.0f - fresnel) * (1.0f - mat.metallic) * (1.0f - mat.transmittance);
-        contrib += kd * incoming_diffuse * mat.albedo.rgb;
-
-        vec2 bi = texture(brdf_integration, vec2(cos_v, sqrt(mat.roughness))).xy;
-        contrib += incoming_reflection * mix(vec3(mat.f0 * bi.x + bi.y), mat.albedo.rgb, mat.metallic);
-    }
-#endif
-
-    for(uint i = 0; i < scene_metadata.point_light_count; ++i)
-    {
-        point_light pl = point_lights.lights[i];
-        vec3 light_dir;
-        float light_dist;
-        vec3 light_color;
-        get_point_light_info(pl, vd.pos, light_dir, light_dist, light_color);
-        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-        ggx_brdf(light_dir * tbn, tview, mat, lobes);
-        float shadow = 1.0f;
-        if(pl.shadow_map_index >= 0 && dot(vd.mapped_normal, light_dir) > 0)
-            shadow = calc_point_shadow(
-                pl.shadow_map_index, vd.pos, vd.hard_normal, light_dir
-            );
-        if(dot(vd.hard_normal, light_dir) < 0)
-            shadow = 0.0f;
-
-        contrib += light_color * shadow * modulate_bsdf(mat, lobes);
-    }
-
-    for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
-    {
-        directional_light dl = directional_lights.lights[i];
-        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-        ggx_brdf(-dl.dir * tbn, tview, mat, lobes);
-
-        float shadow = 1.0f;
-        if(dl.shadow_map_index >= 0 && dot(vd.mapped_normal, -dl.dir) > 0)
-            shadow = calc_directional_shadow(
-                dl.shadow_map_index, vd.pos, vd.hard_normal, -dl.dir
-            );
-        if(dot(vd.hard_normal, dl.dir) > 0)
-            shadow = 0.0f;
-
-        contrib += dl.color * shadow * modulate_bsdf(mat, lobes);
-    }
-    return contrib;
-}
-#endif
-
 float test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
 {
     rayQueryEXT rq;
@@ -605,12 +511,7 @@ bool resolve_reconnection_vertex(
         to.dir = normalize(pos - to_domain.pos);
         to.dist = length(pos - to_domain.pos);
     }
-    else if(
-        rs.vertex.instance_id == ENVMAP_INSTANCE_ID
-#ifdef SHADE_ALL_EXPLICIT_LIGHTS
-        || rs.vertex.instance_id == MISS_INSTANCE_ID
-#endif
-    )
+    else if(rs.vertex.instance_id == ENVMAP_INSTANCE_ID)
     {
         to.dir = octahedral_unpack(rs.vertex.hit_info * 2.0f - 1.0f);
         to.dist = TR_RESTIR.max_ray_dist;
@@ -635,7 +536,6 @@ bool resolve_reconnection_vertex(
         to.emission = rs.vertex.radiance_estimate;
 #endif
     }
-#ifndef SHADE_ALL_EXPLICIT_LIGHTS
     else if(rs.vertex.instance_id == MISS_INSTANCE_ID)
     {
         to.dir = octahedral_unpack(rs.vertex.hit_info * 2.0f - 1.0f);
@@ -662,7 +562,6 @@ bool resolve_reconnection_vertex(
         to.emission = rs.vertex.radiance_estimate;
 #endif
     }
-#endif
     else
     { // Regular mesh triangle
 #ifdef RESTIR_TEMPORAL
@@ -691,44 +590,9 @@ bool resolve_reconnection_vertex(
         to.dist = length(vd.pos-to_domain.pos);
         to.normal = vd.hard_normal;
 
-#if !defined(SHADE_ALL_EXPLICIT_LIGHTS) || defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
         // Normal operation: just find the emissiveness of the vertex.
         // TODO: Allow mesh triangle material changes?
         to.emission = rs.vertex.radiance_estimate;
-#else
-        vd.back_facing = dot(vd.hard_normal, to.dir) > 0;
-        if(vd.back_facing)
-        {
-            vd.smooth_normal = -vd.smooth_normal;
-            vd.hard_normal = -vd.hard_normal;
-        }
-        vd.mapped_normal = vd.smooth_normal;
-
-        to.lobes = bsdf_lobes(0,0,0,0);
-        vec3 tdir = to.dir * to_domain.tbn;
-        to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
-        update_regularization(to.bsdf_pdf, regularization);
-
-        ray_cone rc = to_domain.rc;
-        ray_cone_apply_dist(to.dist, rc);
-        vec2 puvdx;
-        vec2 puvdy;
-        ray_cone_gradients(
-            rc,
-            to.dir,
-            vd.hard_normal,
-            cur_pos,
-            vd.uv.xy,
-            vd.triangle_pos,
-            vd.triangle_uv,
-            puvdx, puvdy
-        );
-
-        sampled_material mat = sample_material(int(rs.vertex.instance_id), vd, puvdx, puvdy);
-        apply_regularization(regularization, mat);
-        to.emission = mat.emission + shade_explicit_lights(int(rs.vertex.instance_id), to.dir, vd, mat, bounce_index);
-        return true;
-#endif
     }
 
     to.lobes = bsdf_lobes(0,0,0,0);
@@ -850,19 +714,10 @@ bool get_intersection_info(
         candidate.hit_info = payload.barycentrics;
         candidate.radiance_estimate = info.mat.emission;
 
-#ifdef SHADE_ALL_EXPLICIT_LIGHTS
-        candidate.radiance_estimate += shade_explicit_lights(
-            payload.instance_id, ray_direction, info.vd, info.mat, bounce_index
-        );
-#endif
-
         return true;
     }
-#ifndef SHADE_ALL_EXPLICIT_LIGHTS
     else if(payload.primitive_id >= 0)
     { // Point light
-        // Point lights are unhittable with SHADE_ALL_EXPLICIT_LIGHTS, as ray
-        // flags cull them.
         point_light pl;
 #ifdef RESTIR_TEMPORAL
         if(in_past)
@@ -897,7 +752,6 @@ bool get_intersection_info(
         candidate.radiance_estimate = info.light;
         return false;
     }
-#endif
     else
     { // Miss
         vec4 color = scene_metadata.environment_factor;
@@ -912,7 +766,6 @@ bool get_intersection_info(
 
         info.envmap_pdf = scene_metadata.environment_proj >= 0 ? sample_environment_map_pdf(ray_direction) : 0.0f;
         info.local_pdf = 0;
-#ifndef SHADE_ALL_EXPLICIT_LIGHTS
         for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
         {
             directional_light dl = directional_lights.lights[i];
@@ -923,7 +776,6 @@ bool get_intersection_info(
             info.light += color;
             info.local_pdf += visible * sample_directional_light_pdf(dl);
         }
-#endif
 
         candidate.instance_id = MISS_INSTANCE_ID;
         candidate.primitive_id = 0;

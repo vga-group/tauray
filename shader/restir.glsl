@@ -12,10 +12,10 @@
 
 #ifdef RESTIR_TEMPORAL
 #define CALC_PREV_VERTEX_POS
+#define TEMPORAL_TABLE_SET 2
 #endif
 
 #define SCENE_SET 1
-#define SCENE_RASTER_SET 2
 #define USE_EXPLICIT_GRADIENTS
 #define CALC_TRIANGLE_CORNERS
 #ifdef RAY_TRACING
@@ -23,7 +23,6 @@
 #else
 #include "scene.glsl"
 #endif
-#include "scene_raster.glsl"
 
 #define RESTIR_DI (MAX_BOUNCES == 1)
 
@@ -41,7 +40,6 @@
 
 struct restir_config
 {
-    shadow_mapping_parameters sm_params;
     uvec2 display_size;
     float min_ray_dist;
     float max_ray_dist;
