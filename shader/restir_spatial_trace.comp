@@ -178,7 +178,7 @@ void main()
 
     float sum_resampling_mis_weight = canonical_pixel.confidence / total_confidence;
     [[unroll]] for(int i = 0; i < MAX_SPATIAL_SAMPLES; ++i)
-        sum_resampling_mis_weight += shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z];
+        sum_resampling_mis_weight += shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][i];
 
     if(gl_LocalInvocationID.z == 0)
     {
