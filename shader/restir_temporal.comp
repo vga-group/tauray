@@ -122,7 +122,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
         prev_p = best_p;
     }
 
-    reservoir prev_pixel = read_reservoir(prev_p, pc.config.display_size.xy);
+    reservoir prev_pixel = read_reservoir(ivec3(prev_p,0), pc.config.display_size.xy);
     domain prev_domain;
     if(read_prev_domain(prev_cam, prev_p, cur_domain, prev_domain) || prev_pixel.confidence == 0)
         return;
@@ -195,20 +195,20 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
 
 void main()
 {
-    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
-    if(any(greaterThanEqual(p, ivec2(pc.config.display_size))))
-        return;
-    uvec4 seed = uvec4(0xFFFFFFFFu, pc.camera_index, p.yx)+pc.sample_index+1234567u;
-    pcg4d(seed);
-
-    camera_data cam = camera.pairs[pc.camera_index].current;
-    reservoir r = read_out_reservoir(p, pc.config.display_size.xy);
-    domain cur_domain;
-    read_domain(cam, p, cur_domain);
-
-    if(r.confidence != 0)
-    {
-        temporal_reuse(seed, p, r, cur_domain);
-        write_reservoir(r, p, pc.config.display_size.xy);
-    }
+//    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+//    if(any(greaterThanEqual(p, ivec2(pc.config.display_size))))
+//        return;
+//    uvec4 seed = uvec4(0xFFFFFFFFu, pc.camera_index, p.yx)+pc.sample_index+1234567u;
+//    pcg4d(seed);
+//
+//    camera_data cam = camera.pairs[pc.camera_index].current;
+//    reservoir r = read_out_reservoir(p, pc.config.display_size.xy);
+//    domain cur_domain;
+//    read_domain(cam, p, cur_domain);
+//
+//    if(r.confidence != 0)
+//    {
+//        temporal_reuse(seed, p, r, cur_domain);
+//        write_reservoir(r, p, pc.config.display_size.xy);
+//    }
 }

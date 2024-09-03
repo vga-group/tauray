@@ -20,7 +20,7 @@ layout(push_constant) uniform push_constant_buffer
 
 layout(local_size_x = DISPATCH_WIDTH, local_size_y = DISPATCH_HEIGHT) in;
 
-layout(binding = 16, rgba32f) writeonly uniform image2D out_color;
+layout(binding = 16, rgba32f) writeonly uniform image2DArray out_color;
 
 #include "restir_core.glsl"
 
@@ -272,7 +272,7 @@ void main()
         // Missed scene, so we don't have any data. Write something so that the
         // spatial reuse knows to skip this pixel. Zero confidence shouldn't
         // ever happen any other way than this.
-        write_reservoir(r, p, pc.config.display_size.xy);
+        write_reservoir(r, ivec3(p,0), pc.config.display_size.xy);
         return;
     }
 
@@ -285,7 +285,7 @@ void main()
     bool keep_old_value = false;
     if(pc.first_pass == 0)
     { // Pass through temporal stuff without reprojection.
-        reservoir prev_pixel = read_reservoir(p, pc.config.display_size.xy);
+        reservoir prev_pixel = read_reservoir(ivec3(p,0), pc.config.display_size.xy);
         r.sum_weight *= r.confidence / (r.confidence + prev_pixel.confidence);
 
         float resampling_mis_weight = prev_pixel.confidence / (prev_pixel.confidence + r.confidence);
@@ -306,7 +306,7 @@ void main()
     if(r.target_function_value > 0)
         r.ucw = r.sum_weight/r.target_function_value;
 
-    write_reservoir(r, p, pc.config.display_size.xy);
+    write_reservoir(r, ivec3(p,0), pc.config.display_size.xy);
     if(!keep_old_value)
-        imageStore(out_color, p, vec4(out_value, 1));
+        imageStore(out_color, ivec3(p,0), vec4(out_value, 1));
 }

@@ -643,21 +643,21 @@ void restir_stage::update(uint32_t frame_index)
 
 #define BIND_RESERVOIRS \
     if(out_reservoir_data.ris_data.has_value()) \
-        set.set_image("out_reservoir_ris_data_tex", *out_reservoir_data.ris_data); \
+        set.set_image_array("out_reservoir_ris_data_tex", *out_reservoir_data.ris_data); \
     if(out_reservoir_data.reconnection_data.has_value()) \
-        set.set_image("out_reservoir_reconnection_data_tex", *out_reservoir_data.reconnection_data); \
+        set.set_image_array("out_reservoir_reconnection_data_tex", *out_reservoir_data.reconnection_data); \
     if(out_reservoir_data.reconnection_radiance.has_value()) \
-        set.set_image("out_reservoir_reconnection_radiance_tex", *out_reservoir_data.reconnection_radiance); \
+        set.set_image_array("out_reservoir_reconnection_radiance_tex", *out_reservoir_data.reconnection_radiance); \
     if(out_reservoir_data.rng_seeds.has_value()) \
-        set.set_image("out_reservoir_rng_seeds_tex", *out_reservoir_data.rng_seeds); \
+        set.set_image_array("out_reservoir_rng_seeds_tex", *out_reservoir_data.rng_seeds); \
     if(in_reservoir_data.ris_data.has_value()) \
-        set.set_image("in_reservoir_ris_data_tex", *in_reservoir_data.ris_data); \
+        set.set_image_array("in_reservoir_ris_data_tex", *in_reservoir_data.ris_data); \
     if(in_reservoir_data.reconnection_data.has_value()) \
-        set.set_image("in_reservoir_reconnection_data_tex", *in_reservoir_data.reconnection_data); \
+        set.set_image_array("in_reservoir_reconnection_data_tex", *in_reservoir_data.reconnection_data); \
     if(in_reservoir_data.reconnection_radiance.has_value()) \
-        set.set_image("in_reservoir_reconnection_radiance_tex", *in_reservoir_data.reconnection_radiance); \
+        set.set_image_array("in_reservoir_reconnection_radiance_tex", *in_reservoir_data.reconnection_radiance); \
     if(in_reservoir_data.rng_seeds.has_value()) \
-        set.set_image("in_reservoir_rng_seeds_tex", *in_reservoir_data.rng_seeds); \
+        set.set_image_array("in_reservoir_rng_seeds_tex", *in_reservoir_data.rng_seeds); \
 
 void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_index, int pass_index)
 {

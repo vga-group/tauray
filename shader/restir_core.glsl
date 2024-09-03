@@ -13,15 +13,15 @@ layout(binding = 4) uniform sampler2D curvature_tex;
 layout(binding = 5) uniform sampler2D material_tex;
 
 
-layout(binding = 6, rgba32ui) readonly uniform uimage2D in_reservoir_ris_data_tex;
-layout(binding = 7, rgba32ui) readonly uniform uimage2D in_reservoir_reconnection_data_tex;
-layout(binding = 8, rgba32f) readonly uniform image2D in_reservoir_reconnection_radiance_tex;
-layout(binding = 9, rgba32ui) readonly uniform uimage2D in_reservoir_rng_seeds_tex;
+layout(binding = 6, rgba32ui) readonly uniform uimage2DArray in_reservoir_ris_data_tex;
+layout(binding = 7, rgba32ui) readonly uniform uimage2DArray in_reservoir_reconnection_data_tex;
+layout(binding = 8, rgba32f) readonly uniform image2DArray in_reservoir_reconnection_radiance_tex;
+layout(binding = 9, rgba32ui) readonly uniform uimage2DArray in_reservoir_rng_seeds_tex;
 
-layout(binding = 10, rgba32ui) uniform uimage2D out_reservoir_ris_data_tex;
-layout(binding = 11, rgba32ui) uniform uimage2D out_reservoir_reconnection_data_tex;
-layout(binding = 12, rgba32f) uniform image2D out_reservoir_reconnection_radiance_tex;
-layout(binding = 13, rgba32ui) uniform uimage2D out_reservoir_rng_seeds_tex;
+layout(binding = 10, rgba32ui) uniform uimage2DArray out_reservoir_ris_data_tex;
+layout(binding = 11, rgba32ui) uniform uimage2DArray out_reservoir_reconnection_data_tex;
+layout(binding = 12, rgba32f) uniform image2DArray out_reservoir_reconnection_radiance_tex;
+layout(binding = 13, rgba32ui) uniform uimage2DArray out_reservoir_rng_seeds_tex;
 
 #include "alias_table.glsl"
 #include "math.glsl"
@@ -224,7 +224,7 @@ reservoir unpack_reservoir(
     return r;
 }
 
-reservoir read_reservoir(ivec2 p, uvec2 size)
+reservoir read_reservoir(ivec3 p, uvec2 size)
 {
     return unpack_reservoir(
         imageLoad(in_reservoir_ris_data_tex, p),
@@ -236,13 +236,13 @@ reservoir read_reservoir(ivec2 p, uvec2 size)
     );
 }
 
-float read_confidence(ivec2 p, uvec2 size)
+float read_confidence(ivec3 p, uvec2 size)
 {
     uint ris = imageLoad(in_reservoir_ris_data_tex, p).w;
     return bitfieldExtract(ris, 0, 15);
 }
 
-reservoir read_out_reservoir(ivec2 p, uvec2 size)
+reservoir read_out_reservoir(ivec3 p, uvec2 size)
 {
     return unpack_reservoir(
         imageLoad(out_reservoir_ris_data_tex, p),
@@ -254,7 +254,7 @@ reservoir read_out_reservoir(ivec2 p, uvec2 size)
     );
 }
 
-void write_reservoir(reservoir r, ivec2 p, uvec2 size)
+void write_reservoir(reservoir r, ivec3 p, uvec2 size)
 {
     r.confidence = min(r.confidence, TR_RESTIR.max_confidence);
     uint reconnection_info = 0;

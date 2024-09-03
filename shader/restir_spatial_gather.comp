@@ -25,18 +25,18 @@ layout(binding = 14) uniform sampler2D emission_tex;
 // These buffers are SUPER overloaded.
 // These names are for demodulated output, but they also contain demodulated
 // input or non-demodulated input/output.
-layout(binding = 15, rgba32f) uniform image2D out_color;
+layout(binding = 15, rgba32f) uniform image2DArray out_color;
 
 layout(binding = 16, rg32ui) readonly uniform uimage2D spatial_selection;
 layout(binding = 17, rgba32f) readonly uniform image2DArray mis_data;
 layout(binding = 18, rgba32f) readonly uniform image2DArray spatial_candidates;
-layout(binding = 19, rgba32f) uniform image2D in_color;
+layout(binding = 19, rgba32f) uniform image2DArray in_color;
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 #include "restir_core.glsl"
 
-void finish_output_color(ivec2 p, reservoir r, vec4 out_value, vec3 sc)
+void finish_output_color(ivec3 p, reservoir r, vec4 out_value, vec3 sc)
 {
     write_reservoir(r, p, pc.display_size);
     if(pc.update_sample_color != 0)
@@ -71,7 +71,7 @@ void main()
 
     vec3 canonical_emission = sample_gbuffer_emission(emission_tex, p);
     vec3 sc = canonical_emission;
-    vec4 canonical_value = imageLoad(in_color, p);
+    vec4 canonical_value = imageLoad(in_color, ivec3(p,0));
     vec4 out_value = canonical_value;
 
     const float max_plane_dist = get_frustum_size(cam, canonical_domain.pos);
@@ -80,73 +80,73 @@ void main()
     {
         // Missed scene, so mark invalid so that temporal reprojection skips
         // this pixel.
-        write_reservoir(r, p, pc.display_size);
+        write_reservoir(r, ivec3(p,0), pc.display_size);
         return;
     }
 
     if(MAX_SPATIAL_SAMPLES == 0)
     {
-        reservoir canonical_pixel = read_reservoir(p, pc.display_size);
+        reservoir canonical_pixel = read_reservoir(ivec3(p,0), pc.display_size);
         sc += canonical_value.rgb * max(canonical_pixel.ucw, 0.0f);
-        finish_output_color(p, canonical_pixel, out_value, sc);
+        finish_output_color(ivec3(p, 0), canonical_pixel, out_value, sc);
         return;
     }
 
-    int chosen_i = 0;
-    float chosen_jacobian_part = 0;
-
-    [[unroll]] for(int i = 0; i < MAX_SPATIAL_SAMPLES; ++i)
-    {
-        vec4 mis = imageLoad(mis_data, ivec3(p, i));
-        vec4 value = imageLoad(spatial_candidates, ivec3(p, i));
-
-        float confidence = mis.r;
-        float target_function_value = mis.a;
-        float resampling_mis_weight = mis.g;
-        float resampling_weight = resampling_mis_weight * target_function_value;
-        sc += value.rgb * resampling_mis_weight;
-        if(update_reservoir(generate_single_uniform_random(seed.x), r, target_function_value, resampling_weight, confidence))
-        {
-            chosen_i = i;
-            chosen_jacobian_part = mis.b;
-            out_value = value;
-        }
-    }
-
-    reservoir canonical_pixel = read_reservoir(p, pc.display_size);
-    // Insert the pixel's own reservoir from the previous step. This must be
-    // done last so that pairwise MIS works (we accumulate
-    // canonical_resampling_mis_weight previously)
-    float resampling_weight = canonical_resampling_mis_weight * canonical_pixel.target_function_value * max(canonical_pixel.ucw, 0); // w_i
-
-    sc += canonical_value.rgb * canonical_resampling_mis_weight * max(canonical_pixel.ucw, 0);
-
-    if(update_reservoir(
-        generate_single_uniform_random(seed.x), r,
-        canonical_pixel.target_function_value,
-        resampling_weight,
-        canonical_pixel.confidence
-    )){
-        r.output_sample = canonical_pixel.output_sample;
-        out_value = canonical_value;
-    }
-    else
-    {
-        mat3 flat_tbn = create_tangent_space(canonical_domain.flat_normal);
-        spatial_candidate_sampler scs = init_spatial_candidate_sampler(
-            cam, canonical_domain.pos, flat_tbn, max_plane_dist
-        );
-        ivec2 s = spatial_candidate_pos(
-            candidate_key, p, ivec2(pc.display_size), scs,
-            pc.camera_index, pc.sample_index, chosen_i
-        );
-        r.output_sample = read_reservoir(s, pc.display_size).output_sample; // X_i
-        r.output_sample.base_path_jacobian_part = chosen_jacobian_part;
-    }
-
-    // Update UCW
-    if(r.target_function_value > 0)
-        r.ucw = r.sum_weight/r.target_function_value;
-
-    finish_output_color(p, r, out_value, sc);
+//    int chosen_i = 0;
+//    float chosen_jacobian_part = 0;
+//
+//    [[unroll]] for(int i = 0; i < MAX_SPATIAL_SAMPLES; ++i)
+//    {
+//        vec4 mis = imageLoad(mis_data, ivec3(p, i));
+//        vec4 value = imageLoad(spatial_candidates, ivec3(p, i));
+//
+//        float confidence = mis.r;
+//        float target_function_value = mis.a;
+//        float resampling_mis_weight = mis.g;
+//        float resampling_weight = resampling_mis_weight * target_function_value;
+//        sc += value.rgb * resampling_mis_weight;
+//        if(update_reservoir(generate_single_uniform_random(seed.x), r, target_function_value, resampling_weight, confidence))
+//        {
+//            chosen_i = i;
+//            chosen_jacobian_part = mis.b;
+//            out_value = value;
+//        }
+//    }
+//
+//    reservoir canonical_pixel = read_reservoir(p, pc.display_size);
+//    // Insert the pixel's own reservoir from the previous step. This must be
+//    // done last so that pairwise MIS works (we accumulate
+//    // canonical_resampling_mis_weight previously)
+//    float resampling_weight = canonical_resampling_mis_weight * canonical_pixel.target_function_value * max(canonical_pixel.ucw, 0); // w_i
+//
+//    sc += canonical_value.rgb * canonical_resampling_mis_weight * max(canonical_pixel.ucw, 0);
+//
+//    if(update_reservoir(
+//        generate_single_uniform_random(seed.x), r,
+//        canonical_pixel.target_function_value,
+//        resampling_weight,
+//        canonical_pixel.confidence
+//    )){
+//        r.output_sample = canonical_pixel.output_sample;
+//        out_value = canonical_value;
+//    }
+//    else
+//    {
+//        mat3 flat_tbn = create_tangent_space(canonical_domain.flat_normal);
+//        spatial_candidate_sampler scs = init_spatial_candidate_sampler(
+//            cam, canonical_domain.pos, flat_tbn, max_plane_dist
+//        );
+//        ivec2 s = spatial_candidate_pos(
+//            candidate_key, p, ivec2(pc.display_size), scs,
+//            pc.camera_index, pc.sample_index, chosen_i
+//        );
+//        r.output_sample = read_reservoir(s, pc.display_size).output_sample; // X_i
+//        r.output_sample.base_path_jacobian_part = chosen_jacobian_part;
+//    }
+//
+//    // Update UCW
+//    if(r.target_function_value > 0)
+//        r.ucw = r.sum_weight/r.target_function_value;
+//
+//    finish_output_color(p, r, out_value, sc);
 }
