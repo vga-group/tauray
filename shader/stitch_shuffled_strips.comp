@@ -1,10 +1,12 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#include "color.glsl"
 
 layout (local_size_x = 256) in;
 
-layout(binding = 0, set = 0, rgba16f) uniform readonly image2DArray input_images[];
-layout(binding = 1, set = 0, rgba16f) uniform image2DArray output_images[];
+layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray input_images[];
+layout(binding = 1, set = 0, rgba32f) uniform image2DArray output_images[];
 
 layout(push_constant) uniform push_constant_buffer
 {
@@ -53,7 +55,11 @@ void main()
                 output_images[control.output_img_id],
                 ivec3(shuffled_pos, viewport_id)
             );
+            float delta_luminance = rgb_to_luminance(old_color.rgb) - rgb_to_luminance(output_color.rgb);
+            float variance = old_color.a + control.blend_ratio * delta_luminance * delta_luminance;
+            variance *= 1.0f - control.blend_ratio;
             output_color = mix(old_color, output_color, control.blend_ratio);
+            output_color.a = variance;
         }
         imageStore(
             output_images[control.output_img_id],

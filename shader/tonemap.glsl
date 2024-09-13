@@ -44,12 +44,14 @@ void main()
         if(info.gamma != 1.0f)
             col.rgb = pow(col.rgb, vec3(1.0f/info.gamma));
 
+        /*
         if(info.alpha_grid_background != 0)
         {
             ivec2 grid = (p.xy/info.alpha_grid_background)&1;
             vec3 alpha_color = (grid.x^grid.y) == 0 ? vec3(0.4) : vec3(0.6);
             col.rgb = mix(alpha_color, col.rgb, col.a);
         }
+        */
         imageStore(out_color, ivec3(p.xy, output_reorder.indices[p.z]), col);
     }
 }

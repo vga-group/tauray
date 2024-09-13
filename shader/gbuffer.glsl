@@ -18,13 +18,17 @@ void write_gbuffer_color(vec4 color, ivec3 pos)
 void accumulate_gbuffer_color(
     vec4 color, ivec3 pos, uint samples, uint previous_samples
 ){
+    uint total = samples + previous_samples;
+    float blend_ratio = float(previous_samples)/float(total);
+    vec4 prev_color = vec4(0);
     if(previous_samples != 0)
-    {
-        vec4 prev_color = imageLoad(color_target, pos);
-        uint total = samples + previous_samples;
-        color = mix(color, prev_color, float(previous_samples)/float(total));
-    }
-    imageStore(color_target, pos, color);
+        prev_color = imageLoad(color_target, pos);
+
+    float delta_luminance = rgb_to_luminance(prev_color.rgb) - rgb_to_luminance(color.rgb);
+    float variance = prev_color.a + (1.0f - blend_ratio) * delta_luminance * delta_luminance;
+    variance *= blend_ratio;
+
+    imageStore(color_target, pos, vec4(mix(color.rgb, prev_color.rgb, blend_ratio), variance));
 }
 
 vec4 read_gbuffer_color(ivec3 pos) { return imageLoad(color_target, pos); }
