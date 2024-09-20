@@ -20,13 +20,13 @@ layout(push_constant) uniform push_constant_buffer
 } pc;
 
 layout(binding = 18, rg32ui) writeonly uniform uimage2D spatial_selection;
-layout(binding = 19, rgba32f) writeonly uniform image2DArray spatial_candidates;
+layout(binding = 19, rgba32f) uniform image2DArray spatial_candidates;
 layout(binding = 20, rgba32f) writeonly uniform image2DArray mis_data;
 
 #include "restir_core.glsl"
 
 shared uint shared_selection_key[SELECTION_TILE_SIZE][SELECTION_TILE_SIZE][MAX_SPATIAL_SAMPLES];
-shared float shared_floats[SELECTION_TILE_SIZE][SELECTION_TILE_SIZE][MAX_SPATIAL_SAMPLES];
+shared float shared_floats[SELECTION_TILE_SIZE][SELECTION_TILE_SIZE][MAX_SPATIAL_SAMPLES][3];
 
 void main()
 {
@@ -87,102 +87,167 @@ void main()
     }
 
     // Shift selected neighbor to own pixel and write the data we need later on.
-    reservoir candidate = read_reservoir(local_s, pc.config.display_size);
-    reservoir canonical_pixel = read_reservoir(p, pc.config.display_size);
+    reservoir[3] candidate_rgb;
+    reservoir[3] canonical_pixel_rgb;
+    [[unroll]] for(int i = 0; i < 3; ++i)
+    {
+        candidate_rgb[i] = read_reservoir(ivec3(local_s,i), pc.config.display_size);
+        canonical_pixel_rgb[i] = read_reservoir(ivec3(p,i), pc.config.display_size);
+    }
 
     local_key <<= candidate_index * 2;
     shared_selection_key[gl_LocalInvocationID.x][gl_LocalInvocationID.y][candidate_index] = local_key;
-    shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][candidate_index] = found != 0 ? candidate.confidence : 0;
+    
+    [[unroll]] for(int i = 0; i < 3; ++i)
+        shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][candidate_index][i] = found != 0 ? candidate_rgb[i].confidence : 0;
+
     barrier();
 
+
+
+
     uint total_key = 0;
-    float total_confidence = 0;
+
+    vec3 total_confidence = vec3(0.0f);
     [[unroll]] for(uint i = 0; i < MAX_SPATIAL_SAMPLES; ++i)
     {
         total_key |= shared_selection_key[gl_LocalInvocationID.x][gl_LocalInvocationID.y][i];
-        total_confidence += shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][i];
+        [[unroll]] for(uint ind = 0; ind < 3; ++ind)
+            total_confidence[ind] += shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][i][ind];
     }
 
     bool candidate_miss = found == 0;
 
     barrier();
 
-    total_confidence += canonical_pixel.confidence;
 
-    if(candidate_miss || candidate.confidence == 0)
+
+
+
+    [[unroll]] for(int i = 0; i < 3; ++i)
+        total_confidence[i] += canonical_pixel_rgb[i].confidence;
+
+
+    vec3 final_value = vec3(0.0f);
+    [[unroll]] for(int i = 0; i < 3; ++i)
     {
-        // No candidate found, so write a failed shift.
-        shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z] = 0;
-        imageStore(spatial_candidates, ivec3(p, gl_GlobalInvocationID.z), vec4(0,0,0,-1.0f));
-        imageStore(mis_data, ivec3(p, gl_GlobalInvocationID.z), vec4(0));
+        if(candidate_miss || candidate_rgb[i].confidence == 0) // ehkä kommenttiin confidence 0
+        {
+            // No candidate found, so write a failed shift.
+            shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z][i] = 0;
+
+            imageStore(spatial_candidates, ivec3(p, gl_GlobalInvocationID.z * 3 + i), vec4(0,0,0,-1.0f));
+            imageStore(mis_data, ivec3(p, gl_GlobalInvocationID.z*3+i), vec4(0));
+        }
+        else
+        {
+            domain candidate_domain;
+            read_domain(cam, local_s, candidate_domain);
+
+            float jacobian_canonical_to_candidate = 0;
+            vec3 canonical_in_other_value;
+
+            shift_map(
+                seed.x, canonical_pixel_rgb[i].output_sample,  candidate_domain,
+                true, false, jacobian_canonical_to_candidate,
+                canonical_in_other_value
+            );
+
+            float canonical_in_other_target_function_value = canonical_in_other_value[i];
+            float canonical_resampling_mis_weight = mis_canonical(
+                canonical_pixel_rgb[i].confidence,
+                candidate_rgb[i].confidence,
+                total_confidence[i],
+                canonical_pixel_rgb[i].target_function_value,
+                canonical_in_other_target_function_value,
+                jacobian_canonical_to_candidate
+            );
+
+            //z+0???
+            shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z][i] = 
+                canonical_resampling_mis_weight;
+
+            vec3 value = vec3(0);
+            float jacobian_candidate_to_canonical = 0;
+
+            shift_map(
+                seed.x, candidate_rgb[i].output_sample, canonical_domain,
+                true, true, jacobian_candidate_to_canonical, value
+            );
+            if(isinf(jacobian_candidate_to_canonical) || isnan(jacobian_candidate_to_canonical))
+                jacobian_candidate_to_canonical = 0;
+
+            final_value[i] = value[i]; //???????
+            float target_function_value = value[i];
+            float candidate_resampling_mis_weight = mis_noncanonical(
+                canonical_pixel_rgb[i].confidence,
+                candidate_rgb[i].confidence,
+                total_confidence[i],
+                candidate_rgb[i].target_function_value,
+                target_function_value,
+                jacobian_candidate_to_canonical
+            );
+
+            if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
+                debugPrintfEXT("candidate_resampling_mis_weight %i %f", i, candidate_resampling_mis_weight);
+
+            imageStore(spatial_candidates, ivec3(p, gl_GlobalInvocationID.z*3+i), vec4(value, 1));
+            imageStore(
+                mis_data,
+                ivec3(p, gl_GlobalInvocationID.z * 3 + i),
+                vec4(
+                    candidate_rgb[i].confidence,
+                    candidate_resampling_mis_weight * jacobian_candidate_to_canonical * candidate_rgb[i].ucw,
+                    candidate_rgb[i].output_sample.base_path_jacobian_part,
+                    target_function_value
+                )
+            );
+        }
     }
-    else
-    {
-        domain candidate_domain;
-        read_domain(cam, local_s, candidate_domain);
 
-        float jacobian_canonical_to_candidate = 0;
-        vec3 canonical_in_other_value;
 
-        shift_map(
-            seed.x, canonical_pixel.output_sample,  candidate_domain,
-            true, false, jacobian_canonical_to_candidate,
-            canonical_in_other_value
-        );
+    //imageStore(spatial_candidates, ivec3(p, gl_GlobalInvocationID.z), vec4(final_value, 1));
 
-        float canonical_in_other_target_function_value = target_function(canonical_in_other_value);
-        float canonical_resampling_mis_weight = mis_canonical(
-            canonical_pixel.confidence,
-            candidate.confidence,
-            total_confidence,
-            canonical_pixel.target_function_value,
-            canonical_in_other_target_function_value,
-            jacobian_canonical_to_candidate
-        );
-        shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z] = canonical_resampling_mis_weight;
-
-        vec3 value = vec3(0);
-        float jacobian_candidate_to_canonical = 0;
-
-        shift_map(
-            seed.x, candidate.output_sample, canonical_domain,
-            true, true, jacobian_candidate_to_canonical, value
-        );
-        if(isinf(jacobian_candidate_to_canonical) || isnan(jacobian_candidate_to_canonical))
-            jacobian_candidate_to_canonical = 0;
-
-        float target_function_value = target_function(value);
-        float candidate_resampling_mis_weight = mis_noncanonical(
-            canonical_pixel.confidence,
-            candidate.confidence,
-            total_confidence,
-            candidate.target_function_value,
-            target_function_value,
-            jacobian_candidate_to_canonical
-        );
-
-        imageStore(spatial_candidates, ivec3(p, gl_GlobalInvocationID.z), vec4(value, 1));
-        imageStore(
-            mis_data,
-            ivec3(p, gl_GlobalInvocationID.z),
-            vec4(
-                candidate.confidence,
-                candidate_resampling_mis_weight * jacobian_candidate_to_canonical * candidate.ucw,
-                candidate.output_sample.base_path_jacobian_part,
-                target_function_value
-            )
-        );
-    }
     barrier();
 
-    float sum_resampling_mis_weight = canonical_pixel.confidence / total_confidence;
-    [[unroll]] for(int i = 0; i < MAX_SPATIAL_SAMPLES; ++i)
-        sum_resampling_mis_weight += shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z];
+    
+    vec3 sum_resampling_mis_weight = vec3(0.0f);
+
+    [[unroll]] for(int i = 0; i < 3; ++i)
+    {
+        sum_resampling_mis_weight[i] = canonical_pixel_rgb[i].confidence / total_confidence[i];
+    }
+
+    [[unroll]] for(int ind = 0; ind < 3; ++ind)
+        [[unroll]] for(int i = 0; i < MAX_SPATIAL_SAMPLES; ++i)
+        {
+
+            sum_resampling_mis_weight[ind] += 
+                shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z][ind];
+
+         if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
+             debugPrintfEXT( "sum_resampling_mis_weight %f", sum_resampling_mis_weight[ind]);
+
+         if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
+             debugPrintfEXT( "shared_float %f", shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z][ind]);
+
+        }
+
 
     if(gl_LocalInvocationID.z == 0)
     {
-        uvec2 sd = uvec2(total_key, floatBitsToUint(sum_resampling_mis_weight));
-        imageStore(spatial_selection, p, uvec4(sd, 0, 0));
+
+        uvec4 sd = uvec4(
+            total_key,
+            floatBitsToUint(sum_resampling_mis_weight.r),
+            floatBitsToUint(sum_resampling_mis_weight.g),
+            floatBitsToUint(sum_resampling_mis_weight.b)
+        );
+
+//         if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
+//             debugPrintfEXT("canonical_mis_weight = %f, %f, %f", sum_resampling_mis_weight.r, sum_resampling_mis_weight.g, sum_resampling_mis_weight.b);
+
+        imageStore(spatial_selection, p, sd);
     }
 }
 

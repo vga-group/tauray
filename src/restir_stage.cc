@@ -217,7 +217,7 @@ restir_stage::restir_stage(
         rtex.ris_data.emplace(
             dev,
             size,
-            1,
+            3,
             vk::Format::eR32G32B32A32Uint,
             0, nullptr,
             vk::ImageTiling::eOptimal,
@@ -230,7 +230,7 @@ restir_stage::restir_stage(
             rtex.reconnection_data.emplace(
                 dev,
                 size,
-                1,
+                3,
                 vk::Format::eR32G32B32A32Uint,
                 0, nullptr,
                 vk::ImageTiling::eOptimal,
@@ -241,7 +241,7 @@ restir_stage::restir_stage(
             rtex.reconnection_radiance.emplace(
                 dev,
                 size,
-                1,
+                3,
                 vk::Format::eR32G32B32A32Sfloat,
                 0, nullptr,
                 vk::ImageTiling::eOptimal,
@@ -253,7 +253,7 @@ restir_stage::restir_stage(
         if(opt.max_bounces != 1 || opt.shift_map != RECONNECTION_SHIFT)
         {
             rtex.rng_seeds.emplace(
-                dev, size, 1,
+                dev, size, 3,
                 vk::Format::eR32G32B32A32Uint,
                 0, nullptr,
                 vk::ImageTiling::eOptimal,
@@ -367,7 +367,7 @@ restir_stage::restir_stage(
             dev,
             size,
             1,
-            vk::Format::eR32G32Uint,
+            vk::Format::eR32G32B32A32Uint,
             0, nullptr,
             vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eStorage,
@@ -377,7 +377,7 @@ restir_stage::restir_stage(
         spatial_mis_data.emplace(
             dev,
             size,
-            max(opt.spatial_samples, 1u),
+            max(opt.spatial_samples, 1u)*3,
             vk::Format::eR32G32B32A32Sfloat,
             0, nullptr,
             vk::ImageTiling::eOptimal,
@@ -388,7 +388,7 @@ restir_stage::restir_stage(
         spatial_candidate_color.emplace(
             dev,
             size,
-            max(opt.spatial_samples, 1u),
+            max(opt.spatial_samples, 1u)*3,
             vk::Format::eR32G32B32A32Sfloat,
             0, nullptr,
             vk::ImageTiling::eOptimal,

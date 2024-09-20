@@ -55,7 +55,7 @@ float estimate_temporal_coherence(float old_value, float new_value)
     return diff / div;
 }
 
-void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_domain)
+void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_domain, int color_index, inout vec3 final_color)
 {
     camera_data cur_cam = camera.pairs[pc.camera_index].current;
     camera_data prev_cam = camera.pairs[pc.camera_index].previous;
@@ -122,7 +122,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
         prev_p = best_p;
     }
 
-    reservoir prev_pixel = read_reservoir(ivec3(prev_p,0), pc.config.display_size.xy);
+    reservoir prev_pixel = read_reservoir(ivec3(prev_p, color_index), pc.config.display_size.xy);
     domain prev_domain;
     if(read_prev_domain(prev_cam, prev_p, cur_domain, prev_domain) || prev_pixel.confidence == 0)
         return;
@@ -146,7 +146,8 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
             do_temporal_visibility_test, false,
             jacobian, value_in_prev_domain
         );
-        float target_value_in_prev_domain = target_function(value_in_prev_domain);
+
+        float target_value_in_prev_domain = value_in_prev_domain[color_index];
 
         float resampling_mis_weight = r.confidence * r.target_function_value /
             (r.confidence * r.target_function_value + prev_pixel.confidence * target_value_in_prev_domain * jacobian);
@@ -170,7 +171,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
             jacobian, value
         );
 
-        float target_function_value = target_function(value);
+        float target_function_value = value[color_index];
 
         float resampling_mis_weight = prev_pixel.confidence * prev_pixel.target_function_value /
             (prev_pixel.confidence * prev_pixel.target_function_value + r.confidence * target_function_value * jacobian);
@@ -181,10 +182,12 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
         if(isnan(resampling_weight) || isinf(resampling_weight))
             resampling_weight = 0.0f;
 
+
         if(update_reservoir(generate_single_uniform_random(seed.x), r, target_function_value, resampling_weight, prev_pixel.confidence))
         {
             r.output_sample = prev_pixel.output_sample;
-            imageStore(out_color, p, vec4(value, 1));
+            //imageStore(out_color, p, vec4(value, 1));
+            final_color[color_index] = value[color_index];
         }
     }
 
@@ -195,20 +198,32 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
 
 void main()
 {
-//    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
-//    if(any(greaterThanEqual(p, ivec2(pc.config.display_size))))
-//        return;
-//    uvec4 seed = uvec4(0xFFFFFFFFu, pc.camera_index, p.yx)+pc.sample_index+1234567u;
-//    pcg4d(seed);
-//
-//    camera_data cam = camera.pairs[pc.camera_index].current;
-//    reservoir r = read_out_reservoir(p, pc.config.display_size.xy);
-//    domain cur_domain;
-//    read_domain(cam, p, cur_domain);
-//
-//    if(r.confidence != 0)
-//    {
-//        temporal_reuse(seed, p, r, cur_domain);
-//        write_reservoir(r, p, pc.config.display_size.xy);
-//    }
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+
+    if(any(greaterThanEqual(p, ivec2(pc.config.display_size))))
+        return;
+
+    uvec4 seed = uvec4(0xFFFFFFFFu, pc.camera_index, p.yx)+pc.sample_index+1234567u;
+    pcg4d(seed);
+
+    camera_data cam = camera.pairs[pc.camera_index].current;
+
+    reservoir[3] r_rgb;
+    [[unroll]] for(int i = 0; i < 3; ++i)
+        r_rgb[i] = read_out_reservoir(ivec3(p,i), pc.config.display_size.xy);
+
+    domain cur_domain;
+    read_domain(cam, p, cur_domain);
+
+    vec3 final_color = imageLoad(out_color, p).rgb;
+    [[unroll]] for(int i = 0; i < 3; ++i)
+        if(r_rgb[i].confidence != 0)
+        {
+            temporal_reuse(seed, p, r_rgb[i], cur_domain, i, final_color);
+            write_reservoir(r_rgb[i], ivec3(p,i), pc.config.display_size.xy);
+        }
+    imageStore(out_color, p, vec4(final_color, 1));
+
+ //    if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
+//        debugPrintfEXT(" %f", final_color.r);
 }

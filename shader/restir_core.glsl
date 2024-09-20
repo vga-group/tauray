@@ -377,7 +377,7 @@ float test_prev_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_
     rayQueryInitializeEXT(rq,
         prev_tlas,
 #ifdef STOCHASTIC_ALPHA_BLENDING
-        gl_RayFlagsTerminateOnFirstHitEXT,
+        el_RayFlagsTerminateOnFirstHitEXT,
 #else
         gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
 #endif
