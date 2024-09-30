@@ -238,6 +238,18 @@ restir_stage::restir_stage(
             vk::SampleCountFlagBits::e1
         );
 
+        rtex.rgb_ucw_data.emplace(
+            dev,
+            size,
+            3,
+            vk::Format::eR32G32B32A32Sfloat, // ????????
+            0, nullptr,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eStorage,
+            vk::ImageLayout::eGeneral,
+            vk::SampleCountFlagBits::e1
+        );
+        
         if(opt.shift_map != RANDOM_REPLAY_SHIFT)
         {
             rtex.reconnection_data.emplace(
@@ -339,11 +351,13 @@ restir_stage::restir_stage(
     set.set_binding_params("in_reservoir_reconnection_radiance_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("in_reservoir_rng_seeds_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("in_reservoir_rgb_target_function_value_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
+    set.set_binding_params("in_reservoir_rgb_ucw_data_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_reservoir_ris_data_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_reservoir_reconnection_data_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_reservoir_reconnection_radiance_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_reservoir_rng_seeds_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_reservoir_rgb_target_function_value_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
+    set.set_binding_params("out_reservoir_rgb_ucw_data_tex", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_diffuse", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_reflection", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("out_length", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
@@ -527,7 +541,7 @@ void restir_stage::update(uint32_t frame_index)
 
 #define reservoir_barrier(r, happens_before, happens_after) \
     { \
-        vk::ImageMemoryBarrier barriers[5]; \
+        vk::ImageMemoryBarrier barriers[6]; \
         uint32_t barrier_count = 0; \
         if(r.ris_data.has_value()) \
         { \
@@ -614,6 +628,23 @@ void restir_stage::update(uint32_t frame_index)
                 } \
             }; \
         } \
+        if(r.rgb_ucw_data.has_value()) \
+        { \
+            barriers[barrier_count++] = vk::ImageMemoryBarrier{ \
+                happens_before, \
+                happens_after, \
+                vk::ImageLayout::eGeneral, \
+                vk::ImageLayout::eGeneral, \
+                VK_QUEUE_FAMILY_IGNORED, \
+                VK_QUEUE_FAMILY_IGNORED, \
+                r.rgb_ucw_data->get_image(dev->id), \
+                { \
+                    vk::ImageAspectFlagBits::eColor, \
+                    0, VK_REMAINING_MIP_LEVELS, \
+                    0, VK_REMAINING_ARRAY_LAYERS \
+                } \
+            }; \
+        } \
         cmd.pipelineBarrier( \
             vk::PipelineStageFlagBits::eAllCommands, \
             vk::PipelineStageFlagBits::eAllCommands, \
@@ -684,6 +715,8 @@ void restir_stage::update(uint32_t frame_index)
         set.set_image_array("out_reservoir_rng_seeds_tex", *out_reservoir_data.rng_seeds); \
     if(out_reservoir_data.rgb_target_function_value.has_value()) \
         set.set_image_array("out_reservoir_rgb_target_function_value_tex", *out_reservoir_data.rgb_target_function_value); \
+    if(out_reservoir_data.rgb_ucw_data.has_value()) \
+        set.set_image_array("out_reservoir_rgb_ucw_data_tex", *out_reservoir_data.rgb_ucw_data); \
     if(in_reservoir_data.ris_data.has_value()) \
         set.set_image_array("in_reservoir_ris_data_tex", *in_reservoir_data.ris_data); \
     if(in_reservoir_data.reconnection_data.has_value()) \
@@ -694,6 +727,8 @@ void restir_stage::update(uint32_t frame_index)
         set.set_image_array("in_reservoir_rng_seeds_tex", *in_reservoir_data.rng_seeds); \
     if(in_reservoir_data.rgb_target_function_value.has_value()) \
         set.set_image_array("in_reservoir_rgb_target_function_value_tex", *in_reservoir_data.rgb_target_function_value); \
+    if(in_reservoir_data.rgb_target_function_value.has_value()) \
+        set.set_image_array("in_reservoir_rgb_ucw_data_tex", *in_reservoir_data.rgb_ucw_data); \
 
 void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_index, int pass_index)
 {

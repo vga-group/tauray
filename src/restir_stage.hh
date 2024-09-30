@@ -242,6 +242,8 @@ private:
         std::optional<texture> rng_seeds;
 
         std::optional<texture> rgb_target_function_value;
+
+        std::optional<texture> rgb_ucw_data;
     };
     reservoir_textures reservoir_data[2];
     int reservoir_data_parity;
