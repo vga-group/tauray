@@ -106,9 +106,8 @@ void sample_path_nee_leaf(
     vec3 resampling_weight = resampling_mis_weight * target_function_value; // w_i
 
 
-    // RIS SEED?????
     [[unroll]] for(int i = 0; i < 3; ++i)
-        if(update_reservoir(generate_single_uniform_random(ris_seed), r_rgb[i], target_function_value[i], resampling_weight[i], 1.0f))
+        if(update_reservoir(generate_single_uniform_random(ris_seed), r_rgb[i], target_function_value[i], resampling_weight[i], 1.0f, i))
         {
             r_rgb[i].output_sample = candidate;
             out_value[i] = value[i];
@@ -202,7 +201,7 @@ bool sample_path_bsdf_bounce(
         if(isnan(resampling_weight[i])) resampling_weight[i] = 0.0f;
 
     [[unroll]] for(int i = 0; i < 3; ++i)
-        if(update_reservoir(generate_single_uniform_random(ris_seed), r_rgb[i], target_function_value[i], resampling_weight[i], 1.0f))
+        if(update_reservoir(generate_single_uniform_random(ris_seed), r_rgb[i], target_function_value[i], resampling_weight[i], 1.0f, i))
         {
             r_rgb[i].output_sample = candidate;
             out_value[i] = value[i];
@@ -321,7 +320,7 @@ void main()
         
         vec3 resampling_weight = vec3(0.0f);
         [[unroll]] for(int i = 0; i < 3; ++i)
-            resampling_weight[i] = resampling_mis_weight[i] * prev_pixel_rgb[i].target_function_value * prev_pixel_rgb[i].ucw; // W_i
+            resampling_weight[i] = resampling_mis_weight[i] * prev_pixel_rgb[i].target_function_value[i]  * prev_pixel_rgb[i].ucw; // W_i
 
         // Don't regurgitate NaNs or Infs
 
@@ -330,7 +329,7 @@ void main()
                 resampling_weight[i] = 0.0f;
 
         [[unroll]] for(int i = 0; i < 3; ++i)
-            if(update_reservoir(generate_single_uniform_random(seed.x), r_rgb[i], prev_pixel_rgb[i].target_function_value, resampling_weight[i], prev_pixel_rgb[i].confidence))
+            if(update_reservoir(generate_single_uniform_random(seed.x), r_rgb[i], prev_pixel_rgb[i].target_function_value[i], resampling_weight[i], prev_pixel_rgb[i].confidence, i))
             {
                 r_rgb[i].output_sample = prev_pixel_rgb[i].output_sample;
                 keep_old_value[i] = true;
@@ -340,9 +339,9 @@ void main()
     // Update UCW
     [[unroll]] for(int i = 0; i < 3; ++i)
     {
-        if(r_rgb[i].target_function_value > 0)
+        if(r_rgb[i].target_function_value[i] > 0)
         {
-            r_rgb[i].ucw = r_rgb[i].sum_weight/r_rgb[i].target_function_value;
+            r_rgb[i].ucw = r_rgb[i].sum_weight/r_rgb[i].target_function_value[i];
 
 //            if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
 //                debugPrintfEXT("canonical: %i, %f", i, r_rgb[i].ucw);

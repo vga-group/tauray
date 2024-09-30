@@ -20,17 +20,17 @@ layout(push_constant) uniform push_constant_buffer
     uint update_sample_color;
 } pc;
 
-layout(binding = 14) uniform sampler2D emission_tex;
+layout(binding = 17) uniform sampler2D emission_tex;
 
 // These buffers are SUPER overloaded.
 // These names are for demodulated output, but they also contain demodulated
 // input or non-demodulated input/output.
-layout(binding = 15, rgba32f) uniform image2D out_color;
+layout(binding = 22, rgba32f) uniform image2D out_color;
 
-layout(binding = 16, rg32ui) readonly uniform uimage2D spatial_selection;
-layout(binding = 17, rgba32f) readonly uniform image2DArray mis_data;
-layout(binding = 18, rgba32f) readonly uniform image2DArray spatial_candidates;
-layout(binding = 19, rgba32f) uniform image2D in_color;
+layout(binding = 23, rg32ui) readonly uniform uimage2D spatial_selection;
+layout(binding = 24, rgba32f) readonly uniform image2DArray mis_data;
+layout(binding = 25, rgba32f) readonly uniform image2DArray spatial_candidates;
+layout(binding = 26, rgba32f) uniform image2D in_color;
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -42,12 +42,21 @@ void finish_output_color(ivec2 p, reservoir[3] r_rgb, vec4 out_value, vec3 sc)
         write_reservoir(r_rgb[i], ivec3(p, i), pc.display_size);
 
     if(pc.update_sample_color != 0)
+    {
         imageStore(in_color, p, out_value);
+    }
     else
     {
+//        if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
+//            debugPrintfEXT("out valueeee");
         imageStore(out_color, p, vec4(sc, 1.0f));
     }
 
+}
+
+float support(float v)
+{
+    return v > 0 ? 1 : 0;
 }
 
 void main()
@@ -76,9 +85,6 @@ void main()
     vec3 canonical_resampling_mis_weight = 
         vec3(uintBitsToFloat(selection).g, uintBitsToFloat(selection).b, uintBitsToFloat(selection).w);
 
-         if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-             debugPrintfEXT("canonical_mis_weight = %f, %f, %f", canonical_resampling_mis_weight.r, canonical_resampling_mis_weight.g, canonical_resampling_mis_weight.b);
-
 
     vec3 canonical_emission = sample_gbuffer_emission(emission_tex, p);
     vec3 sc = canonical_emission;
@@ -104,9 +110,6 @@ void main()
         {
             canonical_pixel[i] = read_reservoir(ivec3(p,i), pc.display_size);
             sc[i] += canonical_value[i] * max(canonical_pixel[i].ucw, 0.0f);
-
-//            if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-//                debugPrintfEXT("spatial: %i, %f", i, canonical_pixel[i].ucw);
         }
 
 
@@ -127,37 +130,28 @@ void main()
 
 
             float confidence = mis.r;
-            float target_function_value = mis.a;
+            float target_function_value = value[reservoir_index];
             float resampling_mis_weight = mis.g;
 
 
             float resampling_weight = resampling_mis_weight * target_function_value;
             sc[reservoir_index] += value[reservoir_index] * resampling_mis_weight;
 
-//            if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-//                debugPrintfEXT("resampling data %i %f", reservoir_index, target_function_value);
-
             if(update_reservoir(
                 generate_single_uniform_random(seed.x),
                 r_rgb[reservoir_index],
                 target_function_value, 
                 resampling_weight,
-                confidence
+                confidence,
+                reservoir_index
             )){
-
-                if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-                    debugPrintfEXT("%i added %f resampling_weight", reservoir_index, resampling_weight);
-
                 chosen_i[reservoir_index] = candidate_index;
                 chosen_jacobian_part[reservoir_index] = mis.b;
-                out_value[reservoir_index] = value[reservoir_index];
+                r_rgb[reservoir_index].target_function_value = value.rgb;
+                out_value[reservoir_index] = value[reservoir_index]; //value = 
             }
         }
     }
-    //[[unroll]] for(int i = 0; i < 3; ++i)
-//        if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-//            debugPrintfEXT("weight_sum for %i: %f", i, r_rgb[i].sum_weight);
-
 
     reservoir[3] canonical_pixel_rgb;
     [[unroll]] for(int ind = 0; ind < 3; ++ind)
@@ -171,23 +165,20 @@ void main()
     {
         float resampling_weight =
             canonical_resampling_mis_weight[ind] *
-            canonical_pixel_rgb[ind].target_function_value *
+            canonical_pixel_rgb[ind].target_function_value[ind] *
             max(canonical_pixel_rgb[ind].ucw, 0); // w_i
                                                   //
-//        if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-//            debugPrintfEXT("%f = %f * %f * %f", resampling_weight, canonical_resampling_mis_weight[ind], canonical_pixel_rgb[ind].target_function_value, canonical_pixel_rgb[ind].ucw);
 
         sc[ind] += canonical_value[ind] * canonical_resampling_mis_weight[ind] * max(canonical_pixel_rgb[ind].ucw, 0);
 
-//        if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-//            debugPrintfEXT("%f, %f, %f", canonical_value[ind], canonical_resampling_mis_weight[ind], canonical_pixel_rgb[ind].ucw);
-        
         if(update_reservoir(
             generate_single_uniform_random(seed.x), r_rgb[ind],
-            canonical_pixel_rgb[ind].target_function_value,
+            canonical_pixel_rgb[ind].target_function_value[ind],
             resampling_weight,
-            canonical_pixel_rgb[ind].confidence
+            canonical_pixel_rgb[ind].confidence,
+            ind
         )){
+            r_rgb[ind].target_function_value = canonical_pixel_rgb[ind].target_function_value;
             r_rgb[ind].output_sample = canonical_pixel_rgb[ind].output_sample;
             out_value[ind] = canonical_value[ind];
         }
@@ -206,21 +197,85 @@ void main()
         }
 
         // Update UCW
-        if(r_rgb[ind].target_function_value > 0)
+        if(r_rgb[ind].target_function_value[ind] > 0)
+            r_rgb[ind].ucw = r_rgb[ind].sum_weight/r_rgb[ind].target_function_value[ind];
+
+//         if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
+//         {
+//            debugPrintfEXT("%f = %f / %f",r_rgb[ind].ucw, r_rgb[ind].sum_weight,
+//                    r_rgb[ind].target_function_value[ind]);
+//         }
+    }
+
+
+
+    reservoir[3] r_rgb_reuse;
+    [[unroll]] for(int reservoir_index = 0; reservoir_index < 3; ++reservoir_index)
+    {
+        init_reservoir(r_rgb_reuse[reservoir_index]);
+        // Shift R sample to G and B
+        // => MIS: p_R(r_sample) / (p_R(r_sample) + p_G(r_sample) + p_B(r_sample))
+        //          target_function_value_R = C_R * p
+        //          target_function_value_G = C_G * p
+        //          target_function_value_B = C_B * p
+        vec3 C = vec3(
+            r_rgb[0].target_function_value[0] * r_rgb[0].ucw,
+            r_rgb[1].target_function_value[1] * r_rgb[1].ucw,
+            r_rgb[2].target_function_value[2] * r_rgb[2].ucw
+        );
+
+        [[unroll]] for(int i = 0; i < 3; ++i)
         {
-            r_rgb[ind].ucw = r_rgb[ind].sum_weight/r_rgb[ind].target_function_value;
-//            if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-//                debugPrintfEXT("%f = %f / %f", r_rgb[ind].ucw, r_rgb[ind].sum_weight, r_rgb[ind].target_function_value);
+            /*
+            float top = support(r_rgb[i].target_function_value[reservoir_index]);
+            float bottom = 0.0f;
+            [[unroll]] for(int j = 0; j < 3; ++j)
+                bottom += support(r_rgb[i].target_function_value[j]);
+            */
+            float top = r_rgb[i].target_function_value[reservoir_index] / C[i];
+            float bottom = 0.0f;
+            [[unroll]] for(int j = 0; j < 3; ++j)
+                bottom += r_rgb[i].target_function_value[j] / C[j];
+
+//            float top = r_rgb[i].target_function_value[reservoir_index] * r_rgb[i].ucw;
+//            float bottom = 0.0f;
+//            [[unroll]] for(int j = 0; j < 3; ++j)
+//                bottom += r_rgb[j].target_function_value[reservoir_index] * r_rgb[j].ucw;;
+
+            float mis_weight = top / bottom;
+    if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
+    {
+        debugPrintfEXT("%f, %f", top, bottom);
+    }
+            
+            float resampling_weight =
+                mis_weight *
+                r_rgb[i].target_function_value[reservoir_index] *
+                max(r_rgb[i].ucw, 0);
+
+            if(isnan(resampling_weight) || isinf(resampling_weight))
+                resampling_weight = 0.0f;
+                                      
+            if(update_reservoir(
+                generate_single_uniform_random(seed.x),
+                r_rgb_reuse[reservoir_index],
+                r_rgb[i].target_function_value[reservoir_index],
+                resampling_weight,
+                r_rgb[i].confidence,
+                reservoir_index
+            )){
+                r_rgb_reuse[reservoir_index].target_function_value = r_rgb[i].target_function_value;
+                r_rgb_reuse[reservoir_index].output_sample = r_rgb[i].output_sample;
+            }
         }
 
+        if(r_rgb_reuse[reservoir_index].target_function_value[reservoir_index] > 0)
+            r_rgb_reuse[reservoir_index].ucw = r_rgb_reuse[reservoir_index].sum_weight /
+                r_rgb_reuse[reservoir_index].target_function_value[reservoir_index];
     }
-//    if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-//        debugPrintfEXT("%f, %f %f", sc.x, sc.y, sc.z);
 
-    if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-        debugPrintfEXT("");
+    r_rgb = r_rgb_reuse;
 
 
     finish_output_color(p, r_rgb, out_value, sc);
-
 }

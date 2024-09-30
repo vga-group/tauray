@@ -25,7 +25,7 @@ layout(push_constant) uniform push_constant_buffer
 
 #include "restir_core.glsl"
 
-layout(binding = 21, rgba32f) uniform image2D out_color;
+layout(binding = 24, rgba32f) uniform image2D out_color;
 
 #ifdef ASSUME_UNCHANGED_TEMPORAL_VISIBILITY
 const bool do_temporal_visibility_test = false;
@@ -149,14 +149,14 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
 
         float target_value_in_prev_domain = value_in_prev_domain[color_index];
 
-        float resampling_mis_weight = r.confidence * r.target_function_value /
-            (r.confidence * r.target_function_value + prev_pixel.confidence * target_value_in_prev_domain * jacobian);
+        float resampling_mis_weight = r.confidence * r.target_function_value[color_index] /
+            (r.confidence * r.target_function_value[color_index] + prev_pixel.confidence * target_value_in_prev_domain * jacobian);
 
         if(isnan(resampling_mis_weight))
             resampling_mis_weight = 0.0f;
 
         // Jacobian is 1 (already in local domain), so not multiplied.
-        float resampling_weight = resampling_mis_weight * r.target_function_value * r.ucw; // w_i
+        float resampling_weight = resampling_mis_weight * r.target_function_value[color_index] * r.ucw; // w_i
 
         r.sum_weight = resampling_weight;
     }
@@ -173,8 +173,8 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
 
         float target_function_value = value[color_index];
 
-        float resampling_mis_weight = prev_pixel.confidence * prev_pixel.target_function_value /
-            (prev_pixel.confidence * prev_pixel.target_function_value + r.confidence * target_function_value * jacobian);
+        float resampling_mis_weight = prev_pixel.confidence * prev_pixel.target_function_value[color_index] /
+            (prev_pixel.confidence * prev_pixel.target_function_value[color_index] + r.confidence * target_function_value * jacobian);
 
         float resampling_weight = resampling_mis_weight * target_function_value * prev_pixel.ucw * jacobian;
 
@@ -183,7 +183,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
             resampling_weight = 0.0f;
 
 
-        if(update_reservoir(generate_single_uniform_random(seed.x), r, target_function_value, resampling_weight, prev_pixel.confidence))
+        if(update_reservoir(generate_single_uniform_random(seed.x), r, target_function_value, resampling_weight, prev_pixel.confidence, color_index))
         {
             r.output_sample = prev_pixel.output_sample;
             //imageStore(out_color, p, vec4(value, 1));
@@ -192,8 +192,8 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
     }
 
     // Update UCW
-    if(r.target_function_value > 0)
-        r.ucw = r.sum_weight/r.target_function_value;
+    if(r.target_function_value[color_index] > 0)
+        r.ucw = r.sum_weight/r.target_function_value[color_index];
 }
 
 void main()

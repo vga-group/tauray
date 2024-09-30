@@ -86,9 +86,9 @@ struct restir_sample
 struct reservoir
 {
     restir_sample output_sample; // Y
-    float ucw; // W_Y
-    float target_function_value;
-    float sum_weight; // w_sum
+    vec3 ucw; // W_Y
+    vec3 target_function_value;
+    vec3 sum_weight; // w_sum
     float confidence; // c
 };
 
@@ -115,7 +115,7 @@ void init_reservoir(out reservoir r)
     // The initial output value is a null sample.
     // output_sample is invalid if the UCW is negative!
     r.ucw = -1.0f;
-    r.target_function_value = 0;
+    r.target_function_value = vec3(0.0f);
     init_restir_sample(r.output_sample, 0);
     r.output_sample.vertex.instance_id = NULL_INSTANCE_ID;
     r.sum_weight = 0.0f;
@@ -125,13 +125,14 @@ void init_reservoir(out reservoir r)
 bool update_reservoir(
     float rand,
     inout reservoir r,
-    float target_function_value, // p^
-    float resampling_weight,// w_i
-    float confidence // c
+    vec3 target_function_value, // p^
+    vec3 resampling_weight,// w_i
+    float confidence, // c
+    int value_index
 ){
     r.sum_weight += resampling_weight;
     r.confidence += confidence;
-    if(rand * r.sum_weight < resampling_weight)
+    if(rand * r.sum_weight[value_index] < resampling_weight[value_index])
     {
         r.target_function_value = target_function_value;
         return true;

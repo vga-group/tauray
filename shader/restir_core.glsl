@@ -17,11 +17,13 @@ layout(binding = 6, rgba32ui) readonly uniform uimage2DArray in_reservoir_ris_da
 layout(binding = 7, rgba32ui) readonly uniform uimage2DArray in_reservoir_reconnection_data_tex;
 layout(binding = 8, rgba32f) readonly uniform image2DArray in_reservoir_reconnection_radiance_tex;
 layout(binding = 9, rgba32ui) readonly uniform uimage2DArray in_reservoir_rng_seeds_tex;
+layout(binding = 10, rgba32f) readonly uniform image2DArray in_reservoir_rgb_target_function_value_tex;
 
-layout(binding = 10, rgba32ui) uniform uimage2DArray out_reservoir_ris_data_tex;
-layout(binding = 11, rgba32ui) uniform uimage2DArray out_reservoir_reconnection_data_tex;
-layout(binding = 12, rgba32f) uniform image2DArray out_reservoir_reconnection_radiance_tex;
-layout(binding = 13, rgba32ui) uniform uimage2DArray out_reservoir_rng_seeds_tex;
+layout(binding = 11, rgba32ui) uniform uimage2DArray out_reservoir_ris_data_tex;
+layout(binding = 12, rgba32ui) uniform uimage2DArray out_reservoir_reconnection_data_tex;
+layout(binding = 13, rgba32f) uniform image2DArray out_reservoir_reconnection_radiance_tex;
+layout(binding = 14, rgba32ui) uniform uimage2DArray out_reservoir_rng_seeds_tex;
+layout(binding = 15, rgba32f) uniform image2DArray out_reservoir_rgb_target_function_value_tex;
 
 #include "alias_table.glsl"
 #include "math.glsl"
@@ -30,13 +32,13 @@ layout(binding = 13, rgba32ui) uniform uimage2DArray out_reservoir_rng_seeds_tex
 #include "ray_cone.glsl"
 
 #ifdef RESTIR_TEMPORAL
-layout(binding = 14) uniform sampler2D prev_depth_or_position_tex;
-layout(binding = 15) uniform sampler2D prev_normal_tex;
-layout(binding = 16) uniform sampler2D prev_flat_normal_tex;
-layout(binding = 17) uniform sampler2D prev_albedo_tex;
-layout(binding = 18) uniform sampler2D prev_curvature_tex;
-layout(binding = 19) uniform sampler2D prev_material_tex;
-layout(binding = 20) uniform sampler2D motion_tex;
+layout(binding = 17) uniform sampler2D prev_depth_or_position_tex;
+layout(binding = 18) uniform sampler2D prev_normal_tex;
+layout(binding = 19) uniform sampler2D prev_flat_normal_tex;
+layout(binding = 20) uniform sampler2D prev_albedo_tex;
+layout(binding = 21) uniform sampler2D prev_curvature_tex;
+layout(binding = 22) uniform sampler2D prev_material_tex;
+layout(binding = 23) uniform sampler2D motion_tex;
 
 #include "temporal_tables.glsl"
 #endif
@@ -186,11 +188,13 @@ reservoir unpack_reservoir(
     uvec4 ris_data,
     uvec4 reconnection_data,
     vec4 reconnection_radiance,
-    uvec4 rng_seeds
+    uvec4 rng_seeds,
+    vec4 rgb_target_function_value
 ){
     reservoir r;
 
-    r.target_function_value = uintBitsToFloat(ris_data.r);
+    //r.target_function_value = uintBitsToFloat(ris_data.r);
+    r.target_function_value = rgb_target_function_value.rgb;
     r.ucw = uintBitsToFloat(ris_data.g);
     r.output_sample.base_path_jacobian_part = uintBitsToFloat(ris_data.b);
 
@@ -232,7 +236,8 @@ reservoir read_reservoir(ivec3 p, uvec2 size)
             imageLoad(in_reservoir_reconnection_data_tex, p) : uvec4(0),
         RESTIR_HAS_RECONNECTION_DATA ?
             imageLoad(in_reservoir_reconnection_radiance_tex, p) : uvec4(0),
-        RESTIR_HAS_SEEDS ? imageLoad(in_reservoir_rng_seeds_tex, p) : uvec4(0)
+        RESTIR_HAS_SEEDS ? imageLoad(in_reservoir_rng_seeds_tex, p) : uvec4(0),
+        imageLoad(in_reservoir_rgb_target_function_value_tex, p)
     );
 }
 
@@ -250,7 +255,8 @@ reservoir read_out_reservoir(ivec3 p, uvec2 size)
             imageLoad(out_reservoir_reconnection_data_tex, p) : uvec4(0),
         RESTIR_HAS_RECONNECTION_DATA ?
             imageLoad(out_reservoir_reconnection_radiance_tex, p) : uvec4(0),
-        RESTIR_HAS_SEEDS ? imageLoad(out_reservoir_rng_seeds_tex, p) : uvec4(0)
+        RESTIR_HAS_SEEDS ? imageLoad(out_reservoir_rng_seeds_tex, p) : uvec4(0),
+        imageLoad(out_reservoir_rgb_target_function_value_tex, p)
     );
 }
 
@@ -268,11 +274,15 @@ void write_reservoir(reservoir r, ivec3 p, uvec2 size)
         r.ucw = 0;
 
     uvec4 ris_data = uvec4(
-        floatBitsToUint(r.target_function_value),
+        //floatBitsToUint(r.target_function_value),
+        floatBitsToUint(0.0f),
         floatBitsToUint(r.ucw),
         floatBitsToUint(r.output_sample.base_path_jacobian_part),
         reconnection_info
     );
+
+    imageStore(out_reservoir_rgb_target_function_value_tex, p, vec4(r.target_function_value.rgb, 1.0f));
+
     imageStore(out_reservoir_ris_data_tex, p, ris_data);
 
     if(RESTIR_HAS_RECONNECTION_DATA)
