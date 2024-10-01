@@ -149,16 +149,17 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
 
         float target_value_in_prev_domain = value_in_prev_domain[color_index];
 
-        float resampling_mis_weight = r.confidence * r.target_function_value[color_index] /
-            (r.confidence * r.target_function_value[color_index] + prev_pixel.confidence * target_value_in_prev_domain * jacobian);
+        vec3 resampling_mis_weight = r.confidence * r.target_function_value /
+            (r.confidence * r.target_function_value + prev_pixel.confidence * target_value_in_prev_domain * jacobian);
 
-        if(isnan(resampling_mis_weight))
-            resampling_mis_weight = 0.0f;
+        [[unroll]]for(int j = 0; j < 3; ++j)
+            if(isnan(resampling_mis_weight[j]))
+                resampling_mis_weight[j] = 0.0f;
 
         // Jacobian is 1 (already in local domain), so not multiplied.
-        float resampling_weight = resampling_mis_weight * r.target_function_value[color_index] * r.ucw; // w_i
-
-        r.sum_weight = resampling_weight;
+        vec3 resampling_weight = resampling_mis_weight * r.target_function_value * r.ucw; // w_i
+                                                                                                       // r.ucw need to be 3d
+        r.sum_weight = resampling_weight[color_index];
     }
 
     { // Temporal sample
@@ -171,20 +172,25 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
             jacobian, value
         );
 
-        float target_function_value = value[color_index];
+        vec3 target_function_value = value;
+        vec3 resampling_mis_weight = prev_pixel.confidence * prev_pixel.target_function_value /
+            (prev_pixel.confidence * prev_pixel.target_function_value + r.confidence * target_function_value * jacobian);
 
-        float resampling_mis_weight = prev_pixel.confidence * prev_pixel.target_function_value[color_index] /
-            (prev_pixel.confidence * prev_pixel.target_function_value[color_index] + r.confidence * target_function_value * jacobian);
-
-        float resampling_weight = resampling_mis_weight * target_function_value * prev_pixel.ucw * jacobian;
+        vec3 resampling_weight = resampling_mis_weight * target_function_value * prev_pixel.ucw * jacobian; // r.ucw 3d!!!
 
         // Don't regurgitate NaNs or Infs
-        if(isnan(resampling_weight) || isinf(resampling_weight))
-            resampling_weight = 0.0f;
+        [[unroll]]for(int j = 0; j < 3; ++j)
+            if(isnan(resampling_weight[j]) || isinf(resampling_weight[j]))
+                resampling_weight[j] = 0.0f;
 
 
-        if(update_reservoir(generate_single_uniform_random(seed.x), r, target_function_value, resampling_weight, prev_pixel.confidence, color_index))
-        {
+        if(update_reservoir(generate_single_uniform_random(seed.x),
+            r,
+            target_function_value,
+            resampling_weight,
+            prev_pixel.confidence,
+            color_index
+        )) {
             r.output_sample = prev_pixel.output_sample;
             //imageStore(out_color, p, vec4(value, 1));
             final_color[color_index] = value[color_index];

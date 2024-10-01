@@ -97,7 +97,6 @@ void sample_path_nee_leaf(
     candidate.nee_terminal = true;
 
     vec3 value = total_throughput * vertex.radiance_estimate;
-        
     vec3 target_function_value = value; // p^(X_i)
 
     candidate.radiance_luminance = rgb_to_luminance(value);
@@ -107,8 +106,14 @@ void sample_path_nee_leaf(
 
 
     [[unroll]] for(int i = 0; i < 3; ++i)
-        if(update_reservoir(generate_single_uniform_random(ris_seed), r_rgb[i], target_function_value[i], resampling_weight[i], 1.0f, i))
-        {
+        if(update_reservoir(
+            generate_single_uniform_random(ris_seed),
+            r_rgb[i],
+            target_function_value,
+            resampling_weight,
+            1.0f,
+            i
+        )) {
             r_rgb[i].output_sample = candidate;
             out_value[i] = value[i];
         }
@@ -201,8 +206,13 @@ bool sample_path_bsdf_bounce(
         if(isnan(resampling_weight[i])) resampling_weight[i] = 0.0f;
 
     [[unroll]] for(int i = 0; i < 3; ++i)
-        if(update_reservoir(generate_single_uniform_random(ris_seed), r_rgb[i], target_function_value[i], resampling_weight[i], 1.0f, i))
-        {
+        if(update_reservoir(generate_single_uniform_random(ris_seed),
+            r_rgb[i],
+            target_function_value,
+            resampling_weight,
+            1.0f,
+            i
+        )){
             r_rgb[i].output_sample = candidate;
             out_value[i] = value[i];
         }
@@ -329,8 +339,13 @@ void main()
                 resampling_weight[i] = 0.0f;
 
         [[unroll]] for(int i = 0; i < 3; ++i)
-            if(update_reservoir(generate_single_uniform_random(seed.x), r_rgb[i], prev_pixel_rgb[i].target_function_value[i], resampling_weight[i], prev_pixel_rgb[i].confidence, i))
-            {
+            if(update_reservoir(generate_single_uniform_random(seed.x),
+                r_rgb[i],
+                prev_pixel_rgb[i].target_function_value,
+                resampling_weight,
+                prev_pixel_rgb[i].confidence,
+                i
+            )) {
                 r_rgb[i].output_sample = prev_pixel_rgb[i].output_sample;
                 keep_old_value[i] = true;
             }

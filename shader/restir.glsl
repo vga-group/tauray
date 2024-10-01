@@ -86,9 +86,9 @@ struct restir_sample
 struct reservoir
 {
     restir_sample output_sample; // Y
-    vec3 ucw; // W_Y
+    float ucw; // W_Y
     vec3 target_function_value;
-    vec3 sum_weight; // w_sum
+    float sum_weight; // w_sum
     float confidence; // c
 };
 
@@ -130,9 +130,9 @@ bool update_reservoir(
     float confidence, // c
     int value_index
 ){
-    r.sum_weight += resampling_weight;
+    r.sum_weight += resampling_weight[value_index];
     r.confidence += confidence;
-    if(rand * r.sum_weight[value_index] < resampling_weight[value_index])
+    if(rand * r.sum_weight < resampling_weight[value_index])
     {
         r.target_function_value = target_function_value;
         return true;
