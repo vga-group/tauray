@@ -159,7 +159,7 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
         // Jacobian is 1 (already in local domain), so not multiplied.
         vec3 resampling_weight = resampling_mis_weight * r.target_function_value * r.ucw; // w_i
                                                                                                        // r.ucw need to be 3d
-        r.sum_weight = resampling_weight[color_index];
+        r.sum_weight = resampling_weight;
     }
 
     { // Temporal sample

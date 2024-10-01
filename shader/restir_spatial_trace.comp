@@ -186,7 +186,7 @@ void main()
                 ivec3(p, gl_GlobalInvocationID.z * 3 + i),
                 vec4(
                     candidate_rgb[i].confidence,
-                    candidate_resampling_mis_weight * jacobian_candidate_to_canonical * candidate_rgb[i].ucw,
+                    candidate_resampling_mis_weight * jacobian_candidate_to_canonical * candidate_rgb[i].ucw[i],
                     candidate_rgb[i].output_sample.base_path_jacobian_part,
                     0
                 )

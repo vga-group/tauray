@@ -109,7 +109,7 @@ void main()
         [[unroll]] for(int i = 0; i < 3; ++i)
         {
             canonical_pixel[i] = read_reservoir(ivec3(p,i), pc.display_size);
-            sc[i] += canonical_value[i] * max(canonical_pixel[i].ucw, 0.0f);
+            sc[i] += canonical_value[i] * max(canonical_pixel[i].ucw[i], 0.0f);
         }
 
 
@@ -169,7 +169,7 @@ void main()
             max(canonical_pixel_rgb[ind].ucw, 0); // w_i
                                                   //
 
-        sc[ind] += canonical_value[ind] * canonical_resampling_mis_weight[ind] * max(canonical_pixel_rgb[ind].ucw, 0);
+        sc[ind] += canonical_value[ind] * canonical_resampling_mis_weight[ind] * max(canonical_pixel_rgb[ind].ucw[ind], 0);
 
         if(update_reservoir(
             generate_single_uniform_random(seed.x), r_rgb[ind],
@@ -197,7 +197,7 @@ void main()
 
         // Update UCW
         if(r_rgb[ind].target_function_value[ind] > 0)
-            r_rgb[ind].ucw = r_rgb[ind].sum_weight/r_rgb[ind].target_function_value[ind];
+            r_rgb[ind].ucw = r_rgb[ind].sum_weight/r_rgb[ind].target_function_value;
 
 //         if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
 //         {

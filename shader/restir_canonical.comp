@@ -330,7 +330,7 @@ void main()
         
         vec3 resampling_weight = vec3(0.0f);
         [[unroll]] for(int i = 0; i < 3; ++i)
-            resampling_weight[i] = resampling_mis_weight[i] * prev_pixel_rgb[i].target_function_value[i]  * prev_pixel_rgb[i].ucw; // W_i
+            resampling_weight[i] = resampling_mis_weight[i] * prev_pixel_rgb[i].target_function_value[i]  * prev_pixel_rgb[i].ucw[i]; // W_i
 
         // Don't regurgitate NaNs or Infs
 
@@ -356,7 +356,7 @@ void main()
     {
         if(r_rgb[i].target_function_value[i] > 0)
         {
-            r_rgb[i].ucw = r_rgb[i].sum_weight/r_rgb[i].target_function_value[i];
+            r_rgb[i].ucw = r_rgb[i].sum_weight/r_rgb[i].target_function_value;
 
 //            if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
 //                debugPrintfEXT("canonical: %i, %f", i, r_rgb[i].ucw);

@@ -189,13 +189,14 @@ reservoir unpack_reservoir(
     uvec4 reconnection_data,
     vec4 reconnection_radiance,
     uvec4 rng_seeds,
-    vec4 rgb_target_function_value
+    vec4 rgb_target_function_value,
+    int reservoir_index
 ){
     reservoir r;
 
     //r.target_function_value = uintBitsToFloat(ris_data.r);
     r.target_function_value = rgb_target_function_value.rgb;
-    r.ucw = uintBitsToFloat(ris_data.g);
+    r.ucw = vec3(uintBitsToFloat(ris_data.g)); // KORJAAAAA
     r.output_sample.base_path_jacobian_part = uintBitsToFloat(ris_data.b);
 
     uint confidence_path_length = ris_data[3];
@@ -208,7 +209,7 @@ reservoir unpack_reservoir(
 
     r.output_sample.vertex.hit_info.x = uintBitsToFloat(reconnection_data[0]);
     r.output_sample.vertex.hit_info.y = uintBitsToFloat(reconnection_data[1]);
-    r.output_sample.vertex.instance_id = r.ucw <= 0 ? NULL_INSTANCE_ID : reconnection_data[2];
+    r.output_sample.vertex.instance_id = r.ucw[reservoir_index] <= 0 ? NULL_INSTANCE_ID : reconnection_data[2];
     r.output_sample.vertex.primitive_id = reconnection_data[3];
 
     r.output_sample.vertex.radiance_estimate = reconnection_radiance.rgb;
@@ -223,7 +224,7 @@ reservoir unpack_reservoir(
     r.output_sample.head_rng_seed = rng_seeds[0];
     r.output_sample.tail_rng_seed = rng_seeds[1];
 
-    r.sum_weight = 0.0f;
+    r.sum_weight = vec3(0.0f);
 
     return r;
 }
@@ -237,7 +238,9 @@ reservoir read_reservoir(ivec3 p, uvec2 size)
         RESTIR_HAS_RECONNECTION_DATA ?
             imageLoad(in_reservoir_reconnection_radiance_tex, p) : uvec4(0),
         RESTIR_HAS_SEEDS ? imageLoad(in_reservoir_rng_seeds_tex, p) : uvec4(0),
-        imageLoad(in_reservoir_rgb_target_function_value_tex, p)
+        imageLoad(in_reservoir_rgb_target_function_value_tex, p),
+        p.z
+
     );
 }
 
@@ -256,7 +259,8 @@ reservoir read_out_reservoir(ivec3 p, uvec2 size)
         RESTIR_HAS_RECONNECTION_DATA ?
             imageLoad(out_reservoir_reconnection_radiance_tex, p) : uvec4(0),
         RESTIR_HAS_SEEDS ? imageLoad(out_reservoir_rng_seeds_tex, p) : uvec4(0),
-        imageLoad(out_reservoir_rgb_target_function_value_tex, p)
+        imageLoad(out_reservoir_rgb_target_function_value_tex, p),
+        p.z
     );
 }
 
@@ -270,13 +274,13 @@ void write_reservoir(reservoir r, ivec3 p, uvec2 size)
     reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.tail_lobe, 18, 2);
     reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.head_length, 20, 6);
     reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.tail_length, 26, 6);
-    if(isnan(r.ucw) || isinf(r.ucw) || r.ucw < 0)
-        r.ucw = 0;
+    if(isnan(r.ucw[p.z]) || isinf(r.ucw[p.z]) || r.ucw[p.z] < 0) // KORJAAAAA
+        r.ucw[p.z] = 0;
 
     uvec4 ris_data = uvec4(
         //floatBitsToUint(r.target_function_value),
         floatBitsToUint(0.0f),
-        floatBitsToUint(r.ucw),
+        floatBitsToUint(r.ucw[p.z]),
         floatBitsToUint(r.output_sample.base_path_jacobian_part),
         reconnection_info
     );
