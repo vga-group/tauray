@@ -354,20 +354,15 @@ void main()
     // Update UCW
     [[unroll]] for(int i = 0; i < 3; ++i)
     {
-        if(r_rgb[i].target_function_value[i] > 0)
+        [[unroll]] for(int j = 0; j < 3; ++j)
         {
-            r_rgb[i].ucw = r_rgb[i].sum_weight/r_rgb[i].target_function_value;
-
-//            if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
-//                debugPrintfEXT("canonical: %i, %f", i, r_rgb[i].ucw);
+            if(r_rgb[i].target_function_value[j] > 0)
+                r_rgb[i].ucw[j] = r_rgb[i].sum_weight[j]/r_rgb[i].target_function_value[j];
+            else
+                r_rgb[i].ucw[j] = 0;
         }
-
-    }
-
-    [[unroll]] for(int i = 0; i < 3; ++i)
         write_reservoir(r_rgb[i], ivec3(p,i), pc.config.display_size.xy);
-
-
+    }
 
     vec3 color = imageLoad(out_color, p).rgb;
 

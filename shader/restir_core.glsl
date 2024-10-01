@@ -18,12 +18,14 @@ layout(binding = 7, rgba32ui) readonly uniform uimage2DArray in_reservoir_reconn
 layout(binding = 8, rgba32f) readonly uniform image2DArray in_reservoir_reconnection_radiance_tex;
 layout(binding = 9, rgba32ui) readonly uniform uimage2DArray in_reservoir_rng_seeds_tex;
 layout(binding = 10, rgba32f) readonly uniform image2DArray in_reservoir_rgb_target_function_value_tex;
+layout(binding = 30, rgba32f) readonly uniform image2DArray in_reservoir_rgb_ucw_data_tex;
 
 layout(binding = 11, rgba32ui) uniform uimage2DArray out_reservoir_ris_data_tex;
 layout(binding = 12, rgba32ui) uniform uimage2DArray out_reservoir_reconnection_data_tex;
 layout(binding = 13, rgba32f) uniform image2DArray out_reservoir_reconnection_radiance_tex;
 layout(binding = 14, rgba32ui) uniform uimage2DArray out_reservoir_rng_seeds_tex;
 layout(binding = 15, rgba32f) uniform image2DArray out_reservoir_rgb_target_function_value_tex;
+layout(binding = 31, rgba32f) uniform image2DArray out_reservoir_rgb_ucw_data_tex;
 
 #include "alias_table.glsl"
 #include "math.glsl"
@@ -190,6 +192,7 @@ reservoir unpack_reservoir(
     vec4 reconnection_radiance,
     uvec4 rng_seeds,
     vec4 rgb_target_function_value,
+    vec4 rgb_ucw_data,
     int reservoir_index
 ){
     reservoir r;
@@ -197,7 +200,13 @@ reservoir unpack_reservoir(
     //r.target_function_value = uintBitsToFloat(ris_data.r);
     r.target_function_value = rgb_target_function_value.rgb;
     r.ucw = vec3(uintBitsToFloat(ris_data.g)); // KORJAAAAA
+    r.ucw = rgb_ucw_data.rgb;
     r.output_sample.base_path_jacobian_part = uintBitsToFloat(ris_data.b);
+
+//    if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
+//    {
+//        debugPrintfEXT("read:  %f, %f, %f", r.ucw.r, r.ucw.g, r.ucw.b);
+//    }
 
     uint confidence_path_length = ris_data[3];
     r.confidence = bitfieldExtract(confidence_path_length, 0, 15);
@@ -239,6 +248,7 @@ reservoir read_reservoir(ivec3 p, uvec2 size)
             imageLoad(in_reservoir_reconnection_radiance_tex, p) : uvec4(0),
         RESTIR_HAS_SEEDS ? imageLoad(in_reservoir_rng_seeds_tex, p) : uvec4(0),
         imageLoad(in_reservoir_rgb_target_function_value_tex, p),
+        imageLoad(in_reservoir_rgb_ucw_data_tex, p),
         p.z
 
     );
@@ -260,6 +270,7 @@ reservoir read_out_reservoir(ivec3 p, uvec2 size)
             imageLoad(out_reservoir_reconnection_radiance_tex, p) : uvec4(0),
         RESTIR_HAS_SEEDS ? imageLoad(out_reservoir_rng_seeds_tex, p) : uvec4(0),
         imageLoad(out_reservoir_rgb_target_function_value_tex, p),
+        imageLoad(out_reservoir_rgb_ucw_data_tex, p),
         p.z
     );
 }
@@ -274,8 +285,10 @@ void write_reservoir(reservoir r, ivec3 p, uvec2 size)
     reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.tail_lobe, 18, 2);
     reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.head_length, 20, 6);
     reconnection_info = bitfieldInsert(reconnection_info, r.output_sample.tail_length, 26, 6);
-    if(isnan(r.ucw[p.z]) || isinf(r.ucw[p.z]) || r.ucw[p.z] < 0) // KORJAAAAA
-        r.ucw[p.z] = 0;
+
+    [[unroll]]for(int i = 0; i < 3; ++i)
+        if(isnan(r.ucw[i]) || isinf(r.ucw[i]) || r.ucw[i] < 0)
+            r.ucw[i] = 0;
 
     uvec4 ris_data = uvec4(
         //floatBitsToUint(r.target_function_value),
@@ -286,6 +299,13 @@ void write_reservoir(reservoir r, ivec3 p, uvec2 size)
     );
 
     imageStore(out_reservoir_rgb_target_function_value_tex, p, vec4(r.target_function_value.rgb, 1.0f));
+
+    imageStore(out_reservoir_rgb_ucw_data_tex, p, vec4(r.ucw.rgb, 1.0f));
+
+//    if(all(equal(pc.config.display_size.xy / 2, gl_GlobalInvocationID.xy)))
+//    {
+//        debugPrintfEXT("write:i %f, %f, %f", r.ucw.r, r.ucw.g, r.ucw.b);
+//    }
 
     imageStore(out_reservoir_ris_data_tex, p, ris_data);
 

@@ -198,8 +198,14 @@ void temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
     }
 
     // Update UCW
-    if(r.target_function_value[color_index] > 0)
-        r.ucw = r.sum_weight/r.target_function_value[color_index];
+
+    [[unroll]] for(int j = 0; j < 3; ++j)
+    {
+        if(r.target_function_value[j] > 0)
+            r.ucw[j] = r.sum_weight[j]/r.target_function_value[j];
+        else
+            r.ucw[j] = 0;
+    }
 }
 
 void main()
