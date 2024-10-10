@@ -205,74 +205,74 @@ void main()
         }
     }
 
-    reservoir[3] r_rgb_reuse;
-    [[unroll]] for(int reservoir_index = 0; reservoir_index < 3; ++reservoir_index)
-    {
-        init_reservoir(r_rgb_reuse[reservoir_index]);
-        // Shift R sample to G and B
-        // => MIS: p_R(r_sample) / (p_R(r_sample) + p_G(r_sample) + p_B(r_sample))
-        //          target_function_value_R = C_R * p
-        //          target_function_value_G = C_G * p
-        //          target_function_value_B = C_B * p
-
-        [[unroll]] for(int i = 0; i < 3; ++i)
-        {
-            
-            float top = support(r_rgb[i].target_function_value[reservoir_index]);
-            float bottom = 0.0f;
-            [[unroll]] for(int j = 0; j < 3; ++j)
-                bottom += support(r_rgb[i].target_function_value[j]);
-            
-//            float top = 1.0 / r_rgb[i].ucw[reservoir_index];
+//    reservoir[3] r_rgb_reuse;
+//    [[unroll]] for(int reservoir_index = 0; reservoir_index < 3; ++reservoir_index)
+//    {
+//        init_reservoir(r_rgb_reuse[reservoir_index]);
+//        // Shift R sample to G and B
+//        // => MIS: p_R(r_sample) / (p_R(r_sample) + p_G(r_sample) + p_B(r_sample))
+//        //          target_function_value_R = C_R * p
+//        //          target_function_value_G = C_G * p
+//        //          target_function_value_B = C_B * p
+//
+//        [[unroll]] for(int i = 0; i < 3; ++i)
+//        {
+//            
+//            float top = support(r_rgb[i].target_function_value[reservoir_index]);
 //            float bottom = 0.0f;
 //            [[unroll]] for(int j = 0; j < 3; ++j)
-//            {
-//                if(r_rgb[i].ucw[j] > 0)
-//                    bottom += 1.0 / r_rgb[i].ucw[j];
-//            }
-
-            float mis_weight = top / bottom;
-            if(r_rgb[i].ucw[reservoir_index] <= 0)
-                mis_weight = 0;
-
-            vec3 resampling_weight =
-                mis_weight *
-                r_rgb[i].target_function_value *
-                max(r_rgb[i].ucw[i], 0);
-            [[unroll]] for(int j = 0; j < 3; ++j)
-                if(isnan(resampling_weight[j]) || isinf(resampling_weight[j]))
-                    resampling_weight[j] = 0.0f;
-                                      
-            if(update_reservoir(
-                generate_single_uniform_random(seed.x),
-                r_rgb_reuse[reservoir_index],
-                r_rgb[i].target_function_value,
-                resampling_weight,
-                r_rgb[i].confidence,
-                reservoir_index
-            )){
-                r_rgb_reuse[reservoir_index].output_sample = r_rgb[i].output_sample;
-            }
-
-//            r_rgb_reuse[reservoir_index].sum_weight += resampling_weight;
-//            r_rgb_reuse[reservoir_index].confidence += r_rgb[i].confidence;
-//            if(generate_single_uniform_random(seed.x) *
-//                r_rgb_reuse[reservoir_index].sum_weight[reservoir_index] < resampling_weight[reservoir_index])
-//            {
-//                r_rgb_reuse[reservoir_index].target_function_value = r_rgb[i].target_function_value;
+//                bottom += support(r_rgb[i].target_function_value[j]);
+//            
+////            float top = 1.0 / r_rgb[i].ucw[reservoir_index];
+////            float bottom = 0.0f;
+////            [[unroll]] for(int j = 0; j < 3; ++j)
+////            {
+////                if(r_rgb[i].ucw[j] > 0)
+////                    bottom += 1.0 / r_rgb[i].ucw[j];
+////            }
+//
+//            float mis_weight = top / bottom;
+//            if(r_rgb[i].ucw[reservoir_index] <= 0)
+//                mis_weight = 0;
+//
+//            vec3 resampling_weight =
+//                mis_weight *
+//                r_rgb[i].target_function_value *
+//                max(r_rgb[i].ucw[i], 0);
+//            [[unroll]] for(int j = 0; j < 3; ++j)
+//                if(isnan(resampling_weight[j]) || isinf(resampling_weight[j]))
+//                    resampling_weight[j] = 0.0f;
+//                                      
+//            if(update_reservoir(
+//                generate_single_uniform_random(seed.x),
+//                r_rgb_reuse[reservoir_index],
+//                r_rgb[i].target_function_value,
+//                resampling_weight,
+//                r_rgb[i].confidence,
+//                reservoir_index
+//            )){
 //                r_rgb_reuse[reservoir_index].output_sample = r_rgb[i].output_sample;
 //            }
-        }
-
-        [[unroll]] for(int j = 0; j < 3; ++j)
-        {
-            if(r_rgb_reuse[reservoir_index].target_function_value[j] > 0)
-                r_rgb_reuse[reservoir_index].ucw[j] = r_rgb_reuse[reservoir_index].sum_weight[j]/
-                    r_rgb_reuse[reservoir_index].target_function_value[j];
-        }
-    }
-
-    //r_rgb = r_rgb_reuse;
+//
+////            r_rgb_reuse[reservoir_index].sum_weight += resampling_weight;
+////            r_rgb_reuse[reservoir_index].confidence += r_rgb[i].confidence;
+////            if(generate_single_uniform_random(seed.x) *
+////                r_rgb_reuse[reservoir_index].sum_weight[reservoir_index] < resampling_weight[reservoir_index])
+////            {
+////                r_rgb_reuse[reservoir_index].target_function_value = r_rgb[i].target_function_value;
+////                r_rgb_reuse[reservoir_index].output_sample = r_rgb[i].output_sample;
+////            }
+//        }
+//
+//        [[unroll]] for(int j = 0; j < 3; ++j)
+//        {
+//            if(r_rgb_reuse[reservoir_index].target_function_value[j] > 0)
+//                r_rgb_reuse[reservoir_index].ucw[j] = r_rgb_reuse[reservoir_index].sum_weight[j]/
+//                    r_rgb_reuse[reservoir_index].target_function_value[j];
+//        }
+//    }
+//
+//    //r_rgb = r_rgb_reuse;
 
 
     finish_output_color(p, r_rgb, out_value, sc);
