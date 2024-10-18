@@ -49,9 +49,6 @@ svgf_stage::svgf_stage(
     firefly_timer(dev, "svgf firefly suppression"),
     temporal_timer(dev, "svgf temporal"),
     atrous_timer(dev, "svgf atrous"),
-    uniforms(dev, sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer),
-    ss(&ss),
-    scene_state_counter(0),
     my_sampler(
         dev,
         vk::Filter::eLinear,
@@ -64,7 +61,10 @@ svgf_stage::svgf_stage(
         false,
         false,
         0.0f
-    )
+    ),
+    ss(&ss),
+    scene_state_counter(0),
+    uniforms(dev, sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer)
 {
     {
         std::map<std::string, std::string> defines;
@@ -122,7 +122,7 @@ void svgf_stage::init_resources()
         vk::Format::eR16Sfloat,
     };
 
-    for (int i = 0; i < svgf_stage::render_target_count; ++i)
+    for(unsigned i = 0; i < svgf_stage::render_target_count; ++i)
     {
         render_target_texture[i].reset(new texture(
             *dev,

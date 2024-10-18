@@ -75,12 +75,12 @@ void bottom_level_acceleration_structure::rebuild(
         transform_address.deviceAddress =
             transform_buffer.get_address(id) + sizeof(vk::TransformMatrixKHR) * i;
 
-        vk::AccelerationStructureGeometryKHR geom;
+        vk::AccelerationStructureGeometryKHR geom{};
         const mesh* m = entries[i].m;
         if(m)
         {
             geom.geometryType = vk::GeometryTypeKHR::eTriangles;
-            geom.geometry = vk::AccelerationStructureGeometryTrianglesDataKHR(
+            geom.geometry.triangles = vk::AccelerationStructureGeometryTrianglesDataKHR(
                 vk::Format::eR32G32B32Sfloat,
                 dev.logical.getBufferAddress({m->get_vertex_buffer(id)}),
                 sizeof(mesh::vertex),
@@ -96,7 +96,7 @@ void bottom_level_acceleration_structure::rebuild(
         else
         {
             geom.geometryType = vk::GeometryTypeKHR::eAabbs;
-            geom.geometry = vk::AccelerationStructureGeometryAabbsDataKHR(
+            geom.geometry.aabbs = vk::AccelerationStructureGeometryAabbsDataKHR(
                 entries[i].aabb_buffer->get_address(id),
                 sizeof(vk::AabbPositionsKHR)
             );

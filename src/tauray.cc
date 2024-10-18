@@ -363,7 +363,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     bool use_shadow_terminator_fix = false;
     bool has_tri_lights = false;
-    bool has_sh_grids = s.count<sh_grid>() != 0;
+    //bool has_sh_grids = s.count<sh_grid>() != 0;
     bool has_point_lights = s.count<point_light>() + s.count<spotlight>() > 0;
     bool has_directional_lights = s.count<directional_light>() > 0;
     s.foreach([&](model& mod){

@@ -176,19 +176,6 @@ void post_processing_renderer::init_pipelines()
         pingpong_index = 0;
     }
 
-    auto swap_pingpong = [&](){
-        if(!need_pingpong)
-            throw std::runtime_error("You did need pingpong...");
-
-        std::swap(in_color, out_color);
-        if(pingpong_index == 0)
-        {
-            // Swap the initial color to second pingpong target
-            out_color = pingpong[1]->get_array_render_target(dev->id);
-        }
-        pingpong_index++;
-    };
-
     // Add the new post processing pipelines here, don't forget to set
     // need_pingpong above to true when the stage is present.
     if(opt.svgf_denoiser.has_value())

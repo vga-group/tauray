@@ -6,6 +6,7 @@ namespace
 {
 using namespace tr;
 
+/*
 bool find_optimal_cascade_placement(
     ray* frustum_rays, // Should be 4 long. Order doesn't matter.
     vec2 view_dir, // Used to maximize useful area.
@@ -91,6 +92,7 @@ bool find_optimal_cascade_placement(
 
     return found_valid;
 }
+*/
 
 }
 
@@ -101,7 +103,7 @@ void directional_shadow_map::track_cameras(
     const mat4& light_transform,
     const std::vector<camera*>& cameras,
     const std::vector<transformable*>& camera_transforms,
-    bool conservative
+    bool /*conservative*/
 ){
     if(cascades.size() == 0)
         cascades.push_back(vec2(0));

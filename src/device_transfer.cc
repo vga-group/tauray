@@ -355,7 +355,7 @@ namespace tr
 std::unique_ptr<device_transfer_interface> create_device_transfer_interface(
     device& from,
     device& to,
-    device_transfer_strategy strat
+    device_transfer_strategy /*strat*/
 ){
     // TODO: Actually use selected strategy
     return std::make_unique<external_semaphore_host_buffer>(from, to);

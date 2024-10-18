@@ -19,9 +19,9 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     // These are usually spammy and useless messages.
     if(type == VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
         return false;
-    if(data->messageIdNumber == 0x912ddde2) // FIXME: Timer ID error on windows
+    if(uint32_t(data->messageIdNumber) == 0x912ddde2u) // FIXME: Timer ID error on windows
         return false;
-    if(data->messageIdNumber == 0x211e533b) // Caused by Monado OpenXR driver
+    if(uint32_t(data->messageIdNumber) == 0x211e533bu) // Caused by Monado OpenXR driver
         return false;
 
     (void)severity;

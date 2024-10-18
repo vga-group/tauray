@@ -408,7 +408,7 @@ scene* scene_stage::get_scene() const
     return cur_scene;
 }
 
-bool scene_stage::check_update(uint32_t categories, uint32_t& prev_counter) const
+bool scene_stage::check_update(uint32_t /*categories*/, uint32_t& prev_counter) const
 {
     uint32_t new_counter = 0;
     // HACK: Descriptor sets are currently updated from changes that we aren't tracking here

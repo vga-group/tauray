@@ -766,9 +766,9 @@ bool allow_reconnection(
     return false;
 #elif defined(USE_HYBRID_SHIFT)
     bool head = as_head;
-    as_head = !bounces ? true : mat.roughness > 0.05f;
+    as_head = bounces ? mat.roughness > 0.05f : true;
     // Don't allow reconnection to transient objects.
-    if((mat.flags & MATERIAL_FLAG_TRANSIENT) != 0) as_head = false;
+    if(bounces && (mat.flags & MATERIAL_FLAG_TRANSIENT) != 0) as_head = false;
     return head && as_head && (dist > TR_RESTIR.reconnection_scale || !bounces);
 #endif
 }
@@ -1789,7 +1789,7 @@ bool hybrid_shift_map(
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd, puvdx, puvdy);
         apply_regularization(regularization, mat);
         ray_cone_apply_roughness(rs.tail_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : mat.roughness, rc);
-        mat3 tbn = mat3(vd.tangent, vd.bitangent, vd.mapped_normal);
+        mat3 tbn = create_tangent_space(vd.mapped_normal);
 
         bool allowed = true;
         if(!allow_reconnection(to.dist, mat, true, allowed))
@@ -1812,11 +1812,7 @@ bool hybrid_shift_map(
             domain tail_domain;
             tail_domain.mat = mat;
             tail_domain.pos = vd.pos;
-            tail_domain.tbn = mat3(
-                vd.tangent,
-                vd.bitangent,
-                vd.mapped_normal
-            );
+            tail_domain.tbn = tbn;
             tail_domain.flat_normal = vd.hard_normal;
             tail_domain.view = to.dir;
             tail_domain.tview = tview;
