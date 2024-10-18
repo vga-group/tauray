@@ -72,6 +72,13 @@ vk::Buffer mesh::get_vertex_buffer(device_id id) const
     return buffers[id].vertex_buffer;
 }
 
+vk::Buffer mesh::get_prev_pos_buffer(device_id id) const
+{
+    if(animation_source)
+        return buffers[id].prev_pos_buffer;
+    return buffers[id].vertex_buffer; // Placeholder buffer that is at least large enough.
+}
+
 vk::Buffer mesh::get_index_buffer(device_id id) const
 {
     if(animation_source)
@@ -184,6 +191,13 @@ void mesh::init_buffers()
     const std::vector<vertex>& vertices = animation_source ? animation_source->vertices : this->vertices;
     const std::vector<uint32_t>& indices = animation_source ? animation_source->indices : this->indices;
     const std::vector<skin_data>& skin = animation_source ? animation_source->skin : this->skin;
+    std::vector<pvec4> prev_pos;
+    if(animation_source)
+    {
+        prev_pos.reserve(vertices.size());
+        for(const vertex& v: vertices)
+            prev_pos.push_back(pvec4(v.pos, 0));
+    }
 
     size_t vertex_bytes = vertices.size() * sizeof(vertices[0]);
     size_t index_bytes = indices.size() * sizeof(indices[0]);
@@ -210,7 +224,21 @@ void mesh::init_buffers()
             cb
         );
 
-        if(!animation_source)
+        if(animation_source)
+        {
+            buf.prev_pos_buffer = create_buffer(
+                dev,
+                {
+                    {}, sizeof(pvec4)*vertices.size(),
+                    vk::BufferUsageFlagBits::eVertexBuffer|vk::BufferUsageFlagBits::eStorageBuffer,
+                    vk::SharingMode::eExclusive
+                },
+                VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+                prev_pos.data(),
+                cb
+            );
+        }
+        else
         {
             buf.index_buffer = create_buffer(
                 dev,
@@ -243,16 +271,19 @@ void mesh::init_buffers()
     }
 }
 
-std::vector<vk::VertexInputBindingDescription> mesh::get_bindings()
+std::vector<vk::VertexInputBindingDescription> mesh::get_bindings(bool animated)
 {
-    return {vk::VertexInputBindingDescription{
+    std::vector<vk::VertexInputBindingDescription> bindings{vk::VertexInputBindingDescription{
         0, sizeof(vertex), vk::VertexInputRate::eVertex
     }};
+    if(animated)
+        bindings.push_back({1, sizeof(pvec4), vk::VertexInputRate::eVertex});
+    return bindings;
 }
 
-std::vector<vk::VertexInputAttributeDescription> mesh::get_attributes()
+std::vector<vk::VertexInputAttributeDescription> mesh::get_attributes(bool animated)
 {
-    return {
+    std::vector<vk::VertexInputAttributeDescription> attributes = {
         vk::VertexInputAttributeDescription{
             0, 0, vk::Format::eR32G32B32Sfloat, offsetof(vertex, pos)
         },
@@ -266,6 +297,9 @@ std::vector<vk::VertexInputAttributeDescription> mesh::get_attributes()
             3, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(vertex, tangent)
         }
     };
+
+    if(animated) attributes.push_back(vk::VertexInputAttributeDescription{4, 1, vk::Format::eR32G32B32Sfloat, 0});
+    return attributes;
 }
 
 }

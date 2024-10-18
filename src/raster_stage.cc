@@ -21,7 +21,8 @@ struct push_constant_buffer
     int32_t base_camera_index;
     int32_t frame_index;
     int32_t flipped_winding_order;
-    int32_t pad[2];
+    int32_t has_prev_pos_data;
+    int32_t pad[1];
     gpu_shadow_mapping_parameters sm_params;
     pvec3 ambient_color;
 };
@@ -143,8 +144,8 @@ raster_stage::raster_stage(
             uvec4(0, 0, target.get_size()),
             load_sources(opt, target),
             {&ss.get_descriptors(), &ss.get_raster_descriptors()},
-            mesh::get_bindings(),
-            mesh::get_attributes(),
+            mesh::get_bindings(true),
+            mesh::get_attributes(true),
             get_color_attachments(opt, target),
             get_depth_attachment(opt, target),
             opt.sample_shading, (bool)target.color || opt.force_alpha_to_coverage, true,
@@ -175,8 +176,8 @@ raster_stage::raster_stage(
         uvec4(0, 0, output_target.get_size()),
         load_sources(opt, output_target),
         {&ss.get_descriptors(), &ss.get_raster_descriptors()},
-        mesh::get_bindings(),
-        mesh::get_attributes(),
+        mesh::get_bindings(true),
+        mesh::get_attributes(true),
         get_color_attachments(opt, output_target),
         get_depth_attachment(opt, output_target),
         opt.sample_shading, (bool)output_target.color || opt.force_alpha_to_coverage, true,
@@ -215,15 +216,21 @@ void raster_stage::update(uint32_t)
             {
                 const scene_stage::instance& inst = instances[i];
                 const mesh* m = inst.m;
-                vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->id)};
-                vk::DeviceSize offsets[] = {0};
-                cb.bindVertexBuffers(0, 1, vertex_buffers, offsets);
+                vk::Buffer vertex_buffers[] = {
+                    m->get_vertex_buffer(dev->id),
+                    m->get_prev_pos_buffer(dev->id)
+                };
+                vk::DeviceSize offsets[] = {0,0};
+                cb.bindVertexBuffers(0, 2, vertex_buffers, offsets);
                 cb.bindIndexBuffer(
                     m->get_index_buffer(dev->id),
                     0, vk::IndexType::eUint32
                 );
                 control.instance_id = i;
                 control.flipped_winding_order = inst.flip_winding_order;
+                // Animated meshes are supposed to have previous position data
+                // in them.
+                control.has_prev_pos_data = m->get_animation_source() != nullptr;
 
                 gfx->push_constants(cb, control);
 

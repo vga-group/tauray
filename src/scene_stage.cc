@@ -1550,6 +1550,7 @@ void scene_stage::record_skinning(device_id id, uint32_t frame_index, vk::Comman
             skinning_desc.set_buffer(id, "destination_data", {{dst->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}});
             skinning_desc.set_buffer(id, "skin_data", {{src->get_skin_buffer(id), 0, VK_WHOLE_SIZE}});
             skinning_desc.set_buffer(id, "joint_data", {{mod.get_joint_buffer()[id], 0, VK_WHOLE_SIZE}});
+            skinning_desc.set_buffer(id, "prev_pos_data", {{dst->get_prev_pos_buffer(id), 0, VK_WHOLE_SIZE}});
             skinning[id].push_descriptors(cb, skinning_desc, 0);
             cb.dispatch((vertex_count+31u)/32u, 1, 1);
         }
@@ -1725,7 +1726,7 @@ void scene_stage::init_descriptor_set_layout()
         scene_desc.add("tlas", {11, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 
     scene_raster_desc.add("sh_grid_data", {0, vk::DescriptorType::eCombinedImageSampler, opt.max_3d_samplers, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
-    scene_raster_desc.add("sh_grids", {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_raster_desc.add("sh_grids", {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     scene_raster_desc.add("shadow_maps", {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     scene_raster_desc.add("shadow_map_cascades", {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     scene_raster_desc.add("shadow_map_atlas", {4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);

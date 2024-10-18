@@ -12,7 +12,8 @@ layout(push_constant) uniform push_constant_buffer
     int base_camera_index;
     int frame_index;
     int flipped_winding_order;
-    int pad[2];
+    int has_prev_pos_data;
+    int pad[1];
     shadow_mapping_parameters sm_params;
     vec3 ambient_color;
 } control;
