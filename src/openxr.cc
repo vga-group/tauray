@@ -80,7 +80,7 @@ namespace tr
 {
 
 openxr::openxr(const options& opt)
-: context(opt), opt(opt), xr_device(VK_NULL_HANDLE)
+:   context(opt), opt(opt), xr_device(VK_NULL_HANDLE)
 {
     if(opt.preview_window)
         init_sdl();
@@ -144,6 +144,7 @@ bool openxr::init_frame()
     xrBeginFrame(xr_session, &begin_info);
 
     update_xr_views();
+    update_xr_controllers();
 
     return false;
 }
@@ -177,6 +178,16 @@ void openxr::setup_xr_surroundings(
         );
         cameras.push_back(s.get<camera>(id));
         camera_transforms.push_back(s.get<transformable>(id));
+    }
+
+    for(size_t i = 0; i < 2; ++i)
+    {
+        entity id = s.add(
+            transformable(reference_frame),
+            openxr_controller{i == 0, false, false, false}
+        );
+        controllers.push_back(s.get<openxr_controller>(id));
+        controller_transforms.push_back(s.get<transformable>(id));
     }
 }
 
@@ -606,10 +617,116 @@ void openxr::init_session()
     xrCreateReferenceSpace(xr_session, &space_info, &xr_reference_space);
 
     session_state = XR_SESSION_STATE_UNKNOWN;
+
+    XrActionSetCreateInfo as_info{
+        XR_TYPE_ACTION_SET_CREATE_INFO,
+        nullptr,
+        "gameplay",
+        "Gameplay",
+        0
+    };
+    xrCreateActionSet(xr_instance, &as_info, &action_set);
+
+    XrActionCreateInfo grip_left_info{
+        XR_TYPE_ACTION_CREATE_INFO,
+        nullptr,
+        "leftcontrollerorientation",
+        XR_ACTION_TYPE_POSE_INPUT,
+        0, nullptr,
+        "Left controller orientation"
+    };
+    xrCreateAction(action_set, &grip_left_info, &grip_pose_action[0]);
+
+    XrActionCreateInfo grip_right_info{
+        XR_TYPE_ACTION_CREATE_INFO,
+        nullptr,
+        "rightcontrollerorientation",
+        XR_ACTION_TYPE_POSE_INPUT,
+        0, nullptr,
+        "Right controller orientation"
+    };
+    xrCreateAction(action_set, &grip_right_info, &grip_pose_action[1]);
+
+    XrActionCreateInfo click_left_info{
+        XR_TYPE_ACTION_CREATE_INFO,
+        nullptr,
+        "leftcontrollerclick",
+        XR_ACTION_TYPE_BOOLEAN_INPUT,
+        0, nullptr,
+        "Left controller click"
+    };
+    xrCreateAction(action_set, &click_left_info, &click_action[0]);
+
+    XrActionCreateInfo click_right_info{
+        XR_TYPE_ACTION_CREATE_INFO,
+        nullptr,
+        "rightcontrollerclick",
+        XR_ACTION_TYPE_BOOLEAN_INPUT,
+        0, nullptr,
+        "Right controller click"
+    };
+    xrCreateAction(action_set, &click_right_info, &click_action[1]);
+
+    XrPath left_grip_path;
+    xrStringToPath(xr_instance, "/user/hand/left/input/grip/pose", &left_grip_path);
+    XrPath right_grip_path;
+    xrStringToPath(xr_instance, "/user/hand/right/input/grip/pose", &right_grip_path);
+    XrPath left_click_path;
+    xrStringToPath(xr_instance, "/user/hand/left/input/select/click", &left_click_path);
+    XrPath right_click_path;
+    xrStringToPath(xr_instance, "/user/hand/right/input/select/click", &right_click_path);
+
+    XrPath interaction_profile_path;
+    xrStringToPath(xr_instance, "/interaction_profiles/khr/simple_controller", &interaction_profile_path);
+
+    XrActionSuggestedBinding bindings[4];
+    bindings[0].action = grip_pose_action[0];
+    bindings[0].binding = left_grip_path;
+    bindings[1].action = grip_pose_action[1];
+    bindings[1].binding = right_grip_path;
+    bindings[2].action = click_action[0];
+    bindings[2].binding = left_click_path;
+    bindings[3].action = click_action[1];
+    bindings[3].binding = right_click_path;
+
+    XrInteractionProfileSuggestedBinding suggested_bindings{
+        XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING,
+        nullptr,
+        interaction_profile_path,
+        std::size(bindings),
+        bindings
+    };
+
+    xrSuggestInteractionProfileBindings(xr_instance, &suggested_bindings);
+
+    XrSessionActionSetsAttachInfo attach_info{
+        XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO,
+        nullptr,
+        1,
+        &action_set
+    };
+    xrAttachSessionActionSets(xr_session, &attach_info);
+
+    const XrPosef identity = {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}};
+
+    XrActionSpaceCreateInfo actionSpaceCI{};
+    actionSpaceCI.type = XR_TYPE_ACTION_SPACE_CREATE_INFO;
+    actionSpaceCI.action = grip_pose_action[0];
+    actionSpaceCI.poseInActionSpace = identity;
+    actionSpaceCI.subactionPath = XR_NULL_PATH;
+    xrCreateActionSpace(xr_session, &actionSpaceCI, &grip_pose_space[0]);
+
+    actionSpaceCI.action = grip_pose_action[1];
+    xrCreateActionSpace(xr_session, &actionSpaceCI, &grip_pose_space[1]);
 }
 
 void openxr::deinit_session()
 {
+    xrDestroyAction(click_action[0]);
+    xrDestroyAction(click_action[1]);
+    xrDestroyAction(grip_pose_action[0]);
+    xrDestroyAction(grip_pose_action[1]);
+    xrDestroyActionSet(action_set);
     xrDestroySpace(xr_reference_space);
     xrDestroySession(xr_session);
 }
@@ -1131,6 +1248,72 @@ void openxr::update_xr_views()
         }
 
         projection_layer_views[i].fov = v.fov;
+    }
+}
+
+void openxr::update_xr_controllers()
+{
+    XrActiveActionSet active_set{action_set, XR_NULL_PATH};
+    XrActionsSyncInfo sync_info{
+        XR_TYPE_ACTIONS_SYNC_INFO,
+        nullptr, 1, &active_set
+    };
+    xrSyncActions(xr_session, &sync_info);
+
+    XrActionStatePose grip_states[2] = {};
+    grip_states[0].type = XR_TYPE_ACTION_STATE_POSE;
+    grip_states[1].type = XR_TYPE_ACTION_STATE_POSE;
+
+    XrActionStateBoolean click_states[2] = {};
+    click_states[0].type = XR_TYPE_ACTION_STATE_BOOLEAN;
+    click_states[1].type = XR_TYPE_ACTION_STATE_BOOLEAN;
+
+    XrActionStateGetInfo get_info{
+        XR_TYPE_ACTION_STATE_GET_INFO,
+        nullptr,
+        grip_pose_action[0],
+        XR_NULL_PATH
+    };
+    xrGetActionStatePose(xr_session, &get_info, &grip_states[0]);
+    get_info.action = grip_pose_action[1];
+    xrGetActionStatePose(xr_session, &get_info, &grip_states[1]);
+    get_info.action = click_action[0];
+    xrGetActionStateBoolean(xr_session, &get_info, &click_states[0]);
+    get_info.action = click_action[1];
+    xrGetActionStateBoolean(xr_session, &get_info, &click_states[1]);
+
+    for(int i = 0; i < 2; ++i)
+    {
+        controllers[i]->connected = grip_states[i].isActive;
+        controllers[i]->clicked = click_states[i].currentState && click_states[i].isActive && click_states[i].changedSinceLastSync;
+        controllers[i]->pressed = click_states[i].currentState && click_states[i].isActive;
+        XrSpaceLocation space_location{};
+        space_location.type = XR_TYPE_SPACE_LOCATION;
+        XrResult res = xrLocateSpace(
+            grip_pose_space[i],
+            xr_reference_space,
+            frame_state.predictedDisplayTime,
+            &space_location
+        );
+        transformable& ct = *controller_transforms[i];
+        if(
+            XR_UNQUALIFIED_SUCCESS(res) &&
+            (space_location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
+            (space_location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) != 0
+        ){
+            ct.set_orientation(quat(
+                space_location.pose.orientation.w,
+                space_location.pose.orientation.x,
+                space_location.pose.orientation.y,
+                space_location.pose.orientation.z
+            ));
+            ct.set_position(vec3(
+                space_location.pose.position.x,
+                space_location.pose.position.y,
+                space_location.pose.position.z
+            ));
+        }
+        else controllers[i]->connected = false;
     }
 }
 
