@@ -97,7 +97,7 @@ dependencies post_processing_renderer::render(dependencies deps)
     dependencies out_deps = tonemap->run(deps);
 
     if(taa)
-        deps = taa->run(deps);
+        out_deps = taa->run(out_deps);
 
     if(delay)
         delay_deps[frame_index] = delay->run(deps);
