@@ -20,7 +20,17 @@ struct push_constants
     float sigma_l;
     float temporal_alpha_color;
     float temporal_alpha_moments;
+    uint input_mask;
 };
+
+uint get_input_mask(gbuffer_target& input_features)
+{
+    uint mask = 0;
+    if(input_features.temporal_gradient) mask |= 1<<0;
+    if(input_features.confidence) mask |= 1<<1;
+    if(input_features.curvature) mask |= 1<<2;
+    return mask;
+}
 
 static_assert(sizeof(push_constants) <= 128);
 }
@@ -175,6 +185,7 @@ void svgf_stage::record_command_buffers()
         control.sigma_n = opt.sigma_n;
         control.temporal_alpha_color = opt.temporal_alpha_color;
         control.temporal_alpha_moments = opt.temporal_alpha_moments;
+        control.input_mask = get_input_mask(input_features);
 
         vk::MemoryBarrier barrier{
             vk::AccessFlagBits::eShaderWrite,

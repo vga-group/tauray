@@ -99,6 +99,10 @@ vec4 get_specular_mask(vec3 uv, vec3 V, vec3 prev_V, vec3 normal, float roughnes
 
 vec2 gather_temporal_gradients_5x5(ivec3 p, vec3 world_pos, vec3 view_pos, vec3 normal, camera_data camera, float frustum_size)
 {
+    // No gradients, so assume no changes.
+    if((control.input_mask & INPUT_TEMPORAL_GRADIENTS) == 0)
+        return vec2(1);
+
     vec2 g1 = (vec2(p.xy + 0.5) + vec2( 1.5f,  0.5f)) / vec2(control.size);
     vec2 g2 = (vec2(p.xy + 0.5) + vec2(-0.5f,  1.5f)) / vec2(control.size);
     vec2 g3 = (vec2(p.xy + 0.5) + vec2(-1.5f, -0.5f)) / vec2(control.size);
@@ -204,8 +208,8 @@ void main()
     float diffuse_luminance = rgb_to_luminance(current_diffuse.rgb);
     float specular_luminance = rgb_to_luminance(current_specular.rgb);
 
-    float confidence = imageLoad(in_confidence, p).r;
-    float curvature = abs(imageLoad(in_curvature, p).r);
+    float confidence = (control.input_mask & INPUT_CONFIDENCE) != 0 ? imageLoad(in_confidence, p).r : 1;
+    float curvature = (control.input_mask & INPUT_CURVATURE) != 0 ? abs(imageLoad(in_curvature, p).r) : 0;
     vec2 temporal_gradient = gather_temporal_gradients_5x5(p, world_pos, view_pos, flat_normal, curr_camera, frustum_size);
     temporal_gradient = pow(temporal_gradient, vec2(8.0f, 1.0f));
 

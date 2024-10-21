@@ -155,6 +155,11 @@ void main()
             float lobe_similarity = specular_lobe_similarity(V, center_normal, center_roughness, Vs, N, sample_roughness);
             float lobe_weight = pow(lobe_similarity, 16.0f);
 
+            // HACK: This is only needed because the secondary bounces are also
+            // noisy. Hence, we must always denoise a little bit, even if the
+            // lobes don't match at all.
+            lobe_weight += 0.1;
+
             float sample_l_spec = rgb_to_luminance(spec_q.rgb);
             float w_lum_spec = abs(sample_l_spec - center_luminance_spec) / (sigma_l * luminance_std_dev_spec + 1e-7);
             w_lum_spec = exp(-w_lum_spec);
