@@ -155,6 +155,7 @@
         {"dshgi-server", options::DSHGI_SERVER}, \
         {"dshgi-client", options::DSHGI_CLIENT}, \
         {"restir-di", options::RESTIR_DI}, \
+        {"restir", options::RESTIR}, \
         {"albedo", feature_stage::ALBEDO}, \
         {"world-normal", feature_stage::WORLD_NORMAL}, \
         {"view-normal", feature_stage::VIEW_NORMAL}, \
@@ -409,6 +410,8 @@
     TR_STRUCT_OPT(taa, \
         "Sets parameters for temporal antialiasing.", \
         TR_STRUCT_OPT_INT(sequence_length, 0, 1, INT_MAX) \
+        TR_STRUCT_OPT_BOOL(edge_dilation, true) \
+        TR_STRUCT_OPT_BOOL(anti_shimmer, false) \
     )\
     TR_ENUM_OPT(denoiser, options::denoiser_type, \
         "Selects the denoiser to use.", \
@@ -436,6 +439,10 @@
         TR_STRUCT_OPT_FLOAT(min_alpha_color, 0.02f, 0.001f, 1.0f) \
         TR_STRUCT_OPT_FLOAT(min_alpha_moments, 0.2f, 0.001f, 1.0f) \
     )\
+    TR_BOOL_OPT(svgf_color_contains_direct_light, \
+        "If set to true, SVGF output will be added to the contents of the color buffer instead of overwriting the color buffer.", \
+        false \
+    ) \
     TR_BOOL_OPT(accumulation, \
         "Whether to accumulate samples from multiple frames or not. " \
         "For interactive mode, samples are accumulated when the camera is " \
@@ -549,6 +556,29 @@
         TR_STRUCT_OPT_FLOAT(search_radius, 32, 0, 500) \
         TR_STRUCT_OPT_BOOL(shared_visibility, false) \
         TR_STRUCT_OPT_BOOL(sample_visibility, false) \
+    ) \
+    TR_STRUCT_OPT(restir, \
+        "Parameters for ReSTIR", \
+        TR_STRUCT_OPT_FLOAT(max_confidence, 16, 0, FLT_MAX) \
+        TR_STRUCT_OPT_BOOL(temporal_reuse, true) \
+        TR_STRUCT_OPT_INT(canonical_samples, 1, 1, INT_MAX) \
+        TR_STRUCT_OPT_INT(spatial_samples, 2, 0, 16) \
+        TR_STRUCT_OPT_INT(passes, 1, 0, INT_MAX) \
+        TR_STRUCT_OPT_BOOL(sample_spatial_disk, true) \
+        TR_STRUCT_OPT_ENUM(shift_mapping_type, \
+            restir_stage::shift_mapping_type, \
+            restir_stage::RECONNECTION_SHIFT, \
+            {"reconnection-shift", restir_stage::RECONNECTION_SHIFT}, \
+            {"random-replay-shift", restir_stage::RANDOM_REPLAY_SHIFT}, \
+            {"hybrid-shift", restir_stage::HYBRID_SHIFT} \
+        ) \
+        TR_STRUCT_OPT_FLOAT(reconnection_scale, 2, 0, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(max_search_radius, 32, 0, INT_MAX) \
+        TR_STRUCT_OPT_FLOAT(min_search_radius, 1, 0, INT_MAX) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_material, false) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_acceleration_structures, false) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_reconnection_radiance, false) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_temporal_visibility, false) \
     )
 //==============================================================================
 // END OF OPTIONS
@@ -558,6 +588,7 @@
 #include "headless.hh"
 #include "tonemap_stage.hh"
 #include "path_tracer_stage.hh"
+#include "restir_stage.hh"
 #include "rt_renderer.hh"
 #include "rt_common.hh"
 #include "feature_stage.hh"
@@ -629,7 +660,8 @@ struct options
         DSHGI,
         DSHGI_SERVER,
         DSHGI_CLIENT,
-        RESTIR_DI
+        RESTIR_DI,
+        RESTIR
     };
     using renderer_option_type = std::variant<
         tr::options::basic_pipeline_type, feature_stage::feature>;
@@ -657,6 +689,7 @@ struct options
 #define TR_STRUCT_OPT_INT(name, default, min, max) int name = default;
 #define TR_STRUCT_OPT_FLOAT(name, default, min, max) float name = default;
 #define TR_STRUCT_OPT_BOOL(name, default) bool name = default;
+#define TR_STRUCT_OPT_ENUM(name, type, default, ...) type name = default;
     TR_OPTIONS
 #undef TR_BOOL_OPT
 #undef TR_BOOL_SOPT
@@ -673,6 +706,7 @@ struct options
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT_BOOL
+#undef TR_STRUCT_OPT_ENUM
 };
 
 void parse_command_line_options(char** argv, options& opt);

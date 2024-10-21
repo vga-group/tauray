@@ -39,6 +39,7 @@ public:
         bool shadow_mapping = false;
         bool alloc_sh_grids = false;
         blas_strategy group_strategy = blas_strategy::STATIC_MERGED_DYNAMIC_PER_MODEL;
+        bool track_prev_tlas = false;
     };
 
     scene_stage(device_mask dev, const options& opt);
@@ -54,6 +55,7 @@ public:
     static inline constexpr uint32_t LIGHT = 1<<2;
 
     bool check_update(uint32_t categories, uint32_t& prev_counter) const;
+    bool has_prev_tlas() const;
 
     environment_map* get_environment_map() const;
     vec3 get_ambient() const;
@@ -67,6 +69,7 @@ public:
         const mesh* m;
         const model* mod;
         uint64_t last_refresh_frame;
+        bool flip_winding_order;
     };
     const std::vector<instance>& get_instances() const;
 
@@ -74,6 +77,9 @@ public:
 
     descriptor_set& get_descriptors();
     descriptor_set& get_raster_descriptors();
+    descriptor_set& get_temporal_tables();
+
+    void get_defines(std::map<std::string, std::string>& defines);
 
     struct shadow_map_instance
     {
@@ -174,6 +180,7 @@ private:
     );
     bool reserve_pre_transformed_vertices(size_t max_vertex_count);
     void clear_pre_transformed_vertices();
+    void update_temporal_tables(uint32_t frame_index);
 
     //==========================================================================
     // Shadow map stuff.
@@ -208,6 +215,7 @@ private:
     gpu_buffer sh_grid_data;
     gpu_buffer shadow_map_data;
     gpu_buffer camera_data;
+
     sampler envmap_sampler;
     sampler shadow_sampler;
     sampler sh_grid_sampler;
@@ -216,6 +224,7 @@ private:
     std::unordered_map<sh_grid*, texture> sh_grid_textures;
 
     std::optional<top_level_acceleration_structure> tlas;
+    std::optional<top_level_acceleration_structure> prev_tlas;
     std::optional<event_subscription> events[10];
 
     sampler brdf_integration_sampler;
@@ -223,8 +232,23 @@ private:
     texture noise_vector_2d;
     texture noise_vector_3d;
 
+    // Temporal tables
+    std::vector<uint32_t> backward_instance_ids;
+    std::vector<uint32_t> forward_instance_ids;
+    std::vector<uint32_t> backward_point_light_ids;
+    std::vector<uint32_t> forward_point_light_ids;
+    size_t prev_instance_count;
+    size_t prev_point_light_count;
+
+    gpu_buffer temporal_tables;
+    gpu_buffer prev_point_light_data;
+
+    //==========================================================================
+    // Descriptor sets
+    //==========================================================================
     descriptor_set scene_desc;
     descriptor_set scene_raster_desc;
+    descriptor_set temporal_tables_desc;
 
     //==========================================================================
     // Pipelines

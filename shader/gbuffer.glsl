@@ -1,6 +1,8 @@
 #ifndef GBUFFER_GLSL
 #define GBUFFER_GLSL
 #include "material.glsl"
+#include "math.glsl"
+#extension GL_EXT_debug_printf : enable
 
 //==============================================================================
 // Color
@@ -47,50 +49,10 @@ vec4 read_gbuffer_color(ivec3 pos) { return vec4(0); }
 
 #endif
 
-//==============================================================================
-// Direct lighting
-//==============================================================================
-#ifdef DIRECT_TARGET_BINDING
-layout(binding = DIRECT_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray direct_target;
-
-void write_gbuffer_direct(vec4 light, ivec3 pos)
+vec4 sample_gbuffer_color(sampler2D tex, ivec2 p)
 {
-    imageStore(direct_target, pos, light);
+    return texelFetch(tex, p, 0);
 }
-
-void accumulate_gbuffer_direct(
-    vec4 light, ivec3 pos, uint samples, uint previous_samples
-){
-    if(previous_samples != 0)
-    {
-        vec4 prev_light = imageLoad(direct_target, pos);
-        uint total = samples + previous_samples;
-        light = mix(light, prev_light, float(previous_samples)/float(total));
-    }
-    imageStore(direct_target, pos, light);
-}
-
-vec4 read_gbuffer_direct(ivec3 pos) { return imageLoad(direct_target, pos); }
-
-#elif defined(DIRECT_TARGET_LOCATION)
-
-layout(location = DIRECT_TARGET_LOCATION) out vec4 direct_target;
-
-void write_gbuffer_direct(vec4 color)
-{
-    direct_target = color;
-}
-
-#else
-
-void write_gbuffer_direct(vec4 color, ivec3 pos) {}
-void write_gbuffer_direct(vec4 color) {}
-void accumulate_gbuffer_direct(
-    vec4 direct, ivec3 pos, uint samples, uint previous_samples
-) {}
-vec4 read_gbuffer_direct(ivec3 pos) { return vec4(0); }
-
-#endif
 
 //==============================================================================
 // Diffuse lighting
@@ -131,11 +93,62 @@ void write_gbuffer_diffuse(vec4 color)
 void write_gbuffer_diffuse(vec4 color, ivec3 pos) {}
 void write_gbuffer_diffuse(vec4 color) {}
 void accumulate_gbuffer_diffuse(
-    vec4 direct, ivec3 pos, uint samples, uint previous_samples
+    vec4 diffuse, ivec3 pos, uint samples, uint previous_samples
 ) {}
 vec4 read_gbuffer_diffuse(ivec3 pos) { return vec4(0); }
 
 #endif
+
+vec4 sample_gbuffer_diffuse(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0);
+}
+
+//==============================================================================
+// Reflection
+//==============================================================================
+#ifdef REFLECTION_TARGET_BINDING
+layout(binding = REFLECTION_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray reflection_target;
+
+void write_gbuffer_reflection(vec4 light, ivec3 pos)
+{
+    imageStore(reflection_target, pos, light);
+}
+
+void accumulate_gbuffer_reflection(
+    vec4 light, ivec3 pos, uint samples, uint previous_samples
+){
+    if(previous_samples != 0)
+    {
+        vec4 prev_light = imageLoad(reflection_target, pos);
+        uint total = samples + previous_samples;
+        light = mix(light, prev_light, float(previous_samples)/float(total));
+    }
+    imageStore(reflection_target, pos, light);
+}
+
+vec4 read_gbuffer_reflection(ivec3 pos) { return imageLoad(reflection_target, pos); }
+
+#elif defined(REFLECTION_TARGET_LOCATION)
+
+layout(location = REFLECTION_TARGET_LOCATION) out vec4 reflection_target;
+
+void write_gbuffer_reflection(vec4 color)
+{
+    reflection_target = color;
+}
+
+#else
+
+void write_gbuffer_reflection(vec4 color, ivec3 pos) {}
+void write_gbuffer_reflection(vec4 color) {}
+void accumulate_gbuffer_reflection(
+    vec4 reflection, ivec3 pos, uint samples, uint previous_samples
+) {}
+vec4 read_gbuffer_reflection(ivec3 pos) { return vec4(0); }
+
+#endif
+
 
 //==============================================================================
 // Albedo
@@ -167,7 +180,10 @@ vec4 read_gbuffer_albedo(ivec3 pos) { return vec4(0); }
 
 #endif
 
-
+vec4 sample_gbuffer_albedo(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0);
+}
 
 //==============================================================================
 // Emission
@@ -196,6 +212,43 @@ vec3 read_gbuffer_emission(ivec3 pos) { return vec3(0); }
 
 #endif
 
+vec3 sample_gbuffer_emission(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0).rgb;
+}
+
+//==============================================================================
+// Curvature
+//==============================================================================
+
+#ifdef CURVATURE_TARGET_BINDING
+layout(binding = CURVATURE_TARGET_BINDING, set = 0, r32f) uniform image2DArray curvature_target;
+
+void write_gbuffer_curvature(float curvature, ivec3 pos) { imageStore(curvature_target, pos, vec4(curvature)); }
+float read_gbuffer_curvature(ivec3 pos) { return imageLoad(curvature_target, pos).x; }
+
+#elif defined(CURVATURE_TARGET_LOCATION)
+
+layout(location = CURVATURE_TARGET_LOCATION) out float curvature_target;
+
+void write_gbuffer_curvature(float curvature)
+{
+    curvature_target = curvature;
+}
+
+#else
+
+void write_gbuffer_curvature(float curvature, ivec3 pos) {}
+void write_gbuffer_curvature(float curvature) {}
+float read_gbuffer_curvature(ivec3 pos) { return 0; }
+
+#endif
+
+float sample_gbuffer_curvature(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0).r;
+}
+
 //==============================================================================
 // Material
 //==============================================================================
@@ -218,7 +271,7 @@ sampled_material unpack_gbuffer_material(vec4 packed_mat, vec4 albedo, vec3 emis
     ret.ior_out = packed_mat[2] * 4.0f;
     ret.f0 = (ret.ior_out - ret.ior_in)/(ret.ior_out + ret.ior_in);
     ret.f0 *= ret.f0;
-    ret.double_sided = true;
+    ret.flags = MATERIAL_FLAG_DOUBLE_SIDED;
     ret.shadow_terminator_mul = 0.0f;
 
     return ret;
@@ -254,26 +307,43 @@ vec4 read_gbuffer_material(ivec3 pos) { return vec4(0); }
 
 #endif
 
+sampled_material sample_gbuffer_material(
+    sampler2D albedo,
+    sampler2D material,
+    sampler2D emission,
+    ivec2 p
+){
+    return unpack_gbuffer_material(
+        texelFetch(material, p, 0),
+        sample_gbuffer_albedo(albedo, p),
+        sample_gbuffer_emission(emission, p)
+    );
+}
+
+sampled_material sample_gbuffer_material(
+    sampler2D albedo,
+    sampler2D material,
+    ivec2 p
+){
+    return unpack_gbuffer_material(
+        texelFetch(material, p, 0),
+        sample_gbuffer_albedo(albedo, p),
+        vec3(0)
+    );
+}
+
 //==============================================================================
 // Normals
 //==============================================================================
 
 vec2 pack_gbuffer_normal(vec3 normal)
 {
-    normal /= abs(normal.x) + abs(normal.y) + abs(normal.z);
-    return normal.z >= 0.0 ?
-        normal.xy : (1 - abs(normal.yx)) * (step(vec2(0), normal.xy)*2-1);
+    return octahedral_pack(normal);
 }
 
 vec3 unpack_gbuffer_normal(vec2 packed_normal)
 {
-    vec3 normal = vec3(
-        packed_normal.x,
-        packed_normal.y,
-        1 - abs(packed_normal.x) - abs(packed_normal.y)
-    );
-    normal.xy += clamp(normal.z, -1.0f, 0.0f) * (step(vec2(0), normal.xy) * 2 - 1);
-    return normalize(normal);
+    return octahedral_unpack(packed_normal);
 }
 
 //==============================================================================
@@ -312,6 +382,11 @@ void write_gbuffer_normal(vec3 normal) {}
 vec3 read_gbuffer_normal(ivec3 pos) { return vec3(0,0,1); }
 
 #endif
+
+vec3 sample_gbuffer_normal(sampler2D tex, ivec2 p)
+{
+    return unpack_gbuffer_normal(texelFetch(tex, p, 0).rg);
+}
 
 //==============================================================================
 // Flat normal
@@ -384,6 +459,11 @@ vec3 read_gbuffer_pos(ivec3 pos) { return vec3(0); }
 
 #endif
 
+vec3 sample_gbuffer_position(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0).rgb;
+}
+
 //==============================================================================
 // Screen-space motion
 //==============================================================================
@@ -417,6 +497,11 @@ void write_gbuffer_screen_motion(vec3 prev_frag_uv) {}
 vec2 read_gbuffer_screen_motion(ivec3 pos) { return vec2(0); }
 
 #endif
+
+vec2 sample_gbuffer_screen_motion(sampler2D tex, ivec2 p)
+{
+    return texelFetch(tex, p, 0).rg;
+}
 
 //==============================================================================
 // Instance ID
@@ -476,7 +561,8 @@ layout(location = LINEAR_DEPTH_TARGET_LOCATION) out vec4 linear_depth_target;
 
 void write_gbuffer_linear_depth()
 {
-    const float linear_depth = gl_FragCoord.z / gl_FragCoord.w;
+    //const float linear_depth = gl_FragCoord.z / gl_FragCoord.w;
+    const float linear_depth = 1.0 / gl_FragCoord.w; // Viewspace Z coordinate
     const vec2 grad = vec2(dFdx(linear_depth), dFdy(linear_depth));
     linear_depth_target = vec4(linear_depth, grad, 0.0);
 }

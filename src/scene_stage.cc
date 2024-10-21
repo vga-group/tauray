@@ -11,15 +11,18 @@ namespace
 {
 using namespace tr;
 
+constexpr uint32_t MATERIAL_FLAG_DOUBLE_SIDED = 1<<0;
+constexpr uint32_t MATERIAL_FLAG_TRANSIENT = 1<<1;
+
 struct material_buffer
 {
     pvec4 albedo_factor;
     pvec4 metallic_roughness_factor;
-    pvec4 emission_factor_double_sided;
+    pvec4 emission_factor;
     float transmittance;
     float ior;
     float normal_factor;
-    float pad[1];
+    uint32_t flags;
     int albedo_tex_id;
     int metallic_roughness_tex_id;
     int normal_tex_id;
@@ -100,7 +103,9 @@ struct point_light_entry
 struct tri_light_entry
 {
     pvec3 pos[3];
-    pvec3 emission_factor;
+    uint32_t emission_factor; // R9G9B9E5
+    uint32_t instance_id;
+    uint32_t primitive_id;
     uint32_t uv[3];
     int emission_tex_id;
 };
@@ -134,12 +139,11 @@ struct shadow_map_entry
     // So -Z would be found at rect.xy + ivec2(rect.z*2, rect.w).
     // xy = origin, zw = width and height
     pvec4 rect;
-    // Used for linearizing depth for omni shadows.
-    // w = near plane.
-    pvec4 clip_info;
-    // xy = projection info, used to do projection for perspective shadows.
+    pvec4 projection_info;
+    // x = near plane
+    // z = far plane
     // zw = PCF radius, adjusted for aspect ratio.
-    pvec4 projection_info_radius;
+    pvec4 range_radius;
     // Takes a world space point to the light's space.
     pmat4 world_to_shadow;
 };
@@ -163,11 +167,12 @@ struct light_order_push_constants
 
 struct scene_metadata_buffer
 {
+    uint32_t instance_count;
     uint32_t point_light_count;
     uint32_t directional_light_count;
     uint32_t tri_light_count;
-    int32_t environment_proj;
     pvec4 environment_factor;
+    int32_t environment_proj;
 };
 
 struct skinning_push_constants
@@ -185,6 +190,23 @@ struct pre_tranform_push_constants
 {
     uint32_t vertex_count;
     uint32_t instance_id;
+};
+
+struct temporal_instance_data
+{
+    uint64_t frame_stamp;
+    uint32_t static_base_index;
+    uint32_t dynamic_base_index;
+    uint32_t group_count;
+    mat4 cur_transform;
+    mat4 cur_normal_transform;
+    mat4 prev_transform;
+    mat4 prev_normal_transform;
+};
+
+struct temporal_light_data
+{
+    uint32_t prev_index;
 };
 
 const quat face_orientations[6] = {
@@ -228,9 +250,9 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     s_table(dev, true),
     instance_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     scene_metadata(dev, sizeof(scene_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
-    directional_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    point_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
-    tri_light_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
+    directional_light_data(dev, 4, vk::BufferUsageFlagBits::eStorageBuffer),
+    point_light_data(dev, max(opt.max_lights * sizeof(point_light_entry), (size_t)4), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc),
+    tri_light_data(dev, 4, vk::BufferUsageFlagBits::eStorageBuffer),
     sh_grid_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     shadow_map_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
     camera_data(dev, 0, vk::BufferUsageFlagBits::eStorageBuffer),
@@ -278,8 +300,13 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     brdf_integration(dev, get_resource_path("data/brdf_integration.exr")),
     noise_vector_2d(dev, get_resource_path("data/noise_vector_2d.exr")),
     noise_vector_3d(dev, get_resource_path("data/noise_vector_3d.exr")),
+    prev_instance_count(0),
+    prev_point_light_count(0),
+    temporal_tables(dev, max(2 * (opt.max_instances + opt.max_lights) * sizeof(uint32_t), (size_t)4), vk::BufferUsageFlagBits::eStorageBuffer),
+    prev_point_light_data(dev, max(opt.max_lights * sizeof(point_light_entry), (size_t)4), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst),
     scene_desc(dev),
     scene_raster_desc(dev),
+    temporal_tables_desc(dev),
     skinning_desc(dev),
     pre_transform_desc(dev),
     opt(opt), stage_timer(dev, "scene update")
@@ -327,6 +354,8 @@ scene_stage::scene_stage(device_mask dev, const options& opt)
     if(dev.get_context()->is_ray_tracing_supported())
     {
         tlas.emplace(dev, opt.max_instances);
+        if(opt.track_prev_tlas)
+            prev_tlas.emplace(dev, opt.max_instances);
 
         if(opt.max_lights > 0)
         {
@@ -379,18 +408,25 @@ scene* scene_stage::get_scene() const
     return cur_scene;
 }
 
-bool scene_stage::check_update(uint32_t categories, uint32_t& prev_counter) const
+bool scene_stage::check_update(uint32_t /*categories*/, uint32_t& prev_counter) const
 {
     uint32_t new_counter = 0;
-    if(categories&ENVMAP) new_counter += envmap_change_counter;
-    if(categories&GEOMETRY) new_counter += geometry_change_counter;
-    if(categories&LIGHT) new_counter += light_change_counter;
+    // HACK: Descriptor sets are currently updated from changes that we aren't tracking here
+    // which causes all command buffers to require updating
+    /*if (categories & ENVMAP)*/ new_counter += envmap_change_counter;
+    /*if (categories & GEOMETRY)*/ new_counter += geometry_change_counter;
+    /*if (categories & LIGHT)*/ new_counter += light_change_counter;
     if(prev_counter != new_counter)
     {
         prev_counter = new_counter;
         return true;
     }
     return false;
+}
+
+bool scene_stage::has_prev_tlas() const
+{
+    return opt.track_prev_tlas;
 }
 
 environment_map* scene_stage::get_environment_map() const
@@ -423,6 +459,16 @@ descriptor_set& scene_stage::get_raster_descriptors()
     return scene_raster_desc;
 }
 
+descriptor_set& scene_stage::get_temporal_tables()
+{
+    return temporal_tables_desc;
+}
+
+void scene_stage::get_defines(std::map<std::string, std::string>& defines)
+{
+    if(opt.pre_transform_vertices)
+        defines["PRE_TRANSFORMED_VERTICES"];
+}
 
 vec2 scene_stage::get_shadow_map_atlas_pixel_margin() const
 {
@@ -618,21 +664,69 @@ int scene_stage::get_shadow_map_index(const light* l)
 bool scene_stage::refresh_instance_cache()
 {
     uint64_t frame_counter = get_context()->get_frame_counter();
-    size_t i = 0;
+    uint32_t i = 0;
     entity last_object_id = INVALID_ENTITY;
     group_cache.clear();
+
+    prev_instance_count = backward_instance_ids.size();
+    backward_instance_ids.clear();
+
     bool scene_changed = false;
 
     auto add_instances = [&](bool static_mesh, bool static_transformable){
-        cur_scene->foreach([&](entity id, transformable& t, model& mod){
+        cur_scene->foreach([&](entity id, transformable& t, model& mod, temporal_instance_data* td){
             // If requesting dynamic meshes, we don't care about the
             // transformable staticness any more.
             if(static_mesh && static_transformable != t.is_static())
                 return;
 
-            bool fetched_transforms = false;
             mat4 transform;
             mat4 normal_transform;
+            mat4 prev_transform;
+            uint32_t prev_i = 0xFFFFFFFFu;
+
+            if(td)
+            {
+                if(td->group_count == mod.group_count())
+                    prev_i = static_mesh ? td->static_base_index : td->dynamic_base_index;
+                if(static_mesh) td->static_base_index = i;
+                else td->dynamic_base_index = i;
+
+                td->group_count = mod.group_count();
+
+                if(td->frame_stamp == frame_counter || t.is_static())
+                {
+                    td->frame_stamp = frame_counter;
+                    transform = td->cur_transform;
+                    normal_transform = td->cur_normal_transform;
+                    prev_transform = td->prev_transform;
+                }
+                else
+                {
+                    transform = t.get_global_transform();
+                    normal_transform = t.get_global_inverse_transpose_transform();
+                    prev_transform = td->cur_transform;
+                    td->frame_stamp = frame_counter;
+                    td->prev_transform = td->cur_transform;
+                    td->prev_normal_transform = td->cur_normal_transform;
+                    td->cur_transform = transform;
+                    td->cur_normal_transform = normal_transform;
+                }
+            }
+            else
+            {
+                transform = t.get_global_transform();
+                normal_transform = t.get_global_inverse_transpose_transform();
+                prev_transform = transform;
+                cur_scene->attach(id, temporal_instance_data{
+                    frame_counter,
+                    static_mesh ? i : 0xFFFFFFFFu,
+                    static_mesh ? 0xFFFFFFFFu : i,
+                    (uint32_t)mod.group_count(), transform, normal_transform, transform, normal_transform
+                });
+            }
+
+            bool flip_winding_order = flipped_winding_order(transform);
             for(const auto& vg: mod)
             {
                 bool is_static = !vg.m->is_skinned() && !vg.m->get_animation_source();
@@ -648,7 +742,8 @@ bool scene_stage::refresh_instance_cache()
                         nullptr,
                         nullptr,
                         nullptr,
-                        frame_counter
+                        frame_counter,
+                        flip_winding_order
                     });
                     scene_changed = true;
                 }
@@ -686,16 +781,9 @@ bool scene_stage::refresh_instance_cache()
 
                 if(inst.last_refresh_frame+1 >= frame_counter || !t.is_static())
                 {
-                    if(!fetched_transforms)
+                    if(inst.prev_transform != prev_transform)
                     {
-                        transform = t.get_global_transform();
-                        normal_transform = t.get_global_inverse_transpose_transform();
-                        fetched_transforms = true;
-                    }
-
-                    if(inst.prev_transform != inst.transform)
-                    {
-                        inst.prev_transform = inst.transform;
+                        inst.prev_transform = prev_transform;
                         inst.last_refresh_frame = frame_counter;
                     }
                     if(inst.transform != transform)
@@ -705,6 +793,9 @@ bool scene_stage::refresh_instance_cache()
                         inst.last_refresh_frame = frame_counter;
                     }
                 }
+                backward_instance_ids.push_back(prev_i);
+                if(prev_i != 0xFFFFFFFFu)
+                    prev_i++;
                 ++i;
             }
         });
@@ -717,6 +808,7 @@ bool scene_stage::refresh_instance_cache()
         instances.resize(i);
         scene_changed = true;
     }
+
     if(scene_changed)
         ensure_blas();
 
@@ -883,6 +975,51 @@ void scene_stage::clear_pre_transformed_vertices()
     }
 }
 
+void scene_stage::update_temporal_tables(uint32_t frame_index)
+{
+    forward_instance_ids.clear();
+    forward_instance_ids.resize(prev_instance_count, 0xFFFFFFFFu);
+    forward_point_light_ids.clear();
+    forward_point_light_ids.resize(prev_point_light_count, 0xFFFFFFFFu);
+
+    for(uint32_t new_id = 0; new_id < backward_instance_ids.size(); ++new_id)
+    {
+        uint32_t& prev_id = backward_instance_ids[new_id];
+        if(prev_id < forward_instance_ids.size())
+            forward_instance_ids[prev_id] = new_id;
+        else prev_id = 0xFFFFFFFFu;
+    }
+    for(uint32_t new_id = 0; new_id < backward_point_light_ids.size(); ++new_id)
+    {
+        uint32_t& prev_id = backward_point_light_ids[new_id];
+        if(prev_id < forward_point_light_ids.size())
+            forward_point_light_ids[prev_id] = new_id;
+        else prev_id = 0xFFFFFFFFu;
+    }
+
+    size_t alignment = get_device_mask().get_min_storage_buffer_alignment();
+    size_t instance_backward_map_offset =  0;
+    size_t instance_forward_map_offset = align_up_to(
+        instance_backward_map_offset + std::max((size_t)1, backward_instance_ids.size()) * sizeof(uint32_t),
+        alignment
+    );
+    size_t point_light_backward_map_offset = align_up_to(
+        instance_forward_map_offset + std::max((size_t)1, forward_instance_ids.size()) * sizeof(uint32_t),
+        alignment
+    );
+    size_t point_light_forward_map_offset = align_up_to(
+        point_light_backward_map_offset + std::max((size_t)1, backward_point_light_ids.size()) * sizeof(uint32_t),
+        alignment
+    );
+    size_t end_offset = point_light_forward_map_offset + std::max((size_t)1, forward_point_light_ids.size()) * sizeof(uint32_t);
+
+    geometry_outdated |= temporal_tables.resize(end_offset);
+    temporal_tables.update(frame_index, backward_instance_ids.data(), instance_backward_map_offset, backward_instance_ids.size() * sizeof(uint32_t));
+    temporal_tables.update(frame_index, forward_instance_ids.data(), instance_forward_map_offset, forward_instance_ids.size() * sizeof(uint32_t));
+    temporal_tables.update(frame_index, backward_point_light_ids.data(), point_light_backward_map_offset, backward_point_light_ids.size() * sizeof(uint32_t));
+    temporal_tables.update(frame_index, forward_point_light_ids.data(), point_light_forward_map_offset, forward_point_light_ids.size() * sizeof(uint32_t));
+}
+
 void scene_stage::update(uint32_t frame_index)
 {
     if(!cur_scene) return;
@@ -959,9 +1096,10 @@ void scene_stage::update(uint32_t frame_index)
             inst.mat.albedo_factor = mat.albedo_factor;
             inst.mat.metallic_roughness_factor =
                 vec4(mat.metallic_factor, mat.roughness_factor, 0, 0);
-            inst.mat.emission_factor_double_sided = vec4(
-                mat.emission_factor, mat.double_sided ? 1.0f : 0.0f
-            );
+            inst.mat.emission_factor = vec4(mat.emission_factor, 0.0f);
+            inst.mat.flags =
+                (mat.double_sided ? MATERIAL_FLAG_DOUBLE_SIDED : 0) |
+                (mat.transient ? MATERIAL_FLAG_TRANSIENT : 0);
             inst.mat.transmittance = mat.transmittance;
             inst.mat.ior = mat.ior;
             inst.mat.normal_factor = mat.normal_factor;
@@ -1057,12 +1195,11 @@ void scene_stage::update(uint32_t frame_index)
                 shadow_map_entry& map = shadow_map_data[sm.map_index];
                 const auto& first_cam = sm.faces[0];
 
-                map.clip_info = vec4(
-                    first_cam.cam.get_clip_info(),
-                    first_cam.cam.get_near()
-                );
-                map.projection_info_radius = vec4(
-                    first_cam.cam.get_projection_info(), sm.radius
+                map.projection_info = first_cam.cam.get_projection_info();
+                map.range_radius = vec4(
+                    first_cam.cam.get_near(),
+                    first_cam.cam.get_far(),
+                    sm.radius
                 );
 
                 // Determine shadow map type from projection
@@ -1086,7 +1223,6 @@ void scene_stage::update(uint32_t frame_index)
                     break;
                 case camera::ORTHOGRAPHIC:
                     { // Directional
-                        map.clip_info.z = first_cam.cam.get_far();
                         map.type = sm.cascades.size();
                         map.cascade_index = cascade_index;
                         map.world_to_shadow = first_cam.cam.get_view_projection(first_cam.transform);
@@ -1132,19 +1268,44 @@ void scene_stage::update(uint32_t frame_index)
         });
     }
 
+    prev_point_light_count = backward_point_light_ids.size();
+    backward_point_light_ids.clear();
+
     size_t point_light_count = cur_scene->count<point_light>() + cur_scene->count<spotlight>();
     lights_outdated |= point_light_data.resize(sizeof(point_light_entry) * point_light_count);
+    lights_outdated |= prev_point_light_data.resize(sizeof(point_light_entry) * prev_point_light_count);
+
     point_light_data.map<uint8_t>(frame_index, [&](uint8_t* light_data){
         point_light_entry* point_light_data =
             reinterpret_cast<point_light_entry*>(light_data);
 
-        size_t i = 0;
-        cur_scene->foreach([&](transformable& t, point_light& pl) {
+        uint32_t i = 0;
+        cur_scene->foreach([&](entity id, transformable& t, point_light& pl, temporal_light_data* td) {
+            if(td)
+            {
+                backward_point_light_ids.push_back(td->prev_index);
+                td->prev_index = i;
+            }
+            else
+            {
+                backward_point_light_ids.push_back(0xFFFFFFFFu);
+                cur_scene->attach(id, temporal_light_data{i});
+            }
             point_light_entry pe = point_light_entry(t, pl, get_shadow_map_index(&pl));
             point_light_data[i] = pe;
             ++i;
         });
-        cur_scene->foreach([&](transformable& t, spotlight& sl) {
+        cur_scene->foreach([&](entity id, transformable& t, spotlight& sl, temporal_light_data* td) {
+            if(td)
+            {
+                backward_point_light_ids.push_back(td->prev_index);
+                td->prev_index = i;
+            }
+            else
+            {
+                backward_point_light_ids.push_back(0xFFFFFFFFu);
+                cur_scene->attach(id, temporal_light_data{i});
+            }
             point_light_entry pe = point_light_entry(t, sl, get_shadow_map_index(&sl));
             point_light_data[i] = pe;
             ++i;
@@ -1172,6 +1333,7 @@ void scene_stage::update(uint32_t frame_index)
 
     scene_metadata.map<scene_metadata_buffer>(
         frame_index, [&](scene_metadata_buffer* data){
+            data->instance_count = instances.size();
             data->point_light_count = point_light_count;
             data->directional_light_count = directional_light_count;
             data->tri_light_count = tri_light_count;
@@ -1302,6 +1464,7 @@ void scene_stage::update(uint32_t frame_index)
             clear_pre_transformed_vertices();
     }
 
+    update_temporal_tables(frame_index);
     if(lights_outdated) light_change_counter++;
     if(geometry_outdated) geometry_change_counter++;
 
@@ -1332,6 +1495,13 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
         {
             vk::CommandBuffer cb = begin_graphics(dev.id);
             stage_timer.begin(cb, dev.id, i);
+
+            // Copy over previous light data.
+            if(prev_point_light_count != 0)
+            {
+                cb.copyBuffer(point_light_data[dev.id], prev_point_light_data[dev.id], vk::BufferCopy{0, 0, prev_point_light_count * sizeof(point_light_entry)});
+            }
+
             instance_data.upload(dev.id, i, cb);
             directional_light_data.upload(dev.id, i, cb);
             point_light_data.upload(dev.id, i, cb);
@@ -1340,6 +1510,7 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
             camera_data.upload(dev.id, i, cb);
             scene_metadata.upload(dev.id, i, cb);
             light_aabb_buffer.upload(dev.id, i, cb);
+            temporal_tables.upload(dev.id, i, cb);
 
             bulk_upload_barrier(cb, vk::PipelineStageFlagBits::eComputeShader);
 
@@ -1379,6 +1550,7 @@ void scene_stage::record_skinning(device_id id, uint32_t frame_index, vk::Comman
             skinning_desc.set_buffer(id, "destination_data", {{dst->get_vertex_buffer(id), 0, VK_WHOLE_SIZE}});
             skinning_desc.set_buffer(id, "skin_data", {{src->get_skin_buffer(id), 0, VK_WHOLE_SIZE}});
             skinning_desc.set_buffer(id, "joint_data", {{mod.get_joint_buffer()[id], 0, VK_WHOLE_SIZE}});
+            skinning_desc.set_buffer(id, "prev_pos_data", {{dst->get_prev_pos_buffer(id), 0, VK_WHOLE_SIZE}});
             skinning[id].push_descriptors(cb, skinning_desc, 0);
             cb.dispatch((vertex_count+31u)/32u, 1, 1);
         }
@@ -1439,6 +1611,9 @@ void scene_stage::record_as_build(
 ){
     auto& instance_buffer = tlas->get_instances_buffer();
     bool as_update = !rebuild;
+
+    if(opt.track_prev_tlas)
+        prev_tlas->copy(id, *tlas, cb);
 
     if(light_blas.has_value())
     {
@@ -1551,7 +1726,7 @@ void scene_stage::init_descriptor_set_layout()
         scene_desc.add("tlas", {11, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 
     scene_raster_desc.add("sh_grid_data", {0, vk::DescriptorType::eCombinedImageSampler, opt.max_3d_samplers, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
-    scene_raster_desc.add("sh_grids", {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    scene_raster_desc.add("sh_grids", {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     scene_raster_desc.add("shadow_maps", {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     scene_raster_desc.add("shadow_map_cascades", {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     scene_raster_desc.add("shadow_map_atlas", {4, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
@@ -1559,6 +1734,14 @@ void scene_stage::init_descriptor_set_layout()
     scene_raster_desc.add("pcf_noise_vector_2d", {6, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
     scene_raster_desc.add("pcf_noise_vector_3d", {7, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
     scene_raster_desc.add("brdf_integration", {8, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+
+    temporal_tables_desc.add("instance_forward_map", {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    temporal_tables_desc.add("instance_backward_map", {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    temporal_tables_desc.add("point_light_forward_map", {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    temporal_tables_desc.add("point_light_backward_map", {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    temporal_tables_desc.add("prev_point_lights", {4, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    if(dev.get_context()->is_ray_tracing_supported())
+        temporal_tables_desc.add("prev_tlas", {5, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 }
 
 void scene_stage::update_descriptor_set()
@@ -1622,7 +1805,9 @@ void scene_stage::update_descriptor_set()
         }
 
         if(dev.ctx->is_ray_tracing_supported())
+        {
             scene_desc.set_acceleration_structure(id, 0, "tlas", *this->tlas->get_tlas_handle(id));
+        }
     }
 
     placeholders& pl = get_device_mask().get_context()->get_placeholders();
@@ -1659,6 +1844,37 @@ void scene_stage::update_descriptor_set()
             });
         }
         scene_raster_desc.set_image(id, 0, "sh_grid_data", std::move(dii_3d));
+    }
+
+    temporal_tables_desc.reset(temporal_tables_desc.get_mask(), 1);
+    size_t alignment = get_device_mask().get_min_storage_buffer_alignment();
+    size_t instance_backward_map_offset =  0;
+    size_t instance_forward_map_offset = align_up_to(
+        instance_backward_map_offset + std::max((size_t)1, backward_instance_ids.size()) * sizeof(uint32_t),
+        alignment
+    );
+    size_t point_light_backward_map_offset = align_up_to(
+        instance_forward_map_offset + std::max((size_t)1, forward_instance_ids.size()) * sizeof(uint32_t),
+        alignment
+    );
+    size_t point_light_forward_map_offset = align_up_to(
+        point_light_backward_map_offset + std::max((size_t)1, backward_point_light_ids.size()) * sizeof(uint32_t),
+        alignment
+    );
+    temporal_tables_desc.set_buffer(0, "instance_forward_map", temporal_tables, instance_forward_map_offset);
+    temporal_tables_desc.set_buffer(0, "instance_backward_map", temporal_tables, instance_backward_map_offset);
+    temporal_tables_desc.set_buffer(0, "point_light_forward_map", temporal_tables, point_light_forward_map_offset);
+    temporal_tables_desc.set_buffer(0, "point_light_backward_map", temporal_tables, point_light_backward_map_offset);
+    temporal_tables_desc.set_buffer(0, "prev_point_lights", prev_point_light_data);
+    for(device& dev: scene_desc.get_mask())
+    {
+        if(dev.ctx->is_ray_tracing_supported())
+        {
+            if(opt.track_prev_tlas)
+                temporal_tables_desc.set_acceleration_structure(dev.id, 0, "prev_tlas", *this->prev_tlas->get_tlas_handle(dev.id));
+            else
+                temporal_tables_desc.set_acceleration_structure(dev.id, 0, "prev_tlas", *this->tlas->get_tlas_handle(dev.id));
+        }
     }
 }
 

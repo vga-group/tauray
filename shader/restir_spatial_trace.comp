@@ -1,0 +1,189 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_KHR_shader_subgroup_clustered : enable
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = SELECTION_TILE_SIZE, local_size_y = SELECTION_TILE_SIZE, local_size_z = MAX_SPATIAL_SAMPLES) in;
+
+#define RAY_TRACING
+#include "restir.glsl"
+
+layout(push_constant) uniform push_constant_buffer
+{
+    restir_config config;
+    uint sample_index;
+    uint camera_index;
+} pc;
+
+layout(binding = 18, rg32ui) writeonly uniform uimage2D spatial_selection;
+layout(binding = 19, rgba32f) writeonly uniform image2DArray spatial_candidates;
+layout(binding = 20, rgba32f) writeonly uniform image2DArray mis_data;
+
+#include "restir_core.glsl"
+
+shared uint shared_selection_key[SELECTION_TILE_SIZE][SELECTION_TILE_SIZE][MAX_SPATIAL_SAMPLES];
+shared float shared_floats[SELECTION_TILE_SIZE][SELECTION_TILE_SIZE][MAX_SPATIAL_SAMPLES];
+
+void main()
+{
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(p, ivec2(pc.config.display_size))))
+        return;
+
+    camera_data cam = camera.pairs[pc.camera_index].current;
+
+    domain canonical_domain;
+    bool canonical_miss = read_domain(cam, p, canonical_domain);
+    if(canonical_miss) // No need to write anything to the images, nobody will read them anyway.
+        return;
+
+    const uint candidate_index = gl_LocalInvocationID.z;
+    const float max_plane_dist = get_frustum_size(cam, canonical_domain.pos);
+    const float inv_max_plane_dist = 1.0f / max_plane_dist;
+
+    uvec4 seed = uvec4(p, pc.camera_index, pc.sample_index);
+    pcg4d(seed);
+
+    // Find candidates
+    uint local_key = 0;
+    float local_confidence = 0;
+    ivec2 local_s = p;
+    int found = 0;
+    mat3 flat_tbn = create_tangent_space(canonical_domain.flat_normal);
+    spatial_candidate_sampler scs = init_spatial_candidate_sampler(
+        cam, canonical_domain.pos, flat_tbn, max_plane_dist
+    );
+    bool canonical_reconnectibility = allow_initial_reconnection(canonical_domain.mat);
+
+    [[unroll]] for(uint i = 0; i < MAX_CANDIDATE_ATTEMPTS; ++i)
+    {
+        ivec2 s = spatial_candidate_pos(
+            p, ivec2(pc.config.display_size.xy), scs,
+            pc.camera_index, pc.sample_index, candidate_index, i
+        );
+
+        vec3 pos;
+        bool miss = get_pos(s, cam, pos);
+
+        bool invalid = found == 2 || miss;
+        bool suboptimal = disocclusion_detect(canonical_domain.flat_normal, canonical_domain.pos, pos, inv_max_plane_dist) < 0.99f;
+
+        bool candidate_reconnectibility = allow_initial_reconnection(get_material(s));
+        if(candidate_reconnectibility != canonical_reconnectibility)
+            suboptimal = true;
+
+        int local_found = invalid ? 0 : (suboptimal ? 1 : 2);
+
+        if(found < local_found)
+        {
+            found = local_found;
+            local_key = i;
+            local_s = s;
+        }
+    }
+
+    // Shift selected neighbor to own pixel and write the data we need later on.
+    reservoir candidate = read_reservoir(local_s, pc.config.display_size);
+    reservoir canonical_pixel = read_reservoir(p, pc.config.display_size);
+
+    local_key <<= candidate_index * 2;
+    shared_selection_key[gl_LocalInvocationID.x][gl_LocalInvocationID.y][candidate_index] = local_key;
+    shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][candidate_index] = found != 0 ? candidate.confidence : 0;
+    barrier();
+
+    uint total_key = 0;
+    float total_confidence = 0;
+    [[unroll]] for(uint i = 0; i < MAX_SPATIAL_SAMPLES; ++i)
+    {
+        total_key |= shared_selection_key[gl_LocalInvocationID.x][gl_LocalInvocationID.y][i];
+        total_confidence += shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][i];
+    }
+
+    bool candidate_miss = found == 0;
+
+    barrier();
+
+    total_confidence += canonical_pixel.confidence;
+
+    if(candidate_miss || candidate.confidence == 0)
+    {
+        // No candidate found, so write a failed shift.
+        shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z] = 0;
+        imageStore(spatial_candidates, ivec3(p, gl_GlobalInvocationID.z), vec4(0,0,0,-1.0f));
+        imageStore(mis_data, ivec3(p, gl_GlobalInvocationID.z), vec4(0));
+    }
+    else
+    {
+        domain candidate_domain;
+        read_domain(cam, local_s, candidate_domain);
+
+        vec4 primary_bsdf = vec4(0);
+        float jacobian_canonical_to_candidate = 0;
+        vec3 canonical_in_other_value;
+
+        shift_map(
+            seed.x, canonical_pixel.output_sample,  candidate_domain,
+            true, false, jacobian_canonical_to_candidate,
+            canonical_in_other_value, primary_bsdf
+        );
+
+        float canonical_in_other_target_function_value = target_function(primary_bsdf, canonical_in_other_value);
+        float canonical_resampling_mis_weight = mis_canonical(
+            canonical_pixel.confidence,
+            candidate.confidence,
+            total_confidence,
+            canonical_pixel.target_function_value,
+            canonical_in_other_target_function_value,
+            jacobian_canonical_to_candidate
+        );
+        shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z] = canonical_resampling_mis_weight;
+
+        vec3 value = vec3(0);
+        float jacobian_candidate_to_canonical = 0;
+
+        shift_map(
+            seed.x, candidate.output_sample, canonical_domain,
+            true, true, jacobian_candidate_to_canonical, value, primary_bsdf
+        );
+        if(isinf(jacobian_candidate_to_canonical) || isnan(jacobian_candidate_to_canonical))
+            jacobian_candidate_to_canonical = 0;
+
+        float target_function_value = target_function(primary_bsdf, value);
+        float candidate_resampling_mis_weight = mis_noncanonical(
+            canonical_pixel.confidence,
+            candidate.confidence,
+            total_confidence,
+            candidate.target_function_value,
+            target_function_value,
+            jacobian_candidate_to_canonical
+        );
+
+        imageStore(spatial_candidates, ivec3(p, gl_GlobalInvocationID.z), output_color_function(primary_bsdf, value));
+        imageStore(
+            mis_data,
+            ivec3(p, gl_GlobalInvocationID.z),
+            vec4(
+                candidate.confidence,
+                candidate_resampling_mis_weight * jacobian_candidate_to_canonical * candidate.ucw,
+                candidate.output_sample.base_path_jacobian_part,
+                target_function_value
+            )
+        );
+    }
+    barrier();
+
+    float sum_resampling_mis_weight = canonical_pixel.confidence / total_confidence;
+    [[unroll]] for(int i = 0; i < MAX_SPATIAL_SAMPLES; ++i)
+        sum_resampling_mis_weight += shared_floats[gl_LocalInvocationID.x][gl_LocalInvocationID.y][i];
+
+    if(gl_LocalInvocationID.z == 0)
+    {
+        uvec2 sd = uvec2(total_key, floatBitsToUint(sum_resampling_mis_weight));
+        imageStore(spatial_selection, p, uvec4(sd, 0, 0));
+    }
+}
+

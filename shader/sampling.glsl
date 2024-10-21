@@ -20,7 +20,7 @@ struct local_sampler
 #ifdef SAMPLING_DATA_BINDING
 layout(binding = SAMPLING_DATA_BINDING, set = 0) uniform sampling_data_buffer
 {
-    uint frame_counter;
+    uint sample_counter;
     uint rng_seed;
 } sampling_data;
 
@@ -32,7 +32,7 @@ layout(binding = SAMPLING_DATA_BINDING, set = 0) uniform sampling_data_buffer
 local_sampler init_local_sampler(uvec4 coord)
 {
     local_sampler ls;
-    coord.w += sampling_data.frame_counter;
+    coord.w += sampling_data.sample_counter;
     coord.z += sampling_data.rng_seed;
 
 #if defined(USE_SOBOL_Z_ORDER_SAMPLING)
@@ -76,7 +76,7 @@ uvec4 generate_ray_sample_uint(inout local_sampler ls, uint bounce_index)
 
 vec4 generate_ray_sample(inout local_sampler ls, uint bounce_index)
 {
-    return ldexp(vec4(generate_ray_sample_uint(ls, bounce_index)), ivec4(-32));
+    return vec4(generate_ray_sample_uint(ls, bounce_index)) * INV_UINT32_MAX;
 }
 
 #endif

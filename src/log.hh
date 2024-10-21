@@ -33,7 +33,16 @@ namespace tr
 std::chrono::system_clock::time_point get_initial_time();
 
 template<typename T>
-std::string to_string(const T& t) { return std::to_string(t); }
+std::string to_string(const T& t) {
+    if constexpr(std::is_pointer_v<T>)
+    {
+        std::stringstream stream;
+        stream << typeid(std::decay_t<std::remove_pointer_t<T>>).name() << "*(" << std::hex << (uintptr_t)t << ")";
+        std::string result(stream.str());
+        return stream.str();
+    }
+    else return std::to_string(t);
+}
 inline std::string to_string(const char* t) { return t; }
 inline std::string to_string(const std::string& t) { return t; }
 inline std::string to_string(const std::string_view& t) { return std::string(t.begin(), t.end()); }

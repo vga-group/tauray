@@ -1,9 +1,12 @@
 #version 460
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
 #include "svgf.glsl"
 #include "projection.glsl"
 #include "gbuffer.glsl"
 #include "color.glsl"
+#include "random_sampler.glsl"
+#include "scene.glsl"
 
 layout (local_size_x = 16, local_size_y = 16) in;
 
@@ -11,120 +14,281 @@ layout(binding = 0, set = 0, rgba32f) uniform image2DArray diffuse_in;
 layout(binding = 1, set = 0, rgba32f) uniform image2DArray diffuse_out;
 layout(binding = 2, set = 0, rgba32f) uniform image2DArray diffuse_hist;
 layout(binding = 3, set = 0, rgba32f) uniform image2DArray final_output;
-layout(binding = 4, set = 0, rgba32f) uniform image2DArray in_linear_depth;
 layout(binding = 5, set = 0, rgba32f) uniform image2DArray in_normal;
 layout(binding = 6, set = 0, rgba32f) uniform image2DArray in_albedo;
 layout(binding = 7, set = 0, rgba32f) uniform image2DArray specular_in;
 layout(binding = 8, set = 0, rgba32f) uniform image2DArray specular_out;
 layout(binding = 9, set = 0, rgba32f) uniform image2DArray spec_hist;
 layout(binding = 10, set = 0, rgba32f) uniform image2DArray in_material;
-layout(binding = 11, set = 0, rgba32f) uniform image2DArray in_moments;
-
-float filter_variance(ivec3 p)
+layout(binding = 12, set = 0) uniform sampler2DArray in_depth;
+layout(binding = 13) buffer uniforms
 {
-    float sum = 0.f;
-
-    const int r = 1;
-    for (int yy = -r; yy <= r; ++yy)
-    for (int xx = -r; xx <= r; ++xx)
-    {
-        const ivec3 q = p + ivec3(xx, yy, 0.0);
-        const float k = gaussian_kernel[abs(xx)][abs(yy)];
-        float v = imageLoad(diffuse_in, q).a;
-        sum += v * k;
-    }
-
-    return sum;
-}
+    uint frame_index;
+} uniforms_buffer;
+layout(binding = 14, set = 0, rgba32f) uniform image2DArray raw_diffuse;
+layout(binding = 16, set = 0, rgba32f) uniform image2DArray in_emissive;
+layout(binding = 17, set = 0, rgba32f) uniform image2DArray specular_hit_dist;
+layout(binding = 18, set = 0, rgba32f) uniform image2DArray history_length;
+layout(binding = 19, set = 0, rgba32f) uniform image2DArray temporal_gradient;
 
 void main()
 {
     const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
-    if(all(lessThan(p.xy, control.size)))
-    {
-        const vec4 z_center = imageLoad(in_linear_depth, p);
-        vec4 center_color = imageLoad(diffuse_in, p);
-        vec4 center_specular = imageLoad(specular_in, p);
+    if(!is_in_screen(p.xy)) return;
 
-        if (any(isnan(z_center)))
+    camera_data curr_camera = camera.pairs[p.z].current;
+    vec3 view_pos;
+    if (get_view_pos(in_depth, p, curr_camera, view_pos)) return;
+
+    float view_z = abs(view_pos.z);
+    vec4 center_color = imageLoad(diffuse_in, p);
+    vec4 center_spec = imageLoad(specular_in, p);
+
+    vec4 out_color = center_color;
+    vec4 out_specular = center_spec;
+    vec2 metallic_roughness = imageLoad(in_material, p).rg;
+    vec3 center_pos = get_world_pos(curr_camera, view_pos);
+
+    vec3 center_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).rg);
+
+#if ATROUS_ENABLED == 1
+    float center_luminance_diff = rgb_to_luminance(center_color.rgb);
+    float center_luminance_spec = rgb_to_luminance(center_spec.rgb);
+    float variance_diff = center_color.a;
+    float variance_spec = center_spec.a;
+
+    /*if (control.iteration == 0)
+    { // Filter variance in 3x3 window
+        const int radius = 1;
+        float w_sum = 1.0;
+
+        for (int y = -radius; y <= radius; ++y)
         {
-            imageStore(diffuse_out, p, center_color);
-            imageStore(specular_out, p, center_specular);
-            return;
-        }
-
-        const int step_size = int(1u << control.iteration);
-
-        float center_luminance = rgb_to_luminance(center_color.rgb);
-
-        const vec3 n_center = unpack_gbuffer_normal(imageLoad(in_normal, p).xy);
-        const float roughness_center = imageLoad(in_material, p).y;
-
-        const float var = filter_variance(p);
-
-        const float phi_color = control.sigma_l *  sqrt(max(0.0, var)) + 1e-2;
-        const vec2 depth_grad = z_center.yz;
-
-        vec4 sum_color = center_color;
-        vec4 sum_specular = center_specular;
-        float sum_w = 1.0;
-        float sum_w_spec = 1.0;
-
-        const int r = control.atrous_kernel_radius;
-        for (int yy = -r; yy <= r; ++yy)
-        for (int xx = -r; xx <= r; ++xx)
-        {
-            const ivec3 q  = p + ivec3(xx, yy, 0) * step_size;
-
-            if (all(lessThan(q.xy, control.size)) && all(greaterThanEqual(q.xy, ivec2(0))) && !(xx == 0 && yy == 0))
+            for (int x = -radius; x <= radius; ++x)
             {
-                const vec4 color_q = imageLoad(diffuse_in, q);
-                const vec4 spec_q = imageLoad(specular_in, q);
-                const float lum_q = rgb_to_luminance(color_q.rgb);
-                const float z_q = imageLoad(in_linear_depth, q).r;
-                const vec3 n_q = unpack_gbuffer_normal(imageLoad(in_normal, q).rg);
-                const float roughness_q = imageLoad(in_material, q).y;
+                // Skip center
+                if (x == 0 && y == 0) continue;
 
-                float w_n = pow(max(0.0, dot(n_q, n_center)), control.sigma_n);
-                float w_z = abs(z_q - z_center.x) / (control.sigma_z * abs(dot(depth_grad, p.xy - q.xy)) + 1e-6);
-                float w_l = abs(lum_q - center_luminance) / phi_color;
-                float w = w_n * exp(-max(0.0, w_z) - max(0.0, w_l));
+                ivec3 q = ivec3(p.xy + ivec2(x, y), p.z);
+                if (!is_in_screen(q.xy)) continue;
 
-                float r_max = 0.1;
-                float r_near = 0.01;
-                float r_far = 0.1;
-                float d_near = 10.0 * roughness_center;
-                float d_far = 70.0 * roughness_center;
-                float w_r = 1.0 - smoothstep(r_near, r_far, abs(roughness_q - roughness_center));
-                float w_d = 1.0 - smoothstep(d_near, d_far, length(vec3(p - q)));
+                float v_diff = imageLoad(diffuse_in, p).a;
+                float v_spec = imageLoad(specular_in, p).a;
 
-                float w_spec = exp(-max(0.0, w_z)) * w_n * w_r * w_d;
-                sum_w += w;
-                sum_color += color_q * vec4(vec3(w), w * w);
-                if (control.iteration < control.spec_iteration_count)
-                {
-                    sum_w_spec += w_spec;
-                    sum_specular += spec_q * vec4(vec3(w_spec), w_spec * w_spec);
-                }
+                variance_diff += v_diff;
+                variance_spec += v_spec;
+                w_sum += 1.0;
             }
         }
 
-        vec4 filtered_color = sum_color / vec4(vec3(sum_w), sum_w * sum_w);
-        vec4 filtered_spec = sum_specular / vec4(vec3(sum_w_spec), sum_w_spec * sum_w_spec);
-        if (control.iteration == 0)
+        variance_diff /= w_sum;
+        variance_spec /= w_sum;
+    }*/
+
+    if(variance_diff <= 1e-5 && control.iteration <= 1) variance_diff = 1e30;
+    if(variance_spec <= 1e-5 && control.iteration <= 1) variance_spec = 1e30;
+    //variance_diff = variance_spec = 1e30;
+
+    float luminance_std_dev_diff = sqrt(variance_diff);
+    float luminance_std_dev_spec = sqrt(variance_spec);
+
+    float frustum_size = get_frustum_size(curr_camera, view_z);
+    float inv_frustum_size = 1.0f / frustum_size;
+
+    vec3 V = normalize(curr_camera.origin.xyz - center_pos);
+
+    const int stride = int(1u << control.iteration);
+
+    float center_roughness = max(0.01, metallic_roughness.g);
+
+    ivec2 offset = ivec2(0);
+#if ATROUS_RANDOM_OFFSET == 1
+    if (control.iteration > 2)
+    {
+        random_sampler rs = init_random_sampler(uvec4(p.xyz, uniforms_buffer.frame_index));
+        vec4 r = generate_uniform_random(rs);
+        offset = ivec2(stride * (r.xy - 0.5) * .5);
+    }
+#endif
+
+    float w_sum = 1;
+    float w_sum_spec = 1;
+    vec4 color_sum = center_color;
+    vec4 specular_sum = center_spec;
+    [[unroll]] for (int y = -ATROUS_RADIUS; y <= ATROUS_RADIUS; ++y)
+    {
+        [[unroll]] for (int x = -ATROUS_RADIUS; x <= ATROUS_RADIUS; ++x)
         {
-            imageStore(diffuse_hist, p, filtered_color);
-            imageStore(spec_hist, p, filtered_spec);
+            if (y == 0 && x == 0) continue;
+
+            ivec3 q = ivec3(p.xy + ivec2(x, y) * stride + offset, p.z);
+
+            if (!is_in_screen(q.xy)) continue;
+
+            const vec4 color_q = imageLoad(diffuse_in, q);
+            const vec4 spec_q = imageLoad(specular_in, q);
+            vec3 X;
+            if(get_pos(in_depth, q, curr_camera, X)) continue;
+
+            vec3 N = unpack_gbuffer_normal(imageLoad(in_normal, q).rg);
+            vec2 material = imageLoad(in_material, q).rg;
+            float sample_roughness = max(0.01, material.g);
+            float w_geom = get_plane_distance_weight(center_pos, X, center_normal, inv_frustum_size);
+
+            float ndotn = saturate(dot(N, center_normal));
+            float w_normal = pow(ndotn, 32.0);
+
+            const float sigma_l = 8.0f;
+            float sample_luminance = rgb_to_luminance(color_q.rgb);
+            float w_lum = abs(sample_luminance - center_luminance_diff) / (sigma_l * luminance_std_dev_diff + 1e-7);
+            w_lum = exp(-w_lum);
+
+            float w = 1.0;
+            w *= w_geom;
+            w *= w_normal;
+            w *= w_lum;
+
+            color_sum += vec4(color_q.rgb * w, color_q.a * w * w);
+            w_sum += w;
+
+            vec3 Vs = normalize(curr_camera.origin.xyz - X);
+            float lobe_similarity = specular_lobe_similarity(V, center_normal, center_roughness, Vs, N, sample_roughness);
+            float lobe_weight = pow(lobe_similarity, 16.0f);
+
+            // HACK: This is only needed because the secondary bounces are also
+            // noisy. Hence, we must always denoise a little bit, even if the
+            // lobes don't match at all.
+            lobe_weight += 0.1;
+
+            float sample_l_spec = rgb_to_luminance(spec_q.rgb);
+            float w_lum_spec = abs(sample_l_spec - center_luminance_spec) / (sigma_l * luminance_std_dev_spec + 1e-7);
+            w_lum_spec = exp(-w_lum_spec);
+
+            float w_spec = 1.0;
+            w_spec *= w_geom;
+            w_spec *= lobe_weight;
+            w_spec *= w_lum_spec;
+
+            specular_sum += vec4(spec_q.rgb * w_spec, spec_q.a * w_spec * w_spec);
+            w_sum_spec += w_spec;
         }
-        if (control.iteration == control.iteration_count - 1)
+    }
+
+    w_sum = max(w_sum, 1e-4);
+    color_sum /= vec4(vec3(w_sum), w_sum * w_sum);
+
+    w_sum_spec = max(w_sum_spec, 1e-4);
+    specular_sum /= vec4(vec3(w_sum_spec), w_sum_spec * w_sum_spec);
+
+    if (control.iteration < ATROUS_ITERATIONS)
+    {
+        out_color = color_sum;
+        out_specular = specular_sum;
+    }
+
+#endif
+
+    //===============================================================
+    // Write outputs
+    //===============================================================
+    if (control.iteration == control.iteration_count - 1)
+    {
+        vec4 albedo = imageLoad(in_albedo, p);
+#if FINAL_OUTPUT == OUTPUT_DENOISED_DIFFUSE
+        imageStore(final_output, p, vec4(out_color.rgb, 1.0));
+#elif FINAL_OUTPUT == OUTPUT_VARIANCE
+        imageStore(final_output, p, vec4(vec3(out_color.a), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_HIST_LENGTH_DIFFUSE
+        vec4 hist_len = imageLoad(history_length, p);
+        if (p.xy == ivec2(640, 360))
         {
-            vec4 albedo = imageLoad(in_albedo, p);
-            imageStore(final_output, p, vec4(filtered_spec.rgb + filtered_color.rgb * albedo.rgb, 1.0));
+            //debugPrintfEXT("len: %f a: %f", hist_len.x, hist_len.y);
         }
-        else
-        {
-            imageStore(diffuse_out, p, filtered_color);
-            imageStore(specular_out, p, filtered_spec);
-        }
+        imageStore(final_output, p, vec4(viridis_quintic((1.0 / hist_len.y) / MAX_ACCUMULATED_FRAMES), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_HIST_LENGTH_SPECULAR
+        vec4 hist_len = imageLoad(history_length, p);
+        imageStore(final_output, p, vec4(viridis_quintic((1.0 / hist_len.w) / MAX_ACCUMULATED_FRAMES), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_UNFILTERED_VARIANCE
+        float variance = moments.y - moments.x * moments.x;
+        imageStore(final_output, p, vec4(vec3(variance), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_REMODULATED_DENOISED_DIFFUSE
+        vec3 remodulated = albedo.xyz * out_color.rgb;
+        imageStore(final_output, p, vec4(remodulated, 1.0));
+#elif FINAL_OUTPUT == OUTPUT_DENOISED_SPECULAR
+        imageStore(final_output, p, vec4(out_specular.rgb, 1.0));
+#elif FINAL_OUTPUT == OUTPUT_REMODULATED_DENOISED_DIFFUSE_AND_SPECULAR
+        float metallic = metallic_roughness.r;
+        float roughness = metallic_roughness.g;
+#if DEMODULATION_USE_SPLIT_SUM_APPROXIMATION == 1
+        vec3 V = normalize(camera.pairs[p.z].current.origin.xyz - center_pos);
+        vec3 N = center_normal;
+        float NoV = dot(N, V);
+        float f0 = mix(0.04, 1.0, metallic);
+        float specular_reflectance = environment_term_rtg(f0, NoV, roughness);
+        vec3 remodulated_spec = out_specular.rgb * specular_reflectance;
+#else
+        vec3 remodulated_spec = out_specular.rgb;
+#endif
+        float approx_fresnel = 0.02f;
+        remodulated_spec = remodulated_spec
+            * mix(vec3(approx_fresnel), albedo.rgb, metallic)
+            / mix(approx_fresnel, 1, metallic);
+        vec3 diffuse = out_color.rgb * albedo.rgb * (1-metallic);
+        vec3 remodulated = diffuse + remodulated_spec;
+        vec3 final_out = vec3(0.0);
+#ifdef COLOR_IS_ADDITIVE
+        final_out = imageLoad(final_output, p).rgb;
+#endif
+        final_out += remodulated;
+        imageStore(final_output, p, vec4(final_out.rgb, 1.0));
+#elif FINAL_OUTPUT == OUTPUT_DIFFUSE_HITDIST
+        vec4 noisy_diffuse = imageLoad(raw_diffuse, p);
+        imageStore(final_output, p, vec4(vec3(noisy_diffuse.a), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_SPECULAR_VARIANCE
+        float specular_variance = out_specular.a;
+        imageStore(final_output, p, vec4(vec3(specular_variance), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_UNFILTERED_SPECULAR_VARIANCE
+        vec2 moments_specular = imageLoad(in_moments_specular, p).rg;
+        float unfiltered_variance = max(1e-8, moments_specular.y - moments_specular.x * moments_specular.x);
+        imageStore(final_output, p, vec4(vec3(unfiltered_variance), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_REMODULATED_DENOISED_SPECULAR
+        float metallic = metallic_roughness.r;
+        float roughness = metallic_roughness.g;
+#if DEMODULATION_USE_SPLIT_SUM_APPROXIMATION == 1
+        vec3 V = normalize(camera.pairs[p.z].current.origin.xyz - center_pos);
+        vec3 N = center_normal;
+        float NoV = dot(N, V);
+        float f0 = mix(0.04, 1.0, metallic);
+        float specular_reflectance = environment_term_rtg(f0, NoV, roughness);
+        vec3 remodulated_spec = out_specular.rgb * specular_reflectance;
+#else
+        vec3 remodulated_spec = albedo.rgb * metallic * out_specular.rgb + (1.0 - metallic) * out_specular.rgb;
+#endif
+        float approx_fresnel = 0.02f;
+        vec3 remodulated_spec = remodulated_spec
+            * mix(vec3(approx_fresnel), albedo.rgb, metallic)
+            / mix(approx_fresnel, 1, metallic);
+        imageStore(final_output, p, vec4(remodulated_spec, 1.0));
+#elif FINAL_OUTPUT == OUTPUT_SPECULAR_HIT_DIST
+        float hitdist = imageLoad(specular_hit_dist, p).r;
+        // if (p.xy == ivec2(640, 360))
+        // {
+        //     debugPrintfEXT("hit t: %f", hitdist != 0.0 ? 1.0 / hitdist : 1e6);
+        // }
+        imageStore(final_output, p, vec4(vec3(hitdist), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_TEMPORAL_GRADIENT_DIFFUSE
+        vec2 gradient = pow(imageLoad(temporal_gradient, p).rg, vec2(8.0f));
+        imageStore(final_output, p, vec4(vec3(gradient.x), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_TEMPORAL_GRADIENT_SPECULAR
+        vec2 gradient = imageLoad(temporal_gradient, p).rg;
+        imageStore(final_output, p, vec4(vec3(gradient.y), 1.0));
+#elif FINAL_OUTPUT == OUTPUT_RAW_INPUT
+
+#endif
+    }
+    else
+    {
+        imageStore(diffuse_out, p, out_color);
+        imageStore(specular_out, p, out_specular);
     }
 }

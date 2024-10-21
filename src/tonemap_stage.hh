@@ -33,16 +33,28 @@ public:
         bool transition_output_layout = true;
         bool alpha_grid_background = false;
         std::vector<uint32_t> reorder = {};
+        // If you only want to tonemap one layer of an array, use this.
+        int limit_to_input_layer = -1;
+        int limit_to_output_layer = -1;
+        // eUndefined deduces.
+        vk::ImageLayout output_image_layout = vk::ImageLayout::eUndefined;
     };
 
     tonemap_stage(
-        device& dev, 
+        device& dev,
         render_target& input,
         std::vector<render_target>& output_frames,
         const options& opt
     );
 
+    tonemap_stage(
+        device& dev,
+        render_target& input,
+        render_target& output,
+        const options& opt
+    );
 private:
+    void init(std::vector<render_target>& output_frames);
     void update(uint32_t frame_index) override;
 
     descriptor_set desc;

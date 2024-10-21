@@ -75,12 +75,12 @@ void bottom_level_acceleration_structure::rebuild(
         transform_address.deviceAddress =
             transform_buffer.get_address(id) + sizeof(vk::TransformMatrixKHR) * i;
 
-        vk::AccelerationStructureGeometryKHR geom;
+        vk::AccelerationStructureGeometryKHR geom{};
         const mesh* m = entries[i].m;
         if(m)
         {
             geom.geometryType = vk::GeometryTypeKHR::eTriangles;
-            geom.geometry = vk::AccelerationStructureGeometryTrianglesDataKHR(
+            geom.geometry.triangles = vk::AccelerationStructureGeometryTrianglesDataKHR(
                 vk::Format::eR32G32B32Sfloat,
                 dev.logical.getBufferAddress({m->get_vertex_buffer(id)}),
                 sizeof(mesh::vertex),
@@ -96,7 +96,7 @@ void bottom_level_acceleration_structure::rebuild(
         else
         {
             geom.geometryType = vk::GeometryTypeKHR::eAabbs;
-            geom.geometry = vk::AccelerationStructureGeometryAabbsDataKHR(
+            geom.geometry.aabbs = vk::AccelerationStructureGeometryAabbsDataKHR(
                 entries[i].aabb_buffer->get_address(id),
                 sizeof(vk::AabbPositionsKHR)
             );
@@ -413,6 +413,23 @@ void top_level_acceleration_structure::rebuild(
 size_t top_level_acceleration_structure::get_updates_since_rebuild() const
 {
     return updates_since_rebuild;
+}
+
+void top_level_acceleration_structure::copy(
+    device_id id,
+    top_level_acceleration_structure& other,
+    vk::CommandBuffer cmd
+){
+    if(other.instance_capacity != instance_capacity)
+        throw std::runtime_error("Attempting to copy between top level acceleration structures of different capacities!");
+    instance_count = other.instance_count;
+
+    vk::CopyAccelerationStructureInfoKHR copy_info = {
+        *other.buffers[id].tlas,
+        *buffers[id].tlas,
+        vk::CopyAccelerationStructureModeKHR::eClone
+    };
+    cmd.copyAccelerationStructureKHR(copy_info);
 }
 
 const vk::AccelerationStructureKHR* top_level_acceleration_structure::get_tlas_handle(device_id id) const

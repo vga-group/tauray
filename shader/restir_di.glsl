@@ -194,7 +194,7 @@ vec3 light_contribution(
         dist2 = dot(pos, pos);
         normal = normalize(cross(tl.pos[2]-tl.pos[0], tl.pos[1]-tl.pos[0]));
 
-        vec3 color = tl.emission_factor;
+        vec3 color = r9g9b9e5_to_rgb(tl.emission_factor);
 
         if(abs(dot(dir, normal)) < 0.001)
             color = vec3(0);

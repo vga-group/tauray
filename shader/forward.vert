@@ -12,6 +12,8 @@ layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec2 in_uv;
 layout(location = 3) in vec4 in_tangent;
 
+layout(location = 4) in vec3 in_prev_pos;
+
 layout(location = 0) out vec3 out_pos;
 layout(location = 1) out vec3 out_prev_pos;
 layout(location = 2) out vec3 out_normal;
@@ -23,7 +25,7 @@ void main()
 {
     instance o = instances.o[control.instance_id];
     out_pos = vec3(o.model * vec4(in_pos, 1.0f));
-    out_prev_pos = vec3(o.model_prev * vec4(in_pos, 1.0f));
+    out_prev_pos = vec3(o.model_prev * vec4(control.has_prev_pos_data != 0 ? in_prev_pos : in_pos, 1.0f));
     gl_Position = camera.pairs[control.base_camera_index + gl_ViewIndex].current.view_proj * vec4(out_pos, 1.0f);
     out_normal = normalize(mat3(o.model_normal) * in_normal);
     out_tangent = normalize(mat3(o.model_normal) * in_tangent.xyz);
