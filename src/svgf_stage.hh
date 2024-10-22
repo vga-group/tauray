@@ -24,7 +24,7 @@ public:
         float sigma_n;
         float temporal_alpha_color;
         float temporal_alpha_moments;
-        bool color_buffer_contains_direct_light;
+        bool color_buffer_contains_direct_light = false;
     };
 
     svgf_stage(

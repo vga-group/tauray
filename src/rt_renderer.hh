@@ -14,7 +14,6 @@
 #include "path_tracer_stage.hh"
 #include "direct_stage.hh"
 #include "raster_stage.hh"
-#include "restir_di_stage.hh"
 #include "feature_stage.hh"
 #include "stitch_stage.hh"
 #include "scene_stage.hh"
@@ -76,7 +75,6 @@ private:
 using path_tracer_renderer = rt_renderer<path_tracer_stage>;
 using feature_renderer = rt_renderer<feature_stage>;
 using direct_renderer = rt_renderer<direct_stage>;
-using restir_di_renderer = rt_renderer<restir_di_stage>;
 
 }
 

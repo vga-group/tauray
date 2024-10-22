@@ -124,7 +124,6 @@ add_library(tauray-core STATIC
   src/rectangle_packer.cc
   src/render_target.cc
   src/restir_stage.cc
-  src/restir_di_stage.cc
   src/restir_renderer.cc
   src/rt_camera_stage.cc
   src/rt_common.cc

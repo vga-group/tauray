@@ -154,7 +154,6 @@
         {"dshgi", options::DSHGI}, \
         {"dshgi-server", options::DSHGI_SERVER}, \
         {"dshgi-client", options::DSHGI_CLIENT}, \
-        {"restir-di", options::RESTIR_DI}, \
         {"restir", options::RESTIR}, \
         {"restir-hybrid", options::RESTIR_HYBRID}, \
         {"albedo", feature_stage::ALBEDO}, \
@@ -322,10 +321,6 @@
         {"orthographic", tr::camera::ORTHOGRAPHIC}, \
         {"equirectangular", tr::camera::EQUIRECTANGULAR} \
     ) \
-    TR_BOOL_OPT(ply_streaming, \
-        "Stream .ply model continuously. Assumes that new ply model data is " \
-        "appended to the given file while this program runs.", \
-        false) \
     TR_ENUM_OPT(up_axis, int, \
         "Rotates the given axis as the up axis in the scene.", \
         1, \
@@ -421,7 +416,7 @@
         {"svgf", options::denoiser_type::SVGF}, \
         {"bmfr", options::denoiser_type::BMFR} \
     ) \
-    TR_STRUCT_OPT(svgf_params, \
+    TR_STRUCT_OPT(svgf, \
         "Parameters for the SVGF denoiser.\n" \
         "atrous-diffuse-iter: number of iterations of the atrous filter for the diffuse channel\n"\
         "atrous-spec-iter: number of iterations of the atrous filter for the specular channel\n"\
@@ -440,10 +435,6 @@
         TR_STRUCT_OPT_FLOAT(min_alpha_color, 0.02f, 0.001f, 1.0f) \
         TR_STRUCT_OPT_FLOAT(min_alpha_moments, 0.2f, 0.001f, 1.0f) \
     )\
-    TR_BOOL_OPT(svgf_color_contains_direct_light, \
-        "If set to true, SVGF output will be added to the contents of the color buffer instead of overwriting the color buffer.", \
-        false \
-    ) \
     TR_BOOL_OPT(accumulation, \
         "Whether to accumulate samples from multiple frames or not. " \
         "For interactive mode, samples are accumulated when the camera is " \
@@ -546,17 +537,6 @@
     TR_STRING_OPT(timing_output, \
         "Sets the timing data output file. Default is stdout.", \
         "" \
-    ) \
-    TR_STRUCT_OPT(restir_di, \
-        "The implementation is biased if sample_visibility = true and " \
-        "shared_visibility = true. sample_visibility only has an effect when " \
-        "shared_visibility = true.\n", \
-        TR_STRUCT_OPT_INT(spatial_samples, 4, 0, 5000) \
-        TR_STRUCT_OPT_FLOAT(max_confidence, 64, 0, 10000) \
-        TR_STRUCT_OPT_INT(ris_samples, 8, 1, 5000) \
-        TR_STRUCT_OPT_FLOAT(search_radius, 32, 0, 500) \
-        TR_STRUCT_OPT_BOOL(shared_visibility, false) \
-        TR_STRUCT_OPT_BOOL(sample_visibility, false) \
     ) \
     TR_STRUCT_OPT(restir, \
         "Parameters for ReSTIR", \
@@ -661,7 +641,6 @@ struct options
         DSHGI,
         DSHGI_SERVER,
         DSHGI_CLIENT,
-        RESTIR_DI,
         RESTIR,
         RESTIR_HYBRID
     };
