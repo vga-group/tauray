@@ -363,7 +363,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     bool use_shadow_terminator_fix = false;
     bool has_tri_lights = false;
-    //bool has_sh_grids = s.count<sh_grid>() != 0;
+    bool has_sh_grids = s.count<sh_grid>() != 0;
     bool has_point_lights = s.count<point_light>() + s.count<spotlight>() > 0;
     bool has_directional_lights = s.count<directional_light>() > 0;
     s.foreach([&](model& mod){
@@ -644,6 +644,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 return new restir_di_renderer(ctx, re_opt);
             }
         case options::RESTIR:
+        case options::RESTIR_HYBRID:
             {
                 restir_renderer::options re_opt;
                 re_opt.scene_options = scene_options;
@@ -668,8 +669,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.restir_options.assume_unchanged_acceleration_structures = opt.restir.assume_unchanged_acceleration_structures;
                 re_opt.restir_options.assume_unchanged_reconnection_radiance = opt.restir.assume_unchanged_reconnection_radiance;
                 re_opt.restir_options.assume_unchanged_temporal_visibility = opt.restir.assume_unchanged_temporal_visibility;
-                re_opt.restir_options.shade_all_explicit_lights = false;
-                re_opt.restir_options.shade_fake_indirect = false;
+                re_opt.restir_options.shade_all_explicit_lights = *rtype == options::RESTIR_HYBRID;
+                re_opt.restir_options.shade_fake_indirect = *rtype == options::RESTIR_HYBRID && has_sh_grids;
 
                 if(opt.taa.sequence_length > 1)
                     re_opt.taa_options = taa;
