@@ -67,6 +67,7 @@ public:
     void set_jitter(const std::vector<vec2>& jitter_sequence);
     void step_jitter();
     vec2 get_jitter() const;
+    size_t jitter_sequence_length() const;
 
 private:
     friend class camera_log;

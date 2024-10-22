@@ -497,6 +497,11 @@ vec2 camera::get_jitter() const
     return jitter_sequence.size() == 0 ? vec2(0) : jitter_sequence[jitter_index];
 }
 
+size_t camera::jitter_sequence_length() const
+{
+    return jitter_sequence.size();
+}
+
 camera_log::camera_log(transformable* cam_transform, camera* cam)
 : cam_transform(cam_transform), cam(cam)
 {

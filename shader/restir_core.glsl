@@ -212,7 +212,7 @@ reservoir unpack_reservoir(
     r.output_sample.vertex.primitive_id = reconnection_data[3];
 
     r.output_sample.vertex.radiance_estimate = reconnection_radiance.rgb;
-    r.output_sample.radiance_luminance = reconnection_radiance.a;
+    r.output_sample.tail_nee_pdf = reconnection_radiance.a;
 
     vec2 incident_dir = vec2(
         uintBitsToFloat(rng_seeds[2]),
@@ -289,7 +289,7 @@ void write_reservoir(reservoir r, ivec2 p, uvec2 size)
         );
         imageStore(out_reservoir_reconnection_data_tex, p, reconnection_data);
         imageStore(out_reservoir_reconnection_radiance_tex, p, vec4(
-            r.output_sample.vertex.radiance_estimate, r.output_sample.radiance_luminance
+            r.output_sample.vertex.radiance_estimate, r.output_sample.tail_nee_pdf
         ));
     }
 
@@ -547,6 +547,7 @@ struct resolved_vertex
 
     bsdf_lobes lobes;
     float bsdf_pdf;
+    float nee_pdf;
 };
 
 bool resolve_reconnection_vertex(
@@ -556,12 +557,15 @@ bool resolve_reconnection_vertex(
     inout float regularization,
     out resolved_vertex to
 ){
+    float point_prob, triangle_prob, dir_prob, envmap_prob;
+    get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
     uint bounce_index = rs.head_length;
 
     // if rv_is_in_past, to is cur. Otherwise, to is prev.
     if(rs.vertex.instance_id == NULL_INSTANCE_ID)
         return false;
 
+    to.nee_pdf = 0;
     if(rs.vertex.instance_id == POINT_LIGHT_INSTANCE_ID)
     {
 #ifdef RESTIR_TEMPORAL
@@ -597,6 +601,8 @@ bool resolve_reconnection_vertex(
         }
         else to.normal = vec3(0);
 
+        to.nee_pdf = sample_point_light_pdf(pl, to_domain.pos) * point_prob / max(scene_metadata.point_light_count, 1u);
+
         to.emission = pl.color;
         if(radius != 0.0f) to.emission /= M_PI * radius * radius;
         to.emission *= get_spotlight_intensity(pl, normalize(center_dir));
@@ -616,6 +622,7 @@ bool resolve_reconnection_vertex(
         to.dist = TR_RESTIR.max_ray_dist;
         to.normal = vec3(0);
         to.emission = rs.vertex.radiance_estimate;
+        to.nee_pdf = uintBitsToFloat(rs.vertex.primitive_id);
     }
     else if(rs.vertex.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID)
     {
@@ -634,6 +641,7 @@ bool resolve_reconnection_vertex(
 #else
         to.emission = rs.vertex.radiance_estimate;
 #endif
+        to.nee_pdf = uintBitsToFloat(rs.vertex.primitive_id);
     }
 #ifndef SHADE_ALL_EXPLICIT_LIGHTS
     else if(rs.vertex.instance_id == MISS_INSTANCE_ID)
@@ -661,6 +669,7 @@ bool resolve_reconnection_vertex(
 #else
         to.emission = rs.vertex.radiance_estimate;
 #endif
+        to.nee_pdf = uintBitsToFloat(rs.vertex.primitive_id);
     }
 #endif
     else
@@ -690,6 +699,7 @@ bool resolve_reconnection_vertex(
         to.dir = normalize(vd.pos-to_domain.pos);
         to.dist = length(vd.pos-to_domain.pos);
         to.normal = vd.hard_normal;
+        to.nee_pdf = pdf * triangle_prob / max(scene_metadata.tri_light_count, 1u);
 
 #if !defined(SHADE_ALL_EXPLICIT_LIGHTS) || defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
         // Normal operation: just find the emissiveness of the vertex.
@@ -727,6 +737,7 @@ bool resolve_reconnection_vertex(
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd, puvdx, puvdy);
         apply_regularization(regularization, mat);
         to.emission = mat.emission + shade_explicit_lights(int(rs.vertex.instance_id), to.dir, vd, mat, bounce_index);
+
         return true;
 #endif
     }
@@ -788,6 +799,8 @@ bool get_intersection_info(
 #if defined(RESTIR_TEMPORAL) && defined(ASSUME_UNCHANGED_ACCELERATION_STRUCTURES)
     in_past = false;
 #endif
+    float point_prob, triangle_prob, dir_prob, envmap_prob;
+    get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
 
     info.light = vec3(0);
     info.envmap_pdf = 0.0f;
@@ -926,7 +939,9 @@ bool get_intersection_info(
 #endif
 
         candidate.instance_id = MISS_INSTANCE_ID;
-        candidate.primitive_id = 0;
+        candidate.primitive_id = floatBitsToUint(
+            info.local_pdf * dir_prob / max(scene_metadata.directional_light_count, 1u) + info.envmap_pdf * envmap_prob
+        );
         candidate.hit_info = octahedral_pack(ray_direction) * 0.5f + 0.5f;
         candidate.radiance_estimate = info.light;
         info.vd.pos = ray_origin + TR_RESTIR.max_ray_dist * ray_direction;
@@ -1122,7 +1137,7 @@ light_sample sample_light(
 
         sample_directional_light(dl, u.zw, ls.dir, ls.color, local_pdf);
         ls.instance_id = DIRECTIONAL_LIGHT_INSTANCE_ID;
-        ls.primitive_id = selected_index;
+        ls.primitive_id = floatBitsToUint(local_pdf * dir_prob);
         ls.hit_info = octahedral_pack(ls.dir) * 0.5f + 0.5f;
 
         ls.pdf = dir_prob / scene_metadata.directional_light_count;
@@ -1134,7 +1149,7 @@ light_sample sample_light(
         ls.color = sample_environment_map(rand32.xyz, ls.dir, ls.dist, local_pdf);
 
         ls.instance_id = ENVMAP_INSTANCE_ID;
-        ls.primitive_id = 0;
+        ls.primitive_id = floatBitsToUint(local_pdf * envmap_prob);
         ls.hit_info = octahedral_pack(ls.dir) * 0.5f + 0.5f;
 
         ls.pdf = envmap_prob;
@@ -1383,7 +1398,6 @@ int replay_path(
 
         bool reconnected = false;
         bool bounces = replay_path_bsdf_bounce(bounce, seed, throughput, primary_bsdf, regularization, src, in_past, head_allows_reconnection, reconnected);
-        apply_regularization(regularization, src.mat);
 
         if(fail_on_reconnect && reconnected)
             return 2;
@@ -1621,7 +1635,6 @@ bool reconnection_shift_map(
     if(update_sample)
     {
         rs.base_path_jacobian_part = half_jacobian;
-        rs.radiance_luminance = rgb_to_luminance(contribution);
     }
     return true;
 }
@@ -1673,8 +1686,6 @@ bool random_replay_shift_map(
         return false;
     }
     contribution = throughput * to_domain.mat.emission;
-    if(update_sample)
-        rs.radiance_luminance = rgb_to_luminance(contribution);
     return true;
 }
 
@@ -1729,8 +1740,6 @@ bool hybrid_shift_map(
             if(replay_status == 2) // Failed to replay path
                 return false;
             contribution = throughput * to_domain.mat.emission;
-            if(update_sample)
-                rs.radiance_luminance = rgb_to_luminance(contribution);
             return true;
         }
         else if(replay_status != 0) // Failed to replay path
@@ -1752,7 +1761,7 @@ bool hybrid_shift_map(
     if(rs.head_length == 0)
         bias_ray(to_domain.pos, to.dir, to.dist, to_domain);
 
-    float v0_pdf = to.bsdf_pdf;
+    float v0_pdf = rs.head_lobe == MATERIAL_LOBE_ALL ? to.nee_pdf : to.bsdf_pdf;
     float v1_pdf = 1.0f;
 
     vec3 emission = to.emission;
@@ -1800,8 +1809,9 @@ bool hybrid_shift_map(
 
         // Turn radiance into to.emission
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-        v1_pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
-        update_regularization(v1_pdf, regularization);
+        float bsdf_pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
+        v1_pdf = rs.tail_lobe == MATERIAL_LOBE_ALL ? rs.tail_nee_pdf : bsdf_pdf;
+        update_regularization(bsdf_pdf, regularization);
         vec3 bsdf = modulate_bsdf(mat, lobes);
 
         // Optionally, update radiance based on tail path in the timeframe of
@@ -1860,10 +1870,7 @@ bool hybrid_shift_map(
         jacobian = 0;
 
     if(update_sample)
-    {
         rs.base_path_jacobian_part = half_jacobian;
-        rs.radiance_luminance = rgb_to_luminance(contribution);
-    }
     return true;
 }
 

@@ -810,7 +810,12 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_i
         pc.camera_index = opt.camera_index;
         pc.sample_index = frame_counter * opt.passes + pass_index;
 
+        scene* cur_scene = scene_data->get_scene();
+        std::vector<entity> camera_entities = get_sorted_cameras(*cur_scene);
+        camera* cam = cur_scene->get<camera>(camera_entities[0]);
         pc.jitter = clamp(r2_noise(vec2(pc.sample_index)), vec2(0.05f), vec2(0.95f))-0.5f;
+        if(cam && cam->jitter_sequence_length() > 1)
+            pc.jitter = clamp(cam->get_jitter() * vec2(config.display_size) * 0.5f, vec2(-0.49f), vec2(0.49f));
         pc.permutation = opt.temporal_permutation;
 
         temporal.push_constants(cmd, pc);

@@ -160,7 +160,7 @@ vec2 temporal_reuse(inout uvec4 seed, ivec2 p, inout reservoir r, domain cur_dom
         // don't tell much of the path's correctness.
         if(shifted && !disocclusion)
         {
-            float coherence = estimate_temporal_coherence(rgb_to_luminance(value_in_prev_domain), r.output_sample.radiance_luminance);
+            float coherence = estimate_temporal_coherence(target_value_in_prev_domain, r.target_function_value);
             diffuse_temporal_coherence += coherence * (1.0f-primary_bsdf.a);
             diffuse_temporal_count += (1.0f-primary_bsdf.a);
 
