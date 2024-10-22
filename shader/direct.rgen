@@ -53,13 +53,15 @@ void evaluate_direct_ray(
     vec3 pos,
     vec3 view,
     out vec3 color,
-    out vec3 diffuse,
+    out vec4 diffuse,
+    out vec4 reflection,
     out pt_vertex_data first_hit_vertex,
     out sampled_material first_hit_material
 ){
     payload.random_seed = pcg4d(lsampler.rs.seed).x;
     color = vec3(0);
-    diffuse = vec3(0);
+    diffuse = vec4(0);
+    reflection = vec4(0);
 
     traceRayEXT(tlas, gl_RayFlagsNoneEXT, 0xFF^0x02, 0, 0, 0, pos, 0.0f, view, RAY_MAX_DIST, 0);
 
@@ -81,16 +83,15 @@ void evaluate_direct_ray(
     int ray_sample_index = 0;
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
     {
-        vec3 diffuse_radiance = vec3(0);
-        vec3 specular_radiance = vec3(0);
         // Do NEE ray
-        next_event_estimation(
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        vec3 radiance = next_event_estimation(
             generate_ray_sample_uint(lsampler, ray_sample_index++), tbn, shading_view,
-            first_hit_material, first_hit_vertex, diffuse_radiance,
-            specular_radiance
+            first_hit_material, first_hit_vertex, lobes
         );
-        color += diffuse_radiance * first_hit_material.albedo.rgb + specular_radiance;
-        diffuse += diffuse_radiance;
+        color += radiance * modulate_bsdf(first_hit_material, lobes);
+        add_demodulated_color(lobes, radiance, diffuse.rgb, reflection.rgb);
+        diffuse.a = reflection.a = 1.0f / length(first_hit_vertex.pos - pos);
     }
 }
 
@@ -110,10 +111,11 @@ void main()
     vec3 dir;
     get_world_camera_ray(lsampler, origin, dir);
 
-    vec3 color, diffuse;
+    vec3 color;
+    vec4 diffuse, reflection;
     evaluate_direct_ray(
         lsampler, origin, dir,
-        color, diffuse, first_hit_vertex, first_hit_material
+        color, diffuse, reflection, first_hit_vertex, first_hit_material
     );
 
     color /= SAMPLES_PER_PASS;
@@ -121,8 +123,8 @@ void main()
 
     write_all_outputs(
         color,
-        color,
         diffuse,
+        reflection,
         first_hit_vertex,
         first_hit_material
     );
