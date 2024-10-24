@@ -29,6 +29,15 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
     if(!this->opt.restir_options.assume_unchanged_acceleration_structures)
         this->opt.scene_options.track_prev_tlas = true;
 
+    if(ctx.has_validation() && this->opt.scene_options.track_prev_tlas)
+    {
+        TR_WARN(
+            "Vulkan validation layers crash when trying to copy old TLAS; "
+            "setting restir.assume-unchanged-acceleration-structures = true."
+        );
+        this->opt.scene_options.track_prev_tlas = false;
+    }
+
     bool has_taa = this->opt.taa_options.has_value();
 
     gbuffer_spec gs;

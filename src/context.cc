@@ -737,6 +737,11 @@ void context::reset_image_views()
     }
 }
 
+bool context::has_validation() const
+{
+    return validation_layers.size() > 0;
+}
+
 void context::deinit_resources()
 {
     sync();
