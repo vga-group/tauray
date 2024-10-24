@@ -93,6 +93,8 @@ public:
 
     vk::Instance get_vulkan_instance() const;
 
+    bool has_validation() const;
+
 protected:
     virtual uint32_t prepare_next_image(uint32_t frame_index) = 0;
     virtual dependencies fill_end_frame_dependencies(const dependencies& deps);

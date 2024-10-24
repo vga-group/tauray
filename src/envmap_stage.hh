@@ -20,6 +20,13 @@ public:
         const std::vector<render_target>& color_arrays
     );
 
+    envmap_stage(
+        device& dev,
+        scene_stage& ss,
+        render_target& color_target,
+        unsigned base_camera_index = 0
+    );
+
 protected:
     void update(uint32_t frame_index) override;
 
@@ -28,6 +35,7 @@ private:
     timer envmap_timer;
 
     uint32_t scene_state_counter;
+    unsigned base_camera_index;
     scene_stage* ss;
 };
 

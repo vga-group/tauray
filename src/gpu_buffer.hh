@@ -30,8 +30,8 @@ public:
 
     device_mask get_mask() const;
 
-    void update(uint32_t frame_index, const void* data, size_t offset = 0, size_t bytes = 0);
-    void update_one(device_id id, uint32_t frame_index, const void* data, size_t offset = 0, size_t bytes = 0);
+    void update(uint32_t frame_index, const void* data, size_t offset = 0, size_t bytes = SIZE_MAX);
+    void update_one(device_id id, uint32_t frame_index, const void* data, size_t offset = 0, size_t bytes = SIZE_MAX);
     template<typename T, typename F>
     void foreach(uint32_t frame_index, size_t entries, F&& f);
     template<typename T, typename F>

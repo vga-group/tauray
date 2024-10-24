@@ -80,17 +80,22 @@ namespace tr
 {
 
 openxr::openxr(const options& opt)
-: context(opt), opt(opt), xr_device(VK_NULL_HANDLE)
+:   context(opt), opt(opt), xr_device(VK_NULL_HANDLE)
 {
-    init_sdl();
+    if(opt.preview_window)
+        init_sdl();
     init_xr();
-    init_vulkan((PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr());
-    if(!SDL_Vulkan_CreateSurface(win, instance, &surface))
-        throw std::runtime_error(SDL_GetError());
+    init_vulkan(vkGetInstanceProcAddr);
+    if(opt.preview_window)
+    {
+        if(!SDL_Vulkan_CreateSurface(win, instance, &surface))
+            throw std::runtime_error(SDL_GetError());
+    }
     init_devices();
     init_session();
     init_xr_swapchain();
-    init_window_swapchain();
+    if(opt.preview_window)
+        init_window_swapchain();
     init_resources();
     init_local_resources();
 }
@@ -99,14 +104,17 @@ openxr::~openxr()
 {
     deinit_local_resources();
     deinit_resources();
-    deinit_window_swapchain();
+    if(opt.preview_window)
+        deinit_window_swapchain();
     deinit_xr_swapchain();
     deinit_session();
     deinit_xr();
     deinit_devices();
-    vkDestroySurfaceKHR(instance, surface, nullptr);
+    if(opt.preview_window)
+        vkDestroySurfaceKHR(instance, surface, nullptr);
     deinit_vulkan();
-    deinit_sdl();
+    if(opt.preview_window)
+        deinit_sdl();
 }
 
 bool openxr::init_frame()
@@ -136,6 +144,7 @@ bool openxr::init_frame()
     xrBeginFrame(xr_session, &begin_info);
 
     update_xr_views();
+    update_xr_controllers();
 
     return false;
 }
@@ -145,8 +154,11 @@ void openxr::recreate_swapchains()
     device& dev_data = get_display_device();
     dev_data.logical.waitIdle();
 
-    deinit_window_swapchain();
-    init_window_swapchain();
+    if(opt.preview_window)
+    {
+        deinit_window_swapchain();
+        init_window_swapchain();
+    }
 }
 
 void openxr::setup_xr_surroundings(
@@ -166,6 +178,16 @@ void openxr::setup_xr_surroundings(
         );
         cameras.push_back(s.get<camera>(id));
         camera_transforms.push_back(s.get<transformable>(id));
+    }
+
+    for(size_t i = 0; i < 2; ++i)
+    {
+        entity id = s.add(
+            transformable(reference_frame),
+            openxr_controller{i == 0, false, false, false}
+        );
+        controllers.push_back(s.get<openxr_controller>(id));
+        controller_transforms.push_back(s.get<transformable>(id));
     }
 }
 
@@ -197,9 +219,12 @@ uint32_t openxr::prepare_next_image(uint32_t frame_index)
         {}
     );
 
-    window_swapchain_index = d.logical.acquireNextImageKHR(
-        window_swapchain, UINT64_MAX, window_frame_available[frame_index], {}
-    ).value;
+    if(opt.preview_window)
+    {
+        window_swapchain_index = d.logical.acquireNextImageKHR(
+            window_swapchain, UINT64_MAX, window_frame_available[frame_index], {}
+        ).value;
+    }
 
     return swapchain_index;
 }
@@ -209,16 +234,24 @@ void openxr::finish_image(uint32_t frame_index, uint32_t swapchain_index, bool)
     blit_images(frame_index, swapchain_index);
 
     device& d = get_display_device();
-    (void)d.present_queue.presentKHR({
-        1, window_frame_finished[frame_index],
-        1, &window_swapchain,
-        &window_swapchain_index
-    });
+    if(opt.preview_window)
+    {
+        (void)d.present_queue.presentKHR({
+            1, window_frame_finished[frame_index],
+            1, &window_swapchain,
+            &window_swapchain_index
+        });
+    }
 
     // TODO: Do we just wait for it orrr...??? Why can't OpenXR just take
     // semaphores...
-    //(void)d.dev.waitForFences(*finish_fence, true, UINT64_MAX);
-    //d.dev.resetFences(*finish_fence);
+    /*
+    if(!opt.preview_window)
+    {
+        (void)d.logical.waitForFences(*finish_fence, true, UINT64_MAX);
+        d.logical.resetFences(*finish_fence);
+    }
+    */
 
     XrSwapchainImageReleaseInfo release_info = {
         XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO,
@@ -244,11 +277,15 @@ bool openxr::queue_can_present(
 ){
     if(props.queueFlags & vk::QueueFlagBits::eGraphics)
     {
-        return
-            (VkPhysicalDevice)device == get_xr_device() &&
-            device.getSurfaceSupportKHR(queue_index, vk::SurfaceKHR(surface)) &&
-            device.getSurfaceFormatsKHR(surface).size() > 0 &&
-            device.getSurfacePresentModesKHR(surface).size() > 0;
+        if(opt.preview_window)
+        {
+            return
+                (VkPhysicalDevice)device == get_xr_device() &&
+                device.getSurfaceSupportKHR(queue_index, vk::SurfaceKHR(surface)) &&
+                device.getSurfaceFormatsKHR(surface).size() > 0 &&
+                device.getSurfacePresentModesKHR(surface).size() > 0;
+        }
+        else return (VkPhysicalDevice)device == get_xr_device();
     }
     return false;
 }
@@ -287,7 +324,7 @@ vk::Device openxr::create_device(
             nullptr,
             system_id,
             0,
-            (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr(),
+            opt.preview_window ? (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr() : vkGetInstanceProcAddr,
             xr_device,
             &(const VkDeviceCreateInfo&)info,
             nullptr
@@ -311,31 +348,35 @@ void openxr::init_sdl()
     if(SDL_Init(subsystems))
         throw std::runtime_error(SDL_GetError());
 
-    win = SDL_CreateWindow(
-        "Tauray",
-        SDL_WINDOWPOS_UNDEFINED,
-        SDL_WINDOWPOS_UNDEFINED,
-        opt.size.x,
-        opt.size.y,
-        SDL_WINDOW_VULKAN | (opt.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0)
-    );
-    if(!win) throw std::runtime_error(SDL_GetError());
-    SDL_GetWindowSize(win, (int*)&opt.size.x, (int*)&opt.size.y);
-    SDL_SetWindowGrab(win, (SDL_bool)true);
-    SDL_SetRelativeMouseMode((SDL_bool)true);
+    if(opt.preview_window)
+    {
+        win = SDL_CreateWindow(
+            "Tauray",
+            SDL_WINDOWPOS_UNDEFINED,
+            SDL_WINDOWPOS_UNDEFINED,
+            opt.size.x,
+            opt.size.y,
+            SDL_WINDOW_VULKAN | (opt.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0)
+        );
+        if(!win) throw std::runtime_error(SDL_GetError());
+        SDL_GetWindowSize(win, (int*)&opt.size.x, (int*)&opt.size.y);
+        SDL_SetWindowGrab(win, (SDL_bool)true);
+        SDL_SetRelativeMouseMode((SDL_bool)true);
 
-    unsigned count = 0;
-    if(!SDL_Vulkan_GetInstanceExtensions(win, &count, nullptr))
-        throw std::runtime_error(SDL_GetError());
+        unsigned count = 0;
+        if(!SDL_Vulkan_GetInstanceExtensions(win, &count, nullptr))
+            throw std::runtime_error(SDL_GetError());
 
-    extensions.resize(count);
-    if(!SDL_Vulkan_GetInstanceExtensions(win, &count, extensions.data()))
-        throw std::runtime_error(SDL_GetError());
+        extensions.resize(count);
+        if(!SDL_Vulkan_GetInstanceExtensions(win, &count, extensions.data()))
+            throw std::runtime_error(SDL_GetError());
+    }
 }
 
 void openxr::deinit_sdl()
 {
-    SDL_DestroyWindow(win);
+    if(opt.preview_window)
+        SDL_DestroyWindow(win);
     SDL_Quit();
 }
 
@@ -576,10 +617,116 @@ void openxr::init_session()
     xrCreateReferenceSpace(xr_session, &space_info, &xr_reference_space);
 
     session_state = XR_SESSION_STATE_UNKNOWN;
+
+    XrActionSetCreateInfo as_info{
+        XR_TYPE_ACTION_SET_CREATE_INFO,
+        nullptr,
+        "gameplay",
+        "Gameplay",
+        0
+    };
+    xrCreateActionSet(xr_instance, &as_info, &action_set);
+
+    XrActionCreateInfo grip_left_info{
+        XR_TYPE_ACTION_CREATE_INFO,
+        nullptr,
+        "leftcontrollerorientation",
+        XR_ACTION_TYPE_POSE_INPUT,
+        0, nullptr,
+        "Left controller orientation"
+    };
+    xrCreateAction(action_set, &grip_left_info, &grip_pose_action[0]);
+
+    XrActionCreateInfo grip_right_info{
+        XR_TYPE_ACTION_CREATE_INFO,
+        nullptr,
+        "rightcontrollerorientation",
+        XR_ACTION_TYPE_POSE_INPUT,
+        0, nullptr,
+        "Right controller orientation"
+    };
+    xrCreateAction(action_set, &grip_right_info, &grip_pose_action[1]);
+
+    XrActionCreateInfo click_left_info{
+        XR_TYPE_ACTION_CREATE_INFO,
+        nullptr,
+        "leftcontrollerclick",
+        XR_ACTION_TYPE_BOOLEAN_INPUT,
+        0, nullptr,
+        "Left controller click"
+    };
+    xrCreateAction(action_set, &click_left_info, &click_action[0]);
+
+    XrActionCreateInfo click_right_info{
+        XR_TYPE_ACTION_CREATE_INFO,
+        nullptr,
+        "rightcontrollerclick",
+        XR_ACTION_TYPE_BOOLEAN_INPUT,
+        0, nullptr,
+        "Right controller click"
+    };
+    xrCreateAction(action_set, &click_right_info, &click_action[1]);
+
+    XrPath left_grip_path;
+    xrStringToPath(xr_instance, "/user/hand/left/input/grip/pose", &left_grip_path);
+    XrPath right_grip_path;
+    xrStringToPath(xr_instance, "/user/hand/right/input/grip/pose", &right_grip_path);
+    XrPath left_click_path;
+    xrStringToPath(xr_instance, "/user/hand/left/input/select/click", &left_click_path);
+    XrPath right_click_path;
+    xrStringToPath(xr_instance, "/user/hand/right/input/select/click", &right_click_path);
+
+    XrPath interaction_profile_path;
+    xrStringToPath(xr_instance, "/interaction_profiles/khr/simple_controller", &interaction_profile_path);
+
+    XrActionSuggestedBinding bindings[4];
+    bindings[0].action = grip_pose_action[0];
+    bindings[0].binding = left_grip_path;
+    bindings[1].action = grip_pose_action[1];
+    bindings[1].binding = right_grip_path;
+    bindings[2].action = click_action[0];
+    bindings[2].binding = left_click_path;
+    bindings[3].action = click_action[1];
+    bindings[3].binding = right_click_path;
+
+    XrInteractionProfileSuggestedBinding suggested_bindings{
+        XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING,
+        nullptr,
+        interaction_profile_path,
+        std::size(bindings),
+        bindings
+    };
+
+    xrSuggestInteractionProfileBindings(xr_instance, &suggested_bindings);
+
+    XrSessionActionSetsAttachInfo attach_info{
+        XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO,
+        nullptr,
+        1,
+        &action_set
+    };
+    xrAttachSessionActionSets(xr_session, &attach_info);
+
+    const XrPosef identity = {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}};
+
+    XrActionSpaceCreateInfo actionSpaceCI{};
+    actionSpaceCI.type = XR_TYPE_ACTION_SPACE_CREATE_INFO;
+    actionSpaceCI.action = grip_pose_action[0];
+    actionSpaceCI.poseInActionSpace = identity;
+    actionSpaceCI.subactionPath = XR_NULL_PATH;
+    xrCreateActionSpace(xr_session, &actionSpaceCI, &grip_pose_space[0]);
+
+    actionSpaceCI.action = grip_pose_action[1];
+    xrCreateActionSpace(xr_session, &actionSpaceCI, &grip_pose_space[1]);
 }
 
 void openxr::deinit_session()
 {
+    xrDestroyAction(click_action[0]);
+    xrDestroyAction(click_action[1]);
+    xrDestroyAction(grip_pose_action[0]);
+    xrDestroyAction(grip_pose_action[1]);
+    xrDestroyActionSet(action_set);
     xrDestroySpace(xr_reference_space);
     xrDestroySession(xr_session);
 }
@@ -867,12 +1014,15 @@ void openxr::deinit_window_swapchain()
 void openxr::init_local_resources()
 {
     device& dev_data = get_display_device();
-    window_frame_available.resize(MAX_FRAMES_IN_FLIGHT);
-    window_frame_finished.resize(MAX_FRAMES_IN_FLIGHT);
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    if(opt.preview_window)
     {
-        window_frame_available[i] = create_binary_semaphore(dev_data);
-        window_frame_finished[i] = create_binary_semaphore(dev_data);
+        window_frame_available.resize(MAX_FRAMES_IN_FLIGHT);
+        window_frame_finished.resize(MAX_FRAMES_IN_FLIGHT);
+        for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            window_frame_available[i] = create_binary_semaphore(dev_data);
+            window_frame_finished[i] = create_binary_semaphore(dev_data);
+        }
     }
 
     finish_fence = vkm(dev_data, dev_data.logical.createFence({}));
@@ -892,13 +1042,45 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
     cmd->begin(vk::CommandBufferBeginInfo{
         vk::CommandBufferUsageFlagBits::eOneTimeSubmit
     });
-    transition_image_layout(
-        *cmd,
-        *window_images[window_swapchain_index],
-        window_image_format,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eTransferDstOptimal
-    );
+
+    if(opt.preview_window)
+    {
+        transition_image_layout(
+            *cmd,
+            *window_images[window_swapchain_index],
+            window_image_format,
+            vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eTransferDstOptimal
+        );
+        for(size_t i = 0; i < image_array_layers; ++i)
+        {
+            cmd->blitImage(
+                images[swapchain_index],
+                vk::ImageLayout::eTransferSrcOptimal,
+                window_images[window_swapchain_index],
+                vk::ImageLayout::eTransferDstOptimal,
+                vk::ImageBlit{
+                    {vk::ImageAspectFlagBits::eColor, 0, (uint32_t)i, 1},
+                    {vk::Offset3D{0,0,0}, {(int)image_size.x, (int)image_size.y, 1}},
+                    {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+                    {
+                        vk::Offset3D{(int)(opt.size.x/image_array_layers*i),0,0},
+                        {(int)(opt.size.x/image_array_layers*(i+1)), (int)opt.size.y, 1}
+                    }
+                },
+                vk::Filter::eLinear
+            );
+        }
+
+        transition_image_layout(
+            *cmd,
+            *window_images[window_swapchain_index],
+            window_image_format,
+            vk::ImageLayout::eTransferDstOptimal,
+            vk::ImageLayout::ePresentSrcKHR
+        );
+    }
+
     transition_image_layout(
         *cmd,
         *xr_images[swapchain_index],
@@ -906,26 +1088,6 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::eTransferDstOptimal
     );
-
-    for(size_t i = 0; i < image_array_layers; ++i)
-    {
-        cmd->blitImage(
-            images[swapchain_index],
-            vk::ImageLayout::eTransferSrcOptimal,
-            window_images[window_swapchain_index],
-            vk::ImageLayout::eTransferDstOptimal,
-            vk::ImageBlit{
-                {vk::ImageAspectFlagBits::eColor, 0, (uint32_t)i, 1},
-                {vk::Offset3D{0,0,0}, {(int)image_size.x, (int)image_size.y, 1}},
-                {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
-                {
-                    vk::Offset3D{(int)(opt.size.x/image_array_layers*i),0,0},
-                    {(int)(opt.size.x/image_array_layers*(i+1)), (int)opt.size.y, 1}
-                }
-            },
-            vk::Filter::eLinear
-        );
-    }
 
     cmd->blitImage(
         images[swapchain_index],
@@ -943,13 +1105,6 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
 
     transition_image_layout(
         *cmd,
-        *window_images[window_swapchain_index],
-        window_image_format,
-        vk::ImageLayout::eTransferDstOptimal,
-        vk::ImageLayout::ePresentSrcKHR
-    );
-    transition_image_layout(
-        *cmd,
         *xr_images[swapchain_index],
         image_format,
         vk::ImageLayout::eTransferDstOptimal,
@@ -962,17 +1117,32 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
         vk::PipelineStageFlagBits::eTopOfPipe
     };
     vk::Semaphore wait_semaphores[2] = {
-        window_frame_available[frame_index],
+        frame_finished[frame_index],
         frame_finished[frame_index]
     };
-    d.graphics_queue.submit(
-        vk::SubmitInfo(
-            2, wait_semaphores, wait_stages,
-            1, cmd.get(),
-            1, window_frame_finished[frame_index]
-        ),
-        {}//finish_fence
-    );
+    if(opt.preview_window)
+    {
+        wait_semaphores[1] = window_frame_available[frame_index];
+        d.graphics_queue.submit(
+            vk::SubmitInfo(
+                2, wait_semaphores, wait_stages,
+                1, cmd.get(),
+                1, window_frame_finished[frame_index]
+            ),
+            {}
+        );
+    }
+    else
+    {
+        d.graphics_queue.submit(
+            vk::SubmitInfo(
+                1, wait_semaphores, wait_stages,
+                1, cmd.get(),
+                0, {}
+            ),
+            {}//finish_fence
+        );
+    }
 }
 
 bool openxr::poll()
@@ -1078,6 +1248,72 @@ void openxr::update_xr_views()
         }
 
         projection_layer_views[i].fov = v.fov;
+    }
+}
+
+void openxr::update_xr_controllers()
+{
+    XrActiveActionSet active_set{action_set, XR_NULL_PATH};
+    XrActionsSyncInfo sync_info{
+        XR_TYPE_ACTIONS_SYNC_INFO,
+        nullptr, 1, &active_set
+    };
+    xrSyncActions(xr_session, &sync_info);
+
+    XrActionStatePose grip_states[2] = {};
+    grip_states[0].type = XR_TYPE_ACTION_STATE_POSE;
+    grip_states[1].type = XR_TYPE_ACTION_STATE_POSE;
+
+    XrActionStateBoolean click_states[2] = {};
+    click_states[0].type = XR_TYPE_ACTION_STATE_BOOLEAN;
+    click_states[1].type = XR_TYPE_ACTION_STATE_BOOLEAN;
+
+    XrActionStateGetInfo get_info{
+        XR_TYPE_ACTION_STATE_GET_INFO,
+        nullptr,
+        grip_pose_action[0],
+        XR_NULL_PATH
+    };
+    xrGetActionStatePose(xr_session, &get_info, &grip_states[0]);
+    get_info.action = grip_pose_action[1];
+    xrGetActionStatePose(xr_session, &get_info, &grip_states[1]);
+    get_info.action = click_action[0];
+    xrGetActionStateBoolean(xr_session, &get_info, &click_states[0]);
+    get_info.action = click_action[1];
+    xrGetActionStateBoolean(xr_session, &get_info, &click_states[1]);
+
+    for(int i = 0; i < 2; ++i)
+    {
+        controllers[i]->connected = grip_states[i].isActive;
+        controllers[i]->clicked = click_states[i].currentState && click_states[i].isActive && click_states[i].changedSinceLastSync;
+        controllers[i]->pressed = click_states[i].currentState && click_states[i].isActive;
+        XrSpaceLocation space_location{};
+        space_location.type = XR_TYPE_SPACE_LOCATION;
+        XrResult res = xrLocateSpace(
+            grip_pose_space[i],
+            xr_reference_space,
+            frame_state.predictedDisplayTime,
+            &space_location
+        );
+        transformable& ct = *controller_transforms[i];
+        if(
+            XR_UNQUALIFIED_SUCCESS(res) &&
+            (space_location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
+            (space_location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) != 0
+        ){
+            ct.set_orientation(quat(
+                space_location.pose.orientation.w,
+                space_location.pose.orientation.x,
+                space_location.pose.orientation.y,
+                space_location.pose.orientation.z
+            ));
+            ct.set_position(vec3(
+                space_location.pose.position.x,
+                space_location.pose.position.y,
+                space_location.pose.position.z
+            ));
+        }
+        else controllers[i]->connected = false;
     }
 }
 

@@ -1,0 +1,175 @@
+#version 460
+#line 3
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+//#extension GL_EXT_debug_printf : enable
+
+#include "restir.glsl"
+
+layout(push_constant) uniform push_constant_buffer
+{
+    restir_config config;
+    uvec2 display_size;
+    uint sample_index;
+    uint camera_index;
+    uint accumulated_samples;
+    uint initialize_output;
+    uint accumulate_color;
+    uint update_sample_color;
+} pc;
+
+layout(binding = 14) uniform sampler2D emission_tex;
+
+// These buffers are SUPER overloaded.
+// These names are for demodulated output, but they also contain demodulated
+// input or non-demodulated input/output.
+layout(binding = 16, rgba32f) uniform image2D out_diffuse;
+layout(binding = 17, rgba32f) uniform image2D out_reflection;
+
+// These names are for accumulation-enabled non-demodulated output.
+#define out_color out_reflection
+
+layout(binding = 18, rg32ui) readonly uniform uimage2D spatial_selection;
+layout(binding = 19, rgba32f) readonly uniform image2DArray mis_data;
+layout(binding = 20, rgba32f) readonly uniform image2DArray spatial_candidates;
+layout(binding = 21, rgba32f) readonly uniform image2D in_color;
+layout(binding = 22, r32f) uniform image2D out_confidence;
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+#include "restir_core.glsl"
+
+void finish_output_color(ivec2 p, reservoir r, vec4 out_value, sum_contribution sc)
+{
+    write_reservoir(r, p, pc.display_size);
+    if(pc.update_sample_color != 0)
+        imageStore(out_diffuse, p, out_value);
+    else
+    {
+#ifdef DEMODULATE_OUTPUT
+        vec2 ray_lengths = imageLoad(out_reflection, p).rg;
+        imageStore(out_diffuse, p, vec4(sc.diffuse, ray_lengths.r));
+        imageStore(out_reflection, p, vec4(sc.reflection, ray_lengths.g));
+#elif defined(SHADE_ALL_EXPLICIT_LIGHTS)
+        vec4 value = imageLoad(out_reflection, p);
+        imageStore(out_reflection, p, vec4(value.rgb + sc.diffuse, 1.0f));
+#else
+        imageStore(out_reflection, p, vec4(sc.diffuse, 1.0f));
+#endif
+    }
+#ifdef OUTPUT_CONFIDENCE
+    imageStore(out_confidence, p, vec4(r.confidence));
+#endif
+}
+
+void main()
+{
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+
+    if(any(greaterThanEqual(p, pc.display_size)))
+        return;
+
+    uvec4 seed = uvec4(p, pc.camera_index, pc.sample_index);
+    pcg4d(seed);
+
+    camera_data cam = camera.pairs[pc.camera_index].current;
+    vec3 origin = cam.origin.xyz;
+
+    reservoir r;
+    init_reservoir(r);
+
+    domain canonical_domain;
+    bool miss = read_domain(cam, p, canonical_domain);
+
+    uvec2 selection = imageLoad(spatial_selection, p).rg;
+    const uint candidate_key = selection.r;
+
+    float canonical_resampling_mis_weight = uintBitsToFloat(selection).g;
+
+    vec3 canonical_emission = sample_gbuffer_emission(emission_tex, p);
+    sum_contribution sc = init_sum_contribution(canonical_emission);
+    vec4 canonical_value = imageLoad(in_color, p);
+    vec4 out_value = canonical_value;
+
+    const float max_plane_dist = get_frustum_size(cam, canonical_domain.pos);
+
+    if(miss)
+    {
+        // Missed scene, so mark invalid so that temporal reprojection skips
+        // this pixel.
+        write_reservoir(r, p, pc.display_size);
+#ifdef DEMODULATE_OUTPUT
+        imageStore(out_diffuse, p, vec4(canonical_domain.mat.emission, 0.0f));
+        imageStore(out_reflection, p, vec4(0));
+#endif
+        return;
+    }
+
+    if(MAX_SPATIAL_SAMPLES == 0)
+    {
+        reservoir canonical_pixel = read_reservoir(p, pc.display_size);
+        add_contribution(sc, canonical_value, max(canonical_pixel.ucw, 0.0f));
+        finish_output_color(p, canonical_pixel, out_value, sc);
+        return;
+    }
+
+    int chosen_i = 0;
+    float chosen_jacobian_part = 0;
+
+    [[unroll]] for(int i = 0; i < MAX_SPATIAL_SAMPLES; ++i)
+    {
+        vec4 mis = imageLoad(mis_data, ivec3(p, i));
+        vec4 value = imageLoad(spatial_candidates, ivec3(p, i));
+
+        float confidence = mis.r;
+        float target_function_value = mis.a;
+        float resampling_mis_weight = mis.g;
+        float resampling_weight = resampling_mis_weight * target_function_value;
+        add_contribution(sc, value, resampling_mis_weight);
+        if(update_reservoir(generate_single_uniform_random(seed.x), r, target_function_value, resampling_weight, confidence))
+        {
+            chosen_i = i;
+            chosen_jacobian_part = mis.b;
+            out_value = value;
+        }
+    }
+
+    reservoir canonical_pixel = read_reservoir(p, pc.display_size);
+    // Insert the pixel's own reservoir from the previous step. This must be
+    // done last so that pairwise MIS works (we accumulate
+    // canonical_resampling_mis_weight previously)
+    float resampling_weight = canonical_resampling_mis_weight * canonical_pixel.target_function_value * max(canonical_pixel.ucw, 0); // w_i
+
+    add_contribution(sc, canonical_value, canonical_resampling_mis_weight * max(canonical_pixel.ucw, 0));
+
+    if(update_reservoir(
+        generate_single_uniform_random(seed.x), r,
+        canonical_pixel.target_function_value,
+        resampling_weight,
+        canonical_pixel.confidence
+    )){
+        r.output_sample = canonical_pixel.output_sample;
+        out_value = canonical_value;
+    }
+    else
+    {
+        mat3 flat_tbn = create_tangent_space(canonical_domain.flat_normal);
+        spatial_candidate_sampler scs = init_spatial_candidate_sampler(
+            cam, canonical_domain.pos, flat_tbn, max_plane_dist
+        );
+        ivec2 s = spatial_candidate_pos(
+            candidate_key, p, ivec2(pc.display_size), scs,
+            pc.camera_index, pc.sample_index, chosen_i
+        );
+        r.output_sample = read_reservoir(s, pc.display_size).output_sample; // X_i
+        r.output_sample.base_path_jacobian_part = chosen_jacobian_part;
+    }
+
+    // Update UCW
+    if(r.target_function_value > 0)
+        r.ucw = r.sum_weight/r.target_function_value;
+
+    finish_output_color(p, r, out_value, sc);
+}

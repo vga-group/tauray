@@ -24,6 +24,7 @@ struct device
     vk::PhysicalDeviceExternalMemoryHostPropertiesEXT ext_mem_props;
     vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rt_props;
     vk::PhysicalDeviceRayTracingPipelineFeaturesKHR rt_feats;
+    vk::PhysicalDeviceRayQueryFeaturesKHR rq_feats;
     vk::PhysicalDeviceAccelerationStructurePropertiesKHR as_props;
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR as_feats;
     vk::PhysicalDeviceMultiviewProperties mv_props;
@@ -95,6 +96,8 @@ public:
     device_mask& operator|=(device_mask other);
     device_mask& operator&=(device_mask other);
     device_mask& operator^=(device_mask other);
+
+    size_t get_min_storage_buffer_alignment() const;
 
 private:
     context* ctx;

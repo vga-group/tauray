@@ -78,11 +78,11 @@ void main()
 
         pt_vertex_data first_hit_vertex;
         sampled_material first_hit_material;
-        vec3 color, direct, diffuse;
+        vec4 diffuse, reflection;
 
         evaluate_ray(
             ls, global_pos, global_ray_dir,
-            color, direct, diffuse, first_hit_vertex, first_hit_material
+            diffuse, reflection, first_hit_vertex, first_hit_material
         );
 
         // There is no need to be able to represent distances further than one
@@ -92,7 +92,7 @@ void main()
             0.0, SQRT3
         );
 
-        vec4 coefs = vec4(color, dist) * coef_mult;
+        vec4 coefs = vec4(modulate_color(first_hit_material, diffuse.rgb, reflection.rgb), dist) * coef_mult;
         sh_probe local_probe = eval_sh_basis(local_ray_dir, coefs);
         if(i == 0) sum_probe = local_probe;
         else for(int l = 0; l < SH_COEF_COUNT; ++l)

@@ -7,6 +7,7 @@
 hitAttributeEXT vec2 attribs;
 
 #define CALC_PREV_VERTEX_POS
+#define DISTRIBUTION_DATA_BINDING 0
 #include "rt_feature.glsl"
 
 layout(location = 0) rayPayloadInEXT hit_payload payload;

@@ -94,6 +94,12 @@ public:
         const texture& tex
     );
 
+    void set_image_array(
+        uint32_t index,
+        std::string_view name,
+        const texture& tex
+    );
+
     void set_buffer(
         device_id id,
         uint32_t index,
@@ -153,6 +159,11 @@ public:
     );
 
     void set_image(
+        std::string_view name,
+        const texture& tex
+    );
+
+    void set_image_array(
         std::string_view name,
         const texture& tex
     );

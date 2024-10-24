@@ -21,7 +21,7 @@ class sh_renderer
 public:
     using options = sh_path_tracer_stage::options;
 
-    sh_renderer(context& ctx, scene_stage& ss, const options& opt);
+    sh_renderer(device_mask dev, scene_stage& ss, const options& opt);
     sh_renderer(const sh_renderer& other) = delete;
     sh_renderer(sh_renderer&& other) = delete;
     ~sh_renderer();
@@ -31,7 +31,7 @@ public:
 private:
     void update_grids();
 
-    context* ctx;
+    device_mask dev;
     options opt;
     scene_stage* ss = nullptr;
     uint32_t scene_state_counter = 0;
@@ -40,8 +40,8 @@ private:
 
     struct per_grid_data
     {
-        std::unique_ptr<sh_path_tracer_stage> pt;
-        std::unique_ptr<sh_compact_stage> compact;
+        std::vector<std::unique_ptr<sh_path_tracer_stage>> pt;
+        std::vector<std::unique_ptr<sh_compact_stage>> compact;
     };
     std::vector<per_grid_data> per_grid;
 };

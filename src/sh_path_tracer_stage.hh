@@ -59,6 +59,7 @@ private:
     texture* output_grid;
     vk::ImageLayout output_layout;
     gpu_buffer grid_data;
+    uint64_t history_length;
 };
 
 }

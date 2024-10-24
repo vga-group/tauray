@@ -5,74 +5,21 @@
 #include "tinyexr.h"
 namespace fs = std::filesystem;
 
+size_t std::hash<tr::texture_view_params>::operator()(const tr::texture_view_params& v) const
+{
+    std::size_t seed = 0;
+    tr::hash_combine(seed, v.layer_index);
+    tr::hash_combine(seed, v.layer_count);
+    tr::hash_combine(seed, v.mipmap_index);
+    tr::hash_combine(seed, v.mipmap_count);
+    tr::hash_combine(seed, (unsigned)(VkImageViewType)v.type);
+    return seed;
+}
+
+
 namespace
 {
 using namespace tr;
-
-void create_tex(
-    device& dev,
-    unsigned array_layers,
-    vkm<vk::Image>& img,
-    vkm<vk::ImageView>& array_view,
-    std::vector<vkm<vk::ImageView>>& layer_views,
-    std::vector<vkm<vk::ImageView>>& multiview_block_views,
-    vk::ImageCreateInfo info,
-    vk::ImageLayout layout,
-    size_t data_size,
-    void* pixel_data
-){
-    layer_views.clear();
-    multiview_block_views.clear();
-    img = sync_create_gpu_image(
-        dev,
-        info,
-        layout,
-        data_size,
-        pixel_data
-    );
-
-    vk::ImageViewType base_type = info.imageType == vk::ImageType::e3D ?
-            vk::ImageViewType::e3D :
-            vk::ImageViewType::e2D;
-    vk::ImageViewType array_type = base_type;
-    if(base_type == vk::ImageViewType::e2D)
-        array_type = vk::ImageViewType::e2DArray;
-
-    vk::ImageViewCreateInfo view_info = {
-        {},
-        img,
-        array_type,
-        info.format,
-        {},
-        {
-            deduce_aspect_mask(info.format),
-            0, info.mipLevels, 0, VK_REMAINING_ARRAY_LAYERS
-        }
-    };
-    array_view = vkm(dev, dev.logical.createImageView(view_info));
-
-    view_info.viewType = base_type;
-    for(unsigned i = 0; i < array_layers; ++i)
-    {
-        view_info.subresourceRange.baseArrayLayer = i;
-        view_info.subresourceRange.layerCount = 1;
-        layer_views.emplace_back(dev, dev.logical.createImageView(view_info));
-    }
-
-    view_info.viewType = array_type;
-    for(unsigned i = 0; i < array_layers; i += dev.mv_props.maxMultiviewViewCount)
-    {
-        view_info.subresourceRange.baseArrayLayer = i;
-        view_info.subresourceRange.layerCount = min(
-            dev.mv_props.maxMultiviewViewCount,
-            array_layers - i
-        );
-        multiview_block_views.emplace_back(
-            dev,
-            dev.logical.createImageView(view_info)
-        );
-    }
-}
 
 void insert_strided(
     std::vector<uint8_t>& data,
@@ -220,6 +167,16 @@ float* read_exr(
 namespace tr
 {
 
+bool texture_view_params::operator==(const texture_view_params& other) const
+{
+    return
+        layer_index == other.layer_index &&
+        layer_count == other.layer_count &&
+        mipmap_index == other.mipmap_index &&
+        mipmap_count == other.mipmap_count &&
+        type == other.type;
+}
+
 texture::texture(device_mask dev, const std::string& path)
 : opaque(false), buffers(dev)
 {
@@ -270,7 +227,17 @@ texture::texture(texture&& other)
 
 vk::ImageView texture::get_array_image_view(device_id id) const
 {
-    return buffers[id].array_view;
+    vk::ImageViewType view_type = type == vk::ImageType::e3D ?
+            vk::ImageViewType::e3D :
+            vk::ImageViewType::e2DArray;
+
+    return get_mipmap_view(id, texture_view_params{
+        0,
+        VK_REMAINING_ARRAY_LAYERS,
+        0,
+        VK_REMAINING_MIP_LEVELS,
+        view_type
+    });
 }
 
 vk::ImageView texture::get_layer_image_view(
@@ -278,7 +245,16 @@ vk::ImageView texture::get_layer_image_view(
     uint32_t layer_index
 ) const
 {
-    return buffers[id].layer_views[layer_index];
+    vk::ImageViewType view_type = type == vk::ImageType::e3D ?
+            vk::ImageViewType::e3D :
+            vk::ImageViewType::e2D;
+    return get_mipmap_view(id, texture_view_params{
+        layer_index,
+        1,
+        0,
+        VK_REMAINING_MIP_LEVELS,
+        view_type
+    });
 }
 
 vk::ImageView texture::get_image_view(device_id id) const
@@ -357,7 +333,7 @@ uvec3 texture::get_dimensions() const
 render_target texture::get_array_render_target(device_id id) const
 {
     const auto& buf = buffers[id];
-    return render_target(dim, 0, array_layers, buf.img, buf.array_view, layout, fmt, msaa);
+    return render_target(dim, 0, array_layers, buf.img, get_array_image_view(id), layout, fmt, msaa);
 }
 
 render_target texture::get_layer_render_target(
@@ -365,7 +341,7 @@ render_target texture::get_layer_render_target(
     uint32_t layer_index
 ) const {
     const auto& buf = buffers[id];
-    return render_target(dim, layer_index, 1, buf.img, buf.layer_views[layer_index], layout, fmt, msaa);
+    return render_target(dim, layer_index, 1, buf.img, get_layer_image_view(id, layer_index), layout, fmt, msaa);
 }
 
 render_target texture::get_multiview_block_render_target(
@@ -374,16 +350,37 @@ render_target texture::get_multiview_block_render_target(
 ) const {
     const auto& buf = buffers[id];
     uint32_t block_size = buffers.get_device(id).mv_props.maxMultiviewViewCount;
+
+    int layer_count = min(block_size, array_layers - block_index * block_size);
+
+    vk::ImageView view = get_mipmap_view(id, texture_view_params{
+        block_index * block_size,
+        VK_REMAINING_ARRAY_LAYERS,
+        0,
+        VK_REMAINING_MIP_LEVELS,
+        vk::ImageViewType::e2DArray
+    });
+
     return render_target(
         dim,
         block_index * block_size,
-        min(
-            array_layers - block_index * block_size,
-            block_size
-        ),
-        buf.img, buf.multiview_block_views[block_index], layout,
-        fmt,
-        msaa
+        layer_count,
+        buf.img,
+        view,
+        layout, fmt, msaa
+    );
+}
+
+render_target texture::get_render_target(device_id id, texture_view_params view) const
+{
+    const auto& buf = buffers[id];
+    return render_target(
+        dim,
+        view.layer_index,
+        view.layer_count,
+        buf.img,
+        get_mipmap_view(id, view),
+        layout, fmt, msaa
     );
 }
 
@@ -394,7 +391,8 @@ device_mask texture::get_mask() const
 
 size_t texture::get_multiview_block_count() const
 {
-    return buffers[0].multiview_block_views.size();
+    device& dev = *buffers.get_mask().begin();
+    return (array_layers+dev.mv_props.maxMultiviewViewCount-1) / dev.mv_props.maxMultiviewViewCount;
 }
 
 void texture::resize(uvec2 size)
@@ -530,12 +528,13 @@ void texture::load_from_file(const std::string& path)
 
 void texture::create(size_t data_size, void* data)
 {
+    mip_levels = data ? calculate_mipmap_count(uvec2(dim.x, dim.y)) : 1;
     vk::ImageCreateInfo img_info{
         {},
         type,
         fmt,
         {(uint32_t)dim.x, (uint32_t)dim.y, (uint32_t)dim.z},
-        data ? calculate_mipmap_count(uvec2(dim.x, dim.y)) : 1,
+        mip_levels,
         array_layers,
         msaa,
         tiling,
@@ -545,12 +544,40 @@ void texture::create(size_t data_size, void* data)
 
     for(auto[dev, buf]: buffers)
     {
-        create_tex(
-            dev, array_layers, buf.img, buf.array_view,
-            buf.layer_views, buf.multiview_block_views, img_info,
-            layout, data_size, data
+        buf.img = sync_create_gpu_image(
+            dev,
+            img_info,
+            layout,
+            data_size,
+            data
         );
     }
+}
+
+vk::ImageView texture::get_mipmap_view(device_id id, texture_view_params params) const
+{
+    const buffer_data& d = buffers[id];
+    auto it = d.views.find(params);
+    if(it != d.views.end())
+        return *(it->second);
+
+    vk::ImageViewCreateInfo view_info = {
+        {},
+        d.img,
+        params.type,
+        fmt,
+        {},
+        {
+            deduce_aspect_mask(fmt),
+            params.mipmap_index, params.mipmap_count,
+            params.layer_index, params.layer_count
+        }
+    };
+    vkm<vk::ImageView>& view = d.views.emplace(
+        params,
+        vkm<vk::ImageView>(buffers.get_device(id), buffers.get_device(id).logical.createImageView(view_info))
+    ).first->second;
+    return view;
 }
 
 }

@@ -100,6 +100,9 @@ bool get_intersection_info(
     nee_pdf.directional_light_pdf = 0;
     nee_pdf.tri_light_pdf = 0;
     nee_pdf.envmap_pdf = 0;
+    mat.metallic = 1;
+    mat.albedo = vec4(0);
+
     if(payload.instance_id >= 0)
     {
         float pdf = 0.0f;
@@ -202,7 +205,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
     float point_prob, triangle_prob, dir_prob, envmap_prob;
     get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
 
-    vec4 u = ldexp(vec4(rand_uint), ivec4(-32));
+    vec4 u = vec4(rand_uint) * INV_UINT32_MAX;
 
     if(false) {}
 #ifdef NEE_SAMPLE_POINT_LIGHTS
@@ -230,7 +233,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
         vec3 B = tl.pos[1]-pos;
         vec3 C = tl.pos[2]-pos;
 
-        vec3 color = tl.emission_factor;
+        vec3 color = r9g9b9e5_to_rgb(tl.emission_factor);
 
         float tri_pdf = 0.0f;
         out_dir = sample_triangle_light(u.xy, A, B, C, tri_pdf);
@@ -285,12 +288,11 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
     return vec3(0);
 }
 
-void next_event_estimation(
+vec3 next_event_estimation(
     uvec4 rand_uint,
     mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
-    inout vec3 diffuse_radiance,
-    inout vec3 specular_radiance
+    inout bsdf_lobes lobes
 ){
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_ENVMAP)
     if(false
@@ -312,23 +314,22 @@ void next_event_estimation(
         float light_pdf;
         // Sample lights
         vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf);
+        bool opaque = mat.transmittance < 0.0001f;
+        if(dot(v.hard_normal, out_dir) < 0 && opaque) contrib = vec3(0);
 
         vec3 shading_light = out_dir * tbn;
-        vec3 d, s;
-        float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, d, s);
-        bool opaque = mat.transmittance < 0.0001f;
-        d = dot(v.hard_normal, out_dir) < 0 && opaque ? vec3(0) : d;
-        s = dot(v.hard_normal, out_dir) < 0 && opaque ? vec3(0) : s;
-        shadow_terminator_fix(d, s, shading_light.z, mat);
+        lobes = bsdf_lobes(0,0,0,0);
+        float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
 
         // TODO: Check if this conditional just hurts performance
-        if(any(greaterThan((d+s) * contrib, vec3(0.0001f))))
+        if(any(greaterThan(contrib, vec3(0.0001f))))
             contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
         contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
-        diffuse_radiance += d * contrib;
-        specular_radiance += s * contrib;
+        return contrib;
     }
+#endif
+    return vec3(0);
 }
 
 // This is used to remove invalid ray directions, which are caused by normal
@@ -341,24 +342,34 @@ float ray_visibility(vec3 view, pt_vertex_data v)
     return step((1-nm) * dot(h, h), 2.0f * vh * vh);
 }
 
+float clamp_contribution_mul(vec3 contrib)
+{
+    if(control.indirect_clamping > 0.0f)
+    {
+        float m = rgb_to_luminance(contrib);
+        if(m > control.indirect_clamping)
+            return control.indirect_clamping / m;
+    }
+    return 1;
+}
+
 void evaluate_ray(
     inout local_sampler lsampler,
     vec3 pos,
     vec3 view,
-    out vec3 color,
-    out vec3 direct,
-    out vec3 diffuse,
+    out vec4 diffuse,
+    out vec4 reflection,
     out pt_vertex_data first_hit_vertex,
     out sampled_material first_hit_material
 ){
-    vec3 diffuse_attenuation_ratio = vec3(1);
     vec3 attenuation = vec3(1);
-    color = vec3(0);
-    direct = vec3(0);
-    diffuse = vec3(0);
+
+    diffuse = vec4(0,0,0,0);
+    reflection = vec4(0,0,0,0);
 
     float regularization = 1.0f;
     float bsdf_pdf = 0.0f;
+    bsdf_lobes primary_lobes = bsdf_lobes(0,0,0,1);
     payload.random_seed = pcg4d(lsampler.rs.seed).x;
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
@@ -386,7 +397,6 @@ void evaluate_ray(
         vec3 light;
         bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
 
-
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
         float mis_pdf = bsdf_mis_pdf(nee_pdf, bsdf_pdf);
@@ -396,13 +406,20 @@ void evaluate_ray(
             light = light / mis_pdf * bsdf_pdf;
         }
 
-        vec3 diffuse_radiance = vec3(0);
-        vec3 specular_radiance = mat.emission + light;
+        light = attenuation * (mat.emission + light);
+#ifndef INDIRECT_CLAMP_FIRST_BOUNCE
+        if(bounce != 0)
+#endif
+        {
+            light *= clamp_contribution_mul(light);
+        }
+        add_demodulated_color(primary_lobes, light, diffuse.rgb, reflection.rgb);
 
         if(bounce == 0)
         {
             first_hit_vertex = v;
             first_hit_material = mat;
+            first_hit_material.emission = light;
         }
 
 #ifdef PATH_SPACE_REGULARIZATION
@@ -415,49 +432,45 @@ void evaluate_ray(
 #endif
 
         mat3 tbn = create_tangent_space(v.mapped_normal);
-        vec3 shading_view = -view * tbn;
-
-        // A lot of the stuff below assumes that the view direction is on the same
-        // side as the normal. If not, everything breaks. Which is why this check
-        // exists. Normal maps can cause these degenerate cases.
-        if(shading_view.z < 0.00001f)
-            shading_view = vec3(shading_view.xy, max(shading_view.z, 0.00001f));
-
-        shading_view = normalize(shading_view);
+        vec3 shading_view = view_to_tangent_space(view, tbn);
 
         if(!terminal)
         {
             // Do NEE ray
-            next_event_estimation(
+            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+            vec3 radiance = attenuation * next_event_estimation(
                 generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
-                mat, v, diffuse_radiance, specular_radiance
+                mat, v, lobes
             );
-        }
-
-        // Then, calculate contribution to pixel color from current bounce.
-        vec3 contribution = attenuation * (diffuse_radiance * mat.albedo.rgb + specular_radiance);
-        if(
-#ifndef INDIRECT_CLAMP_FIRST_BOUNCE
-            bounce != 0 &&
+            if(bounce != 0)
+            {
+                radiance *= modulate_bsdf(mat, lobes);
+                radiance *= clamp_contribution_mul(radiance);
+            }
+            else
+            {
+                primary_lobes = lobes;
+#ifdef INDIRECT_CLAMP_FIRST_BOUNCE
+                radiance *= clamp_contribution_mul(radiance);
 #endif
-            control.indirect_clamping > 0.0f
-        ){
-            contribution = min(contribution, vec3(control.indirect_clamping));
+            }
+            add_demodulated_color(primary_lobes, radiance, diffuse.rgb, reflection.rgb);
+            if(bounce == 1)
+                diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
         }
 
-        color += contribution;
-        diffuse += bounce == 0 ? diffuse_radiance : diffuse_attenuation_ratio * contribution;
-        if(bounce == 0) direct += contribution;
         if(terminal) break;
 
         // Lastly, figure out the next ray and assign proper attenuation for it.
-        vec3 diffuse_weight = vec3(1.0f);
-        vec3 specular_weight = vec3(1.0f);
+        bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
-        material_bsdf_sample(ray_sample, shading_view, mat, view, diffuse_weight, specular_weight, bsdf_pdf);
+        material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
         view = tbn * view;
 
-        shadow_terminator_fix(diffuse_weight, specular_weight, dot(view, v.mapped_normal), mat);
+        if(bounce != 0)
+            attenuation *= modulate_bsdf(mat, lobes);
+        else
+            primary_lobes = lobes;
 
         float visibility = ray_visibility(view, v);
         pos = v.pos;
@@ -467,23 +480,8 @@ void evaluate_ray(
         if(ray_sample.w > qi) break;
         else visibility /= qi;
 #endif
-        attenuation *= (diffuse_weight * mat.albedo.rgb + specular_weight) * visibility;
-        if(bounce == 0)
-        {
-            diffuse_attenuation_ratio = diffuse_weight / (diffuse_weight * mat.albedo.rgb + specular_weight);
-            if(diffuse_weight.r < 1e-7) diffuse_attenuation_ratio.r = 0;
-            if(diffuse_weight.g < 1e-7) diffuse_attenuation_ratio.g = 0;
-            if(diffuse_weight.b < 1e-7) diffuse_attenuation_ratio.b = 0;
-        }
-
         if(max(attenuation.x, max(attenuation.y, attenuation.z)) <= 0.0f) break;
     }
-
-#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
-    vec3 specular = color - diffuse * first_hit_material.albedo.rgb;
-    specular /= mix(vec3(1), first_hit_material.albedo.rgb, first_hit_material.metallic);
-    color = diffuse + specular;
-#endif
 }
 
 #endif
@@ -522,8 +520,8 @@ void get_world_camera_ray(inout local_sampler lsampler, out vec3 origin, out vec
 
 void write_all_outputs(
     vec3 color,
-    vec3 direct,
-    vec3 diffuse,
+    vec4 diffuse,
+    vec4 reflection,
     pt_vertex_data first_hit_vertex,
     sampled_material first_hit_material
 ){
@@ -534,16 +532,6 @@ void write_all_outputs(
 #endif
     {
         uint prev_samples = distribution.samples_accumulated + control.previous_samples;
-
-#ifdef USE_TRANSPARENT_BACKGROUND
-        const float alpha = first_hit_material.albedo.a;
-#else
-        const float alpha = 1.0;
-#endif
-
-        accumulate_gbuffer_color(vec4(color, alpha), p, control.samples, prev_samples);
-        accumulate_gbuffer_direct(vec4(direct, alpha), p, control.samples, prev_samples);
-        accumulate_gbuffer_diffuse(vec4(diffuse, alpha), p, control.samples, prev_samples);
 
         if(prev_samples == 0)
         { // Only write gbuffer for the first sample.
@@ -560,8 +548,17 @@ void write_all_outputs(
             #endif
             write_gbuffer_instance_id(first_hit_vertex.instance_id, p);
         }
+
+#ifdef USE_TRANSPARENT_BACKGROUND
+        const float alpha = first_hit_material.albedo.a;
+#else
+        const float alpha = 1.0;
+#endif
+
+        accumulate_gbuffer_color(vec4(color, alpha), p, control.samples, prev_samples);
+        accumulate_gbuffer_diffuse(diffuse, p, control.samples, prev_samples);
+        accumulate_gbuffer_reflection(reflection, p, control.samples, prev_samples);
     }
 }
-#endif
 
 #endif

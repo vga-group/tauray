@@ -65,6 +65,7 @@ public:
     const std::vector<skin_data>& get_skin() const;
 
     vk::Buffer get_vertex_buffer(device_id id) const;
+    vk::Buffer get_prev_pos_buffer(device_id id) const;
     vk::Buffer get_index_buffer(device_id id) const;
     vk::Buffer get_skin_buffer(device_id id) const;
 
@@ -84,8 +85,8 @@ public:
     // indices are already filled out, but that tangents are garbage.
     void calculate_tangents();
 
-    static std::vector<vk::VertexInputBindingDescription> get_bindings();
-    static std::vector<vk::VertexInputAttributeDescription> get_attributes();
+    static std::vector<vk::VertexInputBindingDescription> get_bindings(bool animated = false);
+    static std::vector<vk::VertexInputAttributeDescription> get_attributes(bool animated = false);
 
 private:
     void init_buffers();
@@ -100,6 +101,7 @@ private:
     struct buffer_data
     {
         vkm<vk::Buffer> vertex_buffer;
+        vkm<vk::Buffer> prev_pos_buffer; // Only allocated for animated meshes.
         vkm<vk::Buffer> index_buffer;
         vkm<vk::Buffer> skin_buffer;
     };

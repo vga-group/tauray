@@ -24,6 +24,7 @@ public:
         float sigma_n;
         float temporal_alpha_color;
         float temporal_alpha_moments;
+        bool color_buffer_contains_direct_light = false;
     };
 
     svgf_stage(
@@ -46,23 +47,36 @@ private:
     compute_pipeline atrous_comp;
     push_descriptor_set temporal_desc;
     compute_pipeline temporal_comp;
-    push_descriptor_set estimate_variance_desc;
-    compute_pipeline estimate_variance_comp;
+    push_descriptor_set firefly_suppression_desc;
+    compute_pipeline firefly_suppression_comp;
+    push_descriptor_set disocclusion_fix_desc;
+    compute_pipeline disocclusion_fix_comp;
+    push_descriptor_set hit_dist_reconstruction_desc;
+    compute_pipeline hit_dist_reconstruction_comp;
     options opt;
     gbuffer_target input_features;
     gbuffer_target prev_features;
     render_target atrous_diffuse_pingpong[2];
     render_target atrous_specular_pingpong[2];
-    render_target moments_history[2];
+    render_target history_length[2]; // R: diffuse history length, G: diffuse alpha, G: specular history length A: specular alpha
     render_target svgf_color_hist;
     render_target svgf_spec_hist;
-    std::unique_ptr<texture> render_target_texture[8];
+    render_target specular_hit_distance[2];
+    static constexpr uint32_t render_target_count = 10;
+    std::unique_ptr<texture> render_target_texture[render_target_count];
     timer svgf_timer;
 
-    std::vector<vec4> jitter_history;
-    gpu_buffer jitter_buffer;
+    timer reconstruction_timer;
+    timer disocclusion_timer;
+    timer firefly_timer;
+    timer temporal_timer;
+    timer atrous_timer;
+
+    sampler my_sampler;
     scene_stage* ss;
     uint32_t scene_state_counter;
+
+    gpu_buffer uniforms;
 };
 }
 

@@ -23,6 +23,8 @@ public:
         vk::Image dst;
         size_t bytes_per_pixel;
         vk::ImageCopy info;
+        vk::ImageLayout src_layout = vk::ImageLayout::eTransferSrcOptimal;
+        vk::ImageLayout dst_layout = vk::ImageLayout::eGeneral;
     };
 
     struct buffer_transfer

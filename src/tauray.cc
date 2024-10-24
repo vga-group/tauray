@@ -9,6 +9,7 @@
 #include "server_context.hh"
 #include "raster_renderer.hh"
 #include "dshgi_renderer.hh"
+#include "restir_renderer.hh"
 #include "dshgi_server.hh"
 #include "frame_client.hh"
 #include "rt_renderer.hh"
@@ -362,6 +363,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     bool use_shadow_terminator_fix = false;
     bool has_tri_lights = false;
+    bool has_sh_grids = s.count<sh_grid>() != 0;
     bool has_point_lights = s.count<point_light>() + s.count<spotlight>() > 0;
     bool has_directional_lights = s.count<directional_light>() > 0;
     s.foreach([&](model& mod){
@@ -383,7 +385,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     scene_options.group_strategy = opt.as_strategy;
 
     taa_stage::options taa;
-    taa.blending_ratio = 1.0f - 1.0f/opt.taa.sequence_length;
+    taa.alpha = 1.0f/opt.taa.sequence_length;
+    taa.anti_shimmer = opt.taa.anti_shimmer;
+    taa.edge_dilation = opt.taa.edge_dilation;
 
     rt_camera_stage::options rc_opt;
     s.foreach([&](camera& cam){ rc_opt.projection = cam.get_projection_type(); });
@@ -397,7 +401,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.rng_seed = opt.rng_seed;
     rc_opt.local_sampler = opt.sampler;
     rc_opt.transparent_background = opt.transparent_background;
-    rc_opt.pre_transformed_vertices = opt.pre_transform_vertices;
     rc_opt.active_viewport_count =
         opt.spatial_reprojection.size() == 0 ?
         ctx.get_display_count() :
@@ -416,6 +419,24 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     sampling_weights.directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
     sampling_weights.envmap = get_environment_map(s) ? opt.sample_envmap : 0.0f;
     sampling_weights.emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
+
+    sh_renderer::options sh;
+    (rt_stage::options&)sh = rc_opt;
+    sh.samples_per_probe = opt.samples_per_probe;
+    sh.film = opt.film;
+    sh.film_radius = opt.film_radius;
+    sh.mis_mode = opt.multiple_importance_sampling;
+    sh.russian_roulette_delta = opt.russian_roulette;
+    sh.temporal_ratio = opt.dshgi_temporal_ratio;
+    sh.indirect_clamping = opt.indirect_clamping;
+    sh.regularization_gamma = opt.regularization;
+    sh.sampling_weights = sampling_weights;
+
+    shadow_map_filter sm_filter;
+    sm_filter.pcf_samples = min(opt.pcf, 64);
+    sm_filter.omni_pcf_samples = min(opt.pcf, 64);
+    sm_filter.pcss_samples = min(opt.pcss, 64);
+    sm_filter.pcss_minimum_radius = opt.pcss_minimum_radius;
 
     auto_assign_shadow_maps(
         s,
@@ -482,14 +503,14 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if (opt.denoiser == options::denoiser_type::SVGF)
                 {
                     svgf_stage::options svgf_opt{};
-                    svgf_opt.atrous_diffuse_iters = opt.svgf_params.atrous_diffuse_iter;
-                    svgf_opt.atrous_spec_iters = opt.svgf_params.atrous_spec_iter;
-                    svgf_opt.atrous_kernel_radius = opt.svgf_params.atrous_kernel_radius;
-                    svgf_opt.sigma_l = opt.svgf_params.sigma_l;
-                    svgf_opt.sigma_n = opt.svgf_params.sigma_n;
-                    svgf_opt.sigma_z = opt.svgf_params.sigma_z;
-                    svgf_opt.temporal_alpha_color = opt.svgf_params.min_alpha_color;
-                    svgf_opt.temporal_alpha_moments = opt.svgf_params.min_alpha_moments;
+                    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
+                    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
+                    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
+                    svgf_opt.sigma_l = opt.svgf.sigma_l;
+                    svgf_opt.sigma_n = opt.svgf.sigma_n;
+                    svgf_opt.sigma_z = opt.svgf.sigma_z;
+                    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
+                    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
                 }
                 else if (opt.denoiser == options::denoiser_type::BMFR)
@@ -526,14 +547,14 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if(opt.denoiser == options::denoiser_type::SVGF)
                 {
                     svgf_stage::options svgf_opt{};
-                    svgf_opt.atrous_diffuse_iters = opt.svgf_params.atrous_diffuse_iter;
-                    svgf_opt.atrous_spec_iters = opt.svgf_params.atrous_spec_iter;
-                    svgf_opt.atrous_kernel_radius = opt.svgf_params.atrous_kernel_radius;
-                    svgf_opt.sigma_l = opt.svgf_params.sigma_l;
-                    svgf_opt.sigma_n = opt.svgf_params.sigma_n;
-                    svgf_opt.sigma_z = opt.svgf_params.sigma_z;
-                    svgf_opt.temporal_alpha_color = opt.svgf_params.min_alpha_color;
-                    svgf_opt.temporal_alpha_moments = opt.svgf_params.min_alpha_moments;
+                    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
+                    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
+                    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
+                    svgf_opt.sigma_l = opt.svgf.sigma_l;
+                    svgf_opt.sigma_n = opt.svgf.sigma_n;
+                    svgf_opt.sigma_z = opt.svgf.sigma_z;
+                    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
+                    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
                 }
                 else if(opt.denoiser == options::denoiser_type::BMFR)
@@ -550,12 +571,12 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rr_opt.msaa_samples = opt.samples_per_pixel;
                 rr_opt.sample_shading = opt.sample_shading;
                 if(opt.taa.sequence_length != 0)
+                {
                     rr_opt.post_process.taa = taa;
+                    rr_opt.unjitter_textures = true;
+                }
                 rr_opt.post_process.tonemap = tonemap;
-                rr_opt.pcf_samples = min(opt.pcf, 64);
-                rr_opt.omni_pcf_samples = min(opt.pcf, 64);
-                rr_opt.pcss_samples = min(opt.pcss, 64);
-                rr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
+                rr_opt.filter = sm_filter;
                 rr_opt.z_pre_pass = opt.use_z_pre_pass;
                 rr_opt.scene_options = scene_options;
                 return new raster_renderer(ctx, rr_opt);
@@ -563,17 +584,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         case options::DSHGI:
             {
                 dshgi_renderer::options dr_opt;
-                sh_renderer::options sh;
-                (rt_stage::options&)sh = rc_opt;
-                sh.samples_per_probe = opt.samples_per_probe;
-                sh.film = opt.film;
-                sh.film_radius = opt.film_radius;
-                sh.mis_mode = opt.multiple_importance_sampling;
-                sh.russian_roulette_delta = opt.russian_roulette;
-                sh.temporal_ratio = opt.dshgi_temporal_ratio;
-                sh.indirect_clamping = opt.indirect_clamping;
-                sh.regularization_gamma = opt.regularization;
-                sh.sampling_weights = sampling_weights;
                 dr_opt.sh_source = sh;
                 dr_opt.sh_order = opt.sh_order;
                 dr_opt.use_probe_visibility = opt.use_probe_visibility;
@@ -582,10 +592,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 dr_opt.post_process.tonemap = tonemap;
                 dr_opt.msaa_samples = opt.samples_per_pixel;
                 dr_opt.sample_shading = opt.sample_shading;
-                dr_opt.pcf_samples = min(opt.pcf, 64);
-                dr_opt.omni_pcf_samples = min(opt.pcf, 64);
-                dr_opt.pcss_samples = min(opt.pcss, 64);
-                dr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
+                dr_opt.filter = sm_filter;
                 dr_opt.z_pre_pass = opt.use_z_pre_pass;
                 dr_opt.scene_options = scene_options;
                 dr_opt.scene_options.alloc_sh_grids = true;
@@ -594,16 +601,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         case options::DSHGI_SERVER:
             {
                 dshgi_server::options dr_opt;
-                (rt_stage::options&)dr_opt.sh = rc_opt;
-                dr_opt.sh.samples_per_probe = opt.samples_per_probe;
-                dr_opt.sh.film = opt.film;
-                dr_opt.sh.film_radius = opt.film_radius;
-                dr_opt.sh.mis_mode = opt.multiple_importance_sampling;
-                dr_opt.sh.russian_roulette_delta = opt.russian_roulette;
-                dr_opt.sh.temporal_ratio = opt.dshgi_temporal_ratio;
-                dr_opt.sh.indirect_clamping = opt.indirect_clamping;
-                dr_opt.sh.regularization_gamma = opt.regularization;
-                dr_opt.sh.sampling_weights = sampling_weights;
+                dr_opt.sh = sh;
                 dr_opt.port_number = opt.port;
                 return new dshgi_server(ctx, dr_opt);
             }
@@ -620,32 +618,59 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     dr_opt.post_process.taa = taa;
                 dr_opt.msaa_samples = opt.samples_per_pixel;
                 dr_opt.sample_shading = opt.sample_shading;
-                dr_opt.pcf_samples = min(opt.pcf, 64);
-                dr_opt.omni_pcf_samples = min(opt.pcf/2, 64);
-                dr_opt.pcss_samples = min(opt.pcss, 64);
-                dr_opt.pcss_minimum_radius = opt.pcss_minimum_radius;
+                dr_opt.filter = sm_filter;
                 dr_opt.z_pre_pass = opt.use_z_pre_pass;
                 dr_opt.scene_options = scene_options;
                 dr_opt.scene_options.alloc_sh_grids = true;
                 return new dshgi_renderer(ctx, dr_opt);
             }
-        case options::RESTIR_DI:
+        case options::RESTIR:
+        case options::RESTIR_HYBRID:
             {
-                restir_di_renderer::options re_opt;
-                (rt_camera_stage::options&)re_opt = rc_opt;
-                re_opt.search_radius = opt.restir_di.search_radius;
-                re_opt.ris_sample_count = opt.restir_di.ris_samples;
-                re_opt.spatial_sample_count = opt.restir_di.spatial_samples;
-                re_opt.max_confidence = opt.restir_di.max_confidence;
-                re_opt.temporal_reuse = opt.restir_di.max_confidence > 0;
-                re_opt.spatial_reuse = opt.restir_di.spatial_samples > 0;
-                re_opt.shared_visibility = opt.restir_di.shared_visibility;
-                re_opt.sample_visibility = opt.restir_di.sample_visibility;
+                restir_renderer::options re_opt;
                 re_opt.scene_options = scene_options;
-                re_opt.tri_light_mode = opt.tri_light_mode;
-                re_opt.post_process.tonemap = tonemap;
+                re_opt.tonemap_options = tonemap;
+                re_opt.sh_options = sh;
+                re_opt.sh_options.max_ray_depth = 4;
+                re_opt.sm_filter = sm_filter;
+                re_opt.restir_options.sampling_weights = sampling_weights;
+                re_opt.restir_options.max_bounces = opt.max_ray_depth-1;
+                re_opt.restir_options.regularization_gamma = opt.regularization;
+                re_opt.restir_options.max_confidence = opt.restir.max_confidence;
+                re_opt.restir_options.temporal_reuse = opt.restir.temporal_reuse;
+                re_opt.restir_options.canonical_samples = opt.restir.canonical_samples;
+                re_opt.restir_options.spatial_samples = opt.restir.spatial_samples;
+                re_opt.restir_options.spatial_sample_oriented_disk = opt.restir.sample_spatial_disk;
+                re_opt.restir_options.shift_map = opt.restir.shift_mapping_type;
+                re_opt.restir_options.passes = opt.restir.passes;
+                re_opt.restir_options.reconnection_scale = opt.restir.reconnection_scale;
+                re_opt.restir_options.max_spatial_search_radius = opt.restir.max_search_radius;
+                re_opt.restir_options.min_spatial_search_radius = opt.restir.min_search_radius;
+                re_opt.restir_options.assume_unchanged_material = opt.restir.assume_unchanged_material;
+                re_opt.restir_options.assume_unchanged_acceleration_structures = opt.restir.assume_unchanged_acceleration_structures;
+                re_opt.restir_options.assume_unchanged_reconnection_radiance = opt.restir.assume_unchanged_reconnection_radiance;
+                re_opt.restir_options.assume_unchanged_temporal_visibility = opt.restir.assume_unchanged_temporal_visibility;
+                re_opt.restir_options.shade_all_explicit_lights = *rtype == options::RESTIR_HYBRID;
+                re_opt.restir_options.shade_fake_indirect = *rtype == options::RESTIR_HYBRID && has_sh_grids;
 
-                return new restir_di_renderer(ctx, re_opt);
+                if(opt.taa.sequence_length > 1)
+                    re_opt.taa_options = taa;
+
+                if (opt.denoiser == options::denoiser_type::SVGF)
+                {
+                    svgf_stage::options svgf_opt{};
+                    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
+                    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
+                    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
+                    svgf_opt.sigma_l = opt.svgf.sigma_l;
+                    svgf_opt.sigma_n = opt.svgf.sigma_n;
+                    svgf_opt.sigma_z = opt.svgf.sigma_z;
+                    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
+                    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
+                    re_opt.svgf_options = svgf_opt;
+                }
+
+                return new restir_renderer(ctx, re_opt);
             }
         };
     }
@@ -798,6 +823,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
     bool recreate_renderer = true;
     bool crash_on_exception = true;
     bool camera_moved = false;
+    bool has_events = SDL_WasInit(SDL_INIT_EVENTS);
 
     ivec3 camera_movement = ivec3(0);
     std::string command_line;
@@ -837,7 +863,8 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         }
 
         SDL_Event event;
-        while(SDL_PollEvent(&event)) switch(event.type)
+
+        while(has_events && SDL_PollEvent(&event)) switch(event.type)
         {
         case SDL_QUIT:
             opt.running = false;
@@ -985,12 +1012,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
     // Ensure everything is finished before going to destructors.
     ctx.sync();
-
-    // TODO: This hack prevents SteamVR from freezing on exit. This isn't just
-    // a Tauray bug, it seems every Vulkan+Linux+Nvidia combo causes that...
-    // Remove it once SteamVR isn't busted anymore.
-    if(opt.display == options::display_type::OPENXR)
-        abort();
 }
 
 void replay_viewer(context& ctx, scene_data& sd, options& opt)

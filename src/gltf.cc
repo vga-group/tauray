@@ -693,14 +693,15 @@ scene_assets load_gltf(
             }
 
             bool generate_tangents = false;
-            if(vert_tangent.size() == 0 && primitive_material.normal_tex.first)
+            if(vert_tangent.size() == 0)
             {
-                TR_WARN(
-                    path, ": ", tg_mesh.name,
-                    " uses a normal map but is missing tangent data. Please "
-                    "export the asset with [Geometry > Tangents] ticked in "
-                    "Blender."
-                );
+                if(primitive_material.normal_tex.first)
+                    TR_WARN(
+                        path, ": ", tg_mesh.name,
+                        " uses a normal map but is missing tangent data. Please "
+                        "export the asset with [Geometry > Tangents] ticked in "
+                        "Blender."
+                    );
                 generate_tangents = true;
             }
 

@@ -12,7 +12,7 @@ using namespace tr;
 // The shadow map renderer uses a custom camera that is not part of the scene.
 struct camera_data_buffer
 {
-    mat4 view_proj;
+    pmat4 view_proj;
 };
 
 struct push_constant_buffer

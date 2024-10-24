@@ -31,8 +31,7 @@ rt_renderer<Pipeline>::rt_renderer(context& ctx, const options& opt)
 
     if(
         (opt.projection == camera::PERSPECTIVE ||
-         opt.projection == camera::ORTHOGRAPHIC) ||
-        std::is_same_v<Pipeline, restir_di_stage>
+         opt.projection == camera::ORTHOGRAPHIC)
     ) use_raster_gbuffer = true;
 
     std::vector<device>& devices = ctx.get_devices();
@@ -88,7 +87,7 @@ void rt_renderer<Pipeline>::render()
     uint32_t swapchain_index, frame_index;
     ctx->get_indices(swapchain_index, frame_index);
 
-    const bool raster_before_rt = std::is_same_v<Pipeline, restir_di_stage>;
+    const bool raster_before_rt = false;
 
     device& display_device = ctx->get_display_device();
     std::vector<device>& devices = ctx->get_devices();
@@ -194,43 +193,35 @@ void rt_renderer<Pipeline>::init_resources()
     post_processing.emplace(ctx->get_display_device(), *scene_update, ctx->get_size(), get_pp_opt(opt));
     post_processing->set_gbuffer_spec(spec);
 
-    if constexpr(std::is_same_v<Pipeline, restir_di_stage>)
-    {
-        spec.flat_normal_present = true;
-        spec.albedo_present = true;
-        spec.emission_present = true;
-        spec.material_present = true;
-        spec.normal_present = true;
-        spec.pos_present = true;
-        spec.screen_motion_present = true;
-    }
-
     // Disable raster G-Buffer when nothing rasterizable is needed.
     if(
         spec.present_count()
         - spec.color_present
-        - spec.direct_present
-        - spec.diffuse_present == 0
+        - spec.diffuse_present
+        - spec.reflection_present == 0
     ) use_raster_gbuffer = false;
 
     vk::ImageUsageFlags img_usage = vk::ImageUsageFlagBits::eStorage|vk::ImageUsageFlagBits::eTransferSrc;
     if(use_raster_gbuffer) img_usage |= vk::ImageUsageFlagBits::eColorAttachment;
 
     spec.set_all_usage(img_usage);
+    spec.set_all_usage(img_usage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst);
+
     spec.color_usage = vk::ImageUsageFlagBits::eStorage|
         vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eTransferSrc;
 
     if(use_raster_gbuffer)
     {
         spec.depth_present = true;
-        spec.depth_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment|
-            vk::ImageUsageFlagBits::eTransferSrc;
+        spec.depth_usage = vk::ImageUsageFlagBits::eDepthStencilAttachment |
+            vk::ImageUsageFlagBits::eTransferSrc |
+            vk::ImageUsageFlagBits::eSampled;
         copy_spec.color_present = spec.color_present;
         copy_spec.color_format = spec.color_format;
         copy_spec.diffuse_present = spec.diffuse_present;
         copy_spec.diffuse_format = spec.diffuse_format;
-        copy_spec.direct_present = spec.direct_present;
-        copy_spec.direct_format = spec.direct_format;
+        copy_spec.reflection_present = spec.reflection_present;
+        copy_spec.reflection_format = spec.reflection_format;
     }
     else
         copy_spec = spec;
@@ -273,12 +264,12 @@ void rt_renderer<Pipeline>::init_resources()
         }
 
         gbuffer_target transfer_target = gbuffer.get_array_target(d.id);
-        if(use_raster_gbuffer && !std::is_same_v<Pipeline, restir_di_stage>)
+        if(use_raster_gbuffer)
         {
             gbuffer_target limited_target;
             limited_target.color = transfer_target.color;
             limited_target.diffuse = transfer_target.diffuse;
-            limited_target.direct = transfer_target.direct;
+            limited_target.reflection = transfer_target.reflection;
             transfer_target = limited_target;
         }
         transfer_target.set_layout(is_display_device ?
@@ -307,7 +298,7 @@ void rt_renderer<Pipeline>::init_resources()
                 gbuffer_target limited_target;
                 limited_target.color = dimg.color;
                 limited_target.diffuse = dimg.diffuse;
-                limited_target.direct = dimg.direct;
+                limited_target.reflection = dimg.reflection;
                 dimg = limited_target;
             }
             dimgs.push_back(dimg);
@@ -332,8 +323,8 @@ void rt_renderer<Pipeline>::init_resources()
     if(use_raster_gbuffer)
     {
         raster_stage::options raster_opt;
-        raster_opt.pcf_samples = 0;
-        raster_opt.pcss_samples = 0;
+        raster_opt.filter.pcf_samples = 0;
+        raster_opt.filter.pcss_samples = 0;
         raster_opt.output_layout = vk::ImageLayout::eGeneral;
         raster_opt.force_alpha_to_coverage = opt.post_process.bmfr || opt.post_process.svgf_denoiser ? true : false;
 
@@ -344,7 +335,7 @@ void rt_renderer<Pipeline>::init_resources()
             gbuffer_target mv_target = gbuffer.get_multiview_block_target(display_device.id, i);
             mv_target.color = render_target();
             mv_target.diffuse = render_target();
-            mv_target.direct = render_target();
+            mv_target.reflection = render_target();
             gbuffer_block_targets.push_back(mv_target);
         }
 
@@ -419,6 +410,5 @@ void rt_renderer<Pipeline>::prepare_transfers(bool reserve)
 template class rt_renderer<path_tracer_stage>;
 template class rt_renderer<feature_stage>;
 template class rt_renderer<direct_stage>;
-template class rt_renderer<restir_di_stage>;
 
 }

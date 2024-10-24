@@ -11,7 +11,7 @@ sampler_table::sampler_table(device_mask dev, bool use_mipmaps)
         vk::SamplerAddressMode::eRepeat,
         vk::SamplerAddressMode::eRepeat,
         vk::SamplerMipmapMode::eLinear,
-        use_mipmaps ? 16 : 0, true, use_mipmaps, false, -1.0f
+        use_mipmaps ? 16 : 0, true, use_mipmaps, false, 0.0f
     )
 {
 }
