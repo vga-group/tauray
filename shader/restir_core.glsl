@@ -1151,6 +1151,7 @@ light_sample sample_light(
         ls.instance_id = ENVMAP_INSTANCE_ID;
         ls.primitive_id = floatBitsToUint(local_pdf * envmap_prob);
         ls.hit_info = octahedral_pack(ls.dir) * 0.5f + 0.5f;
+        ls.dist = max_dist;
 
         ls.pdf = envmap_prob;
     }
