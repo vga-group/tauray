@@ -1622,12 +1622,11 @@ There are things that Tauray does not handle well. In such cases, you may want
 to use some other tool instead. This list of limitations may also change in the
 future, as we work on implementing more missing features. Namely:
 
-* Poor sampling of non-spherical area lights (i.e. emissive volumes). There is
-  no importance sampling for these yet, so the image will be pretty noisy.
 * Morph target animations are not supported.
 * Advanced material models are not yet supported, only the basic GGX
   metallic-roughness + transmission.
-* Noisy caustics, due to the forward path tracing algorithm.
+* Scenes requiring complex light transport - while ReSTIR may be able to resolve
+  some caustics, it's still nowhere near as robust as VCM, for example.
 
 # Conclusion
 
