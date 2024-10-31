@@ -45,7 +45,7 @@ public:
         uvec2 size = uvec2(1280, 720);
         bool fullscreen = false;
         bool hdr_display = false;
-        bool preview_window = true;
+        bool preview_window = false;
     };
 
     openxr(const options& opt);

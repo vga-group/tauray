@@ -546,6 +546,9 @@ void openxr::init_xr()
         image_size.x = view.recommendedImageRectWidth;
         image_size.y = view.recommendedImageRectHeight;
     }
+    
+    image_size.x = 1024;
+    image_size.y = 1024;
 
     image_array_layers = views.size();
 

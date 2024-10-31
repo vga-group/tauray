@@ -175,6 +175,11 @@ void run_demo(context& ctx, demo_scene_data& sd, options& opt)
     });
     set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
 
+    // Camera offset (only for the demo)
+    cam->set_global_position();
+    cam->set_global_position(glm::vec3(0,-0.2f,0));
+    cam->set_global_orientation();
+
     std::chrono::steady_clock::time_point start =
         std::chrono::steady_clock::now();
     float delta = 0.0f;

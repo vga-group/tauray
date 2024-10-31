@@ -414,6 +414,7 @@ void context::init_devices()
     for(unsigned duplicate = 0; duplicate < max(opt.fake_device_multiplier, 1u); ++duplicate)
     for(size_t pdev_index = 0; pdev_index < physical_devices.size(); ++pdev_index)
     {
+        TR_LOG("Physical device: ", pdev_index, " / ", opt.physical_device_indices.size());
         if(
             opt.physical_device_indices.size() != 0 &&
             !opt.physical_device_indices.count(pdev_index) &&
@@ -427,6 +428,7 @@ void context::init_devices()
         >();
         vk::PhysicalDeviceProperties props = props_pack.get<vk::PhysicalDeviceProperties2>().properties;
         vk::PhysicalDeviceSubgroupProperties subgroup_props = props_pack.get<vk::PhysicalDeviceSubgroupProperties>();
+        TR_LOG("Trying device: ", props.deviceName);
         if(props.apiVersion < VK_API_VERSION_1_2)
             continue;
 
