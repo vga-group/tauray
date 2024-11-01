@@ -1,0 +1,153 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+#include "svgf.glsl"
+#include "color.glsl"
+#include "gbuffer.glsl"
+
+#include "scene.glsl"
+
+layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray accumulated_diffuse;
+layout(binding = 1, set = 0, rgba32f) uniform image2DArray filtered_diffuse;
+layout(binding = 3, set = 0, rgba32f) uniform image2DArray normal;
+layout(binding = 4, set = 0) uniform sampler2DArray in_depth;
+layout(binding = 5, set = 0, rgba32f) uniform image2DArray history_length;
+layout(binding = 8, set = 0, rgba32f) uniform image2DArray accumulated_specular;
+layout(binding = 10, set = 0, rgba32f) uniform image2DArray filtered_specular;
+layout(binding = 13, set = 0, rgba32f) uniform image2DArray in_material;
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+void main()
+{
+    const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    if (!is_in_screen(p.xy)) return;
+
+    camera_pair cameras = camera.pairs[p.z];
+    camera_data curr_camera = cameras.current;
+
+    vec4 sum_diffuse = imageLoad(accumulated_diffuse, p);
+    vec4 sum_specular = imageLoad(accumulated_specular, p);
+    vec4 history_length = imageLoad(history_length, p);
+
+    float diffuse_luminance = rgb_to_luminance(sum_diffuse.rgb);
+    float specular_luminance = rgb_to_luminance(sum_specular.rgb);
+    float sum_2nd_moment_diffuse = sum_diffuse.a + diffuse_luminance * diffuse_luminance;
+    float sum_2nd_moment_specular = sum_specular.a + specular_luminance * specular_luminance;
+#if DISOCCLUSION_FIX_ENABLED == 1
+    bool diffuse_disocclusion = history_length.g > 0.25f;
+    bool specular_disocclusion = history_length.a > 0.25f;
+
+    if (diffuse_disocclusion || specular_disocclusion)
+    {
+        vec3 view_pos;
+        if (get_view_pos(in_depth, p, curr_camera, view_pos)) return;
+
+        float view_z = abs(view_pos.z);
+
+        vec3 center_normal = unpack_gbuffer_normal(imageLoad(normal, p).rg);
+        vec3 center_pos = get_world_pos(curr_camera, view_pos);
+        vec2 center_material = imageLoad(in_material, p).xy;
+        float center_roughness = max(0.01, center_material.y);
+
+        vec3 V = normalize(curr_camera.origin.xyz - center_pos);
+        
+        float frustum_size = get_frustum_size(curr_camera, view_z);
+        float inv_frustum_size = 1.0f / frustum_size;
+        const float plane_dist_sensitivity = 0.005;
+
+        const float spec_half_angle = get_specular_lobe_half_angle(0.75, 1.0);
+
+        const int radius = 3;
+        const int stride = 4;
+
+        float w_sum = 1.0;
+        float w_sum_spec = 1.0;
+        for (int y = -radius; y <= radius; ++y)
+        {
+            for (int x = -radius; x <= radius; ++x)
+            {
+                if (x == 0 && y == 0) continue; // Skip current pixel
+
+                ivec3 q = ivec3(p.xy + ivec2(x, y) * stride, p.z);
+                if (!is_in_screen(q.xy)) continue;
+
+                vec4 diff = diffuse_disocclusion ? imageLoad(accumulated_diffuse, q) : vec4(0);
+                vec4 spec = specular_disocclusion ? imageLoad(accumulated_specular, q) : vec4(0);
+                if (any(isnan(diff)) || any(isnan(spec))) continue;
+
+                vec3 sample_view_pos;
+                if (get_view_pos(in_depth, q, curr_camera, sample_view_pos)) continue;
+
+                vec3 X = get_world_pos(curr_camera, sample_view_pos);
+                float Z = abs(sample_view_pos.z);
+
+                vec3 Ns = unpack_gbuffer_normal(imageLoad(normal, q).rg);
+
+                vec2 sample_material = imageLoad(in_material, q).xy;
+                float sample_roughness = max(0.01, sample_material.y);
+
+                float plane_dist_weight = get_plane_distance_weight(center_pos, X, center_normal, inv_frustum_size);
+
+                float ndotn = saturate(dot(Ns, center_normal));
+                float angle = acos(ndotn);
+                float angle_percentage = angle / spec_half_angle;
+                float normal_weight = exp(-3.0 * angle_percentage);
+                float w = 1.0;
+                float w_spec = 1.0;
+    #if DISOCCLUSION_FIX_USE_EDGE_STOPPERS == 1
+                w *= plane_dist_weight;
+
+                w_spec = w;
+
+                w *= normal_weight;
+
+                vec3 sample_view = normalize(curr_camera.origin.xyz - X);
+                float lobe_similarity = specular_lobe_similarity(V, center_normal, center_roughness, sample_view, Ns, sample_roughness);
+                float lobe_weight = pow(lobe_similarity, 8.0f);
+                //lobe_weight += 0.05f;
+                w_spec *= lobe_weight;
+
+    #endif
+                // Moments
+                if(diffuse_disocclusion)
+                {
+                    float l_diff = rgb_to_luminance(diff.rgb);
+                    float second_moment_diff = diff.a + l_diff * l_diff;
+
+                    sum_diffuse.rgb += diff.rgb * w;
+                    sum_2nd_moment_diffuse += second_moment_diff * w;
+                    w_sum += w;
+                }
+
+                if(specular_disocclusion)
+                {
+                    float l_spec = rgb_to_luminance(spec.rgb);
+                    float second_moment_spec = spec.a + l_spec * l_spec;
+
+                    sum_specular.rgb += spec.rgb * w_spec;
+                    sum_2nd_moment_specular += second_moment_spec * w_spec;
+                    w_sum_spec += w_spec;
+                }
+            }
+        }
+
+        w_sum = max(w_sum, 1e-4);
+        w_sum_spec = max(w_sum_spec, 1e-4);
+        sum_diffuse.rgb /= w_sum;
+        sum_2nd_moment_diffuse /= w_sum;
+        sum_specular.rgb /= w_sum_spec;
+        sum_2nd_moment_specular /= w_sum_spec;
+
+        float sum_diff_luminance = rgb_to_luminance(sum_diffuse.rgb);
+        float sum_spec_luminance = rgb_to_luminance(sum_specular.rgb);
+        sum_diffuse.a = max(sum_2nd_moment_diffuse - sum_diff_luminance * sum_diff_luminance, 0);
+        sum_specular.a = max(sum_2nd_moment_specular - sum_spec_luminance * sum_spec_luminance, 0);
+    }
+#endif
+
+
+
+    imageStore(filtered_diffuse, p, sum_diffuse);
+    imageStore(filtered_specular, p, sum_specular);
+}

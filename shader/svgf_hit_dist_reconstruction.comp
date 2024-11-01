@@ -1,0 +1,89 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_debug_printf : enable
+
+#include "svgf.glsl"
+#include "gbuffer.glsl"
+#include "random_sampler.glsl"
+#include "math.glsl"
+#include "scene.glsl"
+
+layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray in_specular;
+layout(binding = 1, set = 0, rgba32f) uniform image2DArray out_specular;
+layout(binding = 2, set = 0, rgba32f) uniform readonly image2DArray in_material;
+layout(binding = 3, set = 0, rgba32f) uniform readonly image2DArray in_normal;
+layout(binding = 4, set = 0) uniform sampler2DArray in_depth;
+
+layout (local_size_x = 16, local_size_y = 16) in;
+void main()
+{
+    const ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    if (!is_in_screen(p.xy)) return;
+
+    camera_data curr_camera = camera.pairs[p.z].current;
+
+    vec3 view_pos;
+    if(get_view_pos(in_depth, p, curr_camera, view_pos)) return;
+
+    const float frustum_size = get_frustum_size(curr_camera, view_pos.z);
+    const float inv_dist_to_point = 1.0 / frustum_size;
+
+    vec4 center_spec = imageLoad(in_specular, p);
+
+    const float plane_dist_sensitivity = 0.005;
+
+    vec3 center_pos = get_world_pos(curr_camera, view_pos);
+    vec3 center_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).xy);
+    vec2 center_material = imageLoad(in_material, p).rg;
+    float center_roughness = max(center_material.g, 0.01);
+
+    vec3 V = normalize(curr_camera.origin.xyz - center_pos);
+
+    float average_inv_hit_dist = center_spec.a;
+    float w_sum = center_spec.a != 0.0 ? 1.0 : 0.0;
+    
+#if HIT_DIST_RECONSTRUCTION_ENABLED == 1
+    const int radius = 1;
+    if (center_spec.a == 0.0)
+    {
+        for (int y = -radius; y <= radius; ++y)
+        {
+            for (int x = -radius; x <= radius; ++x)
+            {
+                if (x == 0 && y == 0) continue;
+
+                ivec3 q = ivec3(p.xy + ivec2(x, y), p.z);
+                if (!is_in_screen(q.xy)) continue;
+
+                vec3 X;
+                if (get_pos(in_depth, q, curr_camera, X)) continue;
+
+                vec3 Vs = normalize(curr_camera.origin.xyz - X);
+                vec3 Ns = unpack_gbuffer_normal(imageLoad(in_normal, q).xy);
+                vec2 Ms = imageLoad(in_material, q).rg;
+                float Rs = max(Ms.g, 0.01);
+
+                vec4 c = imageLoad(in_specular, q);
+
+                float w = c.a != 0.0 ? 1.0 : 0.0;
+
+                float plane_dist = abs(dot((X - center_pos), center_normal));
+                float plane_dist_weight = step(plane_dist * inv_dist_to_point, plane_dist_sensitivity);
+
+                float lobe_similarity = specular_lobe_similarity(V, center_normal, center_roughness, Vs, Ns, Rs);
+                float lobe_weight = pow(lobe_similarity, 16.0f);
+
+                w *= plane_dist_weight;
+                w *= lobe_weight;
+
+                w_sum += w;
+                average_inv_hit_dist += c.a * w;
+            }
+        }
+
+        average_inv_hit_dist = w_sum > 1e-3 ? average_inv_hit_dist / w_sum : 0.0;
+    }
+#endif
+
+    imageStore(out_specular, p, vec4(center_spec.rgb, average_inv_hit_dist));
+}

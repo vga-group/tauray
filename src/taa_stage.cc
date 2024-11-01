@@ -1,21 +1,20 @@
 #include "taa_stage.hh"
 #include "misc.hh"
 #include "camera.hh"
+#include "log.hh"
 
 namespace
 {
 using namespace tr;
 
-shader_source load_source(const tr::taa_stage::options&)
-{
-    std::map<std::string, std::string> defines;
-    return {"shader/taa.comp", defines};
-}
-
 struct push_constant_buffer
 {
     pivec2 size;
-    float blending_ratio;
+    int base_camera_index;
+    int output_layer;
+    float rounding;
+    float gamma;
+    float alpha;
 };
 
 static_assert(sizeof(push_constant_buffer) <= 128);
@@ -28,26 +27,22 @@ namespace tr
 taa_stage::taa_stage(
     device& dev,
     scene_stage& ss,
-    gbuffer_target& current_features,
+    render_target& src,
+    render_target& motion,
+    render_target& depth,
+    render_target& dst,
     const options& opt
 ):  single_device_stage(dev),
-    ss(&ss),
-    desc(dev),
-    comp(dev),
     opt(opt),
-    current_features(current_features),
-    previous_color(
-        dev,
-        current_features.color.size,
-        current_features.get_layer_count(),
-        current_features.color.format,
-        0, nullptr,
-        vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::SampleCountFlagBits::e1
+    scene(&ss),
+    src(src), motion(motion), depth(depth), dst({dst}),
+    pipeline(dev), descriptors(dev),
+    target_sampler(
+        dev, vk::Filter::eNearest, vk::Filter::eNearest,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest, 0, true, false
     ),
-    jitter_buffer(dev, sizeof(pvec4)*opt.active_viewport_count, vk::BufferUsageFlagBits::eStorageBuffer),
     history_sampler(
         dev, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerAddressMode::eClampToEdge,
@@ -56,99 +51,133 @@ taa_stage::taa_stage(
     ),
     stage_timer(dev, "temporal antialiasing (" + std::to_string(opt.active_viewport_count) + " viewports)")
 {
-    shader_source src = load_source(opt);
-    desc.add(src);
-    comp.init(src, {&desc});
+    init();
 
-    desc.reset(dev.id, 1);
-    desc.set_image(dev.id, 0, "current_color", {{{}, current_features.color.view, vk::ImageLayout::eGeneral}});
-    desc.set_image(dev.id, 0, "current_screen_motion", {{{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}});
-    desc.set_image(dev.id, 0, "previous_color", {{history_sampler.get_sampler(dev.id), previous_color.get_array_image_view(dev.id), vk::ImageLayout::eShaderReadOnlyOptimal}});
-    desc.set_buffer(0, "jitter_info", jitter_buffer);
+    src.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    motion.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    depth.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    dst.layout = vk::ImageLayout::eGeneral;
+}
 
-    record_command_buffers();
+taa_stage::taa_stage(
+    device& dev,
+    scene_stage& ss,
+    render_target& src,
+    render_target& motion,
+    render_target& depth,
+    std::vector<render_target>& swapchain_dst,
+    const options& opt
+):  single_device_stage(dev),
+    opt(opt),
+    scene(&ss),
+    src(src), motion(motion), depth(depth), dst(swapchain_dst),
+    pipeline(dev), descriptors(dev),
+    target_sampler(
+        dev, vk::Filter::eNearest, vk::Filter::eNearest,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest, 0, true, false
+    ),
+    history_sampler(
+        dev, vk::Filter::eLinear, vk::Filter::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerMipmapMode::eNearest, 0, true, false
+    ),
+    stage_timer(dev, "temporal antialiasing (" + std::to_string(opt.active_viewport_count) + " viewports)")
+{
+    init();
+
+    src.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    motion.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    depth.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    for(render_target& tgt: swapchain_dst)
+        tgt.layout = dev.ctx->get_expected_display_layout();
+}
+
+void taa_stage::init()
+{
+    first_frame = true;
+    uvec2 size = src.size;
+    for(int i = 0; i < 2; ++i)
+        color_history[i].emplace(
+            *dev,
+            size,
+            src.layer_count,
+            vk::Format::eR16G16B16A16Sfloat,
+            0, nullptr,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage,
+            vk::ImageLayout::eGeneral,
+            vk::SampleCountFlagBits::e1
+        );
+    std::map<std::string, std::string> defines;
+    if(opt.edge_dilation) defines["EDGE_DILATION"];
+    if(opt.anti_shimmer) defines["ANTI_SHIMMER"];
+
+    shader_source shader = {"shader/taa.comp", defines};
+    descriptors.add(shader);
+
+    pipeline.init(shader, {&descriptors, &scene->get_descriptors()});
 }
 
 void taa_stage::update(uint32_t frame_index)
 {
-    bool existing = jitter_history.size() != 0;
-    jitter_history.resize(opt.active_viewport_count);
+    clear_commands();
+    vk::CommandBuffer cb = begin_compute();
+    stage_timer.begin(cb, dev->id, frame_index);
 
-    scene* cur_scene = ss->get_scene();
-    std::vector<entity> cameras = get_sorted_cameras(*cur_scene);
-    for(size_t i = 0; i < opt.active_viewport_count; ++i)
+    uint32_t swapchain_index, frame_index_dummy;
+    dev->ctx->get_indices(swapchain_index, frame_index_dummy);
+
+    uint32_t dst_index = std::min((size_t)swapchain_index, dst.size()-1);
+    uint32_t parity = dev->ctx->get_frame_counter()&1;
+
+    render_target color_history_input_target = color_history[parity]->get_array_render_target(dev->id);
+    render_target color_history_output_target = color_history[1-parity]->get_array_render_target(dev->id);
+
+    src.transition_layout_temporary(cb, vk::ImageLayout::eShaderReadOnlyOptimal, true, true);
+    motion.transition_layout_temporary(cb, vk::ImageLayout::eShaderReadOnlyOptimal, true, true);
+    depth.transition_layout_temporary(cb, vk::ImageLayout::eShaderReadOnlyOptimal, true, true);
+    color_history_input_target.transition_layout(cb, vk::ImageLayout::eGeneral, vk::ImageLayout::eShaderReadOnlyOptimal, true, true);
+    color_history_output_target.transition_layout(cb, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, true, true);
+    dst[dst_index].transition_layout(cb, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, true, true);
+
+    pipeline.bind(cb);
+    descriptors.set_image(dev->id, "src_tex", {{target_sampler.get_sampler(dev->id), src.view, vk::ImageLayout::eShaderReadOnlyOptimal}});
+    descriptors.set_image(dev->id, "history_tex", {{history_sampler.get_sampler(dev->id), color_history_input_target.view, vk::ImageLayout::eShaderReadOnlyOptimal}});
+    descriptors.set_image(dev->id, "dst_img", {{{}, dst[dst_index].view, vk::ImageLayout::eGeneral}});
+    descriptors.set_image(dev->id, "history_out_img", {{{}, color_history_output_target.view, vk::ImageLayout::eGeneral}});
+    descriptors.set_image(dev->id, "motion_tex", {{target_sampler.get_sampler(dev->id), motion.view, vk::ImageLayout::eShaderReadOnlyOptimal}});
+    descriptors.set_image(dev->id, "depth_tex", {{target_sampler.get_sampler(dev->id), depth.view, vk::ImageLayout::eShaderReadOnlyOptimal}});
+    pipeline.push_descriptors(cb, descriptors, 0);
+    pipeline.set_descriptors(cb, scene->get_descriptors(), 0, 1);
+
+    push_constant_buffer pc;
+    pc.size = src.size;
+    pc.base_camera_index = opt.base_camera_index;
+    pc.output_layer = opt.output_layer;
+    pc.rounding = r1_noise(dev->ctx->get_frame_counter());
+    pc.gamma = opt.gamma;
+    pc.alpha = first_frame ? 1.0f : opt.alpha;
+
+    pipeline.push_constants(cb, pc);
+    uvec2 wg = (src.size+15u)/16u;
+    cb.dispatch(wg.x, wg.y, opt.active_viewport_count);
+
+    if(dst.size() > 1)
     {
-        vec4& v = jitter_history[i];
-        vec2 cur_jitter = cur_scene->get<camera>(cameras[i])->get_jitter();
-        vec2 prev_jitter = v;
-        if(!existing) prev_jitter = cur_jitter;
-        v = vec4(cur_jitter, prev_jitter);
+        dst[dst_index].transition_layout(
+            cb,
+            vk::ImageLayout::eGeneral,
+            dev->ctx->get_expected_display_layout(),
+            true, true
+        );
     }
 
-    jitter_buffer.update(frame_index, jitter_history.data());
-}
-
-void taa_stage::record_command_buffers()
-{
-    render_target previous_color_rt = previous_color.get_array_render_target(dev->id);
-
-    for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        vk::CommandBuffer cb = begin_compute();
-
-        stage_timer.begin(cb, dev->id, i);
-
-        // Run the actual TAA code
-        jitter_buffer.upload(dev->id, i, cb);
-
-        comp.bind(cb);
-        comp.set_descriptors(cb, desc, 0, 0);
-
-        uvec2 wg = (current_features.get_size()+15u)/16u;
-        push_constant_buffer control;
-        control.size = current_features.get_size();
-        control.blending_ratio = opt.blending_ratio;
-
-        comp.push_constants(cb, control);
-        cb.dispatch(wg.x, wg.y, opt.active_viewport_count);
-
-        // Store the previous color buffer.
-
-        current_features.color.transition_layout_temporary(cb, vk::ImageLayout::eTransferSrcOptimal);
-        previous_color_rt.transition_layout_temporary(
-            cb, vk::ImageLayout::eTransferDstOptimal, true, true
-        );
-
-        uvec3 size = uvec3(current_features.get_size(), 1);
-        cb.copyImage(
-            current_features.color.image,
-            vk::ImageLayout::eTransferSrcOptimal,
-            previous_color_rt.image,
-            vk::ImageLayout::eTransferDstOptimal,
-            vk::ImageCopy(
-                current_features.color.get_layers(),
-                {0,0,0},
-                previous_color_rt.get_layers(),
-                {0,0,0},
-                {size.x, size.y, size.z}
-            )
-        );
-
-        vk::ImageLayout old_layout = current_features.color.layout;
-        current_features.color.layout = vk::ImageLayout::eTransferSrcOptimal;
-        current_features.color.transition_layout_temporary(cb, vk::ImageLayout::eGeneral);
-        current_features.color.layout = old_layout;
-
-        old_layout = previous_color_rt.layout;
-        previous_color_rt.layout = vk::ImageLayout::eTransferDstOptimal;
-        previous_color_rt.transition_layout_temporary(
-            cb, vk::ImageLayout::eShaderReadOnlyOptimal, true, true
-        );
-        previous_color_rt.layout = old_layout;
-
-        stage_timer.end(cb, dev->id, i);
-        end_compute(cb, i);
-    }
+    stage_timer.end(cb, dev->id, frame_index);
+    end_compute(cb, frame_index);
+    first_frame = false;
 }
 
 }

@@ -48,6 +48,14 @@ vertex_data get_interpolated_vertex(vec3 view, vec2 barycentrics, int instance_i
 
     vec4 model_pos = vec4(v0.pos * b.x + v1.pos * b.y + v2.pos * b.z, 1);
     interp.pos = TRANSFORM_MAT(o.model, model_pos).xyz;
+#ifdef CALC_TRIANGLE_CORNERS
+    interp.triangle_pos[0] = TRANSFORM_MAT(o.model, vec4(v0.pos, 1)).xyz;
+    interp.triangle_pos[1] = TRANSFORM_MAT(o.model, vec4(v1.pos, 1)).xyz;
+    interp.triangle_pos[2] = TRANSFORM_MAT(o.model, vec4(v2.pos, 1)).xyz;
+    interp.triangle_uv[0] = v0.uv;
+    interp.triangle_uv[1] = v1.uv;
+    interp.triangle_uv[2] = v2.uv;
+#endif
 
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
     if(o.light_base_id >= 0)
@@ -108,11 +116,19 @@ void get_interpolated_vertex_light(vec3 view, vec2 barycentrics, int instance_id
     uv = v0.uv * b.x + v1.uv * b.y + v2.uv * b.z;
 }
 
+#ifdef USE_EXPLICIT_GRADIENTS
+sampled_material sample_material(int instance_id, inout vertex_data v, vec2 duvdx, vec2 duvdy)
+#else
 sampled_material sample_material(int instance_id, inout vertex_data v)
+#endif
 {
     instance o = instances.o[instance_id];
     material mat = o.mat;
+#ifdef USE_EXPLICIT_GRADIENTS
+    sampled_material res = sample_material(mat, v, duvdx, duvdy);
+#else
     sampled_material res = sample_material(mat, v);
+#endif
     res.shadow_terminator_mul = o.shadow_terminator_mul;
     return res;
 }
@@ -131,16 +147,16 @@ bool is_material_skippable(int instance_id, vec2 uv, float alpha_cutoff)
 // the Appleseed renderer. This is not physically based, so it's easy to
 // disable. It shouldn't do anything if mul == 1, which should be the default
 // for all objects.
-void shadow_terminator_fix(inout vec3 diffuse, inout vec3 specular, float cos_l, in sampled_material mat)
+void shadow_terminator_fix(inout vec3 contrib, float cos_l, in sampled_material mat)
 {
 #ifdef USE_SHADOW_TERMINATOR_FIX
     float s = (cos_l <= 0 || mat.shadow_terminator_mul == 1) ?
         1.0f : max(cos(acos(cos_l) * mat.shadow_terminator_mul)/cos_l, 0.0f);
-    diffuse *= s;
-    specular *= s;
+    contrib *= s;
 #endif
 }
 
+#ifdef DISTRIBUTION_DATA_BINDING
 camera_data get_camera()
 {
     return camera.pairs[gl_LaunchIDEXT.z].current;
@@ -151,7 +167,6 @@ camera_data get_prev_camera()
     return camera.pairs[gl_LaunchIDEXT.z].previous;
 }
 
-#ifdef DISTRIBUTION_DATA_BINDING
 #if DISTRIBUTION_STRATEGY == 2
 //Permute region for the pixel i
 uint permute_region_id(uint i)
@@ -255,7 +270,7 @@ vec3 sample_environment_map(
         }
 
         ivec2 p = ivec2(i % size.x, i / size.x);
-        vec2 off = ldexp(vec2(uvec2(rand.xy*pixel_count)), ivec2(-32));
+        vec2 off = vec2(uvec2(rand.xy*pixel_count)) * INV_UINT32_MAX;
         vec2 uv = (vec2(p) + off)/vec2(size);
 
         shadow_ray_direction = uv_to_latlong_direction(uv);
@@ -265,7 +280,7 @@ vec3 sample_environment_map(
     else
     {
         pdf = 1.0f / (4.0f * M_PI);
-        shadow_ray_direction = sample_sphere(ldexp(vec2(rand.xy), ivec2(-32)));
+        shadow_ray_direction = sample_sphere(vec2(rand.xy) * INV_UINT32_MAX);
     }
     shadow_ray_length = RAY_MAX_DIST;
     return color;

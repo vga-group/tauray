@@ -9,8 +9,8 @@ using namespace tr;
 
 struct grid_data_buffer
 {
-    mat4 transform;
-    mat4 normal_transform;
+    pmat4 transform;
+    pmat4 normal_transform;
     puvec3 grid_size;
     float mix_ratio;
     pvec3 cell_scale;
@@ -18,80 +18,20 @@ struct grid_data_buffer
     float rotation_y;
 };
 
-namespace sh_path_tracer
+struct push_constant_buffer
 {
-    rt_shader_sources load_sources(const sh_path_tracer_stage::options& opt)
-    {
-        shader_source pl_rint("shader/rt_common_point_light.rint");
-        shader_source shadow_chit("shader/rt_common_shadow.rchit");
-        std::map<std::string, std::string> defines;
-        defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
+    uint32_t samples;
+    uint32_t previous_samples;
+    float min_ray_dist;
+    float indirect_clamping;
+    float film_radius;
+    float russian_roulette_delta;
+    int antialiasing;
+    float regularization_gamma;
+};
 
-        if(opt.russian_roulette_delta > 0)
-            defines["USE_RUSSIAN_ROULETTE"];
-
-        add_defines(opt.sampling_weights, defines);
-        add_defines(opt.film, defines);
-        add_defines(opt.mis_mode, defines);
-
-        if(opt.regularization_gamma != 0.0f)
-            defines["PATH_SPACE_REGULARIZATION"];
-
-        defines["SH_ORDER"] = std::to_string(opt.sh_order);
-        defines["SH_COEF_COUNT"] = std::to_string(
-            sh_grid::get_coef_count(opt.sh_order)
-        );
-
-        rt_stage::get_common_defines(defines, opt);
-
-        return {
-            {"shader/sh_path_tracer.rgen", defines},
-            {
-                {
-                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    {"shader/rt_common.rchit"},
-                    {"shader/rt_common.rahit"}
-                },
-                {
-                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-                    shadow_chit,
-                    {"shader/rt_common_shadow.rahit"}
-                },
-                {
-                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    {"shader/rt_common_point_light.rchit"},
-                    {},
-                    pl_rint
-                },
-                {
-                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
-                    shadow_chit,
-                    {},
-                    pl_rint
-                }
-            },
-            {
-                {"shader/rt_common.rmiss"},
-                {"shader/rt_common_shadow.rmiss", defines}
-            }
-        };
-    }
-
-    struct push_constant_buffer
-    {
-        uint32_t samples;
-        uint32_t previous_samples;
-        float min_ray_dist;
-        float indirect_clamping;
-        float film_radius;
-        float russian_roulette_delta;
-        int antialiasing;
-        float regularization_gamma;
-    };
-
-    // The minimum maximum size for push constant buffers is 128 bytes in vulkan.
-    static_assert(sizeof(push_constant_buffer) <= 128);
-}
+// The minimum maximum size for push constant buffers is 128 bytes in vulkan.
+static_assert(sizeof(push_constant_buffer) <= 128);
 
 }
 
@@ -110,9 +50,64 @@ sh_path_tracer_stage::sh_path_tracer_stage(
     opt(opt),
     output_grid(&output_grid),
     output_layout(output_layout),
-    grid_data(dev, sizeof(grid_data_buffer), vk::BufferUsageFlagBits::eUniformBuffer)
+    grid_data(dev, sizeof(grid_data_buffer), vk::BufferUsageFlagBits::eUniformBuffer),
+    history_length(0)
 {
-    rt_shader_sources src = sh_path_tracer::load_sources(opt);
+    sample_count_multiplier = opt.samples_per_probe;
+
+    shader_source pl_rint("shader/rt_common_point_light.rint");
+    shader_source shadow_chit("shader/rt_common_shadow.rchit");
+    std::map<std::string, std::string> defines;
+    defines["MAX_BOUNCES"] = std::to_string(opt.max_ray_depth);
+
+    if(opt.russian_roulette_delta > 0)
+        defines["USE_RUSSIAN_ROULETTE"];
+
+    add_defines(opt.sampling_weights, defines);
+    add_defines(opt.film, defines);
+    add_defines(opt.mis_mode, defines);
+
+    if(opt.regularization_gamma != 0.0f)
+        defines["PATH_SPACE_REGULARIZATION"];
+
+    defines["SH_ORDER"] = std::to_string(opt.sh_order);
+    defines["SH_COEF_COUNT"] = std::to_string(
+        sh_grid::get_coef_count(opt.sh_order)
+    );
+
+    get_common_defines(defines);
+
+    rt_shader_sources src = {
+        {"shader/sh_path_tracer.rgen", defines},
+        {
+            {
+                vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+                {"shader/rt_common.rchit"},
+                {"shader/rt_common.rahit"}
+            },
+            {
+                vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+                shadow_chit,
+                {"shader/rt_common_shadow.rahit"}
+            },
+            {
+                vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
+                {"shader/rt_common_point_light.rchit"},
+                {},
+                pl_rint
+            },
+            {
+                vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
+                shadow_chit,
+                {},
+                pl_rint
+            }
+        },
+        {
+            {"shader/rt_common.rmiss"},
+            {"shader/rt_common_shadow.rmiss", defines}
+        }
+    };
     desc.add(src, 0);
     gfx.init(src, {&desc, &ss.get_descriptors()});
 }
@@ -126,13 +121,14 @@ void sh_path_tracer_stage::update(uint32_t frame_index)
 
     uint32_t sampling_start_counter =
         dev->ctx->get_frame_counter() * opt.samples_per_probe;
+    history_length++;
     grid_data.map<grid_data_buffer>(
         frame_index,
         [&](grid_data_buffer* guni){
             guni->transform = transform;
             guni->normal_transform = mat4(get_matrix_orientation(transform));
             guni->grid_size = grid->get_resolution();
-            guni->mix_ratio = max(1.0f/dev->ctx->get_frame_counter(), opt.temporal_ratio);
+            guni->mix_ratio = max(1.0f/history_length, opt.temporal_ratio);
             guni->cell_scale = 0.5f*vec3(grid->get_resolution())/grid_transform->get_scaling();
             guni->rotation_x = pcg(sampling_start_counter)/float(0xFFFFFFFFu);
             guni->rotation_y = pcg(sampling_start_counter+1)/float(0xFFFFFFFFu);
@@ -193,7 +189,7 @@ void sh_path_tracer_stage::record_command_buffer_push_constants(
     uint32_t /*frame_index*/,
     uint32_t /*pass_index*/
 ){
-    sh_path_tracer::push_constant_buffer control;
+    push_constant_buffer control;
 
     control.film_radius = opt.film_radius;
     control.russian_roulette_delta = opt.russian_roulette_delta;

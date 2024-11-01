@@ -144,6 +144,7 @@ uint32_t next_power_of_two(uint32_t n);
 uint32_t align_up_to(uint32_t n, uint32_t align);
 
 uint32_t pcg(uint32_t seed);
+float generate_uniform_random(uint32_t& seed);
 
 float halton(int index, int base);
 
@@ -157,6 +158,11 @@ std::vector<vec2> get_camera_jitter_sequence(
 );
 
 size_t hash_combine(size_t a, size_t b);
+
+
+float r1_noise(float x);
+vec2 r2_noise(vec2 x);
+vec3 r3_noise(vec3 x);
 
 }
 

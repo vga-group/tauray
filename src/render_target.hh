@@ -32,6 +32,14 @@ public:
         bool ignore_dst_stage_mask = false
     );
 
+    void transition_layout(
+        vk::CommandBuffer cb,
+        vk::ImageLayout from,
+        vk::ImageLayout to,
+        bool ignore_src_stage_mask = false,
+        bool ignore_dst_stage_mask = false
+    );
+
     vk::ImageSubresourceLayers get_layers() const;
     vk::ImageSubresourceRange get_range() const;
 

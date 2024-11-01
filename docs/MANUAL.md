@@ -1,5 +1,5 @@
 ---
-title: Tauray 1.0 User Manual
+title: Tauray 2.0 User Manual
 author: Julius Ikkala
 geometry: margin=2.4cm
 numbersections: true
@@ -19,7 +19,7 @@ output:
 
 ![The logo of Tauray.](images/tauray_logo.png){width=50%}
 
-**Tauray 1.0** is a GPU-accelerated rendering software developed at Tampere
+**Tauray 2.0** is a GPU-accelerated rendering software developed at Tampere
 University. Its focus is on speed and scalability. Tauray can be used for
 generating datasets as well as developing real-time rendering algorithms.
 It is primarily used as a command-line program, which makes scripting and
@@ -38,7 +38,7 @@ In any case, you should [install Tauray](#installing-tauray) and
 [prepare a scene](#scene-setup) first. Then, you should check that the scene
 works properly, using the [interactive mode](#interactive-rendering) or a
 one-off [offline rendering](#offline-rendering). After that, you should
-[read how Tauray is configured](#configuration) and 
+[read how Tauray is configured](#configuration) and
 [choose the options](#options) based on your needs, and render the final
 results.
 
@@ -72,15 +72,6 @@ sudo cmake --install build
 ```
 
 The rest of the manual assumes a system-wide installation.
-
-## Binaries
-
-If you have acquired a `.deb` of Tauray, you can install it system-wide with
-the following command:
-
-```bash
-sudo dpkg -i tauray.deb
-```
 
 # Scene setup
 
@@ -164,7 +155,8 @@ From the File dropdown, select the Export > glTF 2.0 option.
 
 Now, export the model with the settings shown in the image below. You must enable
 exporting tangents if your scene uses normal maps (and they don't harm you in
-any case), and cameras and punctual lights.
+any case), and cameras and punctual lights. Additionally, lighting mode must
+be "Unitless" for now.
 
 ![You must enable exporting cameras, punctual lights and tangents.](images/blender_export_settings.png)
 
@@ -284,7 +276,7 @@ but they will take place while the program is running!
 
 You can use the CLI to experiment with options without having to restart Tauray
 constantly. There's also some extra features in the CLI that are not present
-elsewhere. You can get help for one specific command with the `help command-name`
+elsewhere: you can get help for one specific command with the `help command-name`
 command, close the program with `quit` and print current configuration with
 `dump`.
 
@@ -297,7 +289,7 @@ restarting Tauray.
 
 Tauray has a __lot__ of options and most things are customizable. Here, we've
 gathered the most important ones with example images of their function where
-applicable. Remember that, you can always get the most up-to-date information
+applicable. Remember that you can always get the most up-to-date information
 with `tauray --help`.
 
 In general, options are documented with a list of possible values for them.
@@ -331,6 +323,10 @@ the `--` and replace the equals-sign with a space.
 | renderer that produces        |                                                                                        |
 | denoised images.              |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
+| `direct`: Interactive         | ![](images/preset_direct.png)                                                          |
+| renderer that computes        |                                                                                        |
+| direct light references.      |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
 | `quality`: Offline renderer   | ![](images/preset_quality.png)                                                         |
 | that creates high-quality     |                                                                                        |
 | images fairly quickly.        |                                                                                        |
@@ -338,6 +334,10 @@ the `--` and replace the equals-sign with a space.
 | `reference`: Reference        | ![](images/preset_reference.png)                                                       |
 | renderer that avoids biased   |                                                                                        |
 | images.                       |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
+| `restir-hybrid`: Hybrid       | ![](images/preset_restir_hybrid.png)                                                   |
+| renderer between ddish-gi     |                                                                                        |
+| and restir.                   |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
 
 Presets are subject to minor changes every now and then, so don't rely on
@@ -363,6 +363,11 @@ the interactive mode, the user does not have camera control. Instead, it follows
 the animation, if present. This option is also forced on by the headless
 rendering mode.
 
+## Silent
+
+`--silent` disables all printing except errors and timing data (if the latter is
+requested).
+
 ## Timing
 
 `-t` or `--timing=<on|off>` make Tauray print timing information on every frame.
@@ -371,8 +376,7 @@ mode. If you need to use headless mode regardless, ensure that its output
 filetype is `none`, so that your benchmark doesn't end up just measuring your
 disk speed instead.
 
-The timing information is printed in a similar format as presented below, by
-default:
+By default, Tauray uses its own timing format, as presented below:
 
 ```
 FRAME 617:
@@ -393,6 +397,11 @@ FRAME 617:
 	HOST: 3.64286 ms
 ```
 
+Additionally, you can change the timing output format into "Trace Event Format"
+with `--trace=trace-event-format`. The output can be viewed in Chrome's
+`about://tracing`. This is particularly useful with
+`--timing-output=<filename>`, which forwards output to another file.
+
 You get the frame index (the first frame is `FRAME 0`) and timing for each
 rendering stage on every device. The `HOST` timing means the overall frametime
 as measured on the CPU: this is what you want to use for benchmarks, excluding
@@ -400,10 +409,6 @@ the first and last few values which wind the in-flight frames up and down.
 
 You can also press the `T` key while Tauray is running to print the same timing
 info for one frame only.
-
-Additionally, you can change the timing output format into "Trace Event Format"
-with `--trace=trace-event-format`. The output can be viewed in Chrome's
-`about://tracing`.
 
 ## Vertical synchronization
 
@@ -422,6 +427,26 @@ partially updated when the display is refreshing.
 *Important!* Do not benchmark Tauray with vertical sync enabled! It
 intentionally limits the framerate!
 
+## Throttle
+
+`--throttle=<framerate>`
+
+can be used to force Tauray's framerate to be below the given rate, in
+interactive modes. This is useful for debugging issues that are hard to see at
+high framerates, and can help conserve battery life when running on a laptop.
+
+## Validation
+
+`--validation=<on|off>` sets whether Vulkan validation layers are enabled or
+not. They're good for debugging and reporting issues, but bad when benchmarking.
+Most presets explicitly disable validation for performance reasons.
+
+## Progress bar
+
+`-p` can be used to display an ASCII progress bar, which estimates how long
+the rendering is going to take at the current rate. It is only available in
+conjunction with `--headless`.
+
 ## Renderer
 
 `--renderer=<renderer-name>` sets the renderer used by Tauray. Tauray comes with
@@ -437,13 +462,19 @@ Table: Summary of renderers included in Tauray.
 | algorithm susceptible to      |                                                                                        |
 | noise.                        |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
-| `whitted`: Noise-free         | ![](images/whitted.png)                                                                |
-| oldskool ray tracing.         |                                                                                        |
+| `direct`: Ray traced          | ![](images/direct.png)                                                                 |
+| direct light only.            |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
 | `raster`: Naive rasterization | ![](images/raster.png)                                                                 |
 | with shadow mapping.          |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
 | `dshgi`: DDISH-GI.            | ![](images/dshgi.png)                                                                  |
++-------------------------------+----------------------------------------------------------------------------------------+
+| `restir`: ReSTIR DI/PT        | ![](images/restir.png)                                                                 |
+| for real-time rendering.      |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
+| `restir-hybrid`: ReSTIR       | ![](images/restir-hybrid.png)                                                          |
+| hybridized with DDISH-GI.     |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
 | `albedo`: Albedo of the first | ![](images/albedo.png)                                                                 |
 | intersection.                 |                                                                                        |
@@ -482,23 +513,117 @@ Table: Summary of renderers included in Tauray.
 
 ### Primary renderers
 
-These are the `path-tracer`, `whitted`, `raster` and `dshgi` renderers.
+These are the `path-tracer`, `restir`, `raster` and `dshgi` renderers.
 Many further options only affect some of these renderers.
 
-Most of the time, you want to be running `path-tracer`, as it is the most
-realistic rendering algorithm provided in Tauray.
+There's two that you'll most likely be interested in. `restir` is an
+implementation of the state-of-the-art ReSTIR DI/GI/PT algorithms, and has very
+low noise levels (by real-time rendering standards). These methods are unbiased
+by default.
 
-The `whitted`-style renderer isn't particularly useful from an end-user's point
-of view, unless you are trying to replicate vintage 90s ray tracing art.
+For offline rendering or simpler real-time rendering needs, you'll want to be
+running `path-tracer`, which is just a very normal forward path tracer with
+MIS, NEE and BSDF importance sampling.
 
 If you can't run Tauray normally due to missing ray tracing support, you may
 still be able to run the `raster` renderer. But in that case, there's hardly any
 reason to be running Tauray, anyway...
 
-Note that when creating scenes for DDISH-GI (`dshgi`), you should place an
-"Irradiance Volume" that covers the scene in Blender. DDISH-GI will use this
-volume for its probe placement. The resolution selected in Blender for the
-irradiance volume will also be used by Tauray.
+`dshgi` is the underlying renderer for DDISH-GI. Note that when creating scenes
+for DDISH-GI (`dshgi`), you should place an "Irradiance Volume" that covers
+the scene in Blender. DDISH-GI will use this volume for its probe placement.
+The resolution selected in Blender for the irradiance volume will also be used
+by Tauray.
+
+### ReSTIR DI / GI / PT
+
+The ReSTIR implementation in Tauray is extremely configurable, to the point that
+all three big variants can be achieved with simple configuration variables. See
+["A Gentle Introduction to ReSTIR](https://intro-to-restir.cwyman.org/) to learn
+further details of what these parameters do.
+
+The implementation acts as ReSTIR DI if `--max-ray-depth=2`, otherwise it's PT.
+The special `restir-hybrid` renderer is similar to ReSTIR GI. It only does one
+bounce, after which lighting is gathered from DDISH-GI probes and punctual
+lights. Direct explicit lighting uses shadow maps also, as this helps with
+performance and isn't always noticeable if PCSS is configured properly.
+
+`--restir.max-confidence=<int>` sets the maximum confidence of a reservoir.
+Large values have generally lower noise, but increase correlation between temporal
+frames. The default is 16, and you probably shouldn't go any higher. While
+even large confidences don't technically cause bias over time, overconfidence
+can backfire via large correlated areas:
+
+| ![VPL-like artefacts](images/restir-overconfident.png) |
+|:-------------------------------------------------------------------------------------------------:|
+| Too high confidence can cause VPL or MLT-like artefacts, depending on the selected shift mapping. |
+
+`--restir.temporal-reuse=<on|off>` is on by default. It enables the temporal
+feedback loop, which makes ReSTIR do its party trick, the explosively increasing
+sample quality. It's also the cause of temporal correlation, and is generally
+harmful if you want to accumulate and converge an image.
+
+`--restir.canonical-samples=<int>` sets the number of canonical samples, e.g.
+number of new samples injected into the feedback loop per frame. It's somewhat
+similar to SPP in a path tracer. Higher numbers = less noise but the performance
+cost is linear.
+
+`--restir.spatial-samples=<int>` sets the amount of neighbors considered for
+spatial reuse. 0 disables spatial reuse. The default is 2, which is quite low
+for ReSTIR literature, but it's pretty good for real-time still.
+
+`--restir.passes=<int>` defaults to one. It's the number of successive spatial
+reuse passes per frame. It can help good samples cover a large distance even
+without temporal reuse.
+
+`--restir.sample-spatial-disk=<on|off>` selects how the spatial neighbors are
+searched. It's enabled by default, and searches from a surface-aligned disk. If
+disabled, the search area is a screen-space disk.
+
+`--restir.shift-mapping-type=<reconnection-shift|random-replay-shift|hybrid-shift>`
+defaults to `reconnection-shift`.
+
+`reconnection-shift` is the fastest and works quite well in scenes with fairly
+high roughnesses, but performs no better than a regular path tracer with
+mirror-like surfaces.
+
+`random-replay-shift` is a general method that produces higher noise levels and
+is the slowest, but kind of deals with any light transport issues. Its
+weaknesses are somewhat similar to Kelemen-style MLT.
+
+`hybrid-shift` aims to combine the good noise level and performance of
+`reconnection-shift` and robustness `random-replay-shift`. It's generally good,
+and just a bit slower than `reconnection-shift` (depending on scene). There's
+a scene-dependent parameter though, `--restir.reconnection-scale=<float>`, which
+controls the minimum ray length considered for reconnection. You may need to
+adjust it if you see artifacting in concave corners.
+
+`--restir.max-search-radius=<float>` controls the maximum distance for spatial
+neighbor search. `--restir.min-search-radius=<float>` controls the minimum
+distance (this should be non-zero to avoid sampling the original pixel itself).
+
+By default, the implementation is unbiased and all `assume-*` are off. You can
+enable specific biases / assumptions for increased performance.
+
+`--restir.assume-unchanged-material=<on|off>` assumes that the material has not
+changed between frames in temporal reuse, saving some bandwidth in material
+storage and reading.
+
+`--restir.assume-unchanged-acceleration-structure=<on|off>` assumes that
+geometry in the acceleration structures has not changed between frames. If there
+are moving objects in the scene, this introduces brightening and darkening bias
+near them.
+
+`--restir.assume-unchanged-reconnection-radiance=<on|off>` lets the temporal
+reuse assume that radiance incoming to the reconnection vertex has not changed.
+This saves re-tracing the rest of the path in temporal reuse, and helps quite a
+bit with performance. Of course, it biases with movement or lighting changes.
+
+`--restir.assume-unchanged-temporal-visibility=<on|off>` lets the temporal reuse
+assume that reconnection will not be blocked when shifting previous samples to
+the new frame. Again, this breaks with movement and sometimes also with rounding
+errors from the selection of the previous pixel.
+
 
 ### Feature buffer / AOV renderers
 
@@ -541,8 +666,8 @@ converted this way.
 
 `--ambient=<r,g,b>`
 
-The `raster` and `whitted` renderers do not properly estimate surrounding
-indirect lighting. Instead, they apply a constant light, called "ambient light",
+The `raster` renderer does not properly estimate surrounding
+indirect lighting. Instead, it applies a constant light, called "ambient light",
 to every surface in the scene. You can adjust that ambient light's color and
 intensity with this parameter.
 
@@ -574,7 +699,9 @@ full animation with this flag specified. You can limit the number of frames to
 something lower with `--frames=<integer>`.
 
 If your animation render is interrupted without finishing, you can easily
-continue from the frame you left off with `--skip-frames=<integer>`.
+continue from the frame you left off with `--skip-frames=<integer>`. Also, you
+can skip all rendering entirely with `--skip-render`. That way, you can save
+camera logs without having to actually render or save images.
 
 In replay and offline rendering modes, you can set the simulated framerate for
 the animation with `--framerate=<number>`. It defaults to 60 fps.
@@ -624,6 +751,14 @@ Table: Summary of available camera projections.
 | `perspective`     | ![Perspective](images/proj_perspective.png){height=6cm}         |
 | `orthographic`    | ![Orthographics](images/proj_ortho.png){height=6cm}             |
 | `equirectangular` | ![Equirectangular](images/proj_equirectangular.png){height=6cm} |
+
+### Camera clip range
+
+`--camera-clip-range=<near,far>`
+
+This parameter forces specific near and far planes for the camera. Things
+outside of that depth range will be clipped/culled in rasterization-based
+renderers.
 
 ### Field of view (FOV)
 
@@ -692,6 +827,10 @@ Denoising can be used with the `path-tracer` renderer in order to reduce noise
 from the images. You basically only want this when very few samples per pixel
 are taken, which causes massive noise.
 
+While the SVGF denoiser somewhat corresponds to the
+"Spatiotemporal Variance Guided Filtering" paper, it has been upgraded quite a
+bit, and is pretty close to state-of-the-art in real-time denoising.
+
 | ![no denoising](images/denoiser_none.png)       | ![with denoising](images/denoiser_svgf.png)     |
 |:-----------------------------------------------:|:-----------------------------------------------:|
 | A path traced rendering with `--denoiser=none`. | The same scene, with `--denoiser=svgf`.         |
@@ -700,6 +839,20 @@ You may want to use `--warmup-frames=<number>` for offline rendering use cases
 in order to get some temporal history before starting actual rendering. Doing
 so will reduce noise. Usually, you also use denoising in conjunction with
 [temporal anti aliasing](#temporal-anti-aliasing).
+
+### SVGF parameters
+
+`--svgf=<atrous-diff-iter,atrous-spec-iter,atrous-kernel-radius,sigma-l,sigma-z,sigma-n,min-alpha-color,min-alpha-moments>`
+
+This sets the parameters for the SVGF denoiser. Note that the defaults are quite
+general, and it's unlikely that you'll gain much by changing these parameters.
+`atrous-diffuse-iter` sets number of iterations of the A-Trous filter for the
+diffuse contribution, while `atrous-spec-iter` sets them for the specular
+contribution. `atrous-kernel-radius` sets the A-Trous filter size.
+`sigma-l` controls the luminance weight, `sigma-z` controls the depth weight, and
+`sigma-n` controls the normal weight. `min-alpha-color` controls the temporal
+accumulation speed for color data, and `min-alpha-moments` controls the
+accumulation speed for moments used to drive the variance guidance.
 
 ## Multi-device rendering
 
@@ -711,13 +864,35 @@ you can use `--devices=-1` (which picks the default GPU) or `--devices=0` (which
 picks the first one) and so on. You can also give a list of integers to define
 a subset of GPUs to use.
 
+If only have one GPU, but want to debug multi-GPU stuff, yuo can use the
+`--fake-devices=<N>` option, which creates N logical devices for each physical
+device.
+
+### Distribution strategy
+
+`--distribution-strategy=<duplicate|scanline|shuffled-strips>` determines
+how the rendering workload is distributed to multiple GPUs. `duplicate` does
+all calculations on each GPU and is not useful. `scanline` distributes scanlines
+evenly across all GPUs, and is a good choice when the GPUs are identical.
+`shuffled-strips` is the default, as it dynamically adjusts to uneven GPU
+performance.
+
+### Workload distribution
+
+With the `shuffled-strips` strategy, Tauray distributes the rendering workload
+dynamically based on how long each GPU took to render earlier frames. To set
+the initial distribution (e.g. for single-frame offline rendering), you can use
+`--workload=<gpu1-share,gpu2-share,...>` to set the ratio of workload given to
+each GPU.
+
 ## Display
 
-`--display=<headless|window|openxr|looking-glass>`
+`--display=<headless|window|openxr|looking-glass|frame-server|frame-client>`
 
 Display type. If you use `--headless`, the `headless` display is forced on.
 Otherwise, you can pick whether you want to output to a window, to a VR HMD with
-OpenXR or a Looking Glass light field display.
+OpenXR or a Looking Glass light field display. `frame-server` and `frame-client`
+are special, see [frame streaming](#frame-streaming).
 
 ### Looking Glass
 
@@ -731,6 +906,28 @@ of the display from the viewer's eye. `depthiness` can be used to adjust the
 distance between viewports, and `relative_view_distance` is the distance of the
 user's eye relative to the size of the display (this is needed for the Y axis,
 as the Looking Glass displays only have multiple horizontal views.)
+
+Additionally, if your Looking Glass isn't connected via USB to the computer
+running Tauray, you can still use it. In that case, you'll need to use the
+`--lkg-calibration=<...>` parameter. Read further instructions from
+`tauray --help`.
+
+### Frame streaming
+
+Tauray supports a really simple form of frame streaming. This can be used to
+have an interactive session on a render farm, although you really should run
+it at a very low [resolution](#output-resolution), because the frames are
+sent uncompressed!
+
+You need two instances of Tauray for this. They can, and probably should be,
+on different computers. One of them acts as the server and is given the flag
+`--display=frame-server`, while the other is the client, which is given
+`--display=frame-client`.
+
+The frame server does the entire rendering, while the frame-client sends its
+inputs over to the server and receives frames from the server. You can set the
+port for the server with `--port=<port-number>`, and the client can then specify
+the address via `--connect=url:port`.
 
 ## Environment map
 
@@ -820,7 +1017,7 @@ files. `--exposure=2` doubles the brightness _before_ tonemapping.
 ## Output file
 
 ### File format
-`--filetype=<exr|png|raw|none>`
+`--filetype=<exr|png|bmp|hdr|raw|none>`
 
 You can change the file format for the output data of
 [headless mode](#offline-rendering) with `--filetype`. The default is .EXR,
@@ -923,14 +1120,17 @@ Table: Comparison between film filters for anti-aliasing path traced images.
 
 ### Temporal anti-aliasing
 
-`--taa=<integer>`
+`--taa=<sequence-length,edge-dilation,anti-shimmer>`
 
 Tauray also implements [Temporal Anti-Aliasing](https://en.wikipedia.org/wiki/Temporal_anti-aliasing).
 This works with all renderers, but isn't recommended with path tracing unless
-you also use a [denoiser](#denoising). The integer corresponds to the equivalent
-SSAA sample quality that it aims for. TAA can cause some flickering in shiny
-edges and in certain rare cases, ghosting. Smaller values suffer less from
-these issues, but don't anti-alias quite as well.
+you also use a [denoiser](#denoising). The `sequence-length` corresponds to the
+equivalent SSAA sample quality that it aims for, and refers to the jittering
+sequence length. `edge-dilation` is enabled by default, it helps with tracking
+motion of anti-aliased edges.
+
+TAA can cause some flickering in shiny edges. `anti-shimmer` is a hack that
+aims to reduce this, but it is not enabled by default.
 
 Table: Comparison between supersampling anti-aliasing with temporal anti-aliasing.
 
@@ -959,6 +1159,13 @@ Single-sided surfaces are also known as **Backface culling**.
 | Cornell box with the original single-sided behaviour.  | The same scene with `--force-double-sided`             |
 
 *If you want to improve ray tracing performance, use `--force-double-sided`!*
+
+## Pre-transformed vertices
+
+`--pre-transform-vertices=<on|off>` is yet another performance option. Enabling
+it consumes more memory, but is likely faster in multi-bounce path tracing
+due to only calculating vertex transforms once instead of on each bounce on
+every pixel.
 
 ## HDR
 
@@ -1008,14 +1215,12 @@ are around 10-100, lower values start to affect the image too much.
 
 `--max-ray-depth=<integer>`
 
-The maximum number of bounces the ray can make can be set with
-`--max-ray-depth`. Higher numbers are generally slower, but are more realistic
-and brighter. While the default is 8, you should usually be fine with just 3-4.
-Especially in bright outdoor areas, you can get away with a low number of
-bounces.
-
-The name of the flag refers to recursion depth, as it also affects refraction
-and alpha blending.
+This parameter sets the maximum number of edges in a path, in ray tracers. The
+number of bounces is one less. Higher numbers are generally slower, but are more
+realistic and brighter. While the default is 8, you should usually be fine with
+just 3-4.  Especially in bright outdoor areas, you can get away with a low number
+of bounces. 2 is direct light only (camera-\>surface-\>light). 1 shows only
+emissive objects (camera-\>light)
 
 | ![dark cornell box](images/cornell3.png){width=50%} | ![bright cornell box](images/cornell8.png){width=50%} |
 |:---------------------------------------------------:|:-----------------------------------------------------:|
@@ -1030,6 +1235,24 @@ travel. You can set the distance with this flag. In massive scenes, you may
 encounter precision issues if it's too small, and in small scenes, you may see
 light leaking a short distance past walls. The default value of 0.0001 is
 generally fairly good.
+
+## Acceleration structure strategy
+
+`--as-strategy=<per-material|per-model|static-merged-dynamic-per-model|all-merged>`
+
+This parameter sets how geometry is assigned to BLASes. `per-material` creates
+a unique BLAS for every material primitive of each object, and is very
+inefficient. `per-model` creates one BLAS per model, which is quite
+straightforward.
+
+`static-merged-dynamic-per-model` is the default, which merges all static
+(non-animated) meshes into a single BLAS, and creates one BLAS for each dynamic
+model. This is a good tradeoff between ray tracing and acceleration structure
+building performance.
+
+`all-merged` is the fastest option for offline rendering, as it just dumps all
+geometry in one BLAS. It is a bit slow to update though, so this is not
+recommended for real-time rendering.
 
 ## Shadow mapping
 
@@ -1150,7 +1373,9 @@ to barely avoid shadow acne in each case.
 | 1024       | ![1024](images/shadow1024.png){height=6cm} |
 | 4096       | ![4096](images/shadow4096.png){height=6cm} |
 
-## Random number seed
+## Sampling
+
+### Random number seed
 
 `--rng-seed=<integer>`
 
@@ -1158,24 +1383,7 @@ Typically, Tauray renders are reproducible in that the RNG seed will always be
 the same. If you want to have different noise in the otherwise same render,
 you should set the random number generator seed with `--rng-seed`.
 
-## Russian roulette sampling
-
-`--russian-roulette=<number>`
-
-Russian Roulette sampling is a method that randomly kills off deep rays in the
-scene. It is typically used when you need lots of light bounces, but still
-want to render the image reasonably quickly. Higher numbers raise the odds of
-rays losing the roulette. You can think of the number as the number of chambers
-in the revolver, and only one of them *doesn't* have a bullet...
-
-| ![regular](images/cornell100.png)               | ![russian roulette](images/cornell100rr.png)    |
-|:-----------------------------------------------:|:-----------------------------------------------:|
-| 100 bounces, 100k spp, no russian roulette: 22s | Same, but with `--russian-roulette=4` : 3s      |
-
-Note: because this method relies on causing certain samples to have higher
-weight than usual, it responds poorly to `--indirect-clamping`!
-
-## Sampler
+### Sampler
 
 `--sampler=<uniform-random|sobol-owen|sobol-z2|sobol-z3>`
 
@@ -1194,7 +1402,79 @@ performance, `uniform-random` is the fastest.
 |:---------------------------------------------------------------:|:---------------------------------------------------------------:|:---------------------------------------------------------------:|:---------------------------------------------------------------:|
 | `uniform-random`                                                | `sobol-owen`                                                    | `sobol-z2`                                                      | `sobol-z3`                                                      |
 
-## Samples per pixel
+### Russian roulette sampling
+
+`--russian-roulette=<number>`
+
+Russian Roulette sampling is a method that randomly kills off deep rays in the
+scene. It is typically used when you need lots of light bounces, but still
+want to render the image reasonably quickly. Higher numbers raise the odds of
+rays losing the roulette. You can think of the number as the number of chambers
+in the revolver, and only one of them *doesn't* have a bullet...
+
+| ![regular](images/cornell100.png)               | ![russian roulette](images/cornell100rr.png)    |
+|:-----------------------------------------------:|:-----------------------------------------------:|
+| 100 bounces, 100k spp, no russian roulette: 22s | Same, but with `--russian-roulette=4` : 3s      |
+
+Note: because this method relies on causing certain samples to have higher
+weight than usual, it responds poorly to `--indirect-clamping`!
+
+### BSDF sampling
+
+`--bounce-mode=<hemisphere|cosine|material>`
+
+This parameter selects how path tracer & ReSTIR select the next bounce.
+By default, it's set to `material`, which is based on GGX VNDF importance
+sampling. `hemisphere` samples direction uniformly from the hemisphere, and
+`cosine` samples a cosine hemisphere. The latter two are mostly available for
+educational purposes, as they cause significantly increased noise levels.
+
+### Multiple importance sampling (MIS)
+
+`--multiple-importance-sampling=<off|balance|power>`
+
+This parameter sets the MIS type for the path tracer. It's set to `power` by
+default, as it's usually the lowest-noise approach. Disabling MIS is also
+possible with `off`, but that's mostly useful for educational purposes, as the
+image will be full of fireflies for any non-trivial scene.
+
+Note that ReSTIR always uses the balance heuristic regardless of this setting.
+
+### Point lights
+
+`--sample-point-lights=<float>` can be used to set the relative weight
+of sampling point lights in next event estimation. Higher values emphasize
+point lights more than other light types. 0 disables next event estimation
+of point lights.
+
+### Directional lights
+
+`--sample-directional=<float>` can be used to set the relative weight
+of sampling directional lights in next event estimation. Higher values emphasize
+directional lights more than other light types. 0 disables next event estimation
+of directional lights.
+
+### Environment maps / infinite area lights
+
+`--sample-envmap=<float>` can be used to set the relative weight
+of sampling directions from the environment map in next event estimation.
+Higher values emphasize envmaps over other light types.
+0 disables next event estimation of envmaps. Envmap sampling is implemented via
+alias tables, so it's O(1) regardless of the environment map resolution.
+
+### Triangle area lights
+
+`--sample-emissive-triangles=<float>` can be used to set the relative weight
+of sampling emissive triangles in next event estimation. Higher values emphasize
+triangle lights more than other light types. 0 disables next event estimation
+of emissive triangles.
+
+`--tri-light-mode=<area|solid-angle|hybrid>` controls how triangular area lights
+are sampled. The `area` method is robust, but noisy. `solid-angle` has less
+noise, but is also less robust to very small triangles. `hybrid` should be
+robust and low-noise, but it is also slower.
+
+### Samples per pixel
 
 `--samples-per-pixel=<integer>`
 
@@ -1205,14 +1485,20 @@ it's the number of [anti-aliasing](#anti-aliasing) samples to take per pixel.
 For path tracing, it's the number of Monte Carlo samples to take. Lower numbers
 are fast, but noisy. High numbers are slow, but don't have much noise.
 
-Usually, `--samples-per-pixel=4096` is suitable for offline rendering. The
-default value is 1, which is suitable real-time use.
+Usually, `--samples-per-pixel=4096` is suitable for offline rendering with path
+tracing. The default value is 1, which is suitable real-time use in all
+contexts.
 
 Table: Effects of samples per pixel (SPP) counts to noise in path tracing.
 
 | ![1](images/pt1.png){width=12%}       | ![4](images/pt4.png){width=12%}       | ![16](images/pt16.png){width=12%}     | ![64](images/pt64.png){width=12%}     | ![256](images/pt256.png){width=12%}   | ![1024](images/pt1024.png){width=12%} | ![4096](images/pt4096.png){width=12%} |
 |:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|
 |            1 SPP                      |            4 SPP                      |            16 SPP                     |            64 SPP                     |            256 SPP                    |            1024 SPP                   |            4096 SPP                   |
+
+For performance, you may consider setting `--samples-per-pass=8` or so. This
+parameter makes one shader pass calculate more samples, reducing overall
+overhead. However, too high values can cause driver timeouts, as their watchdogs
+bite Tauray if it takes too many seconds to run one pass.
 
 ## DDISH-GI
 
@@ -1323,18 +1609,24 @@ you still get color bleeding!
 
 ![The usual scene, but with `--use-white-albedo-on-first-bounce`.](images/white_albedo.png)
 
+## Up axis
+
+`--up-axis=<x|y|z>`
+
+This rotates the scene such that the given axis points up. By default, the
+Y-axis points up.
+
 # Limitations
 
 There are things that Tauray does not handle well. In such cases, you may want
 to use some other tool instead. This list of limitations may also change in the
 future, as we work on implementing more missing features. Namely:
 
-* Poor sampling of non-spherical area lights (i.e. emissive volumes). There is
-  no importance sampling for these yet, so the image will be pretty noisy.
 * Morph target animations are not supported.
 * Advanced material models are not yet supported, only the basic GGX
   metallic-roughness + transmission.
-* Noisy caustics, due to the forward path tracing algorithm.
+* Scenes requiring complex light transport - while ReSTIR may be able to resolve
+  some caustics, it's still nowhere near as robust as VCM, for example.
 
 # Conclusion
 

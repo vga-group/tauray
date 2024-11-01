@@ -320,43 +320,43 @@ mat4 camera::get_view_projection(const mat4& global_transform) const
     return get_projection_matrix() * glm::inverse(global_transform);
 }
 
-vec3 camera::get_clip_info() const
-{
-    switch(type)
-    {
-    case PERSPECTIVE:
-        {
-            float near = pd.perspective.near;
-            float far = pd.perspective.far;
-            if(far == INFINITY) return vec3(near, -1, 1);
-            else return vec3(near * far, near - far, near + far);
-        }
-    default:
-        return vec3(0);
-    }
-}
-
-vec2 camera::get_projection_info() const
+vec4 camera::get_projection_info() const
 {
     switch(type)
     {
     case PERSPECTIVE:
         {
             float rad_fov = glm::radians(pd.perspective.fov);
-            return vec2(
-                2*tan(rad_fov/2.0f)*pd.perspective.aspect,
-                2*tan(rad_fov/2.0f)
-            );
+            vec4 proj_info;
+            proj_info.w = 2*tan(rad_fov/2.0f);
+            proj_info.z = proj_info.w * pd.perspective.aspect;
+            if(pd.perspective.far == INFINITY)
+            {
+                proj_info.x = -pd.perspective.near;
+                proj_info.y = -1;
+            }
+            else
+            {
+
+                float near = pd.perspective.near;
+                float far = pd.perspective.far;
+
+                proj_info.x = near * far / (near-far);
+                proj_info.y = (near + far) / (near-far);
+            }
+            return proj_info;
         }
     case ORTHOGRAPHIC:
         {
-            return vec2(
-                pd.orthographic.right-pd.orthographic.left,
-                pd.orthographic.top-pd.orthographic.bottom
+            return vec4(
+                pd.orthographic.far - pd.orthographic.near,
+                -pd.orthographic.far,
+                pd.orthographic.right - pd.orthographic.left,
+                pd.orthographic.top - pd.orthographic.bottom
             );
         }
     default:
-        return vec2(0);
+        return vec4(0);
     }
 }
 
@@ -402,6 +402,8 @@ struct matrix_camera_data_buffer
     pmat4 proj_inverse;
     pvec4 origin;
     pvec4 dof_params;
+    pvec4 projection_info;
+    pvec4 pan;
 };
 
 struct equirectangular_camera_data_buffer
@@ -446,6 +448,17 @@ void camera::write_uniform_buffer(transformable& self, void* data) const
             buf.proj_inverse = inv_projection;
             buf.origin = origin;
             buf.dof_params = type == PERSPECTIVE ? pd.perspective.focus : vec4(0);
+            buf.projection_info = get_projection_info();
+            buf.pan = type == PERSPECTIVE ? vec4(pd.perspective.fov_offset, 0, 0) : vec4(0);
+
+            if(jitter_sequence.size())
+            {
+                vec2 cur_jitter = jitter_sequence[jitter_index];
+                buf.pan.x += cur_jitter.x;
+                buf.pan.y += cur_jitter.y;
+                buf.pan.z += cur_jitter.x;
+                buf.pan.w += cur_jitter.y;
+            }
         }
         break;
     case EQUIRECTANGULAR:
@@ -482,6 +495,11 @@ void camera::step_jitter()
 vec2 camera::get_jitter() const
 {
     return jitter_sequence.size() == 0 ? vec2(0) : jitter_sequence[jitter_index];
+}
+
+size_t camera::jitter_sequence_length() const
+{
+    return jitter_sequence.size();
 }
 
 camera_log::camera_log(transformable* cam_transform, camera* cam)

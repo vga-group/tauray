@@ -16,15 +16,14 @@ using namespace tr;
 // This must match the push_constant_buffer in shader/forward.glsl
 struct push_constant_buffer
 {
+    pivec2 size;
     uint32_t instance_id;
-    uint32_t pcf_samples;
-    uint32_t omni_pcf_samples;
-    uint32_t pcss_samples;
     int32_t base_camera_index;
-    float pcss_minimum_radius;
-    float noise_scale;
-    int32_t pad[3];
-    pvec2 shadow_map_atlas_pixel_margin;
+    int32_t frame_index;
+    int32_t flipped_winding_order;
+    int32_t has_prev_pos_data;
+    int32_t pad[1];
+    gpu_shadow_mapping_parameters sm_params;
     pvec3 ambient_color;
 };
 
@@ -32,11 +31,15 @@ raster_shader_sources load_sources(const raster_stage::options& opt, const gbuff
 {
     std::map<std::string, std::string> defines;
     defines["SH_ORDER"] = std::to_string(opt.sh_order);
+    if(opt.estimate_indirect) defines["ESTIMATE_INDIRECT"];
+    if(opt.estimate_direct) defines["ESTIMATE_DIRECT"];
     defines["SH_COEF_COUNT"] = std::to_string(
         sh_grid::get_coef_count(opt.sh_order)
     );
     if(!opt.use_probe_visibility)
         defines["SH_INTERPOLATION_TRILINEAR"];
+    if(opt.unjitter_textures)
+        defines["UNJITTER_TEXTURES"];
     gbuf.get_location_defines(defines);
     return {
         {"shader/forward.vert"},
@@ -102,7 +105,7 @@ depth_attachment_state get_depth_attachment(
             vk::AttachmentStoreOp::eDontCare,
             opt.clear_depth ? vk::ImageLayout::eUndefined :
                 vk::ImageLayout::eDepthStencilAttachmentOptimal,
-            vk::ImageLayout::eDepthStencilAttachmentOptimal
+            opt.output_layout
         },
         true,
         true,
@@ -141,14 +144,45 @@ raster_stage::raster_stage(
             uvec4(0, 0, target.get_size()),
             load_sources(opt, target),
             {&ss.get_descriptors(), &ss.get_raster_descriptors()},
-            mesh::get_bindings(),
-            mesh::get_attributes(),
+            mesh::get_bindings(true),
+            mesh::get_attributes(true),
             get_color_attachments(opt, target),
             get_depth_attachment(opt, target),
             opt.sample_shading, (bool)target.color || opt.force_alpha_to_coverage, true,
             {}, false
         });
     }
+}
+
+raster_stage::raster_stage(
+    device& dev,
+    scene_stage& ss,
+    gbuffer_target& output_target,
+    const options& opt
+):  single_device_stage(dev),
+    output_targets({output_target}),
+    opt(opt),
+    scene_state_counter(0),
+    ss(&ss),
+    raster_timer(
+        dev,
+        std::string(output_target.color ? "forward" : "gbuffer") +
+        " rasterization"
+    )
+{
+    array_pipelines.emplace_back(new raster_pipeline(dev));
+    array_pipelines.back()->init({
+        output_target.get_size(),
+        uvec4(0, 0, output_target.get_size()),
+        load_sources(opt, output_target),
+        {&ss.get_descriptors(), &ss.get_raster_descriptors()},
+        mesh::get_bindings(true),
+        mesh::get_attributes(true),
+        get_color_attachments(opt, output_target),
+        get_depth_attachment(opt, output_target),
+        opt.sample_shading, (bool)output_target.color || opt.force_alpha_to_coverage, true,
+        {}, false
+    });
 }
 
 void raster_stage::update(uint32_t)
@@ -162,7 +196,7 @@ void raster_stage::update(uint32_t)
         vk::CommandBuffer cb = begin_graphics();
 
         raster_timer.begin(cb, dev->id, i);
-        size_t j = 0;
+        size_t j = opt.base_camera_index;
         for(std::unique_ptr<raster_pipeline>& gfx: array_pipelines)
         {
             gfx->begin_render_pass(cb, i);
@@ -172,28 +206,31 @@ void raster_stage::update(uint32_t)
 
             const std::vector<scene_stage::instance>& instances = ss->get_instances();
             push_constant_buffer control;
-            control.pcf_samples = opt.pcf_samples;
-            control.omni_pcf_samples = opt.omni_pcf_samples;
-            control.pcss_samples = opt.pcss_samples;
-            control.pcss_minimum_radius = opt.pcss_minimum_radius;
-            control.noise_scale =
-                opt.sample_shading ? ceil(sqrt((int)output_targets[0].get_msaa())) : 1.0f;
+            control.size = gfx->get_state().output_size;
+            control.sm_params = create_shadow_mapping_parameters(opt.filter, *ss);
             control.ambient_color = ss->get_ambient();
-            control.shadow_map_atlas_pixel_margin = ss->get_shadow_map_atlas_pixel_margin();
             control.base_camera_index = j;
+            control.frame_index = dev->ctx->get_frame_counter();
 
             for(size_t i = 0; i < instances.size(); ++i)
             {
                 const scene_stage::instance& inst = instances[i];
                 const mesh* m = inst.m;
-                vk::Buffer vertex_buffers[] = {m->get_vertex_buffer(dev->id)};
-                vk::DeviceSize offsets[] = {0};
-                cb.bindVertexBuffers(0, 1, vertex_buffers, offsets);
+                vk::Buffer vertex_buffers[] = {
+                    m->get_vertex_buffer(dev->id),
+                    m->get_prev_pos_buffer(dev->id)
+                };
+                vk::DeviceSize offsets[] = {0,0};
+                cb.bindVertexBuffers(0, 2, vertex_buffers, offsets);
                 cb.bindIndexBuffer(
                     m->get_index_buffer(dev->id),
                     0, vk::IndexType::eUint32
                 );
                 control.instance_id = i;
+                control.flipped_winding_order = inst.flip_winding_order;
+                // Animated meshes are supposed to have previous position data
+                // in them.
+                control.has_prev_pos_data = m->get_animation_source() != nullptr;
 
                 gfx->push_constants(cb, control);
 

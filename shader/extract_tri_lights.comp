@@ -24,7 +24,9 @@ void main()
         uint output_index = o.light_base_id + gl_GlobalInvocationID.x;
         tri_light light;
         light.emission_tex_id = o.mat.emission_tex_id;
-        light.emission_factor = o.mat.emission_factor_double_sided.rgb;
+        light.emission_factor = rgb_to_r9g9b9e5(o.mat.emission_factor.rgb);
+        light.instance_id = control.instance_id;
+        light.primitive_id = gl_GlobalInvocationID.x;
 
         ivec3 i = ivec3(
             indices[nonuniformEXT(control.instance_id)].i[3*input_index+0],

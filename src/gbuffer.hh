@@ -18,10 +18,16 @@
 #define TR_GBUFFER_ENTRIES \
     /* RGB: total color in linear color space. */\
     TR_GBUFFER_ENTRY(color, vk::Format::eR16G16B16A16Sfloat)\
-    /* RGB: direct light in linear color space. */\
-    TR_GBUFFER_ENTRY(direct, vk::Format::eR16G16B16A16Sfloat)\
-    /* RGB:diffusedirect light in linear color space. */\
+    /* RGB: diffuse and transmissive light in linear color space. */\
     TR_GBUFFER_ENTRY(diffuse, vk::Format::eR16G16B16A16Sfloat)\
+    /* RGB: reflected light in linear color space. */\
+    TR_GBUFFER_ENTRY(reflection, vk::Format::eR16G16B16A16Sfloat)\
+    /* RG: diffuse and specular temporal gradients. */\
+    TR_GBUFFER_ENTRY(temporal_gradient, vk::Format::eR8G8Unorm)\
+    /* R: sampling confidence. */\
+    TR_GBUFFER_ENTRY(confidence, vk::Format::eR16Sfloat)\
+    /* R: Curvature. */\
+    TR_GBUFFER_ENTRY(curvature, vk::Format::eR16Sfloat)\
     /* RGB: Material albedo in linear color space. */\
     TR_GBUFFER_ENTRY(albedo, vk::Format::eR16G16B16A16Sfloat)\
     /* R: Metallicness, G: Roughness, B: IOR, A: transmittance */\
@@ -133,17 +139,19 @@ namespace tr
 #define TR_GBUFFER_ENTRY(name, format) \
         void add_##name(\
             vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eStorage,\
-            vk::Format fmt = format\
+            vk::Format fmt = format,\
+            vk::ImageLayout layout = vk::ImageLayout::eUndefined\
         );\
         bool has_##name() const;
         TR_GBUFFER_ENTRIES
 #undef TR_GBUFFER_ENTRY
 
-        void add(gbuffer_spec spec);
+        void add(gbuffer_spec spec, vk::ImageLayout layout = vk::ImageLayout::eUndefined);
 
         gbuffer_target get_array_target(device_id id) const;
         gbuffer_target get_layer_target(device_id id, uint32_t layer_index) const;
         gbuffer_target get_multiview_block_target(device_id id, uint32_t block_index) const;
+        gbuffer_target get_render_target(device_id id, texture_view_params view) const;
         size_t entry_count() const;
         size_t get_layer_count() const;
         size_t get_multiview_block_count() const;

@@ -164,4 +164,12 @@ device_mask& device_mask::operator^=(device_mask other)
     return *this = *this ^ other;
 }
 
+size_t device_mask::get_min_storage_buffer_alignment() const
+{
+    size_t min_alignment = 0;
+    for(device& dev: *this)
+        min_alignment = max(min_alignment, dev.props.limits.minStorageBufferOffsetAlignment);
+    return min_alignment;
+}
+
 }

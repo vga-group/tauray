@@ -31,8 +31,6 @@ public:
         int max_ray_depth = 8;
         float min_ray_dist = 0.001f;
 
-        bool pre_transformed_vertices = false;
-
         int rng_seed = 0;
         sampler_type local_sampler  = sampler_type::UNIFORM_RANDOM;
 
@@ -40,11 +38,6 @@ public:
         // tracking. 0 puts all in one command buffer and is fastest.
         size_t max_passes_per_command_buffer = 0;
     };
-
-    static void get_common_defines(
-        std::map<std::string, std::string>& defines,
-        const options& opt
-    );
 
     rt_stage(
         device& dev,
@@ -57,6 +50,9 @@ public:
     rt_stage(rt_stage&& other) = delete;
 
     void reset_sample_counter();
+
+    void get_common_defines(std::map<std::string, std::string>& defines);
+
 
 protected:
     void update(uint32_t frame_index) override;
@@ -73,6 +69,7 @@ protected:
     unsigned get_pass_count() const;
 
     scene_stage* ss;
+    unsigned sample_count_multiplier;
 
 private:
     options opt;

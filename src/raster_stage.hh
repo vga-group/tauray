@@ -7,6 +7,7 @@
 #include "sampler.hh"
 #include "gbuffer.hh"
 #include "gpu_buffer.hh"
+#include "shadow_map.hh"
 #include "stage.hh"
 
 namespace tr
@@ -24,28 +25,36 @@ public:
         bool clear_depth = true;
         bool sample_shading = false;
 
-        // Shadow filtering options.
-        int pcf_samples = 64; // 0 => bilinear interpolation
-        int omni_pcf_samples = 16; // 0 => bilinear interpolation
-        int pcss_samples = 32; // 0 => disable PCSS
-        // The minimum radius prevents PCSS from degrading to bilinear filtering
-        // near shadow caster.
-        float pcss_minimum_radius = 0.0f;
+        shadow_map_filter filter = {};
 
         // Spherical harmonics options
         bool use_probe_visibility = false;
         int sh_order = 2;
+        bool estimate_indirect = true;
+        bool estimate_direct = true;
 
         // Required for some denoisers to drop albedo from transparent textures in the gbuffer
         bool force_alpha_to_coverage = false;
         // Output layout to avoid excess work in render pass
         vk::ImageLayout output_layout = vk::ImageLayout::eColorAttachmentOptimal;
+
+        unsigned base_camera_index = 0;
+
+        // Attempts to undo TAA jitter for textures, increasing their clarity.
+        bool unjitter_textures = false;
     };
 
     raster_stage(
         device& dev,
         scene_stage& ss,
         const std::vector<gbuffer_target>& output_array_targets,
+        const options& opt
+    );
+
+    raster_stage(
+        device& dev,
+        scene_stage& ss,
+        gbuffer_target& output_target,
         const options& opt
     );
 

@@ -154,7 +154,8 @@
         {"dshgi", options::DSHGI}, \
         {"dshgi-server", options::DSHGI_SERVER}, \
         {"dshgi-client", options::DSHGI_CLIENT}, \
-        {"restir-di", options::RESTIR_DI}, \
+        {"restir", options::RESTIR}, \
+        {"restir-hybrid", options::RESTIR_HYBRID}, \
         {"albedo", feature_stage::ALBEDO}, \
         {"world-normal", feature_stage::WORLD_NORMAL}, \
         {"view-normal", feature_stage::VIEW_NORMAL}, \
@@ -320,10 +321,6 @@
         {"orthographic", tr::camera::ORTHOGRAPHIC}, \
         {"equirectangular", tr::camera::EQUIRECTANGULAR} \
     ) \
-    TR_BOOL_OPT(ply_streaming, \
-        "Stream .ply model continuously. Assumes that new ply model data is " \
-        "appended to the given file while this program runs.", \
-        false) \
     TR_ENUM_OPT(up_axis, int, \
         "Rotates the given axis as the up axis in the scene.", \
         1, \
@@ -409,6 +406,8 @@
     TR_STRUCT_OPT(taa, \
         "Sets parameters for temporal antialiasing.", \
         TR_STRUCT_OPT_INT(sequence_length, 0, 1, INT_MAX) \
+        TR_STRUCT_OPT_BOOL(edge_dilation, true) \
+        TR_STRUCT_OPT_BOOL(anti_shimmer, false) \
     )\
     TR_ENUM_OPT(denoiser, options::denoiser_type, \
         "Selects the denoiser to use.", \
@@ -417,7 +416,7 @@
         {"svgf", options::denoiser_type::SVGF}, \
         {"bmfr", options::denoiser_type::BMFR} \
     ) \
-    TR_STRUCT_OPT(svgf_params, \
+    TR_STRUCT_OPT(svgf, \
         "Parameters for the SVGF denoiser.\n" \
         "atrous-diffuse-iter: number of iterations of the atrous filter for the diffuse channel\n"\
         "atrous-spec-iter: number of iterations of the atrous filter for the specular channel\n"\
@@ -539,16 +538,28 @@
         "Sets the timing data output file. Default is stdout.", \
         "" \
     ) \
-    TR_STRUCT_OPT(restir_di, \
-        "The implementation is biased if sample_visibility = true and " \
-        "shared_visibility = true. sample_visibility only has an effect when " \
-        "shared_visibility = true.\n", \
-        TR_STRUCT_OPT_INT(spatial_samples, 4, 0, 5000) \
-        TR_STRUCT_OPT_FLOAT(max_confidence, 64, 0, 10000) \
-        TR_STRUCT_OPT_INT(ris_samples, 8, 1, 5000) \
-        TR_STRUCT_OPT_FLOAT(search_radius, 32, 0, 500) \
-        TR_STRUCT_OPT_BOOL(shared_visibility, false) \
-        TR_STRUCT_OPT_BOOL(sample_visibility, false) \
+    TR_STRUCT_OPT(restir, \
+        "Parameters for ReSTIR", \
+        TR_STRUCT_OPT_FLOAT(max_confidence, 16, 0, FLT_MAX) \
+        TR_STRUCT_OPT_BOOL(temporal_reuse, true) \
+        TR_STRUCT_OPT_INT(canonical_samples, 1, 1, INT_MAX) \
+        TR_STRUCT_OPT_INT(spatial_samples, 2, 0, 16) \
+        TR_STRUCT_OPT_INT(passes, 1, 0, INT_MAX) \
+        TR_STRUCT_OPT_BOOL(sample_spatial_disk, true) \
+        TR_STRUCT_OPT_ENUM(shift_mapping_type, \
+            restir_stage::shift_mapping_type, \
+            restir_stage::RECONNECTION_SHIFT, \
+            {"reconnection-shift", restir_stage::RECONNECTION_SHIFT}, \
+            {"random-replay-shift", restir_stage::RANDOM_REPLAY_SHIFT}, \
+            {"hybrid-shift", restir_stage::HYBRID_SHIFT} \
+        ) \
+        TR_STRUCT_OPT_FLOAT(reconnection_scale, 2, 0, FLT_MAX) \
+        TR_STRUCT_OPT_FLOAT(max_search_radius, 32, 0, INT_MAX) \
+        TR_STRUCT_OPT_FLOAT(min_search_radius, 1, 0, INT_MAX) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_material, false) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_acceleration_structures, false) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_reconnection_radiance, false) \
+        TR_STRUCT_OPT_BOOL(assume_unchanged_temporal_visibility, false) \
     )
 //==============================================================================
 // END OF OPTIONS
@@ -558,6 +569,7 @@
 #include "headless.hh"
 #include "tonemap_stage.hh"
 #include "path_tracer_stage.hh"
+#include "restir_stage.hh"
 #include "rt_renderer.hh"
 #include "rt_common.hh"
 #include "feature_stage.hh"
@@ -629,7 +641,8 @@ struct options
         DSHGI,
         DSHGI_SERVER,
         DSHGI_CLIENT,
-        RESTIR_DI
+        RESTIR,
+        RESTIR_HYBRID
     };
     using renderer_option_type = std::variant<
         tr::options::basic_pipeline_type, feature_stage::feature>;
@@ -657,6 +670,7 @@ struct options
 #define TR_STRUCT_OPT_INT(name, default, min, max) int name = default;
 #define TR_STRUCT_OPT_FLOAT(name, default, min, max) float name = default;
 #define TR_STRUCT_OPT_BOOL(name, default) bool name = default;
+#define TR_STRUCT_OPT_ENUM(name, type, default, ...) type name = default;
     TR_OPTIONS
 #undef TR_BOOL_OPT
 #undef TR_BOOL_SOPT
@@ -673,6 +687,7 @@ struct options
 #undef TR_STRUCT_OPT_INT
 #undef TR_STRUCT_OPT_FLOAT
 #undef TR_STRUCT_OPT_BOOL
+#undef TR_STRUCT_OPT_ENUM
 };
 
 void parse_command_line_options(char** argv, options& opt);

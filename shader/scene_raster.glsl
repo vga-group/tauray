@@ -30,8 +30,8 @@ struct shadow_map
     float max_bias;
     int cascade_index;
     vec4 rect;
-    vec4 clip_info;
-    vec4 projection_info_radius;
+    vec4 projection_info;
+    vec4 range_radius;
     mat4 world_to_shadow;
 };
 
@@ -39,6 +39,17 @@ struct shadow_map_cascade
 {
     vec4 offset_scale;
     vec4 rect;
+};
+
+struct shadow_mapping_parameters
+{
+    vec2 shadow_map_atlas_pixel_margin;
+    float pcss_minimum_radius;
+    float noise_scale;
+    int pcf_samples;
+    int omni_pcf_samples;
+    int pcss_samples;
+    int pad[1];
 };
 
 layout(binding = 2, set = SCENE_RASTER_SET, std430) readonly buffer shadow_map_buffer

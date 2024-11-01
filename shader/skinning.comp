@@ -32,6 +32,11 @@ layout(binding = 3) readonly buffer joint_buffer
     mat4 transforms[];
 } joint_data;
 
+layout(binding = 4, scalar) buffer prev_pos_buffer
+{
+    vec4 prev_pos[];
+} prev_pos_data;
+
 layout(push_constant) uniform push_constant_buffer
 {
     uint vertex_count;
@@ -59,6 +64,8 @@ void main()
         dst.normal = normalize(vec3(it_skin_mat * vec4(src.normal, 0.0)));
         dst.tangent = vec4(normalize(vec3(it_skin_mat * vec4(src.tangent.xyz, 0.0))), src.tangent.w);
 
+        vec3 prev_pos = destination_data.vertices[i].pos;
         destination_data.vertices[i] = dst;
+        prev_pos_data.prev_pos[i] = vec4(prev_pos, 0);
     }
 }

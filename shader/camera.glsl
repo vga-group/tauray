@@ -18,6 +18,8 @@ struct camera_data
     mat4 proj_inverse;
     vec4 origin;
     vec4 dof_params;
+    vec4 projection_info;
+    vec4 pan;
 };
 
 void get_camera_ray(
@@ -59,9 +61,37 @@ void get_camera_ray(
 vec3 get_camera_projection(in camera_data cam, vec3 world_pos)
 {
     vec4 projected_pos = cam.view_proj * vec4(world_pos, 1.0f);
-    vec3 uv = vec3(projected_pos.xy / projected_pos.w, projected_pos.z);
+    vec3 uv = vec3(projected_pos.xy / projected_pos.w, projected_pos.w);
     uv.xy = uv.xy * 0.5 + 0.5;
     return uv;
+}
+
+vec3 get_camera_projected_direction(in camera_data cam, vec3 dir)
+{
+    vec4 projected_dir = cam.view_proj * vec4(dir, 0.0f);
+    vec3 uv = vec3(projected_dir.xy / projected_dir.w, projected_dir.w);
+    uv.xy = uv.xy * 0.5 + 0.5;
+    return uv;
+}
+
+// Used for edge detection algorithms. Inverse size of frustum at the depth of
+// a given point.
+float get_frustum_size(camera_data cam, vec3 pos)
+{
+    float frustum_size = min(abs(cam.projection_info.z), abs(cam.projection_info.w));
+    if(cam.projection_info.x < 0) // Perspective
+        frustum_size *= abs(dot(cam.view_inverse[2].xyz, cam.view_inverse[3].xyz - pos));
+
+    return frustum_size;
+}
+
+float get_frustum_size(camera_data cam, float view_z)
+{
+    float frustum_size = min(abs(cam.projection_info.z), abs(cam.projection_info.w));
+    if(cam.projection_info.x < 0) // Perspective
+        frustum_size *= abs(view_z);
+
+    return frustum_size;
 }
 
 #elif CAMERA_PROJECTION_TYPE == 2
