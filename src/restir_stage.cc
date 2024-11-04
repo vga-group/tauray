@@ -476,6 +476,7 @@ restir_stage::restir_stage(
 void restir_stage::reset_accumulation()
 {
     accumulated_samples = 0;
+    valid_history_frame = UINT64_MAX;
 }
 
 void restir_stage::update(uint32_t frame_index)
@@ -786,7 +787,7 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_i
 
     uint64_t frame_counter = dev->ctx->get_frame_counter();
     temporal_timer.begin(cmd, dev->id, frame_index);
-    if(pass_index == 0 && opt.temporal_reuse && valid_history_frame+1 == frame_counter ? 1 : 0)
+    if(pass_index == 0 && opt.temporal_reuse && valid_history_frame+1 == frame_counter)
     { // TEMPORAL
         temporal_set.set_image(dev->id, "motion_tex", {{gbuf_sampler.get_sampler(dev->id), current_buffers.screen_motion.view, vk::ImageLayout::eShaderReadOnlyOptimal}});
         temporal_set.set_image("out_color", *cached_sample_color);

@@ -382,4 +382,13 @@ void restir_renderer::render()
     ctx->end_frame(deps);
 }
 
+void restir_renderer::reset_accumulation(bool reset_sample_counter)
+{
+    if(reset_sample_counter)
+    {
+        for(auto& pv: per_view)
+            pv.restir->reset_accumulation();
+    }
+}
+
 }

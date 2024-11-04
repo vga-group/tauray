@@ -42,6 +42,7 @@ public:
 
     void set_scene(scene* s) override;
     void render() override;
+    void reset_accumulation(bool reset_sample_counter) override;
 
 private:
     context* ctx;
