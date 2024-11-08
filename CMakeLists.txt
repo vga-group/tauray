@@ -117,6 +117,7 @@ add_library(tauray-core STATIC
   src/placeholders.cc
   src/post_processing_renderer.cc
   src/progress_tracker.cc
+  src/radiance_cascades_stage.cc
   src/radix_sort.cc
   src/raster_pipeline.cc
   src/raster_stage.cc

@@ -420,6 +420,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     sampling_weights.envmap = get_environment_map(s) ? opt.sample_envmap : 0.0f;
     sampling_weights.emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
 
+    radiance_cascades_stage::options raca_opt;
+
     sh_renderer::options sh;
     (rt_stage::options&)sh = rc_opt;
     sh.samples_per_probe = opt.samples_per_probe;
@@ -471,6 +473,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
             {
                 path_tracer_renderer::options rt_opt;
                 (rt_camera_stage::options&)rt_opt = rc_opt;
+                rt_opt.rc_opt = raca_opt;
                 rt_opt.use_shadow_terminator_fix =
                     opt.shadow_terminator_fix && use_shadow_terminator_fix;
                 rt_opt.use_white_albedo_on_first_bounce =

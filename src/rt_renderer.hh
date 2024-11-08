@@ -20,6 +20,7 @@
 #include "renderer.hh"
 #include "device_transfer.hh"
 #include "post_processing_renderer.hh"
+#include "radiance_cascades_stage.hh"
 #include <variant>
 
 namespace tr
@@ -33,6 +34,7 @@ public:
     {
         scene_stage::options scene_options = {};
         post_processing_renderer::options post_process = {};
+        std::optional<radiance_cascades_stage::options> rc_opt;
         bool accumulate = false;
     };
 
@@ -67,6 +69,7 @@ private:
     };
     std::vector<per_device_data> per_device;
     std::optional<scene_stage> scene_update;
+    std::optional<radiance_cascades_stage> rc_update;
     std::optional<stitch_stage> stitch;
     std::optional<raster_stage> gbuffer_rasterizer;
     dependencies last_frame_deps;
