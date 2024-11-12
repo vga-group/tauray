@@ -5,6 +5,7 @@
 #include "scene_stage.hh"
 #include "path_tracer_stage.hh"
 #include "tonemap_stage.hh"
+#include "rc_visualizer.hh"
 #include "radiance_cascades_stage.hh"
 
 namespace tr
@@ -25,6 +26,7 @@ public:
     rc_renderer(rc_renderer&& other) = delete;
 
     void set_scene(scene* s) override;
+    void set_visualizer_pos(int cascade, int layer);
     void render() override;
     void reset_accumulation(bool reset_sample_counter) override;
 
@@ -36,7 +38,8 @@ private:
 
     std::optional<scene_stage> scene_update;
     std::optional<radiance_cascades_stage> rc;
-    std::optional<path_tracer_stage> pt;
+    std::optional<rc_visualizer_stage> rcv;
+    //std::optional<path_tracer_stage> pt;
     std::optional<tonemap_stage> tonemap;
 
     dependencies last_frame_deps;

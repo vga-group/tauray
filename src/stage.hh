@@ -63,9 +63,9 @@ class single_device_stage: public multi_device_stage
 public:
     single_device_stage(device& dev, command_buffer_strategy strategy = COMMAND_BUFFER_PER_FRAME);
 
-protected:
     device* dev;
 
+protected:
     vk::CommandBuffer begin_compute(bool single_use = false);
     void end_compute(vk::CommandBuffer buf, uint32_t frame_index, uint32_t swapchain_index = 0);
 

@@ -1,7 +1,6 @@
 #ifndef TR_RADIANCE_CASCADES_STAGE_HH
 #define TR_RADIANCE_CASCADES_STAGE_HH
 #include "texture.hh"
-#include "transformable.hh"
 #include "compute_pipeline.hh"
 #include "scene_stage.hh"
 #include "timer.hh"
@@ -43,6 +42,8 @@ public:
     );
 
     descriptor_set& get_descriptors();
+    size_t get_cascade_count() const;
+    uvec3 get_cascade_size(int cascade) const;
 
 private:
     void update(uint32_t frame_index) override;

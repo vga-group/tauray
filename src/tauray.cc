@@ -470,7 +470,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     pt_opt.tri_light_mode = opt.tri_light_mode;
     pt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
     pt_opt.hide_lights = opt.hide_lights;
-
+    pt_opt.distribution.strategy = opt.distribution_strategy;
+    if(ctx.get_devices().size() == 1)
+        pt_opt.distribution.strategy = DISTRIBUTION_DUPLICATE;
 
     if(auto rtype = std::get_if<feature_stage::feature>(&opt.renderer))
     {
@@ -521,9 +523,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 else if (opt.denoiser == options::denoiser_type::BMFR)
                     rt_opt.post_process.bmfr = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY };
                 rt_opt.scene_options = scene_options;
-                rt_opt.distribution.strategy = opt.distribution_strategy;
-                if(ctx.get_devices().size() == 1)
-                    rt_opt.distribution.strategy = DISTRIBUTION_DUPLICATE;
                 return new path_tracer_renderer(ctx, rt_opt);
             }
         case options::DIRECT:
@@ -681,7 +680,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
             {
                 rc_renderer::options ropt;
                 ropt.scene_options = scene_options;
-                (rt_camera_stage::options&)ropt.pt_options = pt_opt;
+                ropt.pt_options = pt_opt;
                 ropt.tonemap_options = tonemap;
 
                 return new rc_renderer(ctx, ropt);
@@ -839,6 +838,8 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
     bool camera_moved = false;
     bool has_events = SDL_WasInit(SDL_INIT_EVENTS);
 
+    int cascade = 0, layer = 0;
+
     ivec3 camera_movement = ivec3(0);
     std::string command_line;
     while(opt.running)
@@ -898,6 +899,26 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                 {
                     camera_index--;
                     camera_moved = true;
+                }
+                if(event.key.keysym.sym == SDLK_PLUS)
+                {
+                    cascade++;
+                    printf("cascade: %d\n", cascade);
+                }
+                if(event.key.keysym.sym == SDLK_MINUS && cascade > 0)
+                {
+                    cascade--;
+                    printf("cascade: %d\n", cascade);
+                }
+                if(event.key.keysym.sym == SDLK_z)
+                {
+                    layer++;
+                    printf("layer: %d\n", layer);
+                }
+                if(event.key.keysym.sym == SDLK_x && layer > 0)
+                {
+                    layer--;
+                    printf("layer: %d\n", layer);
                 }
                 if(event.key.keysym.sym == SDLK_t && !opt.timing)
                     ctx.get_timing().print_last_trace(opt.trace);
@@ -964,6 +985,9 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
         if(ctx.init_frame())
             break;
+
+        if(rc_renderer* rc = dynamic_cast<rc_renderer*>(rr.get()))
+            rc->set_visualizer_pos(cascade, layer);
 
         if(cameras.size() != 0)
         {
