@@ -2,7 +2,7 @@
 #include "context.hh"
 #include "log.hh"
 #include "json.hpp"
-#include <iostream>
+#include "misc.hh"
 
 namespace tr
 {
@@ -29,13 +29,19 @@ void tracing_record::init(unsigned max_timestamps)
         {
             timing_data& t = timing_resources[i];
             t.timestamp_pools.resize(MAX_FRAMES_IN_FLIGHT);
+            vk::CommandBuffer cb = begin_command_buffer(devices[i]);
             for(size_t j = 0; j < MAX_FRAMES_IN_FLIGHT; ++j)
+            {
                 t.timestamp_pools[j] = vkm(
                     devices[i],
                     devices[i].logical.createQueryPool({
                         {}, vk::QueryType::eTimestamp, max_timestamps * 2u
                     })
                 );
+                cb.resetQueryPool(t.timestamp_pools[j], 0, max_timestamps*2u);
+            }
+            end_command_buffer(devices[i], cb);
+
             for(unsigned j = 0; j < max_timestamps; ++j)
                 t.available_queries.insert(j);
             t.last_results.resize(max_timestamps*2, 0);
