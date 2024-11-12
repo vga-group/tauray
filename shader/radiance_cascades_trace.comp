@@ -1,25 +1,169 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_ray_query : enable
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_debug_printf : enable
 
-#define SCENE_SET 1
-
 layout(push_constant) uniform push_constant_buffer
 {
     vec4 base_offset;
     vec4 xyz_step;
     int cascade;
+    int cascade_count;
     float interval_start;
     float interval_end;
 } pc;
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
+//layout(binding = 0, r32f) uniform writeonly image2DArray cascade_target;
+layout(binding = 0, rgba32f) uniform writeonly image2DArray cascade_target;
+
+#include "radiance_cascades.glsl"
+
+#define RAY_TRACING
+#define USE_RAY_QUERIES
+#define SCENE_SET 1
+#include "scene.glsl"
+#include "rt_common.glsl"
+
+// 0 = mesh
+// 1 = point light
+// -1 = miss
+int get_intersection_info(
+    vec3 ray_origin,
+    vec3 ray_direction,
+    hit_info payload,
+    out vertex_data vd,
+    out sampled_material mat
+){
+    float point_prob, triangle_prob, dir_prob, envmap_prob;
+    get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
+
+    if(payload.instance_id >= 0)
+    { // Mesh
+        vd = get_interpolated_vertex(
+            ray_direction, payload.barycentrics,
+            payload.instance_id,
+            payload.primitive_id
+        );
+        mat = sample_material(payload.instance_id, vd);
+        mat.albedo.a = 1.0;
+
+        return 0;
+    }
+    else if(payload.primitive_id >= 0)
+    { // Point light
+        point_light pl;
+        pl = point_lights.lights[payload.primitive_id];
+
+        vec3 hit_pos = ray_origin + ray_direction * payload.barycentrics.x;
+        // No worries, radius cannot be zero -- we couldn't hit the light here
+        // if it was!
+        mat.emission = get_spotlight_intensity(pl, normalize(pl.pos-ray_origin)) * pl.color / (pl.radius * pl.radius * M_PI);
+        vd.hard_normal = normalize(hit_pos-pl.pos);
+        vd.pos = hit_pos;
+        return 1;
+    }
+    else
+    { // Miss
+        if(pc.cascade+1 == pc.cascade_count)
+        { // Only last cascade gets the environment lighting.
+            vec4 color = scene_metadata.environment_factor;
+            if(scene_metadata.environment_proj >= 0)
+            {
+                vec2 uv = vec2(0);
+                uv.y = asin(-ray_direction.y)/M_PI+0.5f;
+                uv.x = atan(ray_direction.z, ray_direction.x)/(2*M_PI)+0.5f;
+                color.rgb *= texture(environment_map_tex, uv).rgb;
+            }
+            mat.emission = color.rgb;
+
+            for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+            {
+                directional_light dl = directional_lights.lights[i];
+                if(dl.dir_cutoff >= 1.0f)
+                    continue;
+                float visible = step(dl.dir_cutoff, dot(ray_direction, -dl.dir));
+                vec3 color = visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
+                mat.emission += color;
+            }
+
+            vd.pos = ray_origin + 1e9 * ray_direction;
+            vd.hard_normal = vec3(0);
+        }
+        return -1;
+    }
+}
+
+hit_info trace_primary_ray(
+    uint seed,
+    vec3 origin,
+    vec3 dir
+){
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq,
+        tlas,
+        gl_RayFlagsOpaqueEXT,
+        0xFF,
+        origin,
+        pc.interval_start,
+        dir,
+        pc.interval_end
+    );
+
+    return trace_ray_query(rq, seed);
+}
+
 void main()
 {
-    // TODO
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    uint seed = 0; // TODO
+
+    ivec3 probe_index = ivec3(p.x>>(pc.cascade+1), p.y>>(pc.cascade+1), p.z);
+
+    ivec2 map_texel = p.xy - (probe_index.xy << (pc.cascade+1));
+
+    rc_spherical_triangle tri;
+    float solid_angle;
+    rc_mapping(map_texel, pc.cascade, tri, solid_angle);
+
+    // Using centroid for now. If jittering is enabled, should probably
+    // integrate over the solid angle of 'tri' instead.
+    vec3 ray_dir = normalize(tri.a+tri.b+tri.c);
+    vec3 ray_origin = pc.base_offset.xyz + probe_index * pc.xyz_step.xyz;
+
+    vec4 hit_color = vec4(0);
+
+    hit_info hi = trace_primary_ray(seed, ray_origin, ray_dir);
+    vertex_data vd;
+    sampled_material mat;
+    int hit_type = get_intersection_info(ray_origin, ray_dir, hi, vd, mat);
+    if(hit_type >= 0 || pc.cascade+1 == pc.cascade_count)
+    { // Hit an emissive surface.
+        hit_color.rgb = mat.emission;
+        hit_color.a = 1.0f;
+    }
+    /*
+    if(hit_type == 0)
+    {
+        hit_color.rgb = vec3(1,0,0);
+        hit_color.a = 1.0f;
+    }
+    else if(hit_type == 1)
+    {
+        hit_color.rgb = vec3(0,1,0);
+        hit_color.a = 1.0f;
+    }
+    else if(hit_type == -1)
+    {
+        hit_color.rgb = vec3(0,0,1);
+        hit_color.a = 1.0f;
+    }
+    */
+
+    imageStore(cascade_target, p, hit_color);
 }

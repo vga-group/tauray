@@ -10,6 +10,7 @@ struct trace_push_constant_buffer
     pvec4 base_offset;
     pvec4 xyz_step;
     int cascade;
+    int cascade_count;
     float interval_start;
     float interval_end;
 };
@@ -52,6 +53,11 @@ radiance_cascades_stage::radiance_cascades_stage(
         gather.init(src, {&gather_desc});
     }
 
+    if(this->opt.t0 < 0)
+    {
+        vec3 extent = opt.volume.max - opt.volume.min;
+        this->opt.t0 = length(extent) / ((1<<(opt.log2_resolution+1))-1);
+    }
 
     for(uint32_t cascade = 0; cascade <= opt.log2_resolution; ++cascade)
     {
@@ -62,7 +68,8 @@ radiance_cascades_stage::radiance_cascades_stage(
             device_mask(dev),
             uvec2(cascade_size*resolution),
             (unsigned)cascade_size,
-            vk::Format::eR16Sfloat,
+            //vk::Format::eR16Sfloat,
+            vk::Format::eR16G16B16A16Sfloat,
             0,
             nullptr,
             vk::ImageTiling::eOptimal,
@@ -75,12 +82,13 @@ radiance_cascades_stage::radiance_cascades_stage(
                 device_mask(dev),
                 uvec2(cascade_size*resolution),
                 (unsigned)cascade_size,
-                vk::Format::eR16Sfloat,
+                //vk::Format::eR16Sfloat,
+                vk::Format::eR16G16B16A16Sfloat,
                 0,
                 nullptr,
                 vk::ImageTiling::eOptimal,
                 vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
-                vk::ImageLayout::eGeneral
+                vk::ImageLayout::eShaderReadOnlyOptimal
             );
         }
     }
@@ -91,6 +99,18 @@ radiance_cascades_stage::radiance_cascades_stage(
 descriptor_set& radiance_cascades_stage::get_descriptors()
 {
     return cascade_descriptors;
+}
+
+size_t radiance_cascades_stage::get_cascade_count() const
+{
+    return opt.log2_resolution+1;
+}
+
+uvec3 radiance_cascades_stage::get_cascade_size(int cascade) const
+{
+    size_t cascade_size = 1<<(opt.log2_resolution-cascade);
+    size_t resolution = 1<<(cascade+1);
+    return uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size);
 }
 
 void radiance_cascades_stage::update(uint32_t frame_index)
@@ -118,7 +138,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
             vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral,
             VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
             (*next_cascades)[i].get_image(dev->id),
-            {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+            {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
         ));
 
         dii.push_back(vk::DescriptorImageInfo{
@@ -157,8 +177,10 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         trace.push_descriptors(cb, trace_desc, 0);
 
         pc.cascade = cascade;
+        pc.cascade_count = get_cascade_count();
         pc.interval_start = pc.interval_end;
-        pc.interval_end = pc.interval_start + length;
+        // Last iteration gets to cover the entire world.
+        pc.interval_end = cascade == opt.log2_resolution ? 1e9 : pc.interval_start + length;
         pc.base_offset = pvec4(opt.volume.min + vec3(pc.xyz_step), 0);
         pc.xyz_step *= 2.0f;
         length *= 2.0f;
@@ -167,7 +189,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
         size_t cascade_size = 1<<(opt.log2_resolution-cascade);
         size_t resolution = 1<<(cascade+1);
-        uvec3 wg = uvec3(uvec2(resolution+7u)/8u, cascade_size);
+        uvec3 wg = uvec3(uvec2(cascade_size * resolution+7u)/8u, cascade_size);
         cb.dispatch(wg.x, wg.y, wg.z);
     }
 
@@ -201,7 +223,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
         size_t cascade_size = 1<<(opt.log2_resolution-cur_cascade);
         size_t resolution = 1<<(cur_cascade+1);
-        uvec3 wg = uvec3(uvec2(resolution+7u)/8u, cascade_size);
+        uvec3 wg = uvec3(uvec2(cascade_size * resolution+7u)/8u, cascade_size);
         cb.dispatch(wg.x, wg.y, wg.z);
     }
 

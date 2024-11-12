@@ -1,0 +1,43 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    int display_w;
+    int display_h;
+    int cascade_w;
+    int cascade_h;
+    int cascade;
+    int layer;
+} pc;
+
+layout(binding = 0, rgba32f) uniform writeonly image2D target;
+#define RADIANCE_CASCADES_SET 1
+#include "radiance_cascades.glsl"
+
+void main()
+{
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if(p.x < pc.display_w && p.y < pc.display_h)
+    {
+        vec3 col = vec3(0.5);
+
+        if(p.x < pc.cascade_w && p.y < pc.cascade_h)
+        {
+            //float value = texelFetch(radiance_cascades[pc.cascade], ivec3(p.x, p.y, pc.layer), 0).r;
+            //col = value > 0.0 ? vec3(value) : -value * vec3(0.5, 0.5, 1.0);
+
+            // RGBA version
+            vec4 value = texelFetch(radiance_cascades[pc.cascade], ivec3(p.x, p.y, pc.layer), 0);
+            col = value.rgb;
+        }
+        imageStore(target, p, vec4(col, 1.0f));
+    }
+}

@@ -18,9 +18,13 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     this->opt.scene_options.alloc_sh_grids = false;
     this->opt.scene_options.track_prev_tlas = false;
 
+    this->opt.pt_options.distribution.size = ctx.get_size();
+
     scene_update.emplace(dev, this->opt.scene_options);
 
     radiance_cascades_stage::options rc_opt;
+    // Hardcoded for test.glb
+    rc_opt.volume = {vec3(-2), vec3(2)};
 
 
     gbuffer.reset(dev, ctx.get_size(), 1);
@@ -29,8 +33,10 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
 
     rc.emplace(dev, *scene_update, rc_opt);
 
-    gbuffer_target cur = gbuffer.get_array_target(dev.id);
-    pt.emplace(dev, *scene_update, cur, this->opt.pt_options);
+    gbuffer_target cur = gbuffer.get_layer_target(dev.id, 0);
+    rcv.emplace(*rc, cur.color);
+    cur = gbuffer.get_array_target(dev.id);
+    //pt.emplace(dev, *scene_update, cur, this->opt.pt_options);
 
     std::vector<render_target> display = ctx.get_array_render_target();
     this->opt.tonemap_options.limit_to_input_layer = 0;
@@ -49,6 +55,11 @@ void rc_renderer::set_scene(scene* s)
     scene_update->set_scene(s);
 }
 
+void rc_renderer::set_visualizer_pos(int cascade, int layer)
+{
+    rcv->set_position(cascade, layer);
+}
+
 void rc_renderer::render()
 {
     dependencies display_deps(ctx->begin_frame());
@@ -57,18 +68,19 @@ void rc_renderer::render()
 
     dependencies deps = scene_update->run(display_deps);
     deps = rc->run(deps);
-    deps = pt->run(deps);
+    //deps = pt->run(deps);
+    deps = rcv->run(deps);
     deps = tonemap->run(deps);
 
     ctx->end_frame(deps);
 }
 
-void rc_renderer::reset_accumulation(bool reset_sample_counter)
+void rc_renderer::reset_accumulation(bool)
 {
-    if(reset_sample_counter)
+    //if(reset_sample_counter)
     {
         //rc->reset_accumulation();
-        pt->reset_accumulated_samples();
+        //pt->reset_accumulated_samples();
     }
 }
 
