@@ -10,14 +10,13 @@
 #include "raster_renderer.hh"
 #include "dshgi_renderer.hh"
 #include "restir_renderer.hh"
+#include "rc_renderer.hh"
 #include "dshgi_server.hh"
 #include "frame_client.hh"
 #include "rt_renderer.hh"
 #include "scene.hh"
 #include "camera.hh"
-#include "texture.hh"
 #include "environment_map.hh"
-#include "sampler.hh"
 #include "material.hh"
 #include "gltf.hh"
 #include "assimp.hh"
@@ -26,7 +25,6 @@
 #include <chrono>
 #include <iostream>
 #include <thread>
-#include <numeric>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -455,6 +453,25 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         vec2(0.005, opt.shadow_map_bias*2)
     );
 
+    path_tracer_stage::options pt_opt;
+    (rt_camera_stage::options&)pt_opt = rc_opt;
+    pt_opt.use_shadow_terminator_fix =
+        opt.shadow_terminator_fix && use_shadow_terminator_fix;
+    pt_opt.use_white_albedo_on_first_bounce =
+        opt.use_white_albedo_on_first_bounce;
+    pt_opt.film = opt.film;
+    pt_opt.mis_mode = opt.multiple_importance_sampling;
+    pt_opt.film_radius = opt.film_radius;
+    pt_opt.russian_roulette_delta = opt.russian_roulette;
+    pt_opt.indirect_clamping = opt.indirect_clamping;
+    pt_opt.regularization_gamma = opt.regularization;
+    pt_opt.sampling_weights = sampling_weights;
+    pt_opt.bounce_mode = opt.bounce_mode;
+    pt_opt.tri_light_mode = opt.tri_light_mode;
+    pt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
+    pt_opt.hide_lights = opt.hide_lights;
+
+
     if(auto rtype = std::get_if<feature_stage::feature>(&opt.renderer))
     {
         feature_renderer::options rt_opt;
@@ -472,23 +489,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         case options::PATH_TRACER:
             {
                 path_tracer_renderer::options rt_opt;
-                (rt_camera_stage::options&)rt_opt = rc_opt;
+                (path_tracer_stage::options&)rt_opt = pt_opt;
                 rt_opt.rc_opt = raca_opt;
-                rt_opt.use_shadow_terminator_fix =
-                    opt.shadow_terminator_fix && use_shadow_terminator_fix;
-                rt_opt.use_white_albedo_on_first_bounce =
-                    opt.use_white_albedo_on_first_bounce;
-                rt_opt.film = opt.film;
-                rt_opt.mis_mode = opt.multiple_importance_sampling;
-                rt_opt.film_radius = opt.film_radius;
-                rt_opt.russian_roulette_delta = opt.russian_roulette;
-                rt_opt.indirect_clamping = opt.indirect_clamping;
-                rt_opt.regularization_gamma = opt.regularization;
-                rt_opt.sampling_weights = sampling_weights;
-                rt_opt.bounce_mode = opt.bounce_mode;
-                rt_opt.tri_light_mode = opt.tri_light_mode;
                 rt_opt.post_process.tonemap = tonemap;
-                rt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
                 if(opt.temporal_reprojection > 0.0f)
                     rt_opt.post_process.temporal_reprojection =
                         temporal_reprojection_stage::options{opt.temporal_reprojection, {}};
@@ -497,7 +500,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                         spatial_reprojection_stage::options{};
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
-                rt_opt.hide_lights = opt.hide_lights;
                 rt_opt.accumulate = opt.accumulation;
                 rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
                     opt.spatial_reprojection,
@@ -674,6 +676,15 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 }
 
                 return new restir_renderer(ctx, re_opt);
+            }
+        case options::RC:
+            {
+                rc_renderer::options ropt;
+                ropt.scene_options = scene_options;
+                (rt_camera_stage::options&)ropt.pt_options = pt_opt;
+                ropt.tonemap_options = tonemap;
+
+                return new rc_renderer(ctx, ropt);
             }
         };
     }
