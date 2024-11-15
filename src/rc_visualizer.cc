@@ -33,7 +33,7 @@ rc_visualizer_stage::rc_visualizer_stage(
 {
     shader_source src("shader/radiance_cascades_visualizer.comp");
     desc.add(src);
-    visualize.init(src, {&desc, &rc.get_descriptors()});
+    visualize.init(src, {&desc, &rc.ss->get_descriptors(), &rc.get_descriptors()});
 }
 
 void rc_visualizer_stage::set_position(int cascade, int layer)
@@ -50,7 +50,8 @@ void rc_visualizer_stage::update(uint32_t frame_index)
     stage_timer.begin(cb, dev->id, frame_index);
 
     visualize.bind(cb);
-    visualize.set_descriptors(cb, rc->get_descriptors(), 0, 1);
+    visualize.set_descriptors(cb, rc->ss->get_descriptors(), 0, 1);
+    visualize.set_descriptors(cb, rc->get_descriptors(), 0, 2);
     desc.set_image(dev->id, "target", {{{}, output.view, vk::ImageLayout::eGeneral}});
     visualize.push_descriptors(cb, desc, 0);
 

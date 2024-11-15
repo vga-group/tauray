@@ -2,11 +2,6 @@
 #define RADIANCE_CASCADES_GLSL
 #include "math.glsl"
 
-#ifdef RADIANCE_CASCADES_SET
-layout(set=RADIANCE_CASCADES_SET, binding = 0) uniform sampler2DArray radiance_cascades[];
-#endif
-
-
 struct rc_spherical_triangle
 {
     vec3 a, b, c;
@@ -149,7 +144,8 @@ void rc_mapping(ivec2 p, int cascade, inout rc_spherical_triangle t, inout float
     }
 }
 
-void rc_inv_mapping(vec3 dir, int cascade, inout ivec2 p, inout rc_spherical_triangle t, inout float solid_angle)
+// Does cascade 0
+void rc_inv_mapping_init(vec3 dir, out ivec2 p, out float ccw, out rc_spherical_triangle t, out float solid_angle)
 {
     t.cos_a = -1.0f/3.0f;
     t.cos_b = -1.0f/3.0f;
@@ -186,32 +182,107 @@ void rc_inv_mapping(vec3 dir, int cascade, inout ivec2 p, inout rc_spherical_tri
     }
 
     solid_angle = M_PI;
+    ccw = 1.0;
+}
 
-    float ccw = 1.0;
-    for(int i = cascade-1; i >= 0; --i)
+void rc_inv_mapping_step(vec3 dir, inout ivec2 p, inout float ccw, inout rc_spherical_triangle t, inout float solid_angle)
+{
+    p <<= 1;
+
+    solid_angle *= 0.5f;
+    t.sin_solid_angle = sin(solid_angle);
+    t.cos_solid_angle = cos(solid_angle);
+    rc_reorder_triangle(t);
+    if(rc_select_subtriangle(t, dir, ccw))
     {
-        p <<= 1;
+        p.x++;
+        ccw = -ccw;
+    }
 
-        solid_angle *= 0.5f;
-        t.sin_solid_angle = sin(solid_angle);
-        t.cos_solid_angle = cos(solid_angle);
-        rc_reorder_triangle(t);
-        if(rc_select_subtriangle(t, dir, ccw))
-        {
-            p.x++;
-            ccw = -ccw;
-        }
-
-        solid_angle *= 0.5f;
-        t.sin_solid_angle = sin(solid_angle);
-        t.cos_solid_angle = cos(solid_angle);
-        rc_reorder_triangle(t);
-        if(rc_select_subtriangle(t, dir, ccw))
-        {
-            p.y++;
-            ccw = -ccw;
-        }
+    solid_angle *= 0.5f;
+    t.sin_solid_angle = sin(solid_angle);
+    t.cos_solid_angle = cos(solid_angle);
+    rc_reorder_triangle(t);
+    if(rc_select_subtriangle(t, dir, ccw))
+    {
+        p.y++;
+        ccw = -ccw;
     }
 }
+
+void rc_inv_mapping(vec3 dir, int cascade, inout ivec2 p, inout rc_spherical_triangle t, inout float solid_angle)
+{
+    float ccw;
+    rc_inv_mapping_init(dir, p, ccw, t, solid_angle);
+    for(int i = cascade-1; i >= 0; --i)
+        rc_inv_mapping_step(dir, p, ccw, t, solid_angle);
+}
+
+#ifdef RADIANCE_CASCADES_SET
+layout(set=RADIANCE_CASCADES_SET, binding = 0) uniform sampler2DArray radiance_cascades[];
+layout(set=RADIANCE_CASCADES_SET, binding = 1) uniform radiance_cascade_metadata_buffer
+{
+    vec4 aabb_min;
+    vec4 aabb_max;
+    // size.x = c0 width (x)
+    // size.y = c0 height (y)
+    // size.z = c0 depth (z)
+    // size.w = cascade count
+    ivec4 size;
+} radiance_cascade_metadata;
+
+vec3 query_radiance_cascades(vec3 origin, vec3 dir)
+{
+    vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
+    vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
+    // If outside cascade volume, continue ray until it is inside.
+    if(any(lessThan(origin, aabb_min)) || any(greaterThan(origin, aabb_max)))
+    {
+        float t = intersect_aabb(aabb_min, aabb_max, origin, dir);
+        if(t < 0)
+        {
+            // Miss: outside volume.
+            // TODO: Maybe could fall back to envmap?
+            return vec3(1);
+        }
+        origin = origin + dir * t;
+    }
+
+    // 0-1 inside cascade volume
+    vec3 fcoord = (origin - aabb_min) / (aabb_max - aabb_min);
+
+    ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
+    ivec2 probe_resolution = ivec2(2,2);
+    // TODO: Maybe make this a specialization constant?
+    int cascade_count = radiance_cascade_metadata.size.w;
+    ivec3 cascade_coord = clamp(ivec3(fcoord * cascade_size), ivec3(0), ivec3(cascade_size-1));
+
+    vec4 sum = vec4(0,0,0,1);
+
+    float ccw;
+    ivec2 p;
+    float solid_angle;
+    rc_spherical_triangle st;
+    rc_inv_mapping_init(dir, p, ccw, st, solid_angle);
+
+    ivec3 tex_coord = cascade_coord * ivec3(probe_resolution, 1) + ivec3(p, 0);
+    vec4 col = texelFetch(radiance_cascades[0], tex_coord, 0);
+    sum.rgb += col.rgb * sum.a;
+    sum.a *= 1.0f-col.a;
+
+    for(int cascade = 1; sum.a > 0 && cascade < cascade_count; ++cascade)
+    {
+        probe_resolution *= 2;
+        cascade_coord /= 2;
+        cascade_size /= 2;
+        rc_inv_mapping_step(dir, p, ccw, st, solid_angle);
+        tex_coord = cascade_coord * ivec3(probe_resolution, 1) + ivec3(p, 0);
+        vec4 col = texelFetch(radiance_cascades[cascade], tex_coord, 0);
+        sum.rgb += col.rgb * sum.a;
+        sum.a *= 1.0f-col.a;
+    }
+    return sum.rgb;
+}
+#endif
 
 #endif

@@ -1,5 +1,4 @@
 #version 460
-#extension GL_EXT_ray_tracing : require
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : enable
@@ -19,16 +18,25 @@ layout(push_constant) uniform push_constant_buffer
 } pc;
 
 layout(binding = 0, rgba32f) uniform writeonly image2D target;
-#define RADIANCE_CASCADES_SET 1
+#define SCENE_SET 1
+#include "scene.glsl"
+#define RADIANCE_CASCADES_SET 2
 #include "radiance_cascades.glsl"
 
 void main()
 {
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+
     if(p.x < pc.display_w && p.y < pc.display_h)
     {
-        vec3 col = vec3(0.5);
+        const camera_data cam = camera.pairs[gl_GlobalInvocationID.z].current;
+        vec3 origin;
+        vec3 dir;
+        get_camera_ray(cam, ivec2(p.x, pc.display_h-p.y), vec2(pc.display_w, pc.display_h), vec2(0.5), origin, dir);
 
+        vec3 col = query_radiance_cascades(origin, dir);
+
+        /*
         if(p.x < pc.cascade_w && p.y < pc.cascade_h)
         {
             //float value = texelFetch(radiance_cascades[pc.cascade], ivec3(p.x, p.y, pc.layer), 0).r;
@@ -38,6 +46,7 @@ void main()
             vec4 value = texelFetch(radiance_cascades[pc.cascade], ivec3(p.x, p.y, pc.layer), 0);
             col = value.rgb;
         }
+        */
         imageStore(target, p, vec4(col, 1.0f));
     }
 }

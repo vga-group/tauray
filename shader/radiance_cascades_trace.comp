@@ -142,9 +142,10 @@ void main()
     vertex_data vd;
     sampled_material mat;
     int hit_type = get_intersection_info(ray_origin, ray_dir, hi, vd, mat);
-    if(hit_type >= 0 || pc.cascade+1 == pc.cascade_count)
+    if(hit_type >= 0) //|| pc.cascade+1 == pc.cascade_count)
     { // Hit an emissive surface.
-        hit_color.rgb = mat.emission;
+        //hit_color.rgb = mat.emission;
+        hit_color.rgb = mat.albedo.rgb;
         hit_color.a = 1.0f;
     }
     /*

@@ -15,6 +15,17 @@ struct trace_push_constant_buffer
     float interval_end;
 };
 
+struct cascade_metadata_buffer
+{
+    pvec4 aabb_min;
+    pvec4 aabb_max;
+    // size.x = c0 width (x)
+    // size.y = c0 height (y)
+    // size.z = c0 depth (z)
+    // size.w = cascade count
+    pivec4 size;
+};
+
 }
 
 namespace tr
@@ -34,7 +45,8 @@ radiance_cascades_stage::radiance_cascades_stage(
     gather(dev),
     opt(opt),
     prev_cascades_valid(false),
-    stage_timer(dev, "radiance cascade update")
+    stage_timer(dev, "radiance cascade update"),
+    cascades_metadata(dev, sizeof(cascade_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer)
 {
     bool has_prev_cascades =
         opt.recursive || (opt.jitter_rays && opt.temporal_ratio < 1.0f);
@@ -93,7 +105,8 @@ radiance_cascades_stage::radiance_cascades_stage(
         }
     }
 
-    cascade_descriptors.add("textures", {0, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    cascade_descriptors.add("radiance_cascades", {0, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    cascade_descriptors.add("radiance_cascade_metadata", {1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 }
 
 descriptor_set& radiance_cascades_stage::get_descriptors()
@@ -117,8 +130,23 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 {
     clear_commands();
 
+    cascades_metadata.map<cascade_metadata_buffer>(
+        frame_index, [&](cascade_metadata_buffer* data){
+            data->aabb_min = vec4(opt.volume.min, 0);
+            data->aabb_max = vec4(opt.volume.max, 0);
+            data->size = pivec4(
+                1<<opt.log2_resolution,
+                1<<opt.log2_resolution,
+                1<<opt.log2_resolution,
+                opt.log2_resolution+1
+            );
+        }
+    );
+
     vk::CommandBuffer cb = begin_compute();
     stage_timer.begin(cb, dev->id, frame_index);
+
+    cascades_metadata.upload(dev->id, frame_index, cb);
 
     std::vector<texture>* next_cascades = &cascades;
     //std::vector<texture>* prev_cascades = nullptr;
@@ -149,7 +177,8 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     }
 
     cascade_descriptors.reset(cascade_descriptors.get_mask(), 1);
-    cascade_descriptors.set_image(dev->id, 0, "textures", std::move(dii));
+    cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
+    cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
 
     cb.pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
