@@ -45,10 +45,9 @@ public:
     size_t get_cascade_count() const;
     uvec3 get_cascade_size(int cascade) const;
 
+    scene_stage* ss;
 private:
     void update(uint32_t frame_index) override;
-
-    scene_stage* ss;
 
     push_descriptor_set trace_desc;
     push_descriptor_set gather_desc;
@@ -61,6 +60,7 @@ private:
     bool prev_cascades_valid;
     timer stage_timer;
 
+    gpu_buffer cascades_metadata;
     std::vector<texture> cascades;
     std::vector<texture> alt_cascades;
 };

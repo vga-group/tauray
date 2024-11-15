@@ -443,6 +443,21 @@ float triangle_area_pdf(vec3 p, vec3 a, vec3 b, vec3 c)
     return 2.0 * p_dist2*sqrt(p_dist2)/abs(dot(normal, p));
 }
 
+float intersect_aabb(vec3 aabb_min, vec3 aabb_max, vec3 ray_origin, vec3 ray_dir)
+{
+    vec3 inv_ray_dir = 1.0 / ray_dir;
+    vec3 t0 = (aabb_min - ray_origin) * inv_ray_dir;
+    vec3 t1 = (aabb_max - ray_origin) * inv_ray_dir;
+    vec3 mins = min(t0,t1);
+    vec3 maxs = max(t0,t1);
+    float near = max(mins.x, max(mins.y, mins.z));
+    float far = min(maxs.x, min(maxs.y, maxs.z));
+
+    if(near <= far && (far > 0 || near > 0))
+        return near < 0 ? far : near;
+    else return -1;
+}
+
 // Assumes that ray starts from vec3(0)
 float ray_plane_intersection_dist(
     vec3 dir, vec3 A, vec3 B, vec3 C
