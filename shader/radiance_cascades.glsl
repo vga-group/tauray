@@ -87,7 +87,7 @@ bool rc_select_subtriangle(inout rc_spherical_triangle v, vec3 dir, float ccw)
     return left;
 }
 
-void rc_mapping(ivec2 p, int cascade, inout rc_spherical_triangle t, inout float solid_angle)
+void rc_mapping(ivec2 p, int cascade, inout rc_spherical_triangle t, inout rc_spherical_triangle prev_t, inout float solid_angle)
 {
     ivec2 rounded = p >> cascade;
     p -= rounded << cascade;
@@ -121,11 +121,13 @@ void rc_mapping(ivec2 p, int cascade, inout rc_spherical_triangle t, inout float
         t.b = normalize(vec3(1,-1,-1));
         t.c = normalize(vec3(-1,1,-1));
     }
+    prev_t = t;
 
     solid_angle = M_PI;
 
     for(int i = cascade-1; i >= 0; --i)
     {
+        prev_t = t;
         rounded = p >> i;
         p -= rounded << i;
 
@@ -231,6 +233,8 @@ layout(set=RADIANCE_CASCADES_SET, binding = 1) uniform radiance_cascade_metadata
     ivec4 size;
 } radiance_cascade_metadata;
 
+#include "random_sampler.glsl"
+
 vec3 query_radiance_cascades(vec3 origin, vec3 dir)
 {
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
@@ -255,7 +259,9 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir)
     ivec2 probe_resolution = ivec2(2,2);
     // TODO: Maybe make this a specialization constant?
     int cascade_count = radiance_cascade_metadata.size.w;
-    ivec3 cascade_coord = clamp(ivec3(fcoord * cascade_size), ivec3(0), ivec3(cascade_size-1));
+    ivec3 cascade_coord = clamp(ivec3(
+        fcoord * cascade_size
+    ), ivec3(0), ivec3(cascade_size-1));
 
     vec4 sum = vec4(0,0,0,1);
 
@@ -273,8 +279,8 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir)
     for(int cascade = 1; sum.a > 0 && cascade < cascade_count; ++cascade)
     {
         probe_resolution *= 2;
-        cascade_coord /= 2;
         cascade_size /= 2;
+        cascade_coord /= 2;
         rc_inv_mapping_step(dir, p, ccw, st, solid_angle);
         tex_coord = cascade_coord * ivec3(probe_resolution, 1) + ivec3(p, 0);
         vec4 col = texelFetch(radiance_cascades[cascade], tex_coord, 0);

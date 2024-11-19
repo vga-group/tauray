@@ -68,7 +68,8 @@ radiance_cascades_stage::radiance_cascades_stage(
     if(this->opt.t0 < 0)
     {
         vec3 extent = opt.volume.max - opt.volume.min;
-        this->opt.t0 = length(extent) / ((1<<(opt.log2_resolution+1))-1);
+        //this->opt.t0 = 0.5f * length(extent) / ((1<<(opt.log2_resolution+1))-1);
+        this->opt.t0 = 8.0f * max(extent.x, max(extent.y, extent.z)) / ((1<<(opt.log2_resolution+1))-1);
     }
 
     for(uint32_t cascade = 0; cascade <= opt.log2_resolution; ++cascade)
