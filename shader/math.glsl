@@ -599,4 +599,11 @@ vec3 r3_noise(vec3 x)
     return fract(x * vec3(0.819172513f, 0.671043606f, 0.549700478f));
 }
 
+vec3 l1_normalize(vec3 v)
+{
+    vec3 va = abs(v);
+    float l1 = max(va.x, max(va.y, va.z));
+    return v / l1;
+}
+
 #endif
