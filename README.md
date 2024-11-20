@@ -31,6 +31,9 @@ separate license text files.
 - Real-time path tracing (`--renderer=path-tracer`)
   - Accumulation mode (`--accumulation`)
   - Denoising (`--denoiser=svgf` or `--denoiser=bmfr`)
+- ReSTIR DI & PT (`--renderer=restir`)
+  - DI is used when (`--max-ray-depth=2`, e.g. single bounce)
+  - Supports reconnection shift, random replay shift and hybrid shift
 - Offline rendering (`--headless=output_file`)
   - Animations with `--animation`
   - Output file type with `--filetype=[png,exr]`
