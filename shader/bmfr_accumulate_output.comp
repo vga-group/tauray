@@ -90,7 +90,7 @@ void main()
         if (sum_w > 0.001 && !any(isnan(diffuse_prev)))
         {
             float hist_len = diffuse_prev.a;
-            float alpha_color = max(0.01, 1.0 / hist_len);
+            float alpha_color = clamp(1.0 / hist_len, 0.01, 1.0);
             hist_len = min(hist_len + 1.0, 255.0);
             diffuse_curr.a = hist_len;
             diffuse_curr.rgb = mix(diffuse_prev.rgb, diffuse_curr.rgb, alpha_color);

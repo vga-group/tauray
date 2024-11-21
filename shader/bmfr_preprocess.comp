@@ -172,9 +172,9 @@ void main()
     if (sum_w > 0.001 && !any(isnan(diffuse_prev)))
     {
         float hist_len = diffuse_prev.a;
-        float alpha_color = max(0.01, 1.0/hist_len);
-
         hist_len = min(hist_len + 1.0, 255.0);
+        float alpha_color = clamp(1.0/hist_len, 0.01, 1.0);
+
         diffuse.a = hist_len;
         diffuse.rgb = mix(diffuse_prev.rgb, diffuse.rgb, alpha_color);
         specular.rgb = mix(specular_prev.rgb, specular.rgb, alpha_color);
@@ -184,7 +184,7 @@ void main()
         imageStore(tmp_noisy[0], p, diffuse);
         imageStore(tmp_noisy[1], p, specular);
     }
-        
+
 
     const float features[BUFFER_COUNT] = {
         1.f,
