@@ -160,6 +160,7 @@ void gbuffer_texture::reset(
             initial_layout,\
             msaa\
         ));\
+        for (const auto& dev : mask) set_debug_object_name(dev, name->get_image(dev.id), #name);\
     }\
     bool gbuffer_texture::has_##name() const\
     {\
