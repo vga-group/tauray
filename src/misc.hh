@@ -184,6 +184,20 @@ size_t count_gbuffer_array_layers(const std::vector<T>& targets)
 void profile_tick();
 void profile_tock(const char* message = "Tock: ");
 
+template<typename T>
+void set_debug_object_name(const tr::device& device, const T& vulkan_object, const char* name)
+{
+    assert(device.ctx);
+    if (device.ctx->has_validation())
+    {
+        vk::DebugUtilsObjectNameInfoEXT info{};
+        info.objectHandle = (uint64_t)static_cast<T::CType>(vulkan_object);
+        info.objectType = vulkan_object.objectType;
+        info.pObjectName = name;
+        device.logical.setDebugUtilsObjectNameEXT(&info);
+    }
+}
+
 }
 
 #endif
