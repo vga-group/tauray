@@ -15,6 +15,7 @@ layout(push_constant) uniform push_constant_buffer
     int cascade_count;
     float interval_start;
     float interval_end;
+    int c0_angular_resolution;
 } pc;
 
 layout(local_size_x = 8, local_size_y = 8) in;
@@ -124,18 +125,16 @@ void main()
     ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
     uint seed = 0; // TODO
 
-    ivec3 probe_index = ivec3(p.x>>(pc.cascade+1), p.y>>(pc.cascade+1), p.z);
+    int angular_resolution = pc.c0_angular_resolution << pc.cascade;
+    int next_angular_resolution = pc.c0_angular_resolution << (pc.cascade+1);
 
-    ivec2 map_texel = p.xy - (probe_index.xy << (pc.cascade+1));
+    ivec3 probe_index = ivec3(p.x/angular_resolution, p.y/angular_resolution, p.z);
 
-    rc_spherical_triangle tri;
-    rc_spherical_triangle prev_tri;
-    float solid_angle;
-    rc_mapping(map_texel, pc.cascade, tri, prev_tri, solid_angle);
+    ivec2 map_texel = p.xy - probe_index.xy * angular_resolution;
 
-    // Using centroid for now. If jittering is enabled, should probably
-    // integrate over the solid angle of 'tri' instead.
-    vec3 probe_dir = normalize(tri.a+tri.b+tri.c);
+    vec2 map_uv = (vec2(map_texel) + 0.5f) / angular_resolution;
+
+    vec3 probe_dir = concentric_octahedral_mapping(map_uv);
     vec3 probe_origin = pc.base_offset.xyz + probe_index * pc.xyz_step.xyz;
 
 #if 0
@@ -143,10 +142,11 @@ void main()
     vec3 ray_end = probe_origin + probe_dir * pc.interval_end;
 #else
     // With bilinear & forking fixes
-    ivec3 next_index = ivec3(p.x>>(pc.cascade+2), p.y>>(pc.cascade+2), p.z/2);
+    ivec3 next_index = ivec3(probe_index.xyz/2);
     vec3 next_origin = pc.base_offset.xyz + 0.5f * pc.xyz_step.xyz + next_index * pc.xyz_step.xyz * 2.0f;
 
-    vec3 prev_dir = normalize(prev_tri.a+prev_tri.b+prev_tri.c);
+    vec2 prev_map_uv = (vec2(map_texel/2) + 0.5f) / (angular_resolution/2);
+    vec3 prev_dir = concentric_octahedral_mapping(prev_map_uv);
     vec3 ray_origin = probe_origin + prev_dir * pc.interval_start;
     vec3 ray_end = next_origin + probe_dir * pc.interval_end;
 #endif

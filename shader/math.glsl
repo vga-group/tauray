@@ -606,4 +606,41 @@ vec3 l1_normalize(vec3 v)
     return v / l1;
 }
 
+// From "Fast Equal-Area Mapping of the (Hemi)Sphere using SIMD", Petrik Clarberg, 2008.
+// Appears to be identical to Collignon Quincuncial projection.
+vec3 concentric_octahedral_mapping(vec2 u)
+{
+    u = u * 2.0f - 1.0f;
+    vec2 au = abs(u);
+    float d = 1 - au.x - au.y;
+    float r = 1 - abs(d);
+    float phi = (M_PI/4) * ((au.y-au.x)/max(r, 1e-10f)+1);
+    float r2 = r * r;
+    float s = r * sqrt(2 - r2);
+    return vec3(
+        cos(phi) * s * sign(u.x),
+        (1-r2) * sign(d),
+        sin(phi) * s * sign(u.y)
+    );
+}
+
+vec2 concentric_octahedral_mapping_inverse(vec3 dir)
+{
+    vec3 adir = abs(dir);
+    float phi = atan(adir.z, adir.x);
+    float r = sqrt(1-adir.y);
+
+    vec2 uv;
+    uv.y = (2/M_PI) * r * phi;
+    uv.x = r - uv.y;
+
+    if(dir.y < 0) uv.xy = 1 - uv.yx;
+
+    uv.x *= sign(dir.x);
+    uv.y *= sign(dir.z);
+
+    uv = uv * 0.5f + 0.5f;
+    return uv;
+}
+
 #endif
