@@ -37,6 +37,7 @@ void main()
         vec3 col = query_radiance_cascades(origin, dir);
 
         /*
+        vec3 col = vec3(0);
         if(p.x < pc.cascade_w && p.y < pc.cascade_h)
         {
             //float value = texelFetch(radiance_cascades[pc.cascade], ivec3(p.x, p.y, pc.layer), 0).r;

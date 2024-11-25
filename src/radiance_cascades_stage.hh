@@ -16,6 +16,7 @@ public:
     {
         aabb volume;
         uint32_t log2_resolution = 8;
+        uint32_t c0_probe_resolution = 4; // 4x4 = 16 rays per probe
         // Negative: automatic, based on volume and resolution
         float t0 = -1.0f;
 
