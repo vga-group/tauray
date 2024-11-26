@@ -68,24 +68,17 @@ radiance_cascades_stage::radiance_cascades_stage(
     }
 
     vec3 extent = opt.volume.max - opt.volume.min;
-    if(this->opt.t0 < 0)
-    {
-        vec3 extent = opt.volume.max - opt.volume.min;
-        //this->opt.t0 = 0.5f * length(extent) / ((1<<(opt.log2_resolution+1))-1);
-        this->opt.t0 = 8.0f * max(extent.x, max(extent.y, extent.z)) / ((1<<(opt.log2_resolution+1))-1);
-    }
-
-    float range_start = 0;
-    float range_len = this->opt.t0;
     float diagonal_range = length(extent);
 
     for(uint32_t cascade = 0; cascade <= opt.log2_resolution; ++cascade)
     {
         size_t cascade_size = 1<<(opt.log2_resolution-cascade);
         size_t resolution = opt.c0_probe_resolution << cascade;
+
+        vec2 interval = get_cascade_interval(cascade);
         // Cascade starting distance is out of cascade volume
         // => no point in allocating or rendering the rest of the layers.
-        if(range_start > diagonal_range)
+        if(interval[0] > diagonal_range)
             break;
 
         cascades.emplace_back(
@@ -115,8 +108,6 @@ radiance_cascades_stage::radiance_cascades_stage(
                 vk::ImageLayout::eShaderReadOnlyOptimal
             );
         }
-        range_start += range_len;
-        range_len *= 2;
     }
 
     cascade_descriptors.add("radiance_cascades", {0, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
@@ -131,6 +122,26 @@ descriptor_set& radiance_cascades_stage::get_descriptors()
 size_t radiance_cascades_stage::get_cascade_count() const
 {
     return cascades.size();
+}
+
+float radiance_cascades_stage::get_cascade_t0(int cascade) const
+{
+    if(cascade == 0) return 0;
+
+    vec3 extent = opt.volume.max - opt.volume.min;
+
+    // Relative error:
+    float spatial_resolution = max(extent.x, max(extent.y, extent.z))/float(1<<(opt.log2_resolution-cascade));
+
+    // Constant error:
+    //float spatial_resolution = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
+    size_t resolution = opt.c0_probe_resolution << cascade;
+    return (spatial_resolution * resolution) / M_PI;
+}
+
+vec2 radiance_cascades_stage::get_cascade_interval(int cascade) const
+{
+    return vec2(get_cascade_t0(cascade), get_cascade_t0(cascade+1));
 }
 
 uvec3 radiance_cascades_stage::get_cascade_size(int cascade) const
@@ -214,7 +225,6 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     pc.interval_end = 0;
     pc.c0_angular_resolution = opt.c0_probe_resolution;
 
-    float length = opt.t0;
     for(uint32_t cascade = 0; cascade < get_cascade_count(); ++cascade)
     {
         texture& target = (*next_cascades)[cascade];
@@ -223,12 +233,13 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
         pc.cascade = cascade;
         pc.cascade_count = get_cascade_count();
-        pc.interval_start = pc.interval_end;
+
+        vec2 interval = get_cascade_interval(cascade);
+        pc.interval_start = interval[0];
         // Last iteration gets to cover the entire world.
-        pc.interval_end = cascade+1 == get_cascade_count() ? 1e9 : pc.interval_start + length;
+        pc.interval_end = cascade+1 == get_cascade_count() ? 1e9 : interval[1];
         pc.base_offset = pvec4(opt.volume.min + vec3(pc.xyz_step), 0);
         pc.xyz_step *= 2.0f;
-        length *= 2.0f;
 
         trace.push_constants(cb, pc);
 

@@ -125,6 +125,9 @@ void main()
     ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
     uint seed = 0; // TODO
 
+    bool first_cascade = pc.cascade == 0;
+    bool last_cascade = pc.cascade+1 == pc.cascade_count;
+
     int angular_resolution = pc.c0_angular_resolution << pc.cascade;
     int next_angular_resolution = pc.c0_angular_resolution << (pc.cascade+1);
 
@@ -144,9 +147,12 @@ void main()
     // With bilinear & forking fixes
     ivec3 next_index = ivec3(probe_index.xyz/2);
     vec3 next_origin = pc.base_offset.xyz + 0.5f * pc.xyz_step.xyz + next_index * pc.xyz_step.xyz * 2.0f;
+    if(last_cascade) next_origin = probe_origin;
 
     vec2 prev_map_uv = (vec2(map_texel/2) + 0.5f) / (angular_resolution/2);
     vec3 prev_dir = concentric_octahedral_mapping(prev_map_uv);
+    if(first_cascade) prev_dir = probe_dir;
+
     vec3 ray_origin = probe_origin + prev_dir * pc.interval_start;
     vec3 ray_end = next_origin + probe_dir * pc.interval_end;
 #endif
@@ -178,7 +184,7 @@ void main()
         hit_color.a = 1.0f;
     }
     */
-    else if(hit_type == -1 && pc.cascade+1 == pc.cascade_count)
+    else if(hit_type == -1 && last_cascade)
     { // Hit sky
         // TODO read skybox
         hit_color.rgb = mat.emission;
