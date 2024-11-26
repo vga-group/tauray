@@ -28,6 +28,9 @@ public:
         // the memory!
         bool recursive = false;
 
+        // Skips tracing rays if they did not hit anything during last frame.
+        bool skip_missed_rays = true;
+
         // Use rasterizer-style direct illumination (requires shadow maps to be
         // available). If disabled, DI is path traced.
         bool use_raster_di = false;

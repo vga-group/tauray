@@ -14,6 +14,8 @@ struct trace_push_constant_buffer
     float interval_start;
     float interval_end;
     int c0_angular_resolution;
+    int has_history;
+    int ignore_missed_rays;
 };
 
 struct cascade_metadata_buffer
@@ -87,6 +89,7 @@ radiance_cascades_stage::radiance_cascades_stage(
             (unsigned)cascade_size,
             //vk::Format::eR16Sfloat,
             vk::Format::eR16G16B16A16Sfloat,
+            //vk::Format::eR32G32B32A32Sfloat,
             0,
             nullptr,
             vk::ImageTiling::eOptimal,
@@ -101,6 +104,7 @@ radiance_cascades_stage::radiance_cascades_stage(
                 (unsigned)cascade_size,
                 //vk::Format::eR16Sfloat,
                 vk::Format::eR16G16B16A16Sfloat,
+                //vk::Format::eR32G32B32A32Sfloat,
                 0,
                 nullptr,
                 vk::ImageTiling::eOptimal,
@@ -130,10 +134,10 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
 
     vec3 extent = opt.volume.max - opt.volume.min;
 
-    // Relative error:
+    // Relative error: (looks low-res but more consistent in motion)
     float spatial_resolution = max(extent.x, max(extent.y, extent.z))/float(1<<(opt.log2_resolution-cascade));
 
-    // Constant error:
+    // Constant error: (original radiance cascades paper?)
     //float spatial_resolution = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
     size_t resolution = opt.c0_probe_resolution << cascade;
     return (spatial_resolution * resolution) / M_PI;
@@ -240,6 +244,8 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         pc.interval_end = cascade+1 == get_cascade_count() ? 1e9 : interval[1];
         pc.base_offset = pvec4(opt.volume.min + vec3(pc.xyz_step), 0);
         pc.xyz_step *= 2.0f;
+        pc.has_history = prev_cascades_valid ? 1 : 0;
+        pc.ignore_missed_rays = opt.skip_missed_rays ? 1 : 0;
 
         trace.push_constants(cb, pc);
 
@@ -299,6 +305,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
     stage_timer.end(cb, dev->id, frame_index);
     end_compute(cb, frame_index);
+    prev_cascades_valid = true;
 }
 
 }

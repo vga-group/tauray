@@ -16,12 +16,14 @@ layout(push_constant) uniform push_constant_buffer
     float interval_start;
     float interval_end;
     int c0_angular_resolution;
+    int has_history;
+    int ignore_missed_rays;
 } pc;
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
 //layout(binding = 0, r32f) uniform writeonly image2DArray cascade_target;
-layout(binding = 0, rgba32f) uniform writeonly image2DArray cascade_target;
+layout(binding = 0, rgba32f) uniform image2DArray cascade_target;
 
 #include "radiance_cascades.glsl"
 
@@ -125,6 +127,10 @@ void main()
     ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
     uint seed = 0; // TODO
 
+    vec4 hit_color = imageLoad(cascade_target, p);
+    if(pc.has_history != 0 && pc.ignore_missed_rays != 0 && hit_color.a == 0)
+        return;
+
     bool first_cascade = pc.cascade == 0;
     bool last_cascade = pc.cascade+1 == pc.cascade_count;
 
@@ -160,7 +166,7 @@ void main()
     float ray_len = length(ray_dir);
     ray_dir /= ray_len;
 
-    vec4 hit_color = vec4(0);
+    hit_color = vec4(0);
 
     hit_info hi = trace_primary_ray(seed, ray_origin, ray_dir, ray_len);
     vertex_data vd;
