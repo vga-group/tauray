@@ -15,10 +15,11 @@ public:
     struct options
     {
         aabb volume;
-        uint32_t log2_resolution = 8;
+        // +1 => 8x computation needed, general resolution doubled, less fudge
+        // in smallest cascade.
+        uint32_t log2_resolution = 7;
+        // x2 => 4x computation needed, general resolution doubled
         uint32_t c0_probe_resolution = 4; // 4x4 = 16 rays per probe
-        // Negative: automatic, based on volume and resolution
-        float t0 = -1.0f;
 
         bool jitter_rays = false;
         // Only effective with jittering enabled
@@ -44,6 +45,8 @@ public:
 
     descriptor_set& get_descriptors();
     size_t get_cascade_count() const;
+    float get_cascade_t0(int cascade) const;
+    vec2 get_cascade_interval(int cascade) const;
     uvec3 get_cascade_size(int cascade) const;
 
     scene_stage* ss;
