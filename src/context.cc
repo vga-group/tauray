@@ -377,7 +377,8 @@ void context::init_devices()
         VK_KHR_MAINTENANCE1_EXTENSION_NAME,
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
-        VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
+        VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
+        VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,
     };
 
     if(opt.enable_vulkan_validation)
@@ -437,7 +438,8 @@ void context::init_devices()
             // The rest are needed for ray tracing
             vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
             vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-            vk::PhysicalDeviceRayQueryFeaturesKHR
+            vk::PhysicalDeviceRayQueryFeaturesKHR,
+            vk::PhysicalDeviceRobustness2FeaturesEXT
         >();
         auto& feats = feats_pack.get<vk::PhysicalDeviceFeatures2>();
         auto& vulkan_11_feats = feats_pack.get<vk::PhysicalDeviceVulkan11Features>();
@@ -448,6 +450,8 @@ void context::init_devices()
             feats_pack.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
         auto& as_feats =
             feats_pack.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+        auto& robustness_feats =
+            feats_pack.get<vk::PhysicalDeviceRobustness2FeaturesEXT>();
 
         std::vector<vk::QueueFamilyProperties> queue_family_props =
             physical.getQueueFamilyProperties();
@@ -462,6 +466,7 @@ void context::init_devices()
         vulkan_12_feats.shaderSampledImageArrayNonUniformIndexing = true;
         vulkan_11_feats.multiview = true;
         vulkan_12_feats.bufferDeviceAddress = true;
+        robustness_feats.nullDescriptor = VK_TRUE;
 
         // If we're not ray tracing, cut off the ray tracing features.
         if(opt.disable_ray_tracing)
