@@ -165,6 +165,11 @@ void taa_stage::update(uint32_t frame_index)
     uvec2 wg = (src.size+15u)/16u;
     cb.dispatch(wg.x, wg.y, opt.active_viewport_count);
 
+    // frame_delay stage (if enabled) expects these to be in vk::ImageLayout::eGeneral.
+    // Currently we have no way of communicating image layout changes between different stages, so this is done here.
+    motion.transition_layout(cb, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral, true, true);
+    depth.transition_layout(cb, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral, true, true);
+
     if(dst.size() > 1)
     {
         dst[dst_index].transition_layout(
