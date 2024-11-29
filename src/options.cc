@@ -432,7 +432,7 @@ void parse_command_line_options(char** argv, options& opt)
         opt.force_projection.reset();
     }
 
-    if(std::get_if<feature_stage::feature>(&opt.renderer))
+    if(std::get_if<feature_stage::feature>(&opt.renderer) || opt.bounce_data != bd::OFF)
     {
         // Tonemapping is unwanted when rendering feature buffers
         opt.tonemap = tonemap_stage::LINEAR;

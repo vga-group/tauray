@@ -165,7 +165,9 @@
         {"world-motion", feature_stage::WORLD_MOTION}, \
         {"view-motion", feature_stage::VIEW_MOTION}, \
         {"screen-motion", feature_stage::SCREEN_MOTION}, \
-        {"instance-id", feature_stage::INSTANCE_ID} \
+        {"instance-id", feature_stage::INSTANCE_ID}, \
+        {"metallic", feature_stage::METALLNESS}, \
+        {"roughness", feature_stage::ROUGHNESS} \
     )\
     TR_FLOAT_OPT(min_ray_dist, \
         "Sets the minimum distance a ray must travel. 0 can cause " \
@@ -206,7 +208,8 @@
         bd::OFF, \
         {"off", bd::OFF}, \
         {"bounce-count", bd::BOUNCE_COUNT}, \
-        {"bounce-contribution", bd::CONTRIBUTION} \
+        {"bounce-contribution", bd::CONTRIBUTION}, \
+        {"material-id", bd::MATERIAL_ID} \
     )\
     TR_FLOAT_OPT(film_radius, \
         "Sets the sampling radius for the film sampling. This is in pixels " \

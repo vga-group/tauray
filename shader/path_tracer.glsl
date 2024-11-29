@@ -94,7 +94,8 @@ bool get_intersection_info(
     out pt_vertex_data v,
     out intersection_pdf nee_pdf,
     out sampled_material mat,
-    out vec3 light
+    out vec3 light,
+    out material mat_data
 ){
     nee_pdf.point_light_pdf = 0;
     nee_pdf.directional_light_pdf = 0;
@@ -114,7 +115,7 @@ bool get_intersection_info(
             , origin, pdf
 #endif
         );
-        mat = sample_material(payload.instance_id, vd);
+        mat = sample_material(payload.instance_id, vd, mat_data);
         mat.albedo.a = 1.0; // Alpha blending was handled by the any-hit shader!
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
         nee_pdf.tri_light_pdf = pdf == 0.0f ? 0.0f : pdf;
@@ -139,6 +140,7 @@ bool get_intersection_info(
         vec3 color = get_spotlight_intensity(pl, view) * pl.color / (pl.radius * pl.radius * M_PI);
 #ifdef NEE_SAMPLE_POINT_LIGHTS
         mat.emission = vec3(0);
+        mat_data.albedo_tex_id = -1;
         light = color;
         nee_pdf.point_light_pdf = sample_point_light_pdf(pl, origin);
 #else
@@ -196,6 +198,7 @@ bool get_intersection_info(
 #else
         mat.emission += color.rgb;
 #endif
+        mat_data.albedo_tex_id = -1;
         return false;
     }
 }
@@ -361,7 +364,8 @@ void evaluate_ray(
     out vec4 reflection,
     out pt_vertex_data first_hit_vertex,
     out sampled_material first_hit_material,
-    out float bounce_data
+    out float bounce_data,
+    out material mat_data
 ){
     vec3 attenuation = vec3(1);
 
@@ -398,8 +402,12 @@ void evaluate_ray(
         pt_vertex_data v;
         sampled_material mat;
         intersection_pdf nee_pdf;
+        material sampled_material_data;
         vec3 light;
-        bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
+        bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light, sampled_material_data) || bounce == MAX_BOUNCES-1;
+
+        if(bounce == 0)
+            mat_data = sampled_material_data;
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.

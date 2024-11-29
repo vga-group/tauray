@@ -133,6 +133,16 @@ sampled_material sample_material(int instance_id, inout vertex_data v)
     return res;
 }
 
+sampled_material sample_material(int instance_id, inout vertex_data v, out material mat_data)
+{
+    instance o = instances.o[instance_id];
+    material mat = o.mat;
+    mat_data = mat;
+    sampled_material res = sample_material(mat, v);
+    res.shadow_terminator_mul = o.shadow_terminator_mul;
+    return res;
+}
+
 bool is_material_skippable(int instance_id, vec2 uv, float alpha_cutoff)
 {
     material mat = instances.o[instance_id].mat;

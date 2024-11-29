@@ -20,7 +20,9 @@ public:
         WORLD_MOTION,
         VIEW_MOTION,
         SCREEN_MOTION,
-        INSTANCE_ID
+        INSTANCE_ID,
+        METALLNESS,
+        ROUGHNESS
     };
 
     struct options: public rt_camera_stage::options

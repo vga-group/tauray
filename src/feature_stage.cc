@@ -63,6 +63,12 @@ feature_stage::feature_stage(
     case feature_stage::INSTANCE_ID:
         feature = "vec4(gl_InstanceID, gl_PrimitiveID, 0, 1)";
         break;
+    case feature_stage::METALLNESS:
+        feature = "vec4(vec3(mat.metallic), 1.0f)";
+        break;
+    case feature_stage::ROUGHNESS:
+        feature = "vec4(vec3(mat.roughness), 1.0f)";
+        break;
     }
     std::map<std::string, std::string> defines;
     rt_camera_stage::get_common_defines(defines);

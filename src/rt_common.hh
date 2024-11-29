@@ -25,6 +25,7 @@ namespace tr
         OFF = 0,
         BOUNCE_COUNT,
         CONTRIBUTION,
+        MATERIAL_ID
     };
 
     void add_defines(multiple_importance_sampling_mode mode, std::map<std::string, std::string>& defines);

@@ -84,6 +84,7 @@ void main()
     vec4 sum_reflection = vec4(0,0,0,0);
 
     float bounce_data = 0.0f;
+    material mat_data;
 
 #if SAMPLES_PER_PASS != 1
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
@@ -107,7 +108,7 @@ void main()
         evaluate_ray(
             lsampler, origin, dir,
             diffuse, reflection,
-            first_hit_vertex, first_hit_material, bounce_data
+            first_hit_vertex, first_hit_material, bounce_data, mat_data
         );
 #ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
         vec3 old_color = first_hit_material.albedo.rgb;
@@ -121,15 +122,13 @@ void main()
 #endif
     }
 
-//    if(all(equal(gl_LaunchIDEXT.xy, gl_LaunchSizeEXT.xy / 2)))
-//    {
-//        debugPrintfEXT("My float is %f", bounces);
-//    }
-
-
 #if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION)
     write_noise_data(
         vec3(bounce_data) / MAX_BOUNCES / SAMPLES_PER_PASS
+    );
+#elif defined(BD_MATERIAL_ID)
+    write_noise_data(
+        vec3(mat_data.albedo_tex_id)
     );
 #else
     write_all_outputs(
