@@ -328,7 +328,12 @@ vec3 next_event_estimation(
         if(any(greaterThan(contrib, vec3(0.0001f))))
             contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
-        contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
+        contrib /= 
+#ifdef BD_FULL_PDF_CONTRIBUTION
+            1;
+#else
+            nee_mis_pdf(light_pdf, bsdf_pdf);
+#endif
         return contrib;
     }
 #endif
@@ -375,7 +380,10 @@ void evaluate_ray(
     reflection = vec4(0,0,0,0);
     bounce_data = 0.0f;
     bsdf_pdf_sum = 0.0f;
+    float total_bsdf = 1.0f;
     float light_pdf;
+
+    vec3 attenuation_BD = vec3(1.0f);
 
     float total_luminance = 0.0f;
 
@@ -430,6 +438,7 @@ void evaluate_ray(
             light *= clamp_contribution_mul(light);
         }
         add_demodulated_color(primary_lobes, light, diffuse.rgb, reflection.rgb);
+        vec3 specular_radiance_BD = mat.emission + light;
 
         if(bounce == 0)
         {
@@ -450,6 +459,9 @@ void evaluate_ray(
         mat3 tbn = create_tangent_space(v.mapped_normal);
         vec3 shading_view = view_to_tangent_space(view, tbn);
 
+        vec3 diffuse_contrib = vec3(0.0f);
+        vec3 specular_contrib = vec3(0.0f);
+
         if(!terminal)
         {
             // Do NEE ray
@@ -458,6 +470,8 @@ void evaluate_ray(
                 generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
                 mat, v, lobes, light_pdf
             );
+            diffuse_contrib = modulate_diffuse(mat, lobes.diffuse);
+            specular_contrib = modulate_reflection(mat, lobes.dielectric_reflection + lobes.metallic_reflection);
             if(bounce != 0)
             {
                 radiance *= modulate_bsdf(mat, lobes);
@@ -489,15 +503,48 @@ void evaluate_ray(
         bounce_data += 1.0f;
         bsdf_pdf_sum += bsdf_pdf;
 #elif defined(BD_PDF_CONTRIBUTION)
-        float lum = rgb_to_luminance(modulate_color(first_hit_material, diffuse.rgb, reflection.rgb));
-        total_luminance += lum;
-        bsdf_pdf_sum += lum / (bsdf_pdf + light_pdf);
+        float current_luminance = rgb_to_luminance(attenuation_BD * (specular_radiance_BD));
+        if(bsdf_pdf != 0)
+            total_bsdf *= bsdf_pdf;
+
+        bsdf_pdf_sum += current_luminance/total_bsdf;
+
+        total_luminance += current_luminance;
+
         bounce_data += 1.0f;
+#elif defined(BD_FULL_PDF_CONTRIBUTION)
+        float current_luminance = rgb_to_luminance(modulate_color(first_hit_material, diffuse.rgb, reflection.rgb));
+
+        if(bsdf_pdf != 0)
+            total_bsdf *= bsdf_pdf;
+
+        float nee_luminance = rgb_to_luminance(attenuation_BD * (diffuse_contrib * mat.albedo.rgb + specular_contrib));
+        if(light_pdf > 0.0f)
+            nee_luminance /= total_bsdf*light_pdf;
+
+        float bsdf_luminance = rgb_to_luminance(attenuation_BD * (specular_radiance_BD));
+        if(total_bsdf > 0.0f)
+            bsdf_luminance /= total_bsdf;
+
+        if(bounce==0)
+        {
+            current_luminance = 0;
+            bsdf_luminance = 0;
+        }
+
+//        if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
+//        {
+//            debugPrintfEXT("   nee_luminance %f vs bsdf_luminance %f", nee_luminance, bsdf_luminance);
+//        }
+
+        total_luminance += current_luminance;
+        bsdf_pdf_sum += nee_luminance + bsdf_luminance;
+
+
 #endif
 
         if(terminal) break;
 
-        //if(bounce == MAX_BOUNCES -1)
         // Lastly, figure out the next ray and assign proper attenuation for it.
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
@@ -505,7 +552,10 @@ void evaluate_ray(
         view = tbn * view;
 
         if(bounce != 0)
+        {
             attenuation *= modulate_bsdf(mat, lobes);
+            attenuation_BD *= modulate_bsdf(mat, lobes);
+        }
         else
             primary_lobes = lobes;
 
@@ -523,9 +573,20 @@ void evaluate_ray(
 #if defined(BD_CONTRIBUTION)
     if(total_luminance > 0.0f)
         bounce_data /= total_luminance;
+    if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
+    {
+            debugPrintfEXT("   total_luminance %f", total_luminance);
+    }
 #elif defined(BD_PDF_CONTRIBUTION)
-    if(total_luminance > 0.0f)
-        bsdf_pdf_sum /= total_luminance;
+
+    if(bsdf_pdf_sum > 0.0f)
+        total_luminance /= bsdf_pdf_sum;
+
+#elif defined(BD_FULL_PDF_CONTRIBUTION)
+
+    if(bsdf_pdf_sum > 0.0f)
+        total_luminance /= bsdf_pdf_sum;
+
 #endif
 }
 

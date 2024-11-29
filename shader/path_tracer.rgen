@@ -146,7 +146,7 @@ void main()
     write_noise_data(
         vec3(sum) / bounce_data
     );
-#elif defined(BD_PDF_CONTRIBUTION)
+#elif defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION)
 
     write_noise_data(
         vec3(bsdf_pdf_sum)

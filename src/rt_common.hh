@@ -28,7 +28,8 @@ namespace tr
         MATERIAL_ID,
         BSDF_SUM,
         BSDF_VAR,
-        PDF_CONTRIBUTION
+        PDF_CONTRIBUTION,
+        FULL_PDF_CONTRIBUTION
     };
 
     void add_defines(multiple_importance_sampling_mode mode, std::map<std::string, std::string>& defines);

@@ -212,7 +212,8 @@
         {"material-id", bd::MATERIAL_ID}, \
         {"bsdf-sum", bd::BSDF_SUM}, \
         {"bsdf-variance", bd::BSDF_VAR}, \
-        {"pdf-contribution", bd::PDF_CONTRIBUTION} \
+        {"bsdf-contribution", bd::PDF_CONTRIBUTION}, \
+        {"pdf-contribution", bd::FULL_PDF_CONTRIBUTION} \
     )\
     TR_FLOAT_OPT(film_radius, \
         "Sets the sampling radius for the film sampling. This is in pixels " \
