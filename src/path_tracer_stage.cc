@@ -76,6 +76,15 @@ path_tracer_stage::path_tracer_stage(
     if(opt.boda == bd::MATERIAL_ID)
         defines["BD_MATERIAL_ID"];
 
+    if(opt.boda == bd::BSDF_SUM)
+        defines["BD_BSDF_SUM"];
+
+    if(opt.boda == bd::BSDF_VAR)
+        defines["BD_BSDF_VAR"];
+
+    if(opt.boda == bd::PDF_CONTRIBUTION)
+        defines["BD_PDF_CONTRIBUTION"];
+
 #define TR_GBUFFER_ENTRY(name, ...)\
     if(output_target.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
     TR_GBUFFER_ENTRIES

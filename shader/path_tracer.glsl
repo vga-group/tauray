@@ -134,7 +134,7 @@ bool get_intersection_info(
         v.instance_id = vd.instance_id;
         return true;
     }
-    else if(payload.primitive_id >= 0)
+    else if(payload.primitive_id >= 0) //non-triangle light hit
     {
         point_light pl = point_lights.lights[payload.primitive_id];
         vec3 color = get_spotlight_intensity(pl, view) * pl.color / (pl.radius * pl.radius * M_PI);
@@ -157,7 +157,7 @@ bool get_intersection_info(
         mat.albedo = vec4(0,0,0,1);
         return false;
     }
-    else
+    else // envmap hit
     {
         vec4 color = scene_metadata.environment_factor;
         if(scene_metadata.environment_proj >= 0)
@@ -295,7 +295,8 @@ vec3 next_event_estimation(
     uvec4 rand_uint,
     mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
-    inout bsdf_lobes lobes
+    inout bsdf_lobes lobes,
+    out float light_pdf
 ){
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_ENVMAP)
     if(false
@@ -314,7 +315,6 @@ vec3 next_event_estimation(
     ){
         vec3 out_dir;
         float out_length = 0.0f;
-        float light_pdf;
         // Sample lights
         vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf);
         bool opaque = mat.transmittance < 0.0001f;
@@ -365,13 +365,17 @@ void evaluate_ray(
     out pt_vertex_data first_hit_vertex,
     out sampled_material first_hit_material,
     out float bounce_data,
-    out material mat_data
+    out material mat_data,
+    out float bsdf_pdf_sum,
+    out float bsdf_pdf_array[MAX_BOUNCES]
 ){
     vec3 attenuation = vec3(1);
 
     diffuse = vec4(0,0,0,0);
     reflection = vec4(0,0,0,0);
     bounce_data = 0.0f;
+    bsdf_pdf_sum = 0.0f;
+    float light_pdf;
 
     float total_luminance = 0.0f;
 
@@ -452,7 +456,7 @@ void evaluate_ray(
             bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
             vec3 radiance = attenuation * next_event_estimation(
                 generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
-                mat, v, lobes
+                mat, v, lobes, light_pdf
             );
             if(bounce != 0)
             {
@@ -477,10 +481,23 @@ void evaluate_ray(
         bounce_data += lum * bounce;
 #elif defined(BD_BOUNCE_COUNT)
         bounce_data += 1.0f;
+#elif defined(BD_BSDF_SUM)
+        bsdf_pdf_sum += bsdf_pdf;
+        bounce_data += 1.0f;
+#elif defined(BD_BSDF_VAR)
+        bsdf_pdf_array[int(bounce_data)] = bsdf_pdf;
+        bounce_data += 1.0f;
+        bsdf_pdf_sum += bsdf_pdf;
+#elif defined(BD_PDF_CONTRIBUTION)
+        float lum = rgb_to_luminance(modulate_color(first_hit_material, diffuse.rgb, reflection.rgb));
+        total_luminance += lum;
+        bsdf_pdf_sum += lum / (bsdf_pdf + light_pdf);
+        bounce_data += 1.0f;
 #endif
 
         if(terminal) break;
 
+        //if(bounce == MAX_BOUNCES -1)
         // Lastly, figure out the next ray and assign proper attenuation for it.
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
@@ -506,6 +523,9 @@ void evaluate_ray(
 #if defined(BD_CONTRIBUTION)
     if(total_luminance > 0.0f)
         bounce_data /= total_luminance;
+#elif defined(BD_PDF_CONTRIBUTION)
+    if(total_luminance > 0.0f)
+        bsdf_pdf_sum /= total_luminance;
 #endif
 }
 

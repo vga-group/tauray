@@ -24,7 +24,6 @@
 #ifdef USE_COLOR_TARGET
 #define COLOR_TARGET_BINDING 2
 #endif
-
 #ifdef USE_DIRECT_TARGET
 #define DIRECT_TARGET_BINDING 3
 #endif
@@ -85,6 +84,8 @@ void main()
 
     float bounce_data = 0.0f;
     material mat_data;
+    float bsdf_pdf_sum;
+    float bsdf_pdf_array[MAX_BOUNCES];
 
 #if SAMPLES_PER_PASS != 1
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
@@ -108,7 +109,7 @@ void main()
         evaluate_ray(
             lsampler, origin, dir,
             diffuse, reflection,
-            first_hit_vertex, first_hit_material, bounce_data, mat_data
+            first_hit_vertex, first_hit_material, bounce_data, mat_data, bsdf_pdf_sum, bsdf_pdf_array
         );
 #ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
         vec3 old_color = first_hit_material.albedo.rgb;
@@ -130,6 +131,27 @@ void main()
     write_noise_data(
         vec3(mat_data.albedo_tex_id)
     );
+#elif defined(BD_BSDF_SUM)
+    write_noise_data(
+        vec3(bsdf_pdf_sum) / bounce_data
+    );
+#elif defined(BD_BSDF_VAR)
+    float mean_pdf = bsdf_pdf_sum / bounce_data;
+    float sum = 0.0f;
+    for(int i = 0; i < int(bounce_data); ++i)
+    {
+       sum += (bsdf_pdf_array[i] - mean_pdf)*(bsdf_pdf_array[i] - mean_pdf);
+    }
+
+    write_noise_data(
+        vec3(sum) / bounce_data
+    );
+#elif defined(BD_PDF_CONTRIBUTION)
+
+    write_noise_data(
+        vec3(bsdf_pdf_sum)
+    );
+
 #else
     write_all_outputs(
         sum_color.rgb / SAMPLES_PER_PASS,
