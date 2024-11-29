@@ -191,7 +191,7 @@ void set_debug_object_name(const tr::device& device, const T& vulkan_object, con
     if (device.ctx->has_validation())
     {
         vk::DebugUtilsObjectNameInfoEXT info{};
-        info.objectHandle = (uint64_t)static_cast<T::CType>(vulkan_object);
+        info.objectHandle = (uint64_t)static_cast<typename T::CType>(vulkan_object);
         info.objectType = vulkan_object.objectType;
         info.pObjectName = name;
         device.logical.setDebugUtilsObjectNameEXT(&info);
