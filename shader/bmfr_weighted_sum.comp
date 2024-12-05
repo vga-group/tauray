@@ -20,6 +20,9 @@ layout(binding = 6, set = 0) buffer mins_maxs
 {
     float16_t minmax[];
 } mins_maxs_buffer;
+
+layout(binding = 15, set = 0, rgba32f) uniform readonly image2DArray in_prob;
+
 layout(binding = 7, set = 0) uniform uniform_buffer_t
 {
     uint frame_counter;
@@ -41,14 +44,16 @@ void main()
     vec3 curr_pos = imageLoad(in_pos, p).xyz;
     vec3 curr_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).xy);
 
+    vec3 probs = imageLoad(in_prob, p).xyz;
+
     const float features[FEATURE_COUNT] = {
         1.f,
         curr_normal.x,
         curr_normal.y,
         curr_normal.z,
-        curr_pos.x,
-        curr_pos.y,
-        curr_pos.z,
+        probs.x,
+        probs.y,
+        probs.z,
         curr_pos.x * curr_pos.x,
         curr_pos.y * curr_pos.y,
         curr_pos.z * curr_pos.z,

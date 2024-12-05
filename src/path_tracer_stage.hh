@@ -27,6 +27,9 @@ public:
         light_sampling_weights sampling_weights;
         bounce_sampling_mode bounce_mode = bounce_sampling_mode::MATERIAL;
         tri_light_sampling_mode tri_light_mode = tri_light_sampling_mode::HYBRID;
+
+        bd boda = bd::OFF;
+        denoiser_type dt = denoiser_type::NONE;
     };
 
     path_tracer_stage(

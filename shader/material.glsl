@@ -54,6 +54,19 @@ vec3 modulate_bsdf(sampled_material mat, bsdf_lobes bsdf)
     return mat.albedo.rgb * (bsdf.metallic_reflection + bsdf.transmission + bsdf.diffuse) + bsdf.dielectric_reflection;
 }
 
+vec3 modulate_diffuse(sampled_material mat, float diffuse)
+{
+    return diffuse * mat.albedo.rgb * (1 - mat.metallic);
+}
+
+vec3 modulate_reflection(sampled_material mat, float reflected)
+{
+    float approx_fresnel = 0.02f;
+    return reflected
+        * mix(vec3(approx_fresnel), mat.albedo.rgb, mat.metallic)
+        / mix(approx_fresnel, 1, mat.metallic);
+}
+
 vec3 modulate_color(sampled_material mat, vec3 diffuse, vec3 reflected)
 {
     float approx_fresnel = 0.02f;
