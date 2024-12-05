@@ -296,8 +296,7 @@ vec3 next_event_estimation(
     mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
     inout bsdf_lobes lobes,
-    out float light_pdf,
-    out vec3 out_contrib
+    out float light_pdf
 ){
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_ENVMAP)
     if(false
@@ -329,7 +328,6 @@ vec3 next_event_estimation(
         if(any(greaterThan(contrib, vec3(0.0001f))))
             contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
-        out_contrib = contrib;
         contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
         return contrib;
     }
@@ -453,6 +451,10 @@ void evaluate_ray(
         add_demodulated_color(primary_lobes, light, diffuse.rgb, reflection.rgb);
         vec3 specular_radiance_BD = mat.emission + light;
 
+#ifdef BD_CONTRIBUTION
+        vec3 bounce_contribution = light * attenuation;
+#endif
+
         if(bounce == 0)
         {
             first_hit_vertex = v;
@@ -472,20 +474,17 @@ void evaluate_ray(
         mat3 tbn = create_tangent_space(v.mapped_normal);
         vec3 shading_view = view_to_tangent_space(view, tbn);
 
-        vec3 diffuse_contrib = vec3(0.0f);
-        vec3 specular_contrib = vec3(0.0f);
+        vec3 nee_contrib = vec3(0.0);
 
-        vec3 out_contrib = vec3(0.0f);
         if(!terminal)
         {
             // Do NEE ray
             bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
             vec3 radiance = attenuation * next_event_estimation(
                 generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
-                mat, v, lobes, light_pdf, out_contrib
+                mat, v, lobes, light_pdf
             );
-            diffuse_contrib = modulate_diffuse(mat, lobes.diffuse);
-            specular_contrib = modulate_reflection(mat, lobes.dielectric_reflection + lobes.metallic_reflection);
+
             if(bounce != 0)
             {
                 radiance *= modulate_bsdf(mat, lobes);
@@ -499,15 +498,29 @@ void evaluate_ray(
 #endif
             }
             add_demodulated_color(primary_lobes, radiance, diffuse.rgb, reflection.rgb);
+#ifdef BD_CONTRIBUTION
+            bounce_contribution += bounce != 0 ? radiance : radiance * modulate_bsdf(mat, lobes);
+#endif
+            nee_contrib = radiance;
+
             if(bounce == 1)
                 diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
         }
 
+// TODO:
+// Make sure all these values are what they are meant to be.
 #if defined(BD_BOUNCE_COUNT)
         bd_bouce_count += 1.0f;
 
 #elif defined(BD_CONTRIBUTION)
-        float lum_contribution = rgb_to_luminance(attenuation * (diffuse_contrib + specular_contrib));
+        // Old style: 
+        // diffuse = NEE
+        // specular = emission + NEE
+        // In new style this is radiance (NEE) + light
+        // Then, calculate contribution to pixel color from current bounce.
+        // vec3 contribution = attenuation * (diffuse_radiance * mat.albedo.rgb + specular_radiance);
+
+        float lum_contribution = rgb_to_luminance(bounce_contribution);
         total_luminance += lum_contribution;
         bd_weighted_bounce_count += lum_contribution * bounce;
 
@@ -516,7 +529,7 @@ void evaluate_ray(
         bd_bouce_count += 1.0f;
 
 #elif defined(BD_PDF_CONTRIBUTION)
-        float current_luminance = rgb_to_luminance(attenuation_BD * (specular_radiance_BD));
+        float current_luminance = rgb_to_luminance(light);
 
         if(bsdf_pdf != 0)
             total_bsdf *= bsdf_pdf;
@@ -530,12 +543,12 @@ void evaluate_ray(
         if(bsdf_pdf != 0)
             total_bsdf *= bsdf_pdf;
 
-        float nee_luminance = rgb_to_luminance(attenuation_BD * (diffuse_contrib * mat.albedo.rgb + specular_contrib));
+        float nee_luminance = rgb_to_luminance(nee_contrib);
 
         if(light_pdf > 0.0f)
             nee_luminance /= total_bsdf*light_pdf;
 
-        float bsdf_luminance = rgb_to_luminance(attenuation_BD * (specular_radiance_BD));
+        float bsdf_luminance = rgb_to_luminance(attenuation * light);
         
         if(total_bsdf > 0.0f)
             bsdf_luminance /= total_bsdf;
