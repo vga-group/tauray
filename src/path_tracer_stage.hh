@@ -30,6 +30,7 @@ public:
 
         bd boda = bd::OFF;
         denoiser_type dt = denoiser_type::NONE;
+        std::vector<bd> bd_vec;
     };
 
     path_tracer_stage(

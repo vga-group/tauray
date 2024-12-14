@@ -2,6 +2,7 @@
 #define TAURAY_RT_COMMON_HH
 #include <map>
 #include <string>
+#include <vector>
 
 namespace tr
 {
@@ -30,6 +31,9 @@ namespace tr
         BSDF_VAR,
         PDF_CONTRIBUTION,
         FULL_PDF_CONTRIBUTION,
+        NORMAL,
+        POSITION,
+        POSITION_2
     };
 
     enum class denoiser_type
@@ -38,6 +42,34 @@ namespace tr
         SVGF,
         BMFR
     };
+
+    const std::map<std::string, bd> str_bd_map =
+    {
+        {"bounce-count", bd::BOUNCE_COUNT},
+        {"bounce-contribution", bd::CONTRIBUTION},
+        {"material-id", bd::MATERIAL_ID},
+        {"bsdf-sum", bd::BSDF_SUM},
+        {"bsdf-variance", bd::BSDF_VAR},
+        {"bsdf-contribution", bd::PDF_CONTRIBUTION},
+        {"bsdf-nee-contribution", bd::FULL_PDF_CONTRIBUTION},
+        {"normal", bd::NORMAL},
+        {"position", bd::POSITION},
+        {"position-2", bd::POSITION_2}
+    };
+
+    const std::map<bd, std::string> bd_str_map =
+    {
+        { bd::BOUNCE_COUNT,"BD_BOUNCE_COUNT"},
+        { bd::CONTRIBUTION, "BD_CONTRIBUTION"},
+        { bd::MATERIAL_ID, "BD_MATERIAL_ID"},
+        { bd::BSDF_SUM, "BD_BSDF_SUM"},
+        { bd::BSDF_VAR, "BD_BSDF_VAR"},
+        { bd::PDF_CONTRIBUTION, "BD_PDF_CONTRIBUTION"},
+        { bd::FULL_PDF_CONTRIBUTION, "BD_FULL_PDF_CONTRIBUTION"}
+    };
+
+    std::vector<std::string> parse_bounce_data(const std::string str);
+
 
     void add_defines(multiple_importance_sampling_mode mode, std::map<std::string, std::string>& defines);
 

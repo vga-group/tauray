@@ -138,100 +138,88 @@ void main()
 #endif
     }
 
+    vec4 bd_out_1 = vec4(0.0f);
+    vec4 bd_out_2 = vec4(0.0f);
+
 
 #if defined(BD_BOUNCE_COUNT)
-#if defined(BD_BMFR)
-    write_all_outputs(
-        sum_color / SAMPLES_PER_PASS,
-        sum_direct / SAMPLES_PER_PASS,
-        sum_diffuse / SAMPLES_PER_PASS,
-        first_hit_vertex,
-        vec3(bd_bouce_count) / MAX_BOUNCES / SAMPLES_PER_PASS,
-        first_hit_material
-    );
-#else
-    write_noise_data(
-        vec3(bd_bouce_count) / MAX_BOUNCES / SAMPLES_PER_PASS
+    write_bd_outputs(
+        BD_BOUNCE_COUNT,
+        bd_bouce_count / MAX_BOUNCES / SAMPLES_PER_PASS,
+        bd_out_1,
+        bd_out_2
     );
 #endif
 
-#elif defined(BD_CONTRIBUTION)
-#if defined(BD_BMFR)
-    write_all_outputs(
-        sum_color / SAMPLES_PER_PASS,
-        sum_direct / SAMPLES_PER_PASS,
-        sum_diffuse / SAMPLES_PER_PASS,
-        first_hit_vertex,
-        vec3(bd_weighted_bounce_count) / MAX_BOUNCES / SAMPLES_PER_PASS,
-        first_hit_material
-    );
-#else
-    write_noise_data(
-        vec3(bd_weighted_bounce_count)
+#if defined(BD_CONTRIBUTION)
+    write_bd_outputs(
+        BD_CONTRIBUTION,
+        bd_weighted_bounce_count / MAX_BOUNCES / SAMPLES_PER_PASS,
+        bd_out_1,
+        bd_out_2
     );
 #endif
 
-#elif defined(BD_MATERIAL_ID)
-#if defined(BD_BMFR)
-    write_all_outputs(
-        sum_color / SAMPLES_PER_PASS,
-        sum_direct / SAMPLES_PER_PASS,
-        sum_diffuse / SAMPLES_PER_PASS,
-        first_hit_vertex,
-        vec3(bd_mat_data.albedo_tex_id),
-        first_hit_material
-    );
-#else
-    write_noise_data(
-        vec3(bd_mat_data.albedo_tex_id)
+#if defined(BD_MATERIAL_ID)
+    write_bd_outputs(
+        BD_MATERIAL_ID,
+        bd_mat_data.albedo_tex_id,
+        bd_out_1,
+        bd_out_2
     );
 #endif
 
-#elif defined(BD_BSDF_SUM)
-#if defined(BD_BMFR)
-    write_all_outputs(
-        sum_color / SAMPLES_PER_PASS,
-        sum_direct / SAMPLES_PER_PASS,
-        sum_diffuse / SAMPLES_PER_PASS,
-        first_hit_vertex,
-        vec3(bd_bsdf_sum) / bd_bouce_count,
-        first_hit_material
-    );
-#else
-    write_noise_data(
-        vec3(bd_bsdf_sum) / bd_bouce_count
+#if defined(BD_BSDF_SUM)
+    write_bd_outputs(
+        BD_BSDF_SUM,
+        bd_bsdf_sum,
+        bd_out_1,
+        bd_out_2
     );
 #endif
 
-#elif defined(BD_PDF_CONTRIBUTION)
-#if defined(BD_BMFR)
-    write_all_outputs(
-        sum_color / SAMPLES_PER_PASS,
-        sum_direct / SAMPLES_PER_PASS,
-        sum_diffuse / SAMPLES_PER_PASS,
-        first_hit_vertex,
-        vec3(bd_weighted_bsdf),
-        first_hit_material
-    );
-#else
-    write_noise_data(
-        vec3(bd_weighted_bsdf)
+#if defined(BD_PDF_CONTRIBUTION)
+    write_bd_outputs(
+        BD_PDF_CONTRIBUTION,
+        bd_weighted_bsdf,
+        bd_out_1,
+        bd_out_2
     );
 #endif
 
-#elif defined(BD_FULL_PDF_CONTRIBUTION) 
+#if defined(BD_FULL_PDF_CONTRIBUTION) 
+    write_bd_outputs(
+        BD_FULL_PDF_CONTRIBUTION,
+        bd_bsdf_weighted_nee,
+        bd_out_1,
+        bd_out_2
+    );
+#endif
+
+
+#if defined(BD_BOUNCE_COUNT) \
+|| defined(BD_CONTRIBUTION) \
+|| defined(BD_MATERIAL_ID)\
+|| defined(BD_BSDF_SUM) \
+|| defined(BD_PDF_CONTRIBUTION)\
+|| defined(BD_FULL_PDF_CONTRIBUTION)
+
 #if defined(BD_BMFR)
     write_all_outputs(
         sum_color / SAMPLES_PER_PASS,
         sum_direct / SAMPLES_PER_PASS,
         sum_diffuse / SAMPLES_PER_PASS,
         first_hit_vertex,
-        vec3(bd_bsdf_weighted_nee),
+        bd_out_1,
         first_hit_material
     );
-#else
+
+//    if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
+//        debugPrintfEXT("%f", bd_bsdf_weighted_nee);
+
+#else 
     write_noise_data(
-        vec3(bd_bsdf_weighted_nee)
+        bd_out_1
     );
 #endif
 
@@ -244,4 +232,5 @@ void main()
         first_hit_material
     );
 #endif
+
 }

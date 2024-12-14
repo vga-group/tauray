@@ -211,9 +211,12 @@
         {"bounce-contribution", bd::CONTRIBUTION}, \
         {"material-id", bd::MATERIAL_ID}, \
         {"bsdf-sum", bd::BSDF_SUM}, \
-        {"bsdf-variance", bd::BSDF_VAR}, \
         {"bsdf-contribution", bd::PDF_CONTRIBUTION}, \
         {"bsdf-nee-contribution", bd::FULL_PDF_CONTRIBUTION} \
+    )\
+    TR_STRING_OPT(noise_data_str, \
+        "Parameters for noise data.", \
+        "" \
     )\
     TR_FLOAT_OPT(film_radius, \
         "Sets the sampling radius for the film sampling. This is in pixels " \

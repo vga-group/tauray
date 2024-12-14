@@ -44,19 +44,22 @@ void main()
     vec3 curr_pos = imageLoad(in_pos, p).xyz;
     vec3 curr_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).xy);
 
-    vec3 probs = imageLoad(in_prob, p).xyz;
+    vec3 bd = imageLoad(in_prob, p).xyz;
 
-    const float features[FEATURE_COUNT] = {
-        1.f,
-        curr_normal.x,
-        curr_normal.y,
-        curr_normal.z,
-        probs.x,
-        probs.y,
-        probs.z,
-        curr_pos.x * curr_pos.x,
-        curr_pos.y * curr_pos.y,
-        curr_pos.z * curr_pos.z,
+    //const float features[FEATURE_COUNT + BD_BONUS_FEATURES] = {
+    //
+    const float features[BD_FEATURE_COUNT] =
+    {
+        BD_FEATURES_LIST
+//        curr_normal.x,
+//        curr_normal.y,
+//        curr_normal.z,
+//        bd.x,
+//        bd.x,
+//        bd.x,
+//        curr_pos.x * curr_pos.x,
+//        curr_pos.y * curr_pos.y,
+//        curr_pos.z * curr_pos.z,
     };
 
     // Weighted sum of the feature buffers
@@ -75,11 +78,20 @@ void main()
         }
 
         // Load weight and sum
-        const uint offset = control.workset_size.x * control.workset_size.y * FEATURE_COUNT * NUM_WEIGHTS_PER_FEATURE * p.z; 
-        vec3 weight = weights_buffer.weights[offset + group_index * FEATURE_COUNT * NUM_WEIGHTS_PER_FEATURE + feature_buffer];
+        const uint offset = control.workset_size.x *
+            control.workset_size.y * FEATURE_COUNT * 
+            NUM_WEIGHTS_PER_FEATURE * p.z; 
+
+        vec3 weight = weights_buffer.weights[offset + group_index * 
+            FEATURE_COUNT *
+            NUM_WEIGHTS_PER_FEATURE + feature_buffer];
+
         color += weight * feature;
 #ifndef DIFFUSE_ONLY
-        vec3 weight_spec = weights_buffer.weights[offset + group_index * FEATURE_COUNT * NUM_WEIGHTS_PER_FEATURE + feature_buffer + 10];
+        vec3 weight_spec = weights_buffer.weights[offset + group_index *
+            FEATURE_COUNT *
+            NUM_WEIGHTS_PER_FEATURE + feature_buffer + 10];
+
         color_spec += weight_spec * feature;
 #endif
     }

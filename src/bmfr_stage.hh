@@ -22,6 +22,7 @@ public:
     struct options
     {
         bmfr_settings settings;
+        std::vector<std::string> bd_vec;
     };
 
     bmfr_stage(

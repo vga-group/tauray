@@ -487,6 +487,17 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rt_opt.post_process.tonemap = tonemap;
                 rt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
                 rt_opt.boda = opt.noise_data;
+
+                auto v = parse_bounce_data(opt.noise_data_str);
+//                std::transform(v.begin(), v.end(), rt_opt.bd_vec.begin(), 
+//                    [](auto a){return str_bd_map.at(a);
+//
+                for(auto a : v)
+                {
+                    TR_LOG(a);
+                    rt_opt.bd_vec.push_back(str_bd_map.at(a));
+                }
+
                 rt_opt.dt = (tr::denoiser_type)opt.denoiser;
                 if(opt.temporal_reprojection > 0.0f)
                     rt_opt.post_process.temporal_reprojection =
@@ -516,7 +527,11 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
                 }
                 else if (opt.denoiser == options::denoiser_type::BMFR)
-                    rt_opt.post_process.bmfr = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY };
+                    rt_opt.post_process.bmfr = bmfr_stage::options 
+                    {
+                        bmfr_stage::bmfr_settings::DIFFUSE_ONLY,
+                        v
+                    };
                 rt_opt.scene_options = scene_options;
                 rt_opt.distribution.strategy = opt.distribution_strategy;
                 if(ctx.get_devices().size() == 1)
@@ -560,7 +575,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
                 }
                 else if(opt.denoiser == options::denoiser_type::BMFR)
-                    rt_opt.post_process.bmfr = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY };
+                    rt_opt.post_process.bmfr = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY,
+                        {} };
                 rt_opt.scene_options = scene_options;
                 rt_opt.distribution.strategy = opt.distribution_strategy;
                 if(ctx.get_devices().size() == 1)

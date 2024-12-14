@@ -64,18 +64,65 @@ bmfr_stage::bmfr_stage(
 shader_source bmfr_stage::load_shader_source(const std::string& path, const options& opt)
 {
     std::map<std::string, std::string> defines = {};
+
+    std::map<std::string, std::string> macro_map =
+    {
+        {"normal", "curr_normal"},
+        {"position", "curr_pos"},
+        {"position-2", "curr_pos"},
+
+        {"bounce-count", "bd"},
+        {"bounce-contribution", "bd"},
+        {"material-id", "bd"},
+        {"bsdf-sum", "bd"},
+        {"bsdf-variance", "bd"},
+        {"bsdf-contribution", "bd"},
+        {"bsdf-nee-contribution", "bd"}
+    };
+
+    std::vector<std::string> channel_map = {"x", "y", "z", "w"};
+    std::string macro = "1.f,";
+    int indx = 0;
+    int bd_vec_size = 1;
+    for(auto a : opt.bd_vec)
+    {
+        if(a == "normal" || a == "position" || a == "position-2")
+        {
+            macro += macro_map.at(a) + ".x * " + macro_map.at(a) + ".x,";
+            macro += macro_map.at(a) + ".y * " + macro_map.at(a) + ".y,";
+            macro += macro_map.at(a) + ".z * " + macro_map.at(a) + ".z,";
+            bd_vec_size += 3;
+        }
+        else
+        {
+            macro += macro_map.at(a) + "." + channel_map.at(indx % 4) + ",";
+            bd_vec_size += 1;
+            indx++;
+        }
+    }
+    
+
+
     if (opt.settings == bmfr_settings::DIFFUSE_ONLY)
     {
         defines.insert({ "BUFFER_COUNT", "13" });
         defines.insert({ "DIFFUSE_ONLY", "" });
         defines.insert({ "NUM_WEIGHTS_PER_FEATURE", "1" });
+        defines.insert({ "BD_FEATURES_LIST", macro });
+        defines.insert({ "BD_FEATURE_COUNT", std::to_string(bd_vec_size)});
     }
     else
     {
         defines.insert({ "BUFFER_COUNT", "16" });
         defines.insert({ "NUM_WEIGHTS_PER_FEATURE", "2" });
+        defines.insert({ "BD_FEATURES_LIST", macro });
+        defines.insert({ "BD_FEATURE_COUNT", std::to_string(bd_vec_size)});
     }
 
+    std::replace(macro.begin(), macro.end(), ',', '\n');
+
+    TR_LOG(macro);
+    
     return shader_source(path, defines);
 }
 
@@ -212,11 +259,14 @@ void bmfr_stage::init_resources()
         bmfr_preprocess_desc.set_buffer(dev->id, i, "uniform_buffer", {{uniform_buffer[dev->id], 0, VK_WHOLE_SIZE}});
         bmfr_preprocess_desc.set_buffer(dev->id, i, "accept_buffer", {{accepts[i], 0, VK_WHOLE_SIZE}});
 
+#if 0 
         bmfr_fit_desc.set_buffer(dev->id, i, "tmp_buffer", {{tmp_data[i], 0, VK_WHOLE_SIZE}});
         bmfr_fit_desc.set_buffer(dev->id, i, "mins_maxs_buffer", {{min_max_buffer[i], 0, VK_WHOLE_SIZE}});
         bmfr_fit_desc.set_buffer(dev->id, i, "weights_buffer", {{weights[i], 0, VK_WHOLE_SIZE}});
         bmfr_fit_desc.set_buffer(dev->id, i, "uniform_buffer", {{uniform_buffer[dev->id], 0, VK_WHOLE_SIZE}});
         bmfr_fit_desc.set_image(dev->id, i, "in_color", {{{}, current_features.color.view, vk::ImageLayout::eGeneral}});
+#endif
+        //TR_LOG((uintptr_t)(VkImageView)current_features.prob[i].view);
 
         bmfr_weighted_sum_desc.set_buffer(dev->id, i, "weights_buffer", {{weights[i], 0, VK_WHOLE_SIZE}});
         bmfr_weighted_sum_desc.set_image(dev->id, i, "in_color", {{{}, current_features.color.view, vk::ImageLayout::eGeneral}});

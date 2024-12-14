@@ -582,13 +582,13 @@ vec3 read_gbuffer_linear_depth(ivec3 pos) { return vec3(0.0); }
 #ifdef PROB_TARGET_BINDING
 layout(binding = PROB_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray prob_target;
 
-void write_gbuffer_prob(vec3 prob, ivec3 pos)
+void write_gbuffer_prob(vec4 prob, ivec3 pos)
 {
     if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
     {
         //debugPrintfEXT("%d, %d, %d", pos.x, pos.y, pos.z);
     }
-    imageStore(prob_target, pos, vec4(prob, 0));
+    imageStore(prob_target, pos, vec4(prob.rgb, 0));
     //imageStore(prob_target, pos, vec4(1.0, 0.0, 1.0, 0));
 }
 
@@ -601,18 +601,18 @@ vec3 read_gbuffer_prob(ivec3 pos)
 
 layout(location = PROB_TARGET_LOCATION) out vec3 prob_target;
 
-void write_gbuffer_prob(vec3 prob)
+void write_gbuffer_prob(vec4 prob)
 {
     prob_target = prob;
 }
 
 #else
 
-void write_gbuffer_prob(vec3 prob, ivec3 pos) {
+void write_gbuffer_prob(vec4 prob, ivec3 pos) {
     debugPrintfEXT("jei");
 }
 
-void write_gbuffer_prob(vec3 prob) {}
+void write_gbuffer_prob(vec4 prob) {}
 vec3 read_gbuffer_prob(ivec3 pos) { return vec3(0); }
 
 #endif
