@@ -11,9 +11,14 @@
 #include "math.glsl"
 
 #ifdef DIFFUSE_ONLY
-#define R_SIZE ((11) * (11))
+#define R_SIZE ((FEATURE_COUNT + 1) * (FEATURE_COUNT + 1))
 #else
-#define R_SIZE ((12) * (12))
+#define R_SIZE ((FEATURE_COUNT + 2) * (FEATURE_COUNT + 2))
+#endif
+
+#if defined(BD_FEATURE_COUNT)
+    #undef FEATURE_COUNT
+    #define FEATURE_COUNT BD_FEATURE_COUNT
 #endif
 
 #define X_ITERS 2
@@ -182,8 +187,11 @@ void main()
     indices += buffer_offset;
 
     // Normalize world_pos and world_pos² 
-    for (int feature_buffer = 4; feature_buffer < FEATURE_COUNT; ++feature_buffer)
+    for (int feature_buffer = 0; feature_buffer < FEATURE_COUNT; ++feature_buffer)
     {
+        bool needs_normalization = ((1 << feature_buffer) & NORMALIZATION_MASK) != 0;
+        if (!needs_normalization) continue;
+
         float tmp_max = -FLT_MAX;
         float tmp_min = FLT_MAX;
 
@@ -206,8 +214,10 @@ void main()
 
         if (id == 0)
         {
-            const int index = (get_linear_group_id() * 6 + feature_buffer - 4) * 2;
-            const uint offset = control.workset_size.x * control.workset_size.y * 6 * 2 * p.z;
+            const int normalized_feature_count = bitCount(NORMALIZATION_MASK);
+            int normalize_index =  bitCount(((1 << feature_buffer) - 1) & NORMALIZATION_MASK);
+            const int index = (get_linear_group_id() * normalized_feature_count + normalize_index) * 2;
+            const uint offset = control.workset_size.x * control.workset_size.y * normalized_feature_count * 2 * p.z;
             mins_maxs_buffer.minmax[index + offset + 0] = float16_t(block_min_f);
             mins_maxs_buffer.minmax[index + offset + 1] = float16_t(block_max_f);
         }
@@ -272,7 +282,7 @@ void main()
         
         const uint id_limited = min(id, FEATURE_COUNT);
 #ifdef DIFFUSE_ONLY
-        const uint r_access = 11 * col_limited + id_limited;
+        const uint r_access = (FEATURE_COUNT + 1) * col_limited + id_limited;
 #else
         uint limit = col_limited;
         if (col > 12) limit = 11;

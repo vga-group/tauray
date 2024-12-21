@@ -489,9 +489,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rt_opt.boda = opt.noise_data;
 
                 auto v = parse_bounce_data(opt.noise_data_str);
-//                std::transform(v.begin(), v.end(), rt_opt.bd_vec.begin(), 
-//                    [](auto a){return str_bd_map.at(a);
-//
                 for(auto a : v)
                 {
                     TR_LOG(a);
@@ -530,7 +527,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     rt_opt.post_process.bmfr = bmfr_stage::options 
                     {
                         bmfr_stage::bmfr_settings::DIFFUSE_ONLY,
-                        v
+                        v, 
+                        !v.empty()
                     };
                 rt_opt.scene_options = scene_options;
                 rt_opt.distribution.strategy = opt.distribution_strategy;

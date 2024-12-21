@@ -4,7 +4,15 @@
 #define LOCAL_SIZE 16
 #define BLOCK_EDGE_LENGTH 32
 #define BLOCK_PIXELS (BLOCK_EDGE_LENGTH * BLOCK_EDGE_LENGTH)
+
+#ifndef FEATURE_COUNT
 #define FEATURE_COUNT 10
+#endif
+
+// Bit is set if corresponding feature needs normalization
+#ifndef NORMALIZATION_MASK
+#define NORMALIZATION_MASK 1008u // 0b1111110000
+#endif
 
 #define BLOCK_OFFSETS_COUNT 16u
 ivec2 BLOCK_OFFSETS[BLOCK_OFFSETS_COUNT] = ivec2[](
@@ -40,5 +48,19 @@ float scale(float value, float min, float max)
     }
     return value - min;
 }
+
+#ifndef FEATURES
+#define FEATURES \
+        1.f,        \
+        curr_normal.x, \
+        curr_normal.y, \
+        curr_normal.z, \
+        curr_pos.x,    \
+        curr_pos.y,    \
+        curr_pos.z,    \
+        curr_pos.x * curr_pos.x, \
+        curr_pos.y * curr_pos.y, \
+        curr_pos.z * curr_pos.z,
+#endif
 
 #endif

@@ -1,6 +1,7 @@
 #include "bmfr_stage.hh"
 #include "misc.hh"
 #include "log.hh"
+#include <algorithm>
 
 namespace tr
 {
@@ -61,10 +62,11 @@ bmfr_stage::bmfr_stage(
     record_command_buffers();
 }
 
-shader_source bmfr_stage::load_shader_source(const std::string& path, const options& opt)
-{
-    std::map<std::string, std::string> defines = {};
-
+void create_bd_macro(
+        std::vector<std::string> source, 
+        uint32_t& bd_feature_count, 
+        std::string& macro
+){
     std::map<std::string, std::string> macro_map =
     {
         {"normal", "curr_normal"},
@@ -81,47 +83,151 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
     };
 
     std::vector<std::string> channel_map = {"x", "y", "z", "w"};
-    std::string macro = "1.f,";
+
+    macro += "1.f,";
+
     int indx = 0;
-    int bd_vec_size = 1;
-    for(auto a : opt.bd_vec)
+    int count = 1;
+    for(auto a : source)
     {
-        if(a == "normal" || a == "position" || a == "position-2")
+        if(a == "normal" || a == "position")
+        {
+            macro += macro_map.at(a) + ".x,";
+            macro += macro_map.at(a) + ".y,";
+            macro += macro_map.at(a) + ".z,";
+            count += 3;
+        }
+        else if(a == "position-2")
         {
             macro += macro_map.at(a) + ".x * " + macro_map.at(a) + ".x,";
             macro += macro_map.at(a) + ".y * " + macro_map.at(a) + ".y,";
             macro += macro_map.at(a) + ".z * " + macro_map.at(a) + ".z,";
-            bd_vec_size += 3;
+            count += 3;
         }
         else
         {
             macro += macro_map.at(a) + "." + channel_map.at(indx % 4) + ",";
-            bd_vec_size += 1;
+            count += 1;
             indx++;
         }
     }
-    
 
+    bd_feature_count = count;
+}
+
+shader_source bmfr_stage::load_shader_source(const std::string& path, const options& opt)
+{
+    std::map<std::string, std::string> defines = {};
+
+    std::string s = "";
+    int ic = 0;
+    uint32_t normalization_mask = 0;
+    uint32_t mask_index = 1;
+    if (opt.bd_mode)
+    { 
+        std::string macro = "";
+        uint32_t _feature_count = 0;
+
+        create_bd_macro(opt.bd_vec, _feature_count, macro);
+        this->feature_count = _feature_count;
+
+        // features to normalize
+        std::vector<std::string> to_normalize_v =
+        {
+            "position",
+            "position-2"
+        };
+
+        auto needs_normalization = [](const std::string& feature_str) -> bool {
+            return feature_str == "position" || feature_str == "position-2";
+            };
+
+        auto get_feature_count = [](const std::string feature_str) -> uint32_t {
+            return (feature_str == "position" || feature_str == "position-2" || feature_str == "normal") ? 3 : 1;
+            };
+
+        for(int i = 0; i < (int)opt.bd_vec.size(); i++)
+        {
+            uint32_t fc = get_feature_count(opt.bd_vec[i]);
+            if (needs_normalization(opt.bd_vec[i]))
+            {
+                for (uint32_t j = 0; j < fc; ++j)
+                {
+                    normalization_mask |= (1 << mask_index++);
+                }
+            }
+            else
+            {
+                mask_index += fc;
+            }
+
+            auto it = std::find(to_normalize_v.begin(), to_normalize_v.end(), opt.bd_vec.at(i));
+            if(it != to_normalize_v.end())
+            {
+                if(*it == "position" || *it == "position-2" || *it == "normal")
+                {
+                    s += std::to_string(ic) + ",\n";
+                    s += std::to_string(++ic) + ",\n";
+                    s += std::to_string(++ic) + ",\n";
+                    ++ic;
+                }
+                else
+                {
+                    s += std::to_string(ic) + ",\n";
+                    ++ic;
+                }
+            }
+            else
+            {
+                if(opt.bd_vec.at(i) == "position" || opt.bd_vec.at(i) == "position-2" || opt.bd_vec.at(i) == "normal")
+                {
+                    s += " -1 ,\n";
+                    s += " -1 ,\n";
+                    s += " -1 ,\n";
+                }
+                else
+                {
+                    s += " -1 ,\n";
+                }
+            }
+        }
+
+        defines.insert({ "FEATURES", macro });
+        defines.insert({ "FEATURE_COUNT", std::to_string(_feature_count) });
+        defines.insert({ "NORMALIZATION_MASK", std::to_string(normalization_mask) });
+        defines.insert({ "BD_FEATURES_LIST", macro });
+        defines.insert({ "BD_FEATURE_COUNT", std::to_string(_feature_count) });
+        defines.insert({ "BD_NORM_COUNT", std::to_string(ic)});
+
+        defines.insert({ "BD_NORMALIZE_INDICES", "const int norm_ids["
+                 + to_string(feature_count)
+                 + "] = { \n"
+                 + " -1, \n"
+                 + s
+                 + "};"
+             });
+
+
+        std::replace(macro.begin(), macro.end(), ',', '\n');
+        TR_LOG(macro);
+    }
 
     if (opt.settings == bmfr_settings::DIFFUSE_ONLY)
     {
-        defines.insert({ "BUFFER_COUNT", "13" });
+        defines.insert({ "BUFFER_COUNT", "(FEATURE_COUNT + 3)" });
         defines.insert({ "DIFFUSE_ONLY", "" });
         defines.insert({ "NUM_WEIGHTS_PER_FEATURE", "1" });
-        defines.insert({ "BD_FEATURES_LIST", macro });
-        defines.insert({ "BD_FEATURE_COUNT", std::to_string(bd_vec_size)});
     }
     else
     {
-        defines.insert({ "BUFFER_COUNT", "16" });
+        defines.insert({ "BUFFER_COUNT", "(FEATURE_COUNT + 6)" });
         defines.insert({ "NUM_WEIGHTS_PER_FEATURE", "2" });
-        defines.insert({ "BD_FEATURES_LIST", macro });
-        defines.insert({ "BD_FEATURE_COUNT", std::to_string(bd_vec_size)});
     }
 
-    std::replace(macro.begin(), macro.end(), ',', '\n');
-
-    TR_LOG(macro);
+    for(auto& a : defines)
+    {
+        TR_LOG(a.first, " : ", a.second);
+    }
     
     return shader_source(path, defines);
 }
@@ -129,8 +235,7 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
 void bmfr_stage::init_resources()
 {
     constexpr uint32_t BLOCK_SIZE = 32;
-    constexpr uint32_t FEATURE_COUNT = 10;
-    const uint32_t BUFFER_COUNT = opt.settings == bmfr_settings::DIFFUSE_ONLY ? 13 : 16;
+    const uint32_t BUFFER_COUNT = opt.settings == bmfr_settings::DIFFUSE_ONLY ? feature_count + 3 : feature_count + 6;
     const uint32_t NUM_WEIGHTS_PER_FEATURE = opt.settings == bmfr_settings::DIFFUSE_ONLY ? 1 : 2;
     const uint32_t NUM_VIEWPORTS = current_features.get_layer_count();
 
@@ -226,7 +331,7 @@ void bmfr_stage::init_resources()
 
         // Output weights from bmfr fit phase
         {
-            const int required_size = wg.x * wg.y * FEATURE_COUNT * NUM_WEIGHTS_PER_FEATURE * sizeof(glm::vec3) * NUM_VIEWPORTS;
+            const int required_size = wg.x * wg.y * feature_count * NUM_WEIGHTS_PER_FEATURE * sizeof(glm::vec3) * NUM_VIEWPORTS;
             VkBufferCreateInfo bufferInfo = {};
             bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
@@ -259,7 +364,7 @@ void bmfr_stage::init_resources()
         bmfr_preprocess_desc.set_buffer(dev->id, i, "uniform_buffer", {{uniform_buffer[dev->id], 0, VK_WHOLE_SIZE}});
         bmfr_preprocess_desc.set_buffer(dev->id, i, "accept_buffer", {{accepts[i], 0, VK_WHOLE_SIZE}});
 
-#if 0 
+#if 1
         bmfr_fit_desc.set_buffer(dev->id, i, "tmp_buffer", {{tmp_data[i], 0, VK_WHOLE_SIZE}});
         bmfr_fit_desc.set_buffer(dev->id, i, "mins_maxs_buffer", {{min_max_buffer[i], 0, VK_WHOLE_SIZE}});
         bmfr_fit_desc.set_buffer(dev->id, i, "weights_buffer", {{weights[i], 0, VK_WHOLE_SIZE}});

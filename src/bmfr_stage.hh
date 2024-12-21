@@ -11,6 +11,7 @@
 namespace tr
 {
 
+void create_bd_macro(std::vector<std::string> source_str, std::string& bd_feature_count, std::string& macro);
 class bmfr_stage: public single_device_stage
 {
 public:
@@ -23,6 +24,7 @@ public:
     {
         bmfr_settings settings;
         std::vector<std::string> bd_vec;
+        bool bd_mode = false;
     };
 
     bmfr_stage(
@@ -39,7 +41,7 @@ public:
 private:
     void init_resources();
     void record_command_buffers();
-    static shader_source load_shader_source(const std::string& path, const options& opt);
+    shader_source load_shader_source(const std::string& path, const options& opt);
 
     void copy_image(vk::CommandBuffer& cb, render_target& src, render_target& dst);
 
@@ -67,6 +69,8 @@ private:
     std::unique_ptr<texture> rt_textures[10];
     options opt;
     timer stage_timer, bmfr_preprocess_timer, bmfr_fit_timer, bmfr_weighted_sum_timer, bmfr_accumulate_output_timer, image_copy_timer;
+
+    uint32_t feature_count = 10; // Default
 };
 
 } // namespace tr

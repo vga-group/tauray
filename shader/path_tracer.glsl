@@ -636,8 +636,8 @@ void evaluate_ray(
 
         bd_bsdf_sum = bd_bsdf_sum_bsdf_sum / bd_bsdf_sum_bouce_count;
 
-    if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
-        debugPrintfEXT("%f", bd_bsdf_sum);
+//    if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
+//        debugPrintfEXT("%f", bd_bsdf_sum);
 #endif
 
 #if defined(BD_FULL_PDF_CONTRIBUTION)
@@ -703,8 +703,8 @@ void write_noise_data(vec4 data)
 void write_bd_outputs(int id, float value, out vec4 bd_1, out vec4 bd_2)
 {
 
-    if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
-        debugPrintfEXT("%f %i", value, id);
+//    if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
+//        debugPrintfEXT("%f %i", value, id);
 
     if(id < 4)
         bd_1[id] = value;
@@ -717,8 +717,13 @@ void write_all_outputs(
     vec4 diffuse,
     vec4 reflection,
     pt_vertex_data first_hit_vertex,
-#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
-    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION) || defined(BD_BMFR_MODE)
+#if defined(BD_BOUNCE_COUNT) \
+    || defined(BD_CONTRIBUTION) \
+    || defined(BD_MATERIAL_ID) \
+    || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) \
+    || defined(BD_FULL_PDF_CONTRIBUTION) \
+    || defined(BD_BMFR_MODE)
     vec4 prob,
 #endif
     sampled_material first_hit_material

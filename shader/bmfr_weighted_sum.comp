@@ -44,64 +44,33 @@ void main()
     vec3 curr_pos = imageLoad(in_pos, p).xyz;
     vec3 curr_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).xy);
 
-    vec3 bd = imageLoad(in_prob, p).xyz;
-
-    //const float features[FEATURE_COUNT + BD_BONUS_FEATURES] = {
-    //
-    const float features[BD_FEATURE_COUNT] =
+    const float features[FEATURE_COUNT] =
     {
-        BD_FEATURES_LIST
-//        curr_normal.x,
-//        curr_normal.y,
-//        curr_normal.z,
-//        bd.x,
-//        bd.x,
-//        bd.x,
-//        curr_pos.x * curr_pos.x,
-//        curr_pos.y * curr_pos.y,
-//        curr_pos.z * curr_pos.z,
+        FEATURES
     };
 
     // Weighted sum of the feature buffers
     vec3 color = vec3(0);
-#ifndef DIFFUSE_ONLY
-    vec3 color_spec = vec3(0);
-#endif
     for (int feature_buffer = 0; feature_buffer < FEATURE_COUNT; ++feature_buffer)
     {
         float feature = features[feature_buffer];
-        if (feature_buffer >= 4)
-        {
-            const int min_max_index = (group_index * 6 + feature_buffer - 4) * 2;
-            const uint offset = control.workset_size.x * control.workset_size.y * 6 * 2 * p.z;
+        if (((1 << feature_buffer) & NORMALIZATION_MASK) != 0)
+        { // Normalize feature
+            const int num_normalized_features = bitCount(NORMALIZATION_MASK);
+            const int normalize_index = bitCount(((1 << feature_buffer) - 1) & NORMALIZATION_MASK);
+            const int min_max_index = (group_index * num_normalized_features + normalize_index) * 2;
+            const uint offset = control.workset_size.x * control.workset_size.y * num_normalized_features * 2 * p.z;
             feature = scale(feature, float(mins_maxs_buffer.minmax[offset + min_max_index + 0]), float(mins_maxs_buffer.minmax[offset + min_max_index + 1]));
         }
 
         // Load weight and sum
-        const uint offset = control.workset_size.x *
-            control.workset_size.y * FEATURE_COUNT * 
-            NUM_WEIGHTS_PER_FEATURE * p.z; 
-
-        vec3 weight = weights_buffer.weights[offset + group_index * 
-            FEATURE_COUNT *
-            NUM_WEIGHTS_PER_FEATURE + feature_buffer];
+        const uint offset = control.workset_size.x * control.workset_size.y * FEATURE_COUNT * NUM_WEIGHTS_PER_FEATURE * p.z; 
+        vec3 weight = weights_buffer.weights[offset + group_index * FEATURE_COUNT * NUM_WEIGHTS_PER_FEATURE + feature_buffer];
 
         color += weight * feature;
-#ifndef DIFFUSE_ONLY
-        vec3 weight_spec = weights_buffer.weights[offset + group_index *
-            FEATURE_COUNT *
-            NUM_WEIGHTS_PER_FEATURE + feature_buffer + 10];
-
-        color_spec += weight_spec * feature;
-#endif
     }
 
     color = max(color, vec3(0));
-#ifndef DIFFUSE_ONLY
-    color_spec = max(color_spec, vec3(0));
-#endif
+    //color = imageLoad(in_color, p).rgb;
     imageStore(weighted_out[0], p, vec4(color.rgb, 1.0));
-#ifndef DIFFUSE_ONLY
-    imageStore(weighted_out[1], p, vec4(color_spec.rgb, 1.0));
-#endif
 }
