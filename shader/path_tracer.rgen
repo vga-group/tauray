@@ -205,10 +205,11 @@ void main()
 || defined(BD_FULL_PDF_CONTRIBUTION)
 
 #if defined(BD_BMFR)
+
     write_all_outputs(
-        sum_color / SAMPLES_PER_PASS,
-        sum_direct / SAMPLES_PER_PASS,
-        sum_diffuse / SAMPLES_PER_PASS,
+        sum_color.rgb / SAMPLES_PER_PASS,
+        sum_diffuse.rgba / SAMPLES_PER_PASS,
+        sum_reflection.rgba / SAMPLES_PER_PASS,
         first_hit_vertex,
         bd_out_1,
         first_hit_material

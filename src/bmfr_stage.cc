@@ -62,7 +62,7 @@ bmfr_stage::bmfr_stage(
     record_command_buffers();
 }
 
-void create_bd_macro(
+static void create_bd_macro(
         std::vector<std::string> source, 
         uint32_t& bd_feature_count, 
         std::string& macro
@@ -119,12 +119,11 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
 {
     std::map<std::string, std::string> defines = {};
 
-    std::string s = "";
-    int ic = 0;
-    uint32_t normalization_mask = 0;
-    uint32_t mask_index = 1;
     if (opt.bd_mode)
     { 
+        uint32_t normalization_mask = 0;
+        uint32_t mask_index = 1;
+
         std::string macro = "";
         uint32_t _feature_count = 0;
 
@@ -160,53 +159,11 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
             {
                 mask_index += fc;
             }
-
-            auto it = std::find(to_normalize_v.begin(), to_normalize_v.end(), opt.bd_vec.at(i));
-            if(it != to_normalize_v.end())
-            {
-                if(*it == "position" || *it == "position-2" || *it == "normal")
-                {
-                    s += std::to_string(ic) + ",\n";
-                    s += std::to_string(++ic) + ",\n";
-                    s += std::to_string(++ic) + ",\n";
-                    ++ic;
-                }
-                else
-                {
-                    s += std::to_string(ic) + ",\n";
-                    ++ic;
-                }
-            }
-            else
-            {
-                if(opt.bd_vec.at(i) == "position" || opt.bd_vec.at(i) == "position-2" || opt.bd_vec.at(i) == "normal")
-                {
-                    s += " -1 ,\n";
-                    s += " -1 ,\n";
-                    s += " -1 ,\n";
-                }
-                else
-                {
-                    s += " -1 ,\n";
-                }
-            }
         }
 
         defines.insert({ "FEATURES", macro });
         defines.insert({ "FEATURE_COUNT", std::to_string(_feature_count) });
         defines.insert({ "NORMALIZATION_MASK", std::to_string(normalization_mask) });
-        defines.insert({ "BD_FEATURES_LIST", macro });
-        defines.insert({ "BD_FEATURE_COUNT", std::to_string(_feature_count) });
-        defines.insert({ "BD_NORM_COUNT", std::to_string(ic)});
-
-        defines.insert({ "BD_NORMALIZE_INDICES", "const int norm_ids["
-                 + to_string(feature_count)
-                 + "] = { \n"
-                 + " -1, \n"
-                 + s
-                 + "};"
-             });
-
 
         std::replace(macro.begin(), macro.end(), ',', '\n');
         TR_LOG(macro);
@@ -363,7 +320,7 @@ void bmfr_stage::init_resources()
         bmfr_preprocess_desc.set_buffer(dev->id, i, "tmp_buffer", {{tmp_data[i], 0, VK_WHOLE_SIZE}});
         bmfr_preprocess_desc.set_buffer(dev->id, i, "uniform_buffer", {{uniform_buffer[dev->id], 0, VK_WHOLE_SIZE}});
         bmfr_preprocess_desc.set_buffer(dev->id, i, "accept_buffer", {{accepts[i], 0, VK_WHOLE_SIZE}});
-
+        bmfr_preprocess_desc.set_image(dev->id, i, "in_extra", { {{}, current_features.prob.view, vk::ImageLayout::eGeneral}});
 #if 1
         bmfr_fit_desc.set_buffer(dev->id, i, "tmp_buffer", {{tmp_data[i], 0, VK_WHOLE_SIZE}});
         bmfr_fit_desc.set_buffer(dev->id, i, "mins_maxs_buffer", {{min_max_buffer[i], 0, VK_WHOLE_SIZE}});
@@ -382,6 +339,7 @@ void bmfr_stage::init_resources()
         bmfr_weighted_sum_desc.set_buffer(dev->id, i, "uniform_buffer", {{uniform_buffer[dev->id], 0, VK_WHOLE_SIZE}});
         bmfr_weighted_sum_desc.set_image(dev->id, i, "weighted_out", {{{}, weighted_sum[0].view, vk::ImageLayout::eGeneral}, {{}, weighted_sum[1].view, vk::ImageLayout::eGeneral}});
         bmfr_weighted_sum_desc.set_image(dev->id, i, "tmp_noisy", {{{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral}, {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}});
+        bmfr_weighted_sum_desc.set_image(dev->id, i, "in_extra", { {{}, current_features.prob.view, vk::ImageLayout::eGeneral} });
 
         bmfr_accumulate_output_desc.set_image(dev->id, i, "out_color", {{{}, current_features.color.view, vk::ImageLayout::eGeneral}});
         bmfr_accumulate_output_desc.set_image(dev->id, i, "in_screen_motion", {{{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}});

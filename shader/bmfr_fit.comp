@@ -386,10 +386,10 @@ void main()
         barrier();
     }
 #else
-    vec3 x_s[10];
-    vec3 x_s2[10];
-    const int r_size = 12;
-    const int n = 10;
+    vec3 x_s[FEATURE_COUNT];
+    vec3 x_s2[FEATURE_COUNT];
+    const int r_size = FEATURE_COUNT + 2;
+    const int n = FEATURE_COUNT;
     for (int i = n-1; i >=0; --i)
     {
         x_s[i] = r_mat[(r_size) * i + (r_size - 2)];
@@ -416,7 +416,7 @@ void main()
         weights_buffer.weights[index + offset] = weight;
 #else
         weights_buffer.weights[index + offset] = x_s[id];
-        weights_buffer.weights[index + offset + 10] = x_s2[id];
+        weights_buffer.weights[index + offset + FEATURE_COUNT] = x_s2[id];
 #endif
     }
 }

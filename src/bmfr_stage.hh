@@ -11,7 +11,6 @@
 namespace tr
 {
 
-void create_bd_macro(std::vector<std::string> source_str, std::string& bd_feature_count, std::string& macro);
 class bmfr_stage: public single_device_stage
 {
 public:

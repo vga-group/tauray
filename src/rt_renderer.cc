@@ -274,6 +274,7 @@ void rt_renderer<Pipeline>::init_resources()
             limited_target.color = transfer_target.color;
             limited_target.diffuse = transfer_target.diffuse;
             limited_target.reflection = transfer_target.reflection;
+            limited_target.prob = transfer_target.prob;
             transfer_target = limited_target;
         }
         transfer_target.set_layout(is_display_device ?
