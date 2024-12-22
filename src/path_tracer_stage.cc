@@ -95,7 +95,7 @@ path_tracer_stage::path_tracer_stage(
 #endif
 
     if(opt.boda != bd::OFF)
-        defines[bd_str_map.at(opt.boda)];
+        defines[bd_str_map.at(opt.boda)] = "0";
 
     if(opt.dt == denoiser_type::BMFR)
         defines["BD_BMFR"];
@@ -106,7 +106,7 @@ path_tracer_stage::path_tracer_stage(
         auto option = opt.bd_vec.at(i);
         if(option != bd::POSITION && option != bd::POSITION_2 && option != bd::NORMAL)
         {
-            defines[bd_str_map.at(option) + " " + std::to_string(id)];
+            defines[bd_str_map.at(option)] = std::to_string(id);
             TR_LOG(bd_str_map.at(option) + " " + std::to_string(id));
             ++id;
         }

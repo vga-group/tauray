@@ -547,7 +547,7 @@ void evaluate_ray(
         // vec3 contribution = attenuation * (diffuse_radiance * mat.albedo.rgb + specular_radiance);
 
         float lum_contribution = rgb_to_luminance(bounce_contribution);
-        total_luminance += lum_contribution;
+        bd_total_luminance_bounce += lum_contribution;
         bd_weighted_bounce_count += lum_contribution * bounce;
 #endif
 
@@ -562,8 +562,8 @@ void evaluate_ray(
         if(bsdf_pdf != 0)
             bd_pdf_contribution_total_pdf *= bsdf_pdf;
 
-        bd_weighted_bsdf += bd_pdf_contribution_current_luminance / bd_pdf_contribution_total_pdf;
-        bd_pdf_contribution_total_luminance += bd_pdf_contribution_current_luminance;
+        bd_weighted_bsdf += current_luminance / bd_pdf_contribution_total_pdf;
+        bd_pdf_contribution_total_luminance += current_luminance;
 #endif
 
 #if defined(BD_FULL_PDF_CONTRIBUTION)
@@ -709,7 +709,7 @@ void write_bd_outputs(int id, float value, out vec4 bd_1, out vec4 bd_2)
     if(id < 4)
         bd_1[id] = value;
     else
-        bd_2[id] = value;
+        bd_2[id % 4] = value;
 }
 
 void write_all_outputs(
