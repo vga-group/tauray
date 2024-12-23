@@ -499,7 +499,9 @@ void evaluate_ray(
         mat3 tbn = create_tangent_space(v.mapped_normal);
         vec3 shading_view = view_to_tangent_space(view, tbn);
 
+#if defined(BD_FULL_PDF_CONTRIBUTION)
         vec3 nee_contrib = vec3(0.0);
+#endif
 
         if(!terminal)
         {
@@ -526,7 +528,9 @@ void evaluate_ray(
 #ifdef BD_CONTRIBUTION
             bounce_contribution += bounce != 0 ? radiance : radiance * modulate_bsdf(mat, lobes);
 #endif
+#if defined(BD_FULL_PDF_CONTRIBUTION)
             nee_contrib = radiance;
+#endif
 
             if(bounce == 1)
                 diffuse.a = reflection.a = 1.0f / length(v.pos - pos);

@@ -137,6 +137,8 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
             "position-2"
         };
 
+        uint32_t num_normalized_features = 0;
+
         auto needs_normalization = [](const std::string& feature_str) -> bool {
             return feature_str == "position" || feature_str == "position-2";
             };
@@ -153,6 +155,7 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
                 for (uint32_t j = 0; j < fc; ++j)
                 {
                     normalization_mask |= (1 << mask_index++);
+                    num_normalized_features++;
                 }
             }
             else
@@ -160,6 +163,8 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
                 mask_index += fc;
             }
         }
+
+        normalized_feature_count = num_normalized_features;
 
         defines.insert({ "FEATURES", macro });
         defines.insert({ "FEATURE_COUNT", std::to_string(_feature_count) });
@@ -268,7 +273,7 @@ void bmfr_stage::init_resources()
         // Min / max buffer used for normalizing world pos
         {
             // min and max for each channel of world_pos and world_pos² per work group
-            const int required_size = wg.x * wg.y * 6 * 2 * sizeof(uint16_t) * NUM_VIEWPORTS;
+            const int required_size = wg.x * wg.y * normalized_feature_count * 2 * sizeof(uint16_t) * NUM_VIEWPORTS;
             VkBufferCreateInfo bufferInfo = {};
             bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bufferInfo.size = required_size;

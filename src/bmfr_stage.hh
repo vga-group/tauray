@@ -69,7 +69,9 @@ private:
     options opt;
     timer stage_timer, bmfr_preprocess_timer, bmfr_fit_timer, bmfr_weighted_sum_timer, bmfr_accumulate_output_timer, image_copy_timer;
 
-    uint32_t feature_count = 10; // Default
+    // Initialized to defaults, can be overwritten
+    uint32_t feature_count = 10;
+    uint32_t normalized_feature_count = 6;
 };
 
 } // namespace tr
