@@ -22,6 +22,8 @@ public:
     struct options
     {
         bmfr_settings settings;
+        std::vector<std::string> bd_vec;
+        bool bd_mode = false;
     };
 
     bmfr_stage(
@@ -38,7 +40,7 @@ public:
 private:
     void init_resources();
     void record_command_buffers();
-    static shader_source load_shader_source(const std::string& path, const options& opt);
+    shader_source load_shader_source(const std::string& path, const options& opt);
 
     void copy_image(vk::CommandBuffer& cb, render_target& src, render_target& dst);
 
@@ -66,6 +68,10 @@ private:
     std::unique_ptr<texture> rt_textures[10];
     options opt;
     timer stage_timer, bmfr_preprocess_timer, bmfr_fit_timer, bmfr_weighted_sum_timer, bmfr_accumulate_output_timer, image_copy_timer;
+
+    // Initialized to defaults, can be overwritten
+    uint32_t feature_count = 10;
+    uint32_t normalized_feature_count = 6;
 };
 
 } // namespace tr

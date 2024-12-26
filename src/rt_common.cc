@@ -1,7 +1,23 @@
 #include "rt_common.hh"
+#include <sstream>
+#include <cmath>
 
 namespace tr
 {
+
+std::vector<std::string> parse_bounce_data(const std::string str)
+{
+    std::vector<std::string> result;
+    
+    std::istringstream ss(str);
+    std::string token;
+
+    while(std::getline(ss, token, ' '))
+        result.push_back(token);
+
+    return result;
+
+}
 
 void add_defines(film_filter filter, std::map<std::string, std::string>& defines)
 {

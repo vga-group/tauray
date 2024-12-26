@@ -83,7 +83,7 @@ void window::init_sdl()
         SDL_WINDOWPOS_UNDEFINED,
         opt.size.x,
         opt.size.y,
-        SDL_WINDOW_VULKAN | (opt.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_ALWAYS_ON_TOP)
+        SDL_WINDOW_VULKAN | (opt.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0)
     );
     if(!win) throw std::runtime_error(SDL_GetError());
     SDL_GetWindowSize(win, (int*)&opt.size.x, (int*)&opt.size.y);

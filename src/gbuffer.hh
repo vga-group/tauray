@@ -48,7 +48,14 @@
     /* RGB: emission */\
     TR_GBUFFER_ENTRY(emission, vk::Format::eR16G16B16A16Sfloat) \
     /* R: View-space Z-coordinate (hyperbolic, depending on projection) */\
-    TR_GBUFFER_ENTRY(depth, vk::Format::eD32Sfloat)
+    TR_GBUFFER_ENTRY(depth, vk::Format::eD32Sfloat)\
+    /* RGB: probability data */\
+    TR_GBUFFER_ENTRY(prob, vk::Format::eR32G32B32A32Sfloat) \
+    \
+    /* RGB: bd_1 data */\
+    TR_GBUFFER_ENTRY(bd_1, vk::Format::eR32G32B32A32Sfloat) \
+    /* RGB: bd_2 data */\
+    TR_GBUFFER_ENTRY(bd_2, vk::Format::eR32G32B32A32Sfloat)
 
 
 namespace tr

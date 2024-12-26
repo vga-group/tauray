@@ -4,6 +4,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
 
 // Flags:
 // USE_NEXT_EVENT_ESTIMATION:
@@ -23,7 +24,6 @@
 #ifdef USE_COLOR_TARGET
 #define COLOR_TARGET_BINDING 2
 #endif
-
 #ifdef USE_DIRECT_TARGET
 #define DIRECT_TARGET_BINDING 3
 #endif
@@ -60,6 +60,10 @@
 #define REFLECTION_TARGET_BINDING 11
 #endif
 
+#ifdef USE_PROB_TARGET
+#define PROB_TARGET_BINDING 30
+#endif
+
 layout(push_constant, scalar) uniform push_constant_buffer
 {
     uint samples;
@@ -81,6 +85,18 @@ void main()
     vec3 sum_color = vec3(0,0,0);
     vec4 sum_diffuse = vec4(0,0,0,0);
     vec4 sum_reflection = vec4(0,0,0,0);
+
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION)
+    material bd_mat_data;
+    float bd_bouce_count;
+    float bd_weighted_bounce_count;
+    float bd_material_id;
+    float bd_bsdf_sum;
+    float bd_weighted_bsdf;
+    float bd_bsdf_weighted_nee;
+#endif
+
 #if SAMPLES_PER_PASS != 1
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
 #else
@@ -102,8 +118,13 @@ void main()
         vec4 diffuse, reflection;
         evaluate_ray(
             lsampler, origin, dir,
-            diffuse, reflection,
-            first_hit_vertex, first_hit_material
+            diffuse, reflection, first_hit_vertex, 
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION)
+            bd_mat_data, bd_bouce_count, bd_weighted_bounce_count, bd_material_id,
+            bd_bsdf_sum, bd_weighted_bsdf, bd_bsdf_weighted_nee,
+#endif
+            first_hit_material
         );
 #ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
         vec3 old_color = first_hit_material.albedo.rgb;
@@ -117,6 +138,93 @@ void main()
 #endif
     }
 
+    vec4 bd_out_1 = vec4(0.0f);
+    vec4 bd_out_2 = vec4(0.0f);
+
+
+#if defined(BD_BOUNCE_COUNT)
+    write_bd_outputs(
+        BD_BOUNCE_COUNT,
+        bd_bouce_count / MAX_BOUNCES / SAMPLES_PER_PASS,
+        bd_out_1,
+        bd_out_2
+    );
+#endif
+
+#if defined(BD_CONTRIBUTION)
+    write_bd_outputs(
+        BD_CONTRIBUTION,
+        bd_weighted_bounce_count / MAX_BOUNCES / SAMPLES_PER_PASS,
+        bd_out_1,
+        bd_out_2
+    );
+#endif
+
+#if defined(BD_MATERIAL_ID)
+    write_bd_outputs(
+        BD_MATERIAL_ID,
+        bd_mat_data.albedo_tex_id,
+        bd_out_1,
+        bd_out_2
+    );
+#endif
+
+#if defined(BD_BSDF_SUM)
+    write_bd_outputs(
+        BD_BSDF_SUM,
+        bd_bsdf_sum,
+        bd_out_1,
+        bd_out_2
+    );
+#endif
+
+#if defined(BD_PDF_CONTRIBUTION)
+    write_bd_outputs(
+        BD_PDF_CONTRIBUTION,
+        bd_weighted_bsdf,
+        bd_out_1,
+        bd_out_2
+    );
+#endif
+
+#if defined(BD_FULL_PDF_CONTRIBUTION) 
+    write_bd_outputs(
+        BD_FULL_PDF_CONTRIBUTION,
+        bd_bsdf_weighted_nee,
+        bd_out_1,
+        bd_out_2
+    );
+#endif
+
+
+#if defined(BD_BOUNCE_COUNT) \
+|| defined(BD_CONTRIBUTION) \
+|| defined(BD_MATERIAL_ID)\
+|| defined(BD_BSDF_SUM) \
+|| defined(BD_PDF_CONTRIBUTION)\
+|| defined(BD_FULL_PDF_CONTRIBUTION)
+
+#if defined(BD_BMFR)
+
+    write_all_outputs(
+        sum_color.rgb / SAMPLES_PER_PASS,
+        sum_diffuse.rgba / SAMPLES_PER_PASS,
+        sum_reflection.rgba / SAMPLES_PER_PASS,
+        first_hit_vertex,
+        bd_out_1,
+        first_hit_material
+    );
+
+//    if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
+//        debugPrintfEXT("%f", bd_bsdf_weighted_nee);
+
+#else 
+    write_noise_data(
+        bd_out_1
+    );
+#endif
+
+#else
     write_all_outputs(
         sum_color.rgb / SAMPLES_PER_PASS,
         sum_diffuse.rgba / SAMPLES_PER_PASS,
@@ -124,4 +232,6 @@ void main()
         first_hit_vertex,
         first_hit_material
     );
+#endif
+
 }
