@@ -1338,7 +1338,8 @@ bool replay_path_bsdf_bounce(
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     uint sampled_lobe = 0;
     float bsdf_pdf = 0;
-    ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, sampled_lobe);
+    float bsdf_mis_pdf = 0;
+    ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
 
     if(bounce_index == 0)
         bias_ray_origin(src.pos, sampled_lobe == MATERIAL_LOBE_TRANSMISSION, src);
@@ -1444,7 +1445,8 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
         uint sampled_lobe = 0;
         float bsdf_pdf = 0.0f;
-        ggx_bsdf_sample_lobe(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf, sampled_lobe);
+        float bsdf_mis_pdf = 0;
+        ggx_bsdf_sample_lobe(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
         vec3 dir = tail_domain.tbn * tdir;
         update_regularization(bsdf_pdf, regularization);
 

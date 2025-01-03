@@ -288,6 +288,17 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
     return vec3(0);
 }
 
+void correct_lobes_for_normal_map(vec3 sample_dir, vec3 geometric_normal, inout bsdf_lobes lobes)
+{
+    if(dot(geometric_normal, sample_dir) < 0)
+    {
+        lobes.diffuse = 0;
+        lobes.dielectric_reflection = 0;
+        lobes.metallic_reflection = 0;
+    }
+    else lobes.transmission = 0;
+}
+
 vec3 next_event_estimation(
     uvec4 rand_uint,
     mat3 tbn, vec3 shading_view, sampled_material mat,
@@ -314,12 +325,12 @@ vec3 next_event_estimation(
         float light_pdf;
         // Sample lights
         vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf);
-        bool opaque = mat.transmittance < 0.0001f;
-        if(dot(v.hard_normal, out_dir) < 0 && opaque) contrib = vec3(0);
 
         vec3 shading_light = out_dir * tbn;
         lobes = bsdf_lobes(0,0,0,0);
         float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
+
+        correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
 
         // TODO: Check if this conditional just hurts performance
         if(any(greaterThan(contrib, vec3(0.0001f))))
@@ -400,13 +411,14 @@ void evaluate_ray(
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
         float mis_pdf = bsdf_mis_pdf(nee_pdf, bsdf_pdf);
+        float mis_weight = 1.0f;
         if(bsdf_pdf != 0)
         {
             attenuation /= bsdf_pdf;
-            light = light / mis_pdf * bsdf_pdf;
+            mis_weight = bsdf_pdf / mis_pdf;
         }
 
-        light = attenuation * (mat.emission + light);
+        light = attenuation * mis_weight * (mat.emission + light);
 #ifndef INDIRECT_CLAMP_FIRST_BOUNCE
         if(bounce != 0)
 #endif
@@ -466,6 +478,8 @@ void evaluate_ray(
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
         material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
         view = tbn * view;
+
+        correct_lobes_for_normal_map(v.hard_normal, view, lobes);
 
         if(bounce != 0)
             attenuation *= modulate_bsdf(mat, lobes);

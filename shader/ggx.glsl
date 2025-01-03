@@ -245,6 +245,7 @@ void ggx_bsdf_sample_core(
     inout bsdf_lobes bsdf,
     bool eval_all_lobes,
     out float pdf,
+    out float mis_pdf, // A different PDF is needed for the MIS computation, if eval_all_lobes = false.
     out uint selected_lobe
 ){
     const bool zero_roughness = mat.roughness < 0.001f;
@@ -290,8 +291,9 @@ void ggx_bsdf_sample_core(
         float D = zero_roughness ? 4 * cos_l * cos_v : ggx_distribution(cos_h, mat.roughness);
         pdf = G1 * D / (4*abs(cos_v)) * specular_probability;
 
-        if(eval_all_lobes)
-            pdf += (zero_roughness ? 0 : pdf_cosine_hemisphere(out_dir) * diffuse_probability);
+        float diffuse_pdf = (zero_roughness ? 0 : pdf_cosine_hemisphere(out_dir) * diffuse_probability);
+        if(eval_all_lobes) pdf += diffuse_pdf;
+        else mis_pdf = pdf + diffuse_pdf;
 
         ggx_brdf_inner(out_dir, view_dir, h, fresnel, D, cos_d, mat, bsdf);
 
@@ -330,8 +332,11 @@ void ggx_bsdf_sample_core(
             float G1 = ggx_masking(cos_v, cos_d, mat.roughness);
             float D = (zero_roughness ? 0 : ggx_distribution(cos_h, mat.roughness));
             pdf = pdf_cosine_hemisphere(out_dir) * diffuse_probability;
-            if(eval_all_lobes)
-                pdf += G1 * D / (4*abs(cos_v)) * specular_probability;
+            float specular_pdf = G1 * D / (4*abs(cos_v)) * specular_probability;
+
+            if(eval_all_lobes) pdf += specular_pdf;
+            else mis_pdf = pdf + specular_pdf;
+
             ggx_brdf_inner(out_dir, view_dir, h, fresnel, D, cos_d, mat, bsdf);
             if(!eval_all_lobes || zero_roughness)
             {
@@ -378,7 +383,8 @@ void ggx_bsdf_sample(
     out float pdf
 ){
     uint lobe_index;
-    ggx_bsdf_sample_core(uniform_random, view_dir, mat, out_dir, bsdf, true, pdf, lobe_index);
+    float mis_pdf;
+    ggx_bsdf_sample_core(uniform_random, view_dir, mat, out_dir, bsdf, true, pdf, mis_pdf, lobe_index);
 }
 
 void ggx_bsdf_sample_lobe(
@@ -388,9 +394,10 @@ void ggx_bsdf_sample_lobe(
     out vec3 out_dir,
     inout bsdf_lobes bsdf,
     out float pdf,
+    out float mis_pdf,
     out uint lobe_index
 ){
-    ggx_bsdf_sample_core(uniform_random, view_dir, mat, out_dir, bsdf, false, pdf, lobe_index);
+    ggx_bsdf_sample_core(uniform_random, view_dir, mat, out_dir, bsdf, false, pdf, mis_pdf, lobe_index);
 }
 
 float ggx_bsdf_lobe_pdf(
