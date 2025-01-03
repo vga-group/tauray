@@ -60,6 +60,17 @@ void bottom_level_acceleration_structure::rebuild(
     const std::vector<entry>& entries,
     bool update
 ) {
+    rebuild_from(id, *this, frame_index, cb, entries, update);
+}
+
+void bottom_level_acceleration_structure::rebuild_from(
+    device_id id,
+    bottom_level_acceleration_structure& other,
+    size_t frame_index,
+    vk::CommandBuffer cb,
+    const std::vector<entry>& entries,
+    bool update
+){
     if(!update) updates_since_rebuild = 0;
     device& dev = buffers.get_device(id);
     buffer_data& bd = buffers[id];
@@ -165,7 +176,7 @@ void bottom_level_acceleration_structure::rebuild(
         );
         bd.blas = vkm(dev, dev.logical.createAccelerationStructureKHR(create_info));
     }
-    blas_info.srcAccelerationStructure = update ? *bd.blas : VK_NULL_HANDLE;
+    blas_info.srcAccelerationStructure = update ? *other.buffers[id].blas : VK_NULL_HANDLE;
     blas_info.dstAccelerationStructure = bd.blas;
     blas_info.scratchData.deviceAddress = bd.scratch_address;
 

@@ -853,16 +853,19 @@ void scene_stage::ensure_blas()
                 !inst.mat->potentially_transparent()
             });
         }
-        blas_cache.emplace(
-            group.id,
-            bottom_level_acceleration_structure(
-                get_device_mask(),
-                entries,
-                !double_sided,
-                group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : !group.static_mesh,
-                group.static_mesh
-            )
+
+        bool dynamic = group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : !group.static_mesh;
+        blas_info info;
+        info.blas[0] = bottom_level_acceleration_structure(
+            get_device_mask(), entries, !double_sided, dynamic, group.static_mesh
         );
+        if (dynamic && opt.track_prev_tlas)
+        {
+            info.blas[1] = bottom_level_acceleration_structure(
+                get_device_mask(), entries, !double_sided, true, false
+            );
+        }
+        blas_cache.emplace(group.id, std::move(info));
     }
     if(built_one)
         TR_LOG("Finished building acceleration structures");
@@ -1407,7 +1410,9 @@ void scene_stage::update(uint32_t frame_index)
                             !inst.mat->potentially_transparent()
                         });
                     }
-                    blas_cache.at(group.id).update_transforms(frame_index, entries);
+                    // Since all BLASes are static in this strategy, only
+                    // blas[0] is ever allocated.
+                    blas_cache.at(group.id).blas[0]->update_transforms(frame_index, entries);
                 }
             }
 
@@ -1424,7 +1429,12 @@ void scene_stage::update(uint32_t frame_index)
                     for(size_t j = 0; j < group_cache.size() && as_instance_count < total_max_capacity; ++j)
                     {
                         const instance_group& group = group_cache[j];
-                        const bottom_level_acceleration_structure& blas = blas_cache.at(group.id);
+                        const blas_info& bi = blas_cache.at(group.id);
+
+                        bool dynamic = group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : !group.static_mesh;
+                        int blas_index = dynamic && opt.track_prev_tlas ? (frame_index&1) : 0;
+
+                        const bottom_level_acceleration_structure& blas = *bi.blas[blas_index];
                         vk::AccelerationStructureInstanceKHR inst = vk::AccelerationStructureInstanceKHR(
                             {}, offset, 1<<0, 0, // Hit group 0 for triangle meshes.
                             {}, blas.get_blas_address(dev.id)
@@ -1594,8 +1604,13 @@ void scene_stage::record_skinning(device_id id, uint32_t frame_index, vk::Comman
                     !inst.mat->potentially_transparent()
                 });
             }
-            blas_cache.at(group.id).rebuild(
-                id, frame_index, cb, entries,
+            bool dynamic = group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : !group.static_mesh;
+            int prev_blas_index = dynamic && opt.track_prev_tlas ? ((frame_index+1)&1) : 0;
+            int cur_blas_index = dynamic && opt.track_prev_tlas ? (frame_index&1) : 0;
+
+            blas_info& bi = blas_cache.at(group.id);
+            bi.blas[cur_blas_index]->rebuild_from(
+                id, *bi.blas[prev_blas_index], frame_index, cb, entries,
                 group_strategy == blas_strategy::ALL_MERGED_STATIC ? false : true
             );
         }

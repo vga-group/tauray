@@ -44,6 +44,14 @@ public:
         const std::vector<entry>& entries,
         bool update = true
     );
+    void rebuild_from(
+        device_id id,
+        bottom_level_acceleration_structure& other,
+        size_t frame_index,
+        vk::CommandBuffer cb,
+        const std::vector<entry>& entries,
+        bool update = true
+    );
     size_t get_updates_since_rebuild() const;
     vk::AccelerationStructureKHR get_blas_handle(device_id id) const;
     vk::DeviceAddress get_blas_address(device_id id) const;

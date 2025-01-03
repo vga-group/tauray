@@ -164,7 +164,13 @@ private:
         vkm<vk::Buffer> buf;
     };
     per_device<pre_transformed_data> pre_transformed_vertices;
-    std::unordered_map<uint64_t, bottom_level_acceleration_structure> blas_cache;
+    struct blas_info
+    {
+        // If track_prev_tlas = false or the BLAS is static, only blas[0] is in
+        // use. Otherwise, it's a ping-pong buffer.
+        std::optional<bottom_level_acceleration_structure> blas[2];
+    };
+    std::unordered_map<uint64_t, blas_info> blas_cache;
     std::vector<instance> instances;
     std::vector<instance_group> group_cache;
     blas_strategy group_strategy;
