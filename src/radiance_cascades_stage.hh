@@ -15,9 +15,13 @@ public:
     struct options
     {
         aabb volume;
+
+        // Used for culling dead probes
+        texture* distance_field = nullptr;
+
         // +1 => 8x computation needed, general resolution doubled, less fudge
         // in smallest cascade.
-        uint32_t log2_resolution = 7;
+        uint32_t log2_resolution = 8;
         // x2 => 4x computation needed, general resolution doubled
         uint32_t c0_probe_resolution = 4; // 4x4 = 16 rays per probe
 

@@ -205,6 +205,8 @@ texture::texture(
     device_mask dev,
     uvec3 dim,
     vk::Format fmt,
+    size_t data_size,
+    void* data,
     vk::ImageTiling tiling,
     vk::ImageUsageFlags usage,
     vk::ImageLayout layout
@@ -212,7 +214,7 @@ texture::texture(
     tiling(tiling), usage(usage), layout(layout),
     msaa(vk::SampleCountFlagBits::e1), opaque(false), buffers(dev)
 {
-    create(0, nullptr);
+    create(data_size, data);
 }
 
 texture::texture(texture&& other)

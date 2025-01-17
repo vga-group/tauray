@@ -36,6 +36,8 @@ private:
 
     gbuffer_texture gbuffer;
 
+    std::optional<texture> distance_field;
+
     std::optional<scene_stage> scene_update;
     std::optional<radiance_cascades_stage> rc;
     std::optional<rc_visualizer_stage> rcv;

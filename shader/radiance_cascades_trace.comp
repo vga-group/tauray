@@ -24,6 +24,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 
 //layout(binding = 0, r32f) uniform writeonly image2DArray cascade_target;
 layout(binding = 0, rgba32f) uniform image2DArray cascade_target;
+layout(binding = 1, r32f) uniform readonly image3D distance_field;
 
 #include "radiance_cascades.glsl"
 
@@ -32,6 +33,14 @@ layout(binding = 0, rgba32f) uniform image2DArray cascade_target;
 #define SCENE_SET 1
 #include "scene.glsl"
 #include "rt_common.glsl"
+
+float get_distance(int cascade, ivec3 coord)
+{
+    // TODO: Needs mipmaps too.
+    ivec3 transferred_coord = (coord << cascade);
+    if(cascade > 0) transferred_coord += 1<<(cascade-1);
+    return imageLoad(distance_field, transferred_coord).r;
+}
 
 // 0 = mesh
 // 1 = point light
@@ -127,9 +136,9 @@ void main()
     ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
     uint seed = 0; // TODO
 
-    vec4 hit_color = imageLoad(cascade_target, p);
-    if(pc.has_history != 0 && pc.ignore_missed_rays != 0 && hit_color.a == 0)
-        return;
+    vec4 hit_color = vec4(0);//imageLoad(cascade_target, p);
+    //if(pc.has_history != 0 && pc.ignore_missed_rays != 0 && hit_color.a == 0)
+    //    return;
 
     bool first_cascade = pc.cascade == 0;
     bool last_cascade = pc.cascade+1 == pc.cascade_count;
@@ -162,9 +171,19 @@ void main()
     vec3 ray_origin = probe_origin + prev_dir * pc.interval_start;
     vec3 ray_end = next_origin + probe_dir * pc.interval_end;
 #endif
+
     vec3 ray_dir = ray_end - ray_origin;
     float ray_len = length(ray_dir);
     ray_dir /= ray_len;
+
+    float dist = get_distance(pc.cascade, probe_index);
+    if(ray_len < dist || max(pc.xyz_step.x, max(pc.xyz_step.y, pc.xyz_step.z)) < dist)
+    {
+        // TODO: This can be commented out for extra perf, it just needs to be
+        // there for visualization to work when a surface isn't in vicinity.
+        imageStore(cascade_target, p, vec4(0,0,0,0));
+        return;
+    }
 
     hit_color = vec4(0);
 

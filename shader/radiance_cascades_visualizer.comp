@@ -18,6 +18,7 @@ layout(push_constant) uniform push_constant_buffer
 } pc;
 
 layout(binding = 0, rgba32f) uniform writeonly image2D target;
+layout(binding = 1, r32f) uniform readonly image3D distance_field;
 #define SCENE_SET 1
 #include "scene.glsl"
 #define RADIANCE_CASCADES_SET 2
@@ -34,10 +35,9 @@ void main()
         vec3 dir;
         get_camera_ray(cam, ivec2(p.x, pc.display_h-p.y), vec2(pc.display_w, pc.display_h), vec2(0.5), origin, dir);
 
-        vec3 col = query_radiance_cascades(origin, dir);
-
+        uvec4 seed = uvec4(p.x, p.y, 1025, 12);
+        vec3 col = query_radiance_cascades(origin, dir, seed);
         /*
-        vec3 col = vec3(0);
         if(p.x < pc.cascade_w && p.y < pc.cascade_h)
         {
             //float value = texelFetch(radiance_cascades[pc.cascade], ivec3(p.x, p.y, pc.layer), 0).r;
