@@ -452,7 +452,7 @@ vkm<vk::Image> sync_create_gpu_image(
         );
 
         // Generate mipmaps.
-        ivec2 sz = ivec2(info.extent.width, info.extent.height);
+        ivec3 sz = ivec3(info.extent.width, info.extent.height, info.extent.depth);
         for(uint32_t i = 1; i < info.mipLevels; ++i)
         {
             transition_image_layout(
@@ -461,13 +461,13 @@ vkm<vk::Image> sync_create_gpu_image(
                 vk::ImageLayout::eTransferSrcOptimal,
                 i-1, 1
             );
-            ivec2 next_sz = max(sz/2, ivec2(1));
+            ivec3 next_sz = max(sz/2, ivec3(1));
             vk::ImageAspectFlags mask = deduce_aspect_mask(info.format);
             vk::ImageBlit blit(
                 {mask, i-1, 0, 1},
-                {{{0,0,0}, {sz.x,sz.y,1}}},
+                {{{0,0,0}, {sz.x,sz.y,sz.z}}},
                 {mask, i, 0, 1},
-                {{{0,0,0}, {next_sz.x,next_sz.y,1}}}
+                {{{0,0,0}, {next_sz.x,next_sz.y,next_sz.z}}}
             );
             cb.blitImage(
                 img, vk::ImageLayout::eTransferSrcOptimal,
@@ -583,6 +583,26 @@ std::string load_text_file(const std::string& path)
 
     delete [] data;
     return ret;
+}
+
+std::vector<uint8_t> load_binary_file(const std::string& path)
+{
+    FILE* f = fopen(path.c_str(), "rb");
+
+    if(!f) throw std::runtime_error("Unable to open " + path);
+
+    fseek(f, 0, SEEK_END);
+    size_t sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    std::vector<uint8_t> data(sz);
+    if(fread(data.data(), 1, sz, f) != sz)
+    {
+        fclose(f);
+        throw std::runtime_error("Unable to read " + path);
+    }
+    fclose(f);
+    return data;
 }
 
 bool nonblock_getline(std::string& line)

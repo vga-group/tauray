@@ -21,10 +21,12 @@ namespace tr
 
 rc_visualizer_stage::rc_visualizer_stage(
     radiance_cascades_stage& rc,
-    render_target& output
+    render_target& output,
+    const options& opt
 ):  single_device_stage(*rc.dev),
     rc(&rc),
     output(output),
+    opt(opt),
     desc(*rc.dev),
     visualize(*rc.dev),
     cascade(0),
@@ -53,6 +55,7 @@ void rc_visualizer_stage::update(uint32_t frame_index)
     visualize.set_descriptors(cb, rc->ss->get_descriptors(), 0, 1);
     visualize.set_descriptors(cb, rc->get_descriptors(), 0, 2);
     desc.set_image(dev->id, "target", {{{}, output.view, vk::ImageLayout::eGeneral}});
+    desc.set_image(dev->id, "distance_field", {{{}, opt.distance_field->get_image_view(dev->id), vk::ImageLayout::eGeneral}});
     visualize.push_descriptors(cb, desc, 0);
 
     visualize_push_constant_buffer pc;

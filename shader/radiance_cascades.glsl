@@ -18,7 +18,26 @@ layout(set=RADIANCE_CASCADES_SET, binding = 1) uniform radiance_cascade_metadata
 
 #include "random_sampler.glsl"
 
-vec3 query_radiance_cascades(vec3 origin, vec3 dir)
+ivec2 octahedral_wrap(ivec2 p, ivec2 size)
+{
+    if(p.x < 0 || p.x >= size.x)
+    {
+        p.x = -1-p.x;
+        if(p.x < 0) p.x += 2 * size.x;
+        p.y = size.y-1-p.y;
+    }
+
+    if(p.y < 0 || p.y >= size.y)
+    {
+        p.y = -1-p.y;
+        if(p.y < 0) p.y += 2 * size.y;
+        p.x = size.x-1-p.x;
+    }
+
+    return p;
+}
+
+vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
 {
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
     vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
@@ -42,15 +61,18 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir)
     ivec2 probe_resolution = ivec2(radiance_cascade_metadata.c0_angular_resolution);
     // TODO: Maybe make this a specialization constant?
     int cascade_count = radiance_cascade_metadata.size.w;
+
+    vec4 random_interpolation = generate_single_uniform_random(seed) - 0.5f;
     ivec3 cascade_coord = clamp(ivec3(
-        fcoord * cascade_size
+        fcoord * cascade_size + random_interpolation.xyz
     ), ivec3(0), ivec3(cascade_size-1));
 
     vec4 sum = vec4(0,0,0,1);
 
     vec2 uv = concentric_octahedral_mapping_inverse(dir);
 
-    ivec2 p = clamp(ivec2(uv * probe_resolution), ivec2(0), probe_resolution-1);
+    random_interpolation = generate_single_uniform_random(seed) - 0.5f;
+    ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution + random_interpolation.xy)), probe_resolution);
 
     ivec3 tex_coord = cascade_coord * ivec3(probe_resolution, 1) + ivec3(p, 0);
     vec4 col = texelFetch(radiance_cascades[0], tex_coord, 0);
@@ -62,7 +84,8 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir)
         probe_resolution *= 2;
         cascade_coord /= 2;
 
-        ivec2 p = clamp(ivec2(uv * probe_resolution), ivec2(0), probe_resolution-1);
+        random_interpolation = generate_single_uniform_random(seed) - 0.5f;
+        ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution + random_interpolation.xy)), probe_resolution);
 
         tex_coord = cascade_coord * ivec3(probe_resolution, 1) + ivec3(p, 0);
         vec4 col = texelFetch(radiance_cascades[cascade], tex_coord, 0);

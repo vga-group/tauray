@@ -53,6 +53,8 @@ public:
         device_mask dev,
         uvec3 dim,
         vk::Format fmt,
+        size_t data_size = 0,
+        void* data = nullptr,
         vk::ImageTiling tiling = vk::ImageTiling::eOptimal,
         vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eSampled,
         vk::ImageLayout layout = vk::ImageLayout::eGeneral

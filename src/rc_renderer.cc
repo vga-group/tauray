@@ -1,6 +1,7 @@
 #include "rc_renderer.hh"
 //#include "vulkan/vulkan_format_traits.hpp"
 #include "log.hh"
+#include "misc.hh"
 
 namespace tr
 {
@@ -26,15 +27,28 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     // Hardcoded for test.glb
     rc_opt.volume = {vec3(-2), vec3(2)};
 
+    std::vector<uint8_t> distance_field_data = load_binary_file("test/test-distance-field.raw");
+    distance_field.emplace(texture(
+        dev,
+        uvec3(256),
+        vk::Format::eR32Sfloat,
+        distance_field_data.size(),
+        distance_field_data.data(),
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
+    ));
+    rc_opt.distance_field = &distance_field.value();
 
     gbuffer.reset(dev, ctx.get_size(), 1);
     gbuffer.add(gs, vk::ImageLayout::eGeneral);
 
-
     rc.emplace(dev, *scene_update, rc_opt);
 
+    rc_visualizer_stage::options rcv_opt;
+    rcv_opt.distance_field = &distance_field.value();
     gbuffer_target cur = gbuffer.get_layer_target(dev.id, 0);
-    rcv.emplace(*rc, cur.color);
+
+    rcv.emplace(*rc, cur.color, rcv_opt);
     cur = gbuffer.get_array_target(dev.id);
     //pt.emplace(dev, *scene_update, cur, this->opt.pt_options);
 

@@ -9,9 +9,15 @@ namespace tr
 class rc_visualizer_stage: public single_device_stage
 {
 public:
+    struct options
+    {
+        texture* distance_field;
+    };
+
     rc_visualizer_stage(
         radiance_cascades_stage& rc,
-        render_target& output
+        render_target& output,
+        const options& opt
     );
 
     void set_position(int cascade, int z_layer);
@@ -21,6 +27,7 @@ private:
 
     radiance_cascades_stage* rc;
     render_target output;
+    options opt;
 
     push_descriptor_set desc;
     compute_pipeline visualize;

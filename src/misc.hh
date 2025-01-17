@@ -114,6 +114,7 @@ vk::SampleCountFlagBits get_max_available_sample_count(context& ctx);
 
 std::string get_resource_path(const std::string& path);
 std::string load_text_file(const std::string& path);
+std::vector<uint8_t> load_binary_file(const std::string& path);
 bool nonblock_getline(std::string& line);
 
 template<typename T>
