@@ -104,12 +104,9 @@ path_tracer_stage::path_tracer_stage(
     for(auto i = 0; i < (int)opt.bd_vec.size(); i++)
     {
         auto option = opt.bd_vec.at(i);
-        if(option != bd::POSITION && option != bd::POSITION_2 && option != bd::NORMAL)
-        {
-            defines[bd_str_map.at(option)] = std::to_string(id);
-            TR_LOG(bd_str_map.at(option) + " " + std::to_string(id));
-            ++id;
-        }
+        defines[bd_str_map.at(option)] = std::to_string(id);
+        //TR_LOG(bd_str_map.at(option) + " " + std::to_string(id));
+        ++id;
     }
 
 #define TR_GBUFFER_ENTRY(name, ...)\

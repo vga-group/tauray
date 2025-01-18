@@ -56,6 +56,8 @@ layout(binding = 14, set = 0) buffer accept_buf_t
 } accept_buffer;
 
 layout(binding = 15, set = 0, rgba32f) uniform image2DArray in_extra;
+layout(binding = 16, set = 0, r32i) uniform iimage2DArray in_instance_id;
+layout(binding = 17, set = 0, rgba32f) uniform image2DArray in_material;
 
 vec3 get_specular(ivec3 p)
 {

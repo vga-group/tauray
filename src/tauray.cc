@@ -491,8 +491,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 auto v = parse_bounce_data(opt.noise_data_str);
                 for(auto a : v)
                 {
-                    TR_LOG(a);
-                    rt_opt.bd_vec.push_back(str_bd_map.at(a));
+                    //TR_LOG(a);
+                    if (str_bd_map.count(a) != 0)
+                        rt_opt.bd_vec.push_back(str_bd_map.at(a));
                 }
 
                 rt_opt.dt = (tr::denoiser_type)opt.denoiser;

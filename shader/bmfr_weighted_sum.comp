@@ -28,6 +28,8 @@ layout(binding = 7, set = 0) uniform uniform_buffer_t
 } uniform_buffer;
 
 layout(binding = 8, set = 0, rgba32f) uniform readonly image2DArray in_extra;
+layout(binding = 9, set = 0, r32i) uniform iimage2DArray in_instance_id;
+layout(binding = 10, set = 0, rgba32f) uniform image2DArray in_material;
 
 void main()
 {

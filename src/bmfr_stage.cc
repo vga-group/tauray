@@ -63,15 +63,18 @@ bmfr_stage::bmfr_stage(
 }
 
 static void create_bd_macro(
-        std::vector<std::string> source, 
+        const std::vector<std::string>& source, 
         uint32_t& bd_feature_count, 
         std::string& macro
 ){
-    std::map<std::string, std::string> macro_map =
+    const std::map<std::string, std::string> macro_map =
     {
         {"normal", "curr_normal"},
         {"position", "curr_pos"},
         {"position-2", "curr_pos"},
+        {"roughness", "imageLoad(in_material, p).g"},
+        {"metallic", "imageLoad(in_material, p).r"},
+        {"instance-id", "float(imageLoad(in_instance_id, p).r)"},
 
         {"bounce-count", "bd"},
         {"bounce-contribution", "bd"},
@@ -82,7 +85,7 @@ static void create_bd_macro(
         {"bsdf-nee-contribution", "bd"}
     };
 
-    std::vector<std::string> channel_map = {"x", "y", "z", "w"};
+    const std::vector<std::string> channel_map = {"x", "y", "z", "w"};
 
     macro += "1.f,";
 
@@ -103,6 +106,11 @@ static void create_bd_macro(
             macro += macro_map.at(a) + ".y * " + macro_map.at(a) + ".y,";
             macro += macro_map.at(a) + ".z * " + macro_map.at(a) + ".z,";
             count += 3;
+        }
+        else if (a == "roughness" || a == "metallic" || a == "instance-id")
+        {
+            macro += macro_map.at(a) + ",";
+            count += 1;
         }
         else
         {
@@ -130,12 +138,8 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
         create_bd_macro(opt.bd_vec, _feature_count, macro);
         this->feature_count = _feature_count;
 
-        // features to normalize
-        std::vector<std::string> to_normalize_v =
-        {
-            "position",
-            "position-2"
-        };
+        // Normalization mask is uint32
+        assert(feature_count <= 32); 
 
         uint32_t num_normalized_features = 0;
 
@@ -169,9 +173,6 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
         defines.insert({ "FEATURES", macro });
         defines.insert({ "FEATURE_COUNT", std::to_string(_feature_count) });
         defines.insert({ "NORMALIZATION_MASK", std::to_string(normalization_mask) });
-
-        std::replace(macro.begin(), macro.end(), ',', '\n');
-        TR_LOG(macro);
     }
 
     if (opt.settings == bmfr_settings::DIFFUSE_ONLY)
@@ -184,11 +185,6 @@ shader_source bmfr_stage::load_shader_source(const std::string& path, const opti
     {
         defines.insert({ "BUFFER_COUNT", "(FEATURE_COUNT + 6)" });
         defines.insert({ "NUM_WEIGHTS_PER_FEATURE", "2" });
-    }
-
-    for(auto& a : defines)
-    {
-        TR_LOG(a.first, " : ", a.second);
     }
     
     return shader_source(path, defines);
@@ -325,7 +321,9 @@ void bmfr_stage::init_resources()
         bmfr_preprocess_desc.set_buffer(dev->id, i, "tmp_buffer", {{tmp_data[i], 0, VK_WHOLE_SIZE}});
         bmfr_preprocess_desc.set_buffer(dev->id, i, "uniform_buffer", {{uniform_buffer[dev->id], 0, VK_WHOLE_SIZE}});
         bmfr_preprocess_desc.set_buffer(dev->id, i, "accept_buffer", {{accepts[i], 0, VK_WHOLE_SIZE}});
-        bmfr_preprocess_desc.set_image(dev->id, i, "in_extra", { {{}, current_features.prob.view, vk::ImageLayout::eGeneral}});
+        bmfr_preprocess_desc.set_image(dev->id, i, "in_extra", { {{}, current_features.prob.view, vk::ImageLayout::eGeneral} });
+        bmfr_preprocess_desc.set_image(dev->id, i, "in_instance_id", { {{}, current_features.instance_id.view, vk::ImageLayout::eGeneral} });
+        bmfr_preprocess_desc.set_image(dev->id, i, "in_material", { {{}, current_features.material.view, vk::ImageLayout::eGeneral}});
 #if 1
         bmfr_fit_desc.set_buffer(dev->id, i, "tmp_buffer", {{tmp_data[i], 0, VK_WHOLE_SIZE}});
         bmfr_fit_desc.set_buffer(dev->id, i, "mins_maxs_buffer", {{min_max_buffer[i], 0, VK_WHOLE_SIZE}});
@@ -345,6 +343,8 @@ void bmfr_stage::init_resources()
         bmfr_weighted_sum_desc.set_image(dev->id, i, "weighted_out", {{{}, weighted_sum[0].view, vk::ImageLayout::eGeneral}, {{}, weighted_sum[1].view, vk::ImageLayout::eGeneral}});
         bmfr_weighted_sum_desc.set_image(dev->id, i, "tmp_noisy", {{{}, tmp_noisy[0].view, vk::ImageLayout::eGeneral}, {{}, tmp_noisy[1].view, vk::ImageLayout::eGeneral}});
         bmfr_weighted_sum_desc.set_image(dev->id, i, "in_extra", { {{}, current_features.prob.view, vk::ImageLayout::eGeneral} });
+        bmfr_weighted_sum_desc.set_image(dev->id, i, "in_instance_id", { {{}, current_features.instance_id.view, vk::ImageLayout::eGeneral} });
+        bmfr_weighted_sum_desc.set_image(dev->id, i, "in_material", { {{}, current_features.material.view, vk::ImageLayout::eGeneral} });
 
         bmfr_accumulate_output_desc.set_image(dev->id, i, "out_color", {{{}, current_features.color.view, vk::ImageLayout::eGeneral}});
         bmfr_accumulate_output_desc.set_image(dev->id, i, "in_screen_motion", {{{}, current_features.screen_motion.view, vk::ImageLayout::eGeneral}});

@@ -31,9 +31,6 @@ namespace tr
         BSDF_VAR,
         PDF_CONTRIBUTION,
         FULL_PDF_CONTRIBUTION,
-        NORMAL,
-        POSITION,
-        POSITION_2
     };
 
     enum class denoiser_type
@@ -52,9 +49,6 @@ namespace tr
         {"bsdf-variance", bd::BSDF_VAR},
         {"bsdf-contribution", bd::PDF_CONTRIBUTION},
         {"bsdf-nee-contribution", bd::FULL_PDF_CONTRIBUTION},
-        {"normal", bd::NORMAL},
-        {"position", bd::POSITION},
-        {"position-2", bd::POSITION_2}
     };
 
     const std::map<bd, std::string> bd_str_map =
