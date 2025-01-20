@@ -18,6 +18,13 @@ struct trace_push_constant_buffer
     int ignore_missed_rays;
 };
 
+struct gather_push_constant_buffer
+{
+    int cascade;
+    int c0_angular_resolution;
+    float blend_ratio;
+};
+
 struct cascade_metadata_buffer
 {
     pvec4 aabb_min;
@@ -182,12 +189,12 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     cascades_metadata.upload(dev->id, frame_index, cb);
 
     std::vector<texture>* next_cascades = &cascades;
-    //std::vector<texture>* prev_cascades = nullptr;
+    std::vector<texture>* prev_cascades = nullptr;
 
     if(opt.recursive || (opt.jitter_rays && opt.temporal_ratio < 1.0f))
     {
         next_cascades = (frame_index&1) ? &cascades : &alt_cascades;
-        //prev_cascades = (frame_index&1) ? &alt_cascades : &cascades;
+        prev_cascades = (frame_index&1) ? &alt_cascades : &cascades;
     }
 
     std::vector<vk::ImageMemoryBarrier> barriers;
@@ -260,7 +267,8 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     }
 
     //==========================================================================
-    // Gather pass - fills importance values for missed rays.
+    // Gather pass - fills importance values for missed rays & implements
+    // temporal accumulation.
     //==========================================================================
     for(size_t i = 0; i < next_cascades->size(); ++i)
     {
@@ -280,12 +288,21 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     for(uint32_t i = 1; i < get_cascade_count(); ++i)
     {
         uint32_t cur_cascade = get_cascade_count()-1-i;
-        uint32_t prev_cascade = cur_cascade+1;
-        texture& prev_target = (*next_cascades)[prev_cascade];
+        uint32_t upper_cascade = cur_cascade+1;
+        texture& upper_target = (*next_cascades)[upper_cascade];
         texture& cur_target = (*next_cascades)[cur_cascade];
-        gather_desc.set_image(dev->id, "prev_cascade", {{{}, prev_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
-        gather_desc.set_image(dev->id, "cur_cascade", {{{}, cur_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        texture& prev_target = prev_cascades ?
+            (*prev_cascades)[cur_cascade] : cur_target;
+        gather_desc.set_image(dev->id, "upper_target", {{{}, upper_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "lower_target", {{{}, cur_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "prev_lower_target", {{{}, prev_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather.push_descriptors(cb, gather_desc, 0);
+
+        gather_push_constant_buffer pc;
+        pc.cascade = cur_cascade;
+        pc.c0_angular_resolution = opt.c0_probe_resolution;
+        pc.blend_ratio = 0.0f;
+        gather.push_constants(cb, pc);
 
         size_t cascade_size = 1<<(opt.log2_resolution-cur_cascade);
         size_t resolution = opt.c0_probe_resolution<<cur_cascade;
