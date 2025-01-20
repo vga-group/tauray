@@ -1,4 +1,5 @@
 #include "post_processing_renderer.hh"
+#include "log.hh"
 
 namespace tr
 {
@@ -57,6 +58,24 @@ void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
         spec.pos_present = true;
         spec.albedo_present = true;
         spec.diffuse_present = true;
+        spec.prob_present = true;
+        
+        bool needs_material = std::find(opt.bmfr->bd_vec.begin(), opt.bmfr->bd_vec.end(), "metallic") != opt.bmfr->bd_vec.end() ||
+                std::find(opt.bmfr->bd_vec.begin(), opt.bmfr->bd_vec.end(), "roughness") != opt.bmfr->bd_vec.end();
+
+        bool needs_instance_id = std::find(opt.bmfr->bd_vec.begin(), opt.bmfr->bd_vec.end(), "instance-id") != opt.bmfr->bd_vec.end();
+
+        if (needs_material)
+        {
+            TR_LOG("BMFR: Enabling material in gbuffer due to specified options\n");
+            spec.material_present = true;
+        }
+
+        if (needs_instance_id)
+        {
+            TR_LOG("BMFR: Enabling instance-id in gbuffer due to specified options\n");
+            spec.instance_id_present = true;
+        }
     }
 
     if(opt.taa.has_value())

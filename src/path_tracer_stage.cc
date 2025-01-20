@@ -2,6 +2,7 @@
 #include "scene_stage.hh"
 #include "misc.hh"
 #include "environment_map.hh"
+#include "log.hh"
 
 namespace
 {
@@ -66,6 +67,47 @@ path_tracer_stage::path_tracer_stage(
 
     if(opt.depth_of_field)
         defines["USE_DEPTH_OF_FIELD"];
+
+#if 0 
+    if(opt.boda == bd::BOUNCE_COUNT)
+        defines["BD_BOUNCE_COUNT"];
+
+    if(opt.boda == bd::CONTRIBUTION)
+        defines["BD_CONTRIBUTION"];
+
+    if(opt.boda == bd::MATERIAL_ID)
+        defines["BD_MATERIAL_ID"];
+
+    if(opt.boda == bd::BSDF_SUM)
+        defines["BD_BSDF_SUM"];
+
+    if(opt.boda == bd::BSDF_VAR)
+        defines["BD_BSDF_VAR"];
+
+    if(opt.boda == bd::PDF_CONTRIBUTION)
+        defines["BD_PDF_CONTRIBUTION"];
+
+    if(opt.boda == bd::FULL_PDF_CONTRIBUTION)
+        defines["BD_FULL_PDF_CONTRIBUTION"];
+
+    if(opt.dt == denoiser_type::BMFR)
+        defines["BD_BMFR"];
+#endif
+
+    if(opt.boda != bd::OFF)
+        defines[bd_str_map.at(opt.boda)] = "0";
+
+    if(opt.dt == denoiser_type::BMFR)
+        defines["BD_BMFR"];
+
+    int id = 0;
+    for(auto i = 0; i < (int)opt.bd_vec.size(); i++)
+    {
+        auto option = opt.bd_vec.at(i);
+        defines[bd_str_map.at(option)] = std::to_string(id);
+        //TR_LOG(bd_str_map.at(option) + " " + std::to_string(id));
+        ++id;
+    }
 
 #define TR_GBUFFER_ENTRY(name, ...)\
     if(output_target.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];

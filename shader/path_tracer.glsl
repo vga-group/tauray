@@ -94,7 +94,8 @@ bool get_intersection_info(
     out pt_vertex_data v,
     out intersection_pdf nee_pdf,
     out sampled_material mat,
-    out vec3 light
+    out vec3 light,
+    out material mat_data
 ){
     nee_pdf.point_light_pdf = 0;
     nee_pdf.directional_light_pdf = 0;
@@ -114,7 +115,7 @@ bool get_intersection_info(
             , origin, pdf
 #endif
         );
-        mat = sample_material(payload.instance_id, vd);
+        mat = sample_material(payload.instance_id, vd, mat_data);
         mat.albedo.a = 1.0; // Alpha blending was handled by the any-hit shader!
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
         nee_pdf.tri_light_pdf = pdf == 0.0f ? 0.0f : pdf;
@@ -133,12 +134,13 @@ bool get_intersection_info(
         v.instance_id = vd.instance_id;
         return true;
     }
-    else if(payload.primitive_id >= 0)
+    else if(payload.primitive_id >= 0) //non-triangle light hit
     {
         point_light pl = point_lights.lights[payload.primitive_id];
         vec3 color = get_spotlight_intensity(pl, view) * pl.color / (pl.radius * pl.radius * M_PI);
 #ifdef NEE_SAMPLE_POINT_LIGHTS
         mat.emission = vec3(0);
+        mat_data.albedo_tex_id = -1;
         light = color;
         nee_pdf.point_light_pdf = sample_point_light_pdf(pl, origin);
 #else
@@ -155,7 +157,7 @@ bool get_intersection_info(
         mat.albedo = vec4(0,0,0,1);
         return false;
     }
-    else
+    else // envmap hit
     {
         vec4 color = scene_metadata.environment_factor;
         if(scene_metadata.environment_proj >= 0)
@@ -196,6 +198,7 @@ bool get_intersection_info(
 #else
         mat.emission += color.rgb;
 #endif
+        mat_data.albedo_tex_id = -1;
         return false;
     }
 }
@@ -303,7 +306,8 @@ vec3 next_event_estimation(
     uvec4 rand_uint,
     mat3 tbn, vec3 shading_view, sampled_material mat,
     pt_vertex_data v,
-    inout bsdf_lobes lobes
+    inout bsdf_lobes lobes,
+    out float light_pdf
 ){
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_ENVMAP)
     if(false
@@ -322,7 +326,6 @@ vec3 next_event_estimation(
     ){
         vec3 out_dir;
         float out_length = 0.0f;
-        float light_pdf;
         // Sample lights
         vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf);
 
@@ -371,12 +374,63 @@ void evaluate_ray(
     out vec4 diffuse,
     out vec4 reflection,
     out pt_vertex_data first_hit_vertex,
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION) || defined(BD_BMFR_MODE)
+    out material bd_mat_data, //1
+    out float bd_bouce_count, //1 
+    out float bd_weighted_bounce_count, //1
+    out float bd_material_id, //1
+    out float bd_bsdf_sum, //1
+    out float bd_weighted_bsdf,
+    out float bd_bsdf_weighted_nee,
+#endif
     out sampled_material first_hit_material
 ){
     vec3 attenuation = vec3(1);
-
     diffuse = vec4(0,0,0,0);
     reflection = vec4(0,0,0,0);
+    float light_pdf;
+
+#if defined(BD_BOUNCE_COUNT) \
+    || defined(BD_CONTRIBUTION)\
+    || defined(BD_MATERIAL_ID)\
+    || defined(BD_BSDF_SUM)\
+    || defined(BD_PDF_CONTRIBUTION)\
+    || defined(BD_FULL_PDF_CONTRIBUTION)\
+    || defined(BD_BMFR_MODE)
+
+    bd_bouce_count = 0.0f;
+    bd_weighted_bounce_count = 0.0f;
+    bd_material_id = 0.0f;
+    bd_bsdf_sum = 0.0f;
+    bd_weighted_bsdf = 0.0f;
+    bd_bsdf_weighted_nee = 0.0f;
+#endif
+
+#if defined(BD_CONTRIBUTION)
+    float bd_total_luminance_bounce = 0.0f;
+#endif
+
+#if defined(BD_BSDF_SUM)
+    float bd_bsdf_sum_bsdf_sum = 0.0f;
+    float bd_bsdf_sum_bouce_count = 0.0f;
+#endif
+
+#if defined(BD_PDF_CONTRIBUTION)
+    float bd_pdf_contribution_total_pdf = 1.0f;
+    float bd_pdf_contribution_total_luminance = 0.0f;
+#endif
+
+#if defined(BD_FULL_PDF_CONTRIBUTION)
+    float full_pdf_contribution_luminance = 0.0f;
+    float full_pdf_contribution_total_pdf = 1.0f;
+
+
+
+#endif
+
+    vec3 attenuation_BD = vec3(1.0f);
+
 
     float regularization = 1.0f;
     float bsdf_pdf = 0.0f;
@@ -405,8 +459,14 @@ void evaluate_ray(
         pt_vertex_data v;
         sampled_material mat;
         intersection_pdf nee_pdf;
+        material sampled_material_data;
         vec3 light;
-        bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
+        bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light, sampled_material_data) || bounce == MAX_BOUNCES-1;
+
+#if defined(BD_MATERIAL_ID) || defined(BD_BMFR_MODE)
+        if(bounce == 0)
+            bd_mat_data = sampled_material_data;
+#endif
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
@@ -426,6 +486,11 @@ void evaluate_ray(
             light *= clamp_contribution_mul(light);
         }
         add_demodulated_color(primary_lobes, light, diffuse.rgb, reflection.rgb);
+        vec3 specular_radiance_BD = mat.emission + light;
+
+#ifdef BD_CONTRIBUTION
+        vec3 bounce_contribution = light * attenuation;
+#endif
 
         if(bounce == 0)
         {
@@ -446,14 +511,19 @@ void evaluate_ray(
         mat3 tbn = create_tangent_space(v.mapped_normal);
         vec3 shading_view = view_to_tangent_space(view, tbn);
 
+#if defined(BD_FULL_PDF_CONTRIBUTION)
+        vec3 nee_contrib = vec3(0.0);
+#endif
+
         if(!terminal)
         {
             // Do NEE ray
             bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
             vec3 radiance = attenuation * next_event_estimation(
                 generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
-                mat, v, lobes
+                mat, v, lobes, light_pdf
             );
+
             if(bounce != 0)
             {
                 radiance *= modulate_bsdf(mat, lobes);
@@ -467,9 +537,76 @@ void evaluate_ray(
 #endif
             }
             add_demodulated_color(primary_lobes, radiance, diffuse.rgb, reflection.rgb);
+#ifdef BD_CONTRIBUTION
+            bounce_contribution += bounce != 0 ? radiance : radiance * modulate_bsdf(mat, lobes);
+#endif
+#if defined(BD_FULL_PDF_CONTRIBUTION)
+            nee_contrib = radiance;
+#endif
+
             if(bounce == 1)
                 diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
         }
+
+// TODO:
+// Make sure all these values are what they are meant to be.
+#if defined(BD_BOUNCE_COUNT)
+        bd_bouce_count += 1.0f;
+#endif
+
+#if defined(BD_CONTRIBUTION)
+        // Old style: 
+        // diffuse = NEE
+        // specular = emission + NEE
+        // In new style this is radiance (NEE) + light
+        // Then, calculate contribution to pixel color from current bounce.
+        // vec3 contribution = attenuation * (diffuse_radiance * mat.albedo.rgb + specular_radiance);
+
+        float lum_contribution = rgb_to_luminance(bounce_contribution);
+        bd_total_luminance_bounce += lum_contribution;
+        bd_weighted_bounce_count += lum_contribution * bounce;
+#endif
+
+#if defined(BD_BSDF_SUM)
+        bd_bsdf_sum_bsdf_sum += bsdf_pdf;
+        bd_bsdf_sum_bouce_count += 1.0f;
+#endif
+
+#if defined(BD_PDF_CONTRIBUTION)
+        float current_luminance = rgb_to_luminance(light);
+
+        if(bsdf_pdf != 0)
+            bd_pdf_contribution_total_pdf *= bsdf_pdf;
+
+        bd_weighted_bsdf += current_luminance / bd_pdf_contribution_total_pdf;
+        bd_pdf_contribution_total_luminance += current_luminance;
+#endif
+
+#if defined(BD_FULL_PDF_CONTRIBUTION)
+        float current_luminance = rgb_to_luminance(modulate_color(first_hit_material, diffuse.rgb, reflection.rgb));
+
+        if(bsdf_pdf != 0)
+            full_pdf_contribution_total_pdf *= bsdf_pdf;
+
+        float nee_luminance = rgb_to_luminance(nee_contrib);
+
+        if(light_pdf > 0.0f)
+            nee_luminance /= full_pdf_contribution_total_pdf * light_pdf;
+
+        float bsdf_luminance = rgb_to_luminance(attenuation * light);
+        
+        if(full_pdf_contribution_total_pdf > 0.0f)
+            bsdf_luminance /= full_pdf_contribution_total_pdf;
+
+        if(bounce==0)
+        {
+            current_luminance = 0;
+            bsdf_luminance = 0;
+        }
+
+        full_pdf_contribution_luminance += current_luminance;
+        bd_bsdf_weighted_nee += nee_luminance + bsdf_luminance;
+#endif
 
         if(terminal) break;
 
@@ -482,7 +619,13 @@ void evaluate_ray(
         correct_lobes_for_normal_map(v.hard_normal, view, lobes);
 
         if(bounce != 0)
+        {
             attenuation *= modulate_bsdf(mat, lobes);
+#if defined(BD_BOUNCE_COUNT) || defined(BD_CONTRIBUTION) || defined(BD_MATERIAL_ID) || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) || defined(BD_FULL_PDF_CONTRIBUTION) || defined(BD_BMFR_MODE)
+            attenuation_BD *= modulate_bsdf(mat, lobes);
+#endif
+        }
         else
             primary_lobes = lobes;
 
@@ -496,6 +639,29 @@ void evaluate_ray(
 #endif
         if(max(attenuation.x, max(attenuation.y, attenuation.z)) <= 0.0f) break;
     }
+
+#if defined(BD_CONTRIBUTION)
+    if(bd_total_luminance_bounce > 0.0f)
+        bd_weighted_bounce_count /= bd_total_luminance_bounce;
+#endif
+
+#if defined(BD_PDF_CONTRIBUTION)
+    if(bd_weighted_bsdf > 0.0f)
+        bd_pdf_contribution_total_luminance /= bd_weighted_bsdf;
+#endif
+
+#if defined(BD_BSDF_SUM)
+
+        bd_bsdf_sum = bd_bsdf_sum_bsdf_sum / bd_bsdf_sum_bouce_count;
+
+//    if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
+//        debugPrintfEXT("%f", bd_bsdf_sum);
+#endif
+
+#if defined(BD_FULL_PDF_CONTRIBUTION)
+    if(bd_bsdf_weighted_nee > 0.0f)
+        full_pdf_contribution_luminance /= bd_bsdf_weighted_nee;
+#endif
 }
 
 #endif
@@ -532,11 +698,52 @@ void get_world_camera_ray(inout local_sampler lsampler, out vec3 origin, out vec
     );
 }
 
+void write_noise_data(vec4 data)
+{
+    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+#if DISTRIBUTION_STRATEGY != 0
+    if(p != ivec3(-1))
+#endif
+    {
+        uint prev_samples = distribution.samples_accumulated + control.previous_samples;
+
+#ifdef USE_TRANSPARENT_BACKGROUND
+        const float alpha = first_hit_material.albedo.a;
+#else
+        const float alpha = 1.0;
+#endif
+    
+    accumulate_gbuffer_color(vec4(data.rrr, alpha), p, control.samples, prev_samples);
+
+    }
+}
+
+void write_bd_outputs(int id, float value, out vec4 bd_1, out vec4 bd_2)
+{
+
+//    if(all(equal(ivec2(gl_LaunchIDEXT.xy), ivec2(960, 540))))
+//        debugPrintfEXT("%f %i", value, id);
+
+    if(id < 4)
+        bd_1[id] = value;
+    else
+        bd_2[id % 4] = value;
+}
+
 void write_all_outputs(
     vec3 color,
     vec4 diffuse,
     vec4 reflection,
     pt_vertex_data first_hit_vertex,
+#if defined(BD_BOUNCE_COUNT) \
+    || defined(BD_CONTRIBUTION) \
+    || defined(BD_MATERIAL_ID) \
+    || defined(BD_BSDF_SUM) \
+    || defined(BD_PDF_CONTRIBUTION) \
+    || defined(BD_FULL_PDF_CONTRIBUTION) \
+    || defined(BD_BMFR_MODE)
+    vec4 prob,
+#endif
     sampled_material first_hit_material
 ){
     // Write all outputs
@@ -554,6 +761,17 @@ void write_all_outputs(
             write_gbuffer_material(first_hit_material, p);
             write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
             write_gbuffer_pos(first_hit_vertex.pos, p);
+
+#if defined(BD_BOUNCE_COUNT) \
+|| defined(BD_CONTRIBUTION) \
+|| defined(BD_MATERIAL_ID)\
+|| defined(BD_BSDF_SUM) \
+|| defined(BD_PDF_CONTRIBUTION)\
+|| defined(BD_FULL_PDF_CONTRIBUTION)
+
+            write_gbuffer_prob(prob, p);
+#endif
+
             #ifdef CALC_PREV_VERTEX_POS
             write_gbuffer_screen_motion(
                 get_camera_projection(get_prev_camera(), first_hit_vertex.prev_pos),
@@ -574,5 +792,4 @@ void write_all_outputs(
         accumulate_gbuffer_reflection(reflection, p, control.samples, prev_samples);
     }
 }
-
 #endif

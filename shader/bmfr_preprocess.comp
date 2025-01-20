@@ -11,6 +11,21 @@
 #define COS_LIMIT    0.90f
 #define DISCARD_LIMIT 0.50f
 
+#ifndef FEATURES
+#define FEATURES \
+        1.f,        \
+        curr_normal.x, \
+        curr_normal.y, \
+        curr_normal.z, \
+        curr_pos.x,    \
+        curr_pos.y,    \
+        curr_pos.z,    \
+        curr_pos.x * curr_pos.x, \
+        curr_pos.y * curr_pos.y, \
+        curr_pos.z * curr_pos.z,
+
+#endif
+
 layout (local_size_x = 16, local_size_y = 16) in;
 
 layout(binding = 0, set = 0, rgba16f) uniform image2DArray in_color;
@@ -39,6 +54,10 @@ layout(binding = 14, set = 0) buffer accept_buf_t
 {
     uint8_t accepts[];
 } accept_buffer;
+
+layout(binding = 15, set = 0, rgba32f) uniform image2DArray in_extra;
+layout(binding = 16, set = 0, r32i) uniform iimage2DArray in_instance_id;
+layout(binding = 17, set = 0, rgba32f) uniform image2DArray in_material;
 
 vec3 get_specular(ivec3 p)
 {
@@ -111,6 +130,8 @@ void main()
     vec4 curr_color = imageLoad(in_color, p);
     vec3 curr_normal = unpack_gbuffer_normal(imageLoad(in_normal, p).xy);
     vec3 curr_pos = imageLoad(in_pos, p).xyz;
+    vec4 bd = imageLoad(in_extra, p);
+
     float sum_w = 0.0;
     {
         vec2 motion = vec2(imageLoad(in_screen_motion,p));
@@ -185,26 +206,11 @@ void main()
         imageStore(tmp_noisy[1], p, specular);
     }
 
-
     const float features[BUFFER_COUNT] = {
-        1.f,
-        curr_normal.x,
-        curr_normal.y,
-        curr_normal.z,
-        curr_pos.x,
-        curr_pos.y,
-        curr_pos.z,
-        curr_pos.x * curr_pos.x,
-        curr_pos.y * curr_pos.y,
-        curr_pos.z * curr_pos.z,
+        FEATURES
         diffuse.r,
         diffuse.g,
-        diffuse.b,
-#ifndef DIFFUSE_ONLY
-        specular.r,
-        specular.g,
-        specular.b
-#endif
+        diffuse.b
     };
 
     const int block_edge_length = BLOCK_EDGE_LENGTH;

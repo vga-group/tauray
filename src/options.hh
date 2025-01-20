@@ -165,7 +165,9 @@
         {"world-motion", feature_stage::WORLD_MOTION}, \
         {"view-motion", feature_stage::VIEW_MOTION}, \
         {"screen-motion", feature_stage::SCREEN_MOTION}, \
-        {"instance-id", feature_stage::INSTANCE_ID} \
+        {"instance-id", feature_stage::INSTANCE_ID}, \
+        {"metallic", feature_stage::METALLNESS}, \
+        {"roughness", feature_stage::ROUGHNESS} \
     )\
     TR_FLOAT_OPT(min_ray_dist, \
         "Sets the minimum distance a ray must travel. 0 can cause " \
@@ -200,6 +202,21 @@
         {"point", film_filter::POINT}, \
         {"box", film_filter::BOX}, \
         {"blackman-harris", film_filter::BLACKMAN_HARRIS} \
+    )\
+    TR_ENUM_OPT(noise_data, bd, \
+        "shows noise data", \
+        bd::OFF, \
+        {"off", bd::OFF}, \
+        {"bounce-count", bd::BOUNCE_COUNT}, \
+        {"bounce-contribution", bd::CONTRIBUTION}, \
+        {"material-id", bd::MATERIAL_ID}, \
+        {"bsdf-sum", bd::BSDF_SUM}, \
+        {"bsdf-contribution", bd::PDF_CONTRIBUTION}, \
+        {"bsdf-nee-contribution", bd::FULL_PDF_CONTRIBUTION} \
+    )\
+    TR_STRING_OPT(noise_data_str, \
+        "Parameters for noise data.", \
+        "" \
     )\
     TR_FLOAT_OPT(film_radius, \
         "Sets the sampling radius for the film sampling. This is in pixels " \

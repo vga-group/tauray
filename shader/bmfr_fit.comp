@@ -11,9 +11,14 @@
 #include "math.glsl"
 
 #ifdef DIFFUSE_ONLY
-#define R_SIZE ((11) * (11))
+#define R_SIZE ((FEATURE_COUNT + 1) * (FEATURE_COUNT + 1))
 #else
-#define R_SIZE ((12) * (12))
+#define R_SIZE ((FEATURE_COUNT + 2) * (FEATURE_COUNT + 2))
+#endif
+
+#if defined(BD_FEATURE_COUNT)
+    #undef FEATURE_COUNT
+    #define FEATURE_COUNT BD_FEATURE_COUNT
 #endif
 
 #define X_ITERS 2
@@ -51,7 +56,6 @@ shared vec3 divider;
 shared float block_min_f, block_max_f, vec_length, u_length_squared, v_dot_a;
 shared float16_t u_vec[BLOCK_SIZE * BLOCK_SIZE];
 shared vec3 r_mat[R_SIZE];
-
 
 int get_linear_id()
 {
@@ -183,8 +187,11 @@ void main()
     indices += buffer_offset;
 
     // Normalize world_pos and world_pos² 
-    for (int feature_buffer = 4; feature_buffer < FEATURE_COUNT; ++feature_buffer)
+    for (int feature_buffer = 0; feature_buffer < FEATURE_COUNT; ++feature_buffer)
     {
+        bool needs_normalization = ((1 << feature_buffer) & NORMALIZATION_MASK) != 0;
+        if (!needs_normalization) continue;
+
         float tmp_max = -FLT_MAX;
         float tmp_min = FLT_MAX;
 
@@ -205,11 +212,12 @@ void main()
         parallel_reduction_min();
         barrier();
 
-
         if (id == 0)
         {
-            const int index = (get_linear_group_id() * 6 + feature_buffer - 4) * 2;
-            const uint offset = control.workset_size.x * control.workset_size.y * 6 * 2 * p.z;
+            const int normalized_feature_count = bitCount(NORMALIZATION_MASK);
+            int normalize_index =  bitCount(((1 << feature_buffer) - 1) & NORMALIZATION_MASK);
+            const int index = (get_linear_group_id() * normalized_feature_count + normalize_index) * 2;
+            const uint offset = control.workset_size.x * control.workset_size.y * normalized_feature_count * 2 * p.z;
             mins_maxs_buffer.minmax[index + offset + 0] = float16_t(block_min_f);
             mins_maxs_buffer.minmax[index + offset + 1] = float16_t(block_max_f);
         }
@@ -274,7 +282,7 @@ void main()
         
         const uint id_limited = min(id, FEATURE_COUNT);
 #ifdef DIFFUSE_ONLY
-        const uint r_access = 11 * col_limited + id_limited;
+        const uint r_access = (FEATURE_COUNT + 1) * col_limited + id_limited;
 #else
         uint limit = col_limited;
         if (col > 12) limit = 11;
@@ -378,10 +386,10 @@ void main()
         barrier();
     }
 #else
-    vec3 x_s[10];
-    vec3 x_s2[10];
-    const int r_size = 12;
-    const int n = 10;
+    vec3 x_s[FEATURE_COUNT];
+    vec3 x_s2[FEATURE_COUNT];
+    const int r_size = FEATURE_COUNT + 2;
+    const int n = FEATURE_COUNT;
     for (int i = n-1; i >=0; --i)
     {
         x_s[i] = r_mat[(r_size) * i + (r_size - 2)];
@@ -408,7 +416,7 @@ void main()
         weights_buffer.weights[index + offset] = weight;
 #else
         weights_buffer.weights[index + offset] = x_s[id];
-        weights_buffer.weights[index + offset + 10] = x_s2[id];
+        weights_buffer.weights[index + offset + FEATURE_COUNT] = x_s2[id];
 #endif
     }
 }
