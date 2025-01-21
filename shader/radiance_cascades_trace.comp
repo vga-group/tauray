@@ -16,14 +16,13 @@ layout(push_constant) uniform push_constant_buffer
     float interval_start;
     float interval_end;
     int c0_angular_resolution;
-    int has_history;
-    int ignore_missed_rays;
+    int cascade_size;
 } pc;
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
-//layout(binding = 0, r32f) uniform writeonly image2DArray cascade_target;
-layout(binding = 0, rgba32f) uniform image2DArray cascade_target;
+//layout(binding = 0, r32f) uniform writeonly image3D cascade_target;
+layout(binding = 0, rgba32f) uniform image3D cascade_target;
 layout(binding = 1, r32f) uniform readonly image3D distance_field;
 
 #include "radiance_cascades.glsl"
@@ -136,19 +135,14 @@ void main()
     ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
     uint seed = 0; // TODO
 
-    vec4 hit_color = vec4(0);//imageLoad(cascade_target, p);
-    //if(pc.has_history != 0 && pc.ignore_missed_rays != 0 && hit_color.a == 0)
-    //    return;
-
     bool first_cascade = pc.cascade == 0;
     bool last_cascade = pc.cascade+1 == pc.cascade_count;
 
     int angular_resolution = pc.c0_angular_resolution << pc.cascade;
     int next_angular_resolution = pc.c0_angular_resolution << (pc.cascade+1);
 
-    ivec3 probe_index = ivec3(p.x/angular_resolution, p.y/angular_resolution, p.z);
-
-    ivec2 map_texel = p.xy - probe_index.xy * angular_resolution;
+    ivec3 probe_index = ivec3(p.xy%pc.cascade_size, p.z);
+    ivec2 map_texel = p.xy/pc.cascade_size;
 
     vec2 map_uv = (vec2(map_texel) + 0.5f) / angular_resolution;
 
@@ -181,40 +175,32 @@ void main()
     {
         // TODO: This can be commented out for extra perf, it just needs to be
         // there for visualization to work when a surface isn't in vicinity.
-        imageStore(cascade_target, p, vec4(0,0,0,0));
+        imageStore(cascade_target, p, vec4(0));
         return;
     }
-
-    hit_color = vec4(0);
 
     hit_info hi = trace_primary_ray(seed, ray_origin, ray_dir, ray_len);
     vertex_data vd;
     sampled_material mat;
     int hit_type = get_intersection_info(ray_origin, ray_dir, hi, vd, mat);
-    if(hit_type >= 0)
-    { // Hit an emissive surface.
-        //hit_color.rgb = mat.emission;
-        hit_color.rgb = mat.albedo.rgb + mat.emission;
-        hit_color.a = 1.0f;
-    }
-    /*
+
+    vec2 hit_color = vec2(0);
     if(hit_type == 0)
-    {
-        hit_color.rgb = vec3(1,0,0);
-        hit_color.a = 1.0f;
+    { // Hit an emissive surface.
+        hit_color.r = rgb_to_luminance(mat.albedo.rgb*0.2f + mat.emission);
+        hit_color.g = 1.0f;
     }
     else if(hit_type == 1)
-    {
-        hit_color.rgb = vec3(0,1,0);
-        hit_color.a = 1.0f;
+    { // Hit a point light.
+        hit_color.r = rgb_to_luminance(mat.emission);
+        hit_color.g = 1.0f;
     }
-    */
     else if(hit_type == -1 && last_cascade)
     { // Hit sky
         // TODO read skybox
-        hit_color.rgb = mat.emission;
-        hit_color.a = 1.0f;
+        hit_color.r = rgb_to_luminance(mat.emission);
+        hit_color.g = 1.0f;
     }
 
-    imageStore(cascade_target, p, hit_color);
+    imageStore(cascade_target, p, vec4(hit_color,0,0));
 }

@@ -14,8 +14,7 @@ struct trace_push_constant_buffer
     float interval_start;
     float interval_end;
     int c0_angular_resolution;
-    int has_history;
-    int ignore_missed_rays;
+    int cascade_size;
 };
 
 struct gather_push_constant_buffer
@@ -23,6 +22,7 @@ struct gather_push_constant_buffer
     int cascade;
     int c0_angular_resolution;
     float blend_ratio;
+    int cascade_size;
 };
 
 struct cascade_metadata_buffer
@@ -51,7 +51,7 @@ radiance_cascades_stage::radiance_cascades_stage(
     trace_desc(dev),
     gather_desc(dev),
     cascade_descriptors(dev),
-    cascade_sampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest, 0, false, false, false, 0.0f),
+    cascade_sampler(dev, vk::Filter::eLinear, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest, 0, false, false, false, 0.0f),
     trace(dev),
     gather(dev),
     opt(opt),
@@ -92,11 +92,8 @@ radiance_cascades_stage::radiance_cascades_stage(
 
         cascades.emplace_back(
             device_mask(dev),
-            uvec2(cascade_size*resolution),
-            (unsigned)cascade_size,
-            //vk::Format::eR16Sfloat,
-            vk::Format::eR16G16B16A16Sfloat,
-            //vk::Format::eR32G32B32A32Sfloat,
+            uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+            vk::Format::eR16G16Sfloat,
             0,
             nullptr,
             vk::ImageTiling::eOptimal,
@@ -107,11 +104,8 @@ radiance_cascades_stage::radiance_cascades_stage(
         {
             alt_cascades.emplace_back(
                 device_mask(dev),
-                uvec2(cascade_size*resolution),
-                (unsigned)cascade_size,
-                //vk::Format::eR16Sfloat,
-                vk::Format::eR16G16B16A16Sfloat,
-                //vk::Format::eR32G32B32A32Sfloat,
+                uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+                vk::Format::eR16G16Sfloat,
                 0,
                 nullptr,
                 vk::ImageTiling::eOptimal,
@@ -211,7 +205,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
         dii.push_back(vk::DescriptorImageInfo{
             cascade_sampler.get_sampler(dev->id),
-            (*next_cascades)[i].get_array_image_view(dev->id),
+            (*next_cascades)[i].get_image_view(dev->id),
             vk::ImageLayout::eShaderReadOnlyOptimal
         });
     }
@@ -242,9 +236,12 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     for(uint32_t cascade = 0; cascade < get_cascade_count(); ++cascade)
     {
         texture& target = (*next_cascades)[cascade];
-        trace_desc.set_image(dev->id, "cascade_target", {{{}, target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        trace_desc.set_image(dev->id, "cascade_target", {{{}, target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         trace_desc.set_image(dev->id, "distance_field", {{{}, opt.distance_field->get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         trace.push_descriptors(cb, trace_desc, 0);
+
+        size_t cascade_size = 1<<(opt.log2_resolution-cascade);
+        size_t resolution = opt.c0_probe_resolution<<cascade;
 
         pc.cascade = cascade;
         pc.cascade_count = get_cascade_count();
@@ -255,13 +252,10 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         pc.interval_end = cascade+1 == get_cascade_count() ? 1e9 : interval[1];
         pc.base_offset = pvec4(opt.volume.min + vec3(pc.xyz_step), 0);
         pc.xyz_step *= 2.0f;
-        pc.has_history = prev_cascades_valid ? 1 : 0;
-        pc.ignore_missed_rays = opt.skip_missed_rays ? 1 : 0;
+        pc.cascade_size = cascade_size;
 
         trace.push_constants(cb, pc);
 
-        size_t cascade_size = 1<<(opt.log2_resolution-cascade);
-        size_t resolution = opt.c0_probe_resolution<<cascade;
         uvec3 wg = uvec3(uvec2(cascade_size * resolution+7u)/8u, cascade_size);
         cb.dispatch(wg.x, wg.y, wg.z);
     }
@@ -293,19 +287,21 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         texture& cur_target = (*next_cascades)[cur_cascade];
         texture& prev_target = prev_cascades ?
             (*prev_cascades)[cur_cascade] : cur_target;
-        gather_desc.set_image(dev->id, "upper_target", {{{}, upper_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
-        gather_desc.set_image(dev->id, "lower_target", {{{}, cur_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
-        gather_desc.set_image(dev->id, "prev_lower_target", {{{}, prev_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "upper_target", {{{}, upper_target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "lower_target", {{{}, cur_target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "prev_lower_target", {{{}, prev_target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather.push_descriptors(cb, gather_desc, 0);
+
+        size_t cascade_size = 1<<(opt.log2_resolution-cur_cascade);
+        size_t resolution = opt.c0_probe_resolution<<cur_cascade;
 
         gather_push_constant_buffer pc;
         pc.cascade = cur_cascade;
         pc.c0_angular_resolution = opt.c0_probe_resolution;
         pc.blend_ratio = 0.0f;
+        pc.cascade_size = cascade_size;
         gather.push_constants(cb, pc);
 
-        size_t cascade_size = 1<<(opt.log2_resolution-cur_cascade);
-        size_t resolution = opt.c0_probe_resolution<<cur_cascade;
         uvec3 wg = uvec3(uvec2(cascade_size * resolution+7u)/8u, cascade_size);
         cb.dispatch(wg.x, wg.y, wg.z);
     }

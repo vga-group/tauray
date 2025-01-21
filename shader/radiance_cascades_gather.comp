@@ -8,45 +8,45 @@
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
-layout(binding = 0, rgba32f) uniform readonly image2DArray upper_target;
-layout(binding = 1, rgba32f) uniform image2DArray lower_target;
-layout(binding = 2, rgba32f) uniform readonly image2DArray prev_lower_target;
+layout(binding = 0, rg32f) uniform readonly image3D upper_target;
+layout(binding = 1, rg32f) uniform image3D lower_target;
+layout(binding = 2, rg32f) uniform readonly image3D prev_lower_target;
 
 layout(push_constant) uniform push_constant_buffer
 {
     int cascade;
     int c0_angular_resolution;
     float blend_ratio;
+    int cascade_size;
 } pc;
 
 void main()
 {
     ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
 
-    int upper_angular_resolution = pc.c0_angular_resolution << (pc.cascade+1);
-    int lower_angular_resolution = pc.c0_angular_resolution << pc.cascade;
+    ivec3 lower_probe_index = ivec3(p.xy%pc.cascade_size, p.z);
+    ivec2 lower_map_texel = p.xy/pc.cascade_size;
 
-    ivec3 lower_probe_index = ivec3(p.x/lower_angular_resolution, p.y/lower_angular_resolution, p.z);
-    ivec2 lower_map_texel = p.xy - lower_probe_index.xy * lower_angular_resolution;
-
-    ivec3 upper_probe_index = ivec3(p.x/upper_angular_resolution, p.y/upper_angular_resolution, p.z/2);
+    ivec3 upper_probe_index = lower_probe_index / 2;
     ivec2 upper_map_base_texel = lower_map_texel * 2;
-    ivec3 base_q = ivec3(upper_probe_index.xy * upper_angular_resolution + upper_map_base_texel, upper_probe_index.z);
 
-    vec4 dst = imageLoad(lower_target, p);
-    vec4 src_avg = vec4(0);
-    src_avg += imageLoad(upper_target, base_q+ivec3(0,0,0));
-    src_avg += imageLoad(upper_target, base_q+ivec3(1,0,0));
-    src_avg += imageLoad(upper_target, base_q+ivec3(0,1,0));
-    src_avg += imageLoad(upper_target, base_q+ivec3(1,1,0));
+    int base_offset = pc.cascade_size/2;
+    ivec3 base_q = ivec3(upper_probe_index.xy + base_offset*upper_map_base_texel, upper_probe_index.z);
+
+    vec2 dst = imageLoad(lower_target, p).rg;
+    vec2 src_avg = vec2(0);
+    src_avg += imageLoad(upper_target, base_q+ivec3(0,0,0)).rg;
+    src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,0,0)).rg;
+    src_avg += imageLoad(upper_target, base_q+ivec3(0,base_offset,0)).rg;
+    src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,base_offset,0)).rg;
     src_avg /= 4;
 
-    dst.rgb = mix(src_avg.rgb, dst.rgb, dst.a);
+    dst.r = mix(src_avg.r, dst.r, dst.g);
 
     if(pc.blend_ratio > 0)
     {
-        vec4 prev = imageLoad(prev_lower_target, p);
+        vec2 prev = imageLoad(prev_lower_target, p).rg;
         dst = mix(dst, prev, pc.blend_ratio);
     }
-    imageStore(lower_target, p, dst);
+    imageStore(lower_target, p, vec4(dst,0,0));
 }
