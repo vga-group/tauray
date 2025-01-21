@@ -5,7 +5,7 @@
 
 // Yeah, I know this is horribly ugly. It's just how we get
 // DefaultTBuiltInResource.
-#include <StandAlone/ResourceLimits.cpp>
+#include <glslang/ResourceLimits/ResourceLimits.cpp>
 #include "spirv_reflect.h"
 
 #include <filesystem>
@@ -127,7 +127,7 @@ shader_source::shader_source(
         shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
         shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_5);
 
-        TBuiltInResource resources = glslang::DefaultTBuiltInResource;
+        TBuiltInResource resources = DefaultTBuiltInResource;
 
         EShMessages messages = (EShMessages)(EShMsgSpvRules|EShMsgVulkanRules);
 

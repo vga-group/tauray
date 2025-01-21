@@ -25,6 +25,7 @@ struct device
     vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rt_props;
     vk::PhysicalDeviceRayTracingPipelineFeaturesKHR rt_feats;
     vk::PhysicalDeviceRayQueryFeaturesKHR rq_feats;
+    vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR rp_feats;
     vk::PhysicalDeviceAccelerationStructurePropertiesKHR as_props;
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR as_feats;
     vk::PhysicalDeviceMultiviewProperties mv_props;

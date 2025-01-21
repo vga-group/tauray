@@ -115,11 +115,12 @@ void bottom_level_acceleration_structure::rebuild(
 
     vk::AccelerationStructureBuildGeometryInfoKHR blas_info(
         vk::AccelerationStructureTypeKHR::eBottomLevel,
-        dynamic ?
+        vk::BuildAccelerationStructureFlagBitsKHR::eAllowDataAccess|
+        (dynamic ?
             vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild|
             vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate :
             vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace|
-            vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction,
+            vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction),
         update ?
             vk::BuildAccelerationStructureModeKHR::eUpdate :
             vk::BuildAccelerationStructureModeKHR::eBuild,
@@ -308,6 +309,7 @@ top_level_acceleration_structure::top_level_acceleration_structure(
 
         vk::AccelerationStructureBuildGeometryInfoKHR tlas_info(
             vk::AccelerationStructureTypeKHR::eTopLevel,
+            vk::BuildAccelerationStructureFlagBitsKHR::eAllowDataAccess|
             vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace|
             vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
             vk::BuildAccelerationStructureModeKHR::eBuild,
