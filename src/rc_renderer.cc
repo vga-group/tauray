@@ -18,10 +18,13 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     this->opt.scene_options.shadow_mapping = false;
     this->opt.scene_options.alloc_sh_grids = false;
     this->opt.scene_options.track_prev_tlas = false;
+    this->opt.scene_options.shadow_mapping = true;
 
     this->opt.pt_options.distribution.size = ctx.get_size();
 
     scene_update.emplace(dev, this->opt.scene_options);
+
+    sms.emplace(dev, *scene_update, shadow_map_stage::options{});
 
     radiance_cascades_stage::options rc_opt;
     // Hardcoded for test.glb
@@ -81,6 +84,7 @@ void rc_renderer::render()
     ctx->get_indices(swapchain_index, frame_index);
 
     dependencies deps = scene_update->run(display_deps);
+    deps = sms->run(deps);
     deps = rc->run(deps);
     //deps = pt->run(deps);
     deps = rcv->run(deps);

@@ -24,6 +24,7 @@ struct gather_push_constant_buffer
     int c0_angular_resolution;
     float blend_ratio;
     int cascade_size;
+    int carry_from_previous;
 };
 
 struct cascade_metadata_buffer
@@ -282,12 +283,12 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
     gather.bind(cb);
 
-    for(uint32_t i = 1; i < get_cascade_count(); ++i)
+    for(uint32_t i = 0; i < get_cascade_count(); ++i)
     {
         uint32_t cur_cascade = get_cascade_count()-1-i;
         uint32_t upper_cascade = cur_cascade+1;
-        texture& upper_target = (*next_cascades)[upper_cascade];
         texture& cur_target = (*next_cascades)[cur_cascade];
+        texture& upper_target = i == 0 ? cur_target : (*next_cascades)[upper_cascade];
         texture& prev_target = prev_cascades ?
             (*prev_cascades)[cur_cascade] : cur_target;
         gather_desc.set_image(dev->id, "upper_target", {{{}, upper_target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
@@ -303,6 +304,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         pc.c0_angular_resolution = opt.c0_probe_resolution;
         pc.blend_ratio = history_frames == 0 ? 1.0f : max(1.0f/history_frames, opt.temporal_ratio);
         pc.cascade_size = cascade_size;
+        pc.carry_from_previous = i != 0 ? 1 : 0;
         gather.push_constants(cb, pc);
 
         uvec3 wg = uvec3(uvec2(cascade_size * resolution+7u)/8u, cascade_size);

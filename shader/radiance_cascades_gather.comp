@@ -18,6 +18,7 @@ layout(push_constant) uniform push_constant_buffer
     int c0_angular_resolution;
     float blend_ratio;
     int cascade_size;
+    int carry_from_previous;
 } pc;
 
 void main()
@@ -34,14 +35,17 @@ void main()
     ivec3 base_q = ivec3(upper_probe_index.xy + base_offset*upper_map_base_texel, upper_probe_index.z);
 
     vec2 dst = imageLoad(lower_target, p).rg;
-    vec2 src_avg = vec2(0);
-    src_avg += imageLoad(upper_target, base_q+ivec3(0,0,0)).rg;
-    src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,0,0)).rg;
-    src_avg += imageLoad(upper_target, base_q+ivec3(0,base_offset,0)).rg;
-    src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,base_offset,0)).rg;
-    src_avg /= 4;
+    if(pc.carry_from_previous != 0)
+    {
+        vec2 src_avg = vec2(0);
+        src_avg += imageLoad(upper_target, base_q+ivec3(0,0,0)).rg;
+        src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,0,0)).rg;
+        src_avg += imageLoad(upper_target, base_q+ivec3(0,base_offset,0)).rg;
+        src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,base_offset,0)).rg;
+        src_avg /= 4;
 
-    dst.r = mix(src_avg.r, dst.r, dst.g);
+        dst.r = mix(src_avg.r, dst.r, dst.g);
+    }
 
     if(pc.blend_ratio < 1.0f)
     {
