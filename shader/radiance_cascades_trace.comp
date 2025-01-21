@@ -30,6 +30,7 @@ layout(binding = 1, r32f) uniform readonly image3D distance_field;
 
 #define RAY_TRACING
 #define USE_RAY_QUERIES
+#define GET_INTERSECTION_TRIANGLE_POSITIONS
 #define SCENE_SET 1
 #include "scene.glsl"
 #include "rt_common.glsl"
@@ -130,6 +131,12 @@ hit_info trace_primary_ray(
 
     return trace_ray_query(rq, seed);
 }
+
+/*
+float simple_shade(hit_info info)
+{
+}
+*/
 
 void main()
 {

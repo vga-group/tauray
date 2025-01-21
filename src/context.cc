@@ -264,7 +264,7 @@ vk::Instance context::create_instance(
     const vk::InstanceCreateInfo& info,
     PFN_vkGetInstanceProcAddr
 ){
-    return vk::createInstance({info}, nullptr, vk::DispatchLoaderStatic());
+    return vk::createInstance({info}, nullptr);
 }
 
 vk::Device context::create_device(
@@ -276,13 +276,15 @@ vk::Device context::create_device(
 
 void context::init_vulkan(PFN_vkGetInstanceProcAddr getInstanceProcAddr)
 {
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(getInstanceProcAddr);
+
     if(opt.enable_vulkan_validation)
     {
         validation_layers.push_back("VK_LAYER_KHRONOS_validation");
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
         std::vector<vk::LayerProperties> available_layers =
-            vk::enumerateInstanceLayerProperties(vk::DispatchLoaderStatic());
+            vk::enumerateInstanceLayerProperties();
 
         for(
             auto it = validation_layers.begin();
@@ -335,7 +337,7 @@ void context::init_vulkan(PFN_vkGetInstanceProcAddr getInstanceProcAddr)
 
     instance = create_instance(instance_info, getInstanceProcAddr);
 
-    vk::defaultDispatchLoaderDynamic.init(instance, getInstanceProcAddr);
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
 
     if(opt.enable_vulkan_validation)
     {
@@ -391,6 +393,7 @@ void context::init_devices()
         required_device_extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
         required_device_extensions.push_back(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
         required_device_extensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+        required_device_extensions.push_back(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
     }
 
     bool use_distribution =
@@ -442,7 +445,8 @@ void context::init_devices()
             vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
             vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
             vk::PhysicalDeviceRayQueryFeaturesKHR,
-            vk::PhysicalDeviceRobustness2FeaturesEXT
+            vk::PhysicalDeviceRobustness2FeaturesEXT,
+            vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR
         >();
         auto& feats = feats_pack.get<vk::PhysicalDeviceFeatures2>();
         auto& vulkan_11_feats = feats_pack.get<vk::PhysicalDeviceVulkan11Features>();
@@ -451,6 +455,8 @@ void context::init_devices()
             feats_pack.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
         auto& rq_feats =
             feats_pack.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+        auto& rp_feats =
+            feats_pack.get<vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR>();
         auto& as_feats =
             feats_pack.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
         auto& robustness_feats =
@@ -611,6 +617,7 @@ void context::init_devices()
                 props2.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
             dev_data.rt_feats = rt_feats;
             dev_data.rq_feats = rq_feats;
+            dev_data.rp_feats = rp_feats;
             dev_data.as_props = props2.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
             dev_data.as_feats = as_feats;
             dev_data.mv_props = props2.get<vk::PhysicalDeviceMultiviewProperties>();
