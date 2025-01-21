@@ -11,6 +11,7 @@ layout(push_constant) uniform push_constant_buffer
 {
     vec4 base_offset;
     vec4 xyz_step;
+    vec2 jitter;
     int cascade;
     int cascade_count;
     float interval_start;
@@ -144,7 +145,7 @@ void main()
     ivec3 probe_index = ivec3(p.xy%pc.cascade_size, p.z);
     ivec2 map_texel = p.xy/pc.cascade_size;
 
-    vec2 map_uv = (vec2(map_texel) + 0.5f) / angular_resolution;
+    vec2 map_uv = (vec2(map_texel) + pc.jitter) / angular_resolution;
 
     vec3 probe_dir = concentric_octahedral_mapping(map_uv);
     vec3 probe_origin = pc.base_offset.xyz + probe_index * pc.xyz_step.xyz;
@@ -158,7 +159,7 @@ void main()
     vec3 next_origin = pc.base_offset.xyz + 0.5f * pc.xyz_step.xyz + next_index * pc.xyz_step.xyz * 2.0f;
     if(last_cascade) next_origin = probe_origin;
 
-    vec2 prev_map_uv = (vec2(map_texel/2) + 0.5f) / (angular_resolution/2);
+    vec2 prev_map_uv = (vec2(map_texel/2) + pc.jitter) / (angular_resolution/2);
     vec3 prev_dir = concentric_octahedral_mapping(prev_map_uv);
     if(first_cascade) prev_dir = probe_dir;
 

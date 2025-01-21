@@ -43,10 +43,10 @@ void main()
 
     dst.r = mix(src_avg.r, dst.r, dst.g);
 
-    if(pc.blend_ratio > 0)
+    if(pc.blend_ratio < 1.0f)
     {
         vec2 prev = imageLoad(prev_lower_target, p).rg;
-        dst = mix(dst, prev, pc.blend_ratio);
+        dst = mix(prev, dst, pc.blend_ratio);
     }
     imageStore(lower_target, p, vec4(dst,0,0));
 }
