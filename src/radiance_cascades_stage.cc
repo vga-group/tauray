@@ -9,6 +9,7 @@ struct trace_push_constant_buffer
 {
     pvec4 base_offset;
     pvec4 xyz_step;
+    pvec2 jitter;
     int cascade;
     int cascade_count;
     float interval_start;
@@ -57,6 +58,7 @@ radiance_cascades_stage::radiance_cascades_stage(
     opt(opt),
     prev_cascades_valid(false),
     stage_timer(dev, "radiance cascade update"),
+    history_frames(0),
     cascades_metadata(dev, sizeof(cascade_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer)
 {
     bool has_prev_cascades =
@@ -98,7 +100,7 @@ radiance_cascades_stage::radiance_cascades_stage(
             nullptr,
             vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
-            vk::ImageLayout::eShaderReadOnlyOptimal
+            vk::ImageLayout::eGeneral
         );
         if(has_prev_cascades)
         {
@@ -110,7 +112,7 @@ radiance_cascades_stage::radiance_cascades_stage(
                 nullptr,
                 vk::ImageTiling::eOptimal,
                 vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
-                vk::ImageLayout::eShaderReadOnlyOptimal
+                vk::ImageLayout::eGeneral
             );
         }
     }
@@ -197,7 +199,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     {
         barriers.push_back(vk::ImageMemoryBarrier(
             {}, vk::AccessFlagBits::eShaderWrite,
-            vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral,
+            vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
             VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
             (*next_cascades)[i].get_image(dev->id),
             {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
@@ -206,7 +208,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         dii.push_back(vk::DescriptorImageInfo{
             cascade_sampler.get_sampler(dev->id),
             (*next_cascades)[i].get_image_view(dev->id),
-            vk::ImageLayout::eShaderReadOnlyOptimal
+            vk::ImageLayout::eGeneral
         });
     }
 
@@ -229,6 +231,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
     trace_push_constant_buffer pc;
     pc.xyz_step = pvec4((opt.volume.max-opt.volume.min)/float(2<<opt.log2_resolution), 0);
+    pc.jitter = opt.jitter_rays ? r2_noise(vec2(dev->ctx->get_frame_counter())) : vec2(0.5f);
     pc.interval_start = 0;
     pc.interval_end = 0;
     pc.c0_angular_resolution = opt.c0_probe_resolution;
@@ -298,7 +301,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         gather_push_constant_buffer pc;
         pc.cascade = cur_cascade;
         pc.c0_angular_resolution = opt.c0_probe_resolution;
-        pc.blend_ratio = 0.0f;
+        pc.blend_ratio = history_frames == 0 ? 1.0f : max(1.0f/history_frames, opt.temporal_ratio);
         pc.cascade_size = cascade_size;
         gather.push_constants(cb, pc);
 
@@ -311,7 +314,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     {
         barriers[i].srcAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
         barriers[i].dstAccessMask = {};
-        barriers[i].newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        barriers[i].newLayout = vk::ImageLayout::eGeneral;
     }
 
     cb.pipelineBarrier(
@@ -323,6 +326,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     stage_timer.end(cb, dev->id, frame_index);
     end_compute(cb, frame_index);
     prev_cascades_valid = true;
+    history_frames++;
 }
 
 }

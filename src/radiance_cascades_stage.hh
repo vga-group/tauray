@@ -25,7 +25,7 @@ public:
         // x2 => 4x computation needed, general resolution doubled
         uint32_t c0_probe_resolution = 4; // 4x4 = 16 rays per probe
 
-        bool jitter_rays = false;
+        bool jitter_rays = true;
         // Only effective with jittering enabled
         float temporal_ratio = 0.01f;
         // Get lighting for current pass from previous pass. Requires double
@@ -70,6 +70,7 @@ private:
     options opt;
     bool prev_cascades_valid;
     timer stage_timer;
+    int history_frames;
 
     gpu_buffer cascades_metadata;
     std::vector<texture> cascades;
