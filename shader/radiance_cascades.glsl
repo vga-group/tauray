@@ -3,7 +3,7 @@
 #include "math.glsl"
 
 #ifdef RADIANCE_CASCADES_SET
-layout(set=RADIANCE_CASCADES_SET, binding = 0) uniform sampler2DArray radiance_cascades[];
+layout(set=RADIANCE_CASCADES_SET, binding = 0) uniform sampler3D radiance_cascades[];
 layout(set=RADIANCE_CASCADES_SET, binding = 1) uniform radiance_cascade_metadata_buffer
 {
     vec4 aabb_min;
@@ -62,35 +62,28 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
     // TODO: Maybe make this a specialization constant?
     int cascade_count = radiance_cascade_metadata.size.w;
 
-    vec4 random_interpolation = generate_single_uniform_random(seed) - 0.5f;
-    ivec3 cascade_coord = clamp(ivec3(
-        fcoord * cascade_size + random_interpolation.xyz
-    ), ivec3(0), ivec3(cascade_size-1));
-
     vec4 sum = vec4(0,0,0,1);
 
     vec2 uv = concentric_octahedral_mapping_inverse(dir);
 
-    random_interpolation = vec4(0);//generate_single_uniform_random(seed) - 0.5f;
-    ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution + random_interpolation.xy)), probe_resolution);
-
-    ivec3 tex_coord = cascade_coord * ivec3(probe_resolution, 1) + ivec3(p, 0);
-    vec4 col = texelFetch(radiance_cascades[0], tex_coord, 0);
-    sum.rgb += col.rgb * col.a * sum.a;
-    sum.a *= 1.0f-col.a;
+    ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution)), probe_resolution);
+    vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), ivec3(cascade_size-0.5));
+    vec3 tex_coord = cascade_coord + vec3(p * cascade_size.xy, 0);
+    vec2 col = textureLod(radiance_cascades[0], tex_coord, 0).rg;
+    sum.rgb += col.rrr * col.g * sum.a;
+    sum.a *= 1.0f-col.g;
 
     for(int cascade = 1; sum.a > 0 && cascade < cascade_count; ++cascade)
     {
         probe_resolution *= 2;
-        cascade_coord /= 2;
+        cascade_size /= 2;
 
-        random_interpolation = vec4(0);//generate_single_uniform_random(seed) - 0.5f;
-        ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution + random_interpolation.xy)), probe_resolution);
-
-        tex_coord = cascade_coord * ivec3(probe_resolution, 1) + ivec3(p, 0);
-        vec4 col = texelFetch(radiance_cascades[cascade], tex_coord, 0);
-        sum.rgb += col.rgb * col.a * sum.a;
-        sum.a *= 1.0f-col.a;
+        ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution)), probe_resolution);
+        vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), ivec3(cascade_size-0.5));
+        vec3 tex_coord = cascade_coord + ivec3(p * cascade_size.xy, 0);
+        vec2 col = textureLod(radiance_cascades[cascade], tex_coord, 0).rg;
+        sum.rgb += col.rrr * col.g * sum.a;
+        sum.a *= 1.0f-col.g;
     }
     return sum.rgb;
 }
