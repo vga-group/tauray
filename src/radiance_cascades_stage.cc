@@ -1,4 +1,5 @@
 #include "radiance_cascades_stage.hh"
+#include "shadow_map.hh"
 #include "misc.hh"
 
 namespace
@@ -16,6 +17,8 @@ struct trace_push_constant_buffer
     float interval_end;
     int c0_angular_resolution;
     int cascade_size;
+    gpu_shadow_mapping_parameters sm_params;
+    float ambient;
 };
 
 struct gather_push_constant_buffer
@@ -231,11 +234,14 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     trace.set_descriptors(cb, ss->get_raster_descriptors(), 0, 2);
 
     trace_push_constant_buffer pc;
+    shadow_map_filter sm_filter = {0,0,0,0};
+    pc.sm_params = create_shadow_mapping_parameters(sm_filter, *ss);
     pc.xyz_step = pvec4((opt.volume.max-opt.volume.min)/float(2<<opt.log2_resolution), 0);
     pc.jitter = opt.jitter_rays ? r2_noise(vec2(dev->ctx->get_frame_counter())) : vec2(0.5f);
     pc.interval_start = 0;
     pc.interval_end = 0;
     pc.c0_angular_resolution = opt.c0_probe_resolution;
+    pc.ambient = opt.ambient;
 
     for(uint32_t cascade = 0; cascade < get_cascade_count(); ++cascade)
     {

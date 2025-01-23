@@ -7,19 +7,6 @@
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_debug_printf : enable
 
-layout(push_constant) uniform push_constant_buffer
-{
-    vec4 base_offset;
-    vec4 xyz_step;
-    vec2 jitter;
-    int cascade;
-    int cascade_count;
-    float interval_start;
-    float interval_end;
-    int c0_angular_resolution;
-    int cascade_size;
-} pc;
-
 layout(local_size_x = 8, local_size_y = 8) in;
 
 //layout(binding = 0, r32f) uniform writeonly image3D cascade_target;
@@ -32,8 +19,29 @@ layout(binding = 1, r32f) uniform readonly image3D distance_field;
 #define USE_RAY_QUERIES
 #define GET_INTERSECTION_TRIANGLE_POSITIONS
 #define SCENE_SET 1
+#define SCENE_RASTER_SET 2
 #include "scene.glsl"
 #include "rt_common.glsl"
+#include "scene_raster.glsl"
+
+layout(push_constant) uniform push_constant_buffer
+{
+    vec4 base_offset;
+    vec4 xyz_step;
+    vec2 jitter;
+    int cascade;
+    int cascade_count;
+    float interval_start;
+    float interval_end;
+    int c0_angular_resolution;
+    int cascade_size;
+    shadow_mapping_parameters sm_params;
+    float ambient;
+} pc;
+
+#define SHADOW_MAPPING_PARAMS pc.sm_params
+#define SHADOW_MAPPING_SCREEN_COORD ivec2(0)
+#include "shadow_mapping.glsl"
 
 float get_distance(int cascade, ivec3 coord)
 {
@@ -53,9 +61,6 @@ int get_intersection_info(
     out vertex_data vd,
     out sampled_material mat
 ){
-    float point_prob, triangle_prob, dir_prob, envmap_prob;
-    get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
-
     if(payload.instance_id >= 0)
     { // Mesh
         vd = get_interpolated_vertex(
@@ -69,45 +74,10 @@ int get_intersection_info(
         return 0;
     }
     else if(payload.primitive_id >= 0)
-    { // Point light
-        point_light pl;
-        pl = point_lights.lights[payload.primitive_id];
-
-        vec3 hit_pos = ray_origin + ray_direction * payload.barycentrics.x;
-        // No worries, radius cannot be zero -- we couldn't hit the light here
-        // if it was!
-        mat.emission = get_spotlight_intensity(pl, normalize(pl.pos-ray_origin)) * pl.color / (pl.radius * pl.radius * M_PI);
-        vd.hard_normal = normalize(hit_pos-pl.pos);
-        vd.pos = hit_pos;
-        return 1;
+    {
     }
     else
     { // Miss
-        if(pc.cascade+1 == pc.cascade_count)
-        { // Only last cascade gets the environment lighting.
-            vec4 color = scene_metadata.environment_factor;
-            if(scene_metadata.environment_proj >= 0)
-            {
-                vec2 uv = vec2(0);
-                uv.y = asin(-ray_direction.y)/M_PI+0.5f;
-                uv.x = atan(ray_direction.z, ray_direction.x)/(2*M_PI)+0.5f;
-                color.rgb *= texture(environment_map_tex, uv).rgb;
-            }
-            mat.emission = color.rgb;
-
-            for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
-            {
-                directional_light dl = directional_lights.lights[i];
-                if(dl.dir_cutoff >= 1.0f)
-                    continue;
-                float visible = step(dl.dir_cutoff, dot(ray_direction, -dl.dir));
-                vec3 color = visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
-                mat.emission += color;
-            }
-
-            vd.pos = ray_origin + 1e9 * ray_direction;
-            vd.hard_normal = vec3(0);
-        }
         return -1;
     }
 }
@@ -132,11 +102,110 @@ hit_info trace_primary_ray(
     return trace_ray_query(rq, seed);
 }
 
-/*
-float simple_shade(hit_info info)
+vec2 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
 {
+    if(info.instance_id >= 0)
+    { // Hit an emissive surface.
+        vec3 normal = normalize(cross(
+            info.positions[1]- info.positions[0],
+            info.positions[2]- info.positions[0]
+        ));
+        if(dot(normal, ray_direction) > 0) normal = -normal;
+        vec3 pos = ray_origin + info.hit_t * ray_direction;
+        instance o = instances.o[info.instance_id];
+        vec3 color = o.mat.albedo_factor.rgb;
+        if(o.mat.albedo_tex_id >= 0)
+        {
+            // Only fetch material info for textured surfaces.
+            ivec3 i = ivec3(
+                indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+0],
+                indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+1],
+                indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+2]
+            );
+            vertex v0 = vertices[nonuniformEXT(info.instance_id)].v[i.x];
+            vertex v1 = vertices[nonuniformEXT(info.instance_id)].v[i.y];
+            vertex v2 = vertices[nonuniformEXT(info.instance_id)].v[i.z];
+            vec3 b = vec3(1.0f - info.barycentrics.x - info.barycentrics.y, info.barycentrics);
+            vec2 uv = v0.uv * b.x + v1.uv * b.y + v2.uv * b.z;
+            vec3 tex_col = sample_texture(o.mat.albedo_tex_id, uv).rgb;
+            tex_col = inverse_srgb_correction(tex_col);
+            color *= tex_col;
+        }
+
+        vec3 emission = o.mat.emission_factor.rgb + pc.ambient * color;
+
+        // Shade as if it was a diffuse surface.
+        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+        {
+            directional_light dl = directional_lights.lights[i];
+            float shadow = 1.0f;
+            if(dl.shadow_map_index >= 0 && dot(normal, -dl.dir) > 0)
+                shadow = calc_directional_shadow(
+                    dl.shadow_map_index, pos, normal, -dl.dir
+                );
+            if(dot(normal, dl.dir) > 0)
+                shadow = 0.0f;
+
+            emission += color * shadow * dl.color * max(dot(normal, -dl.dir), 0);
+        }
+
+        POINT_LIGHT_FOR_BEGIN(v.pos)
+            point_light pl = point_lights.lights[item_index];
+            vec3 light_dir;
+            float light_dist;
+            vec3 light_color;
+            get_point_light_info(pl, pos, light_dir, light_dist, light_color);
+
+            float shadow = 1.0f;
+            if(pl.shadow_map_index >= 0 && dot(normal, light_dir) > 0)
+                shadow = calc_point_shadow(
+                    pl.shadow_map_index, pos, normal, light_dir
+                );
+            if(dot(normal, light_dir) < 0)
+                shadow = 0.0f;
+
+            emission += color * shadow * light_color * max(dot(normal, light_dir), 0);
+        POINT_LIGHT_FOR_END
+
+        return vec2(rgb_to_luminance(emission), 1.0f);
+    }
+    else if(info.primitive_id >= 0)
+    { // Point light
+        point_light pl;
+        pl = point_lights.lights[info.primitive_id];
+
+        vec3 hit_pos = ray_origin + ray_direction * info.barycentrics.x;
+        // No worries, radius cannot be zero -- we couldn't hit the light here
+        // if it was!
+        vec3 emission = get_spotlight_intensity(pl, normalize(pl.pos-ray_origin)) * pl.color / (pl.radius * pl.radius * M_PI);
+        return vec2(rgb_to_luminance(emission), 1.0f);
+    }
+    else if(pc.cascade+1 == pc.cascade_count)
+    { // Only last cascade gets the environment lighting.
+        vec4 color = scene_metadata.environment_factor;
+        if(scene_metadata.environment_proj >= 0)
+        {
+            vec2 uv = vec2(0);
+            uv.y = asin(-ray_direction.y)/M_PI+0.5f;
+            uv.x = atan(ray_direction.z, ray_direction.x)/(2*M_PI)+0.5f;
+            color.rgb *= texture(environment_map_tex, uv).rgb;
+        }
+        vec3 emission = color.rgb;
+
+        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+        {
+            directional_light dl = directional_lights.lights[i];
+            if(dl.dir_cutoff >= 1.0f)
+                continue;
+            float visible = step(dl.dir_cutoff, dot(ray_direction, -dl.dir));
+            vec3 color = visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
+            emission += color;
+        }
+
+        return vec2(rgb_to_luminance(emission), 1.0f);
+    }
+    return vec2(0);
 }
-*/
 
 void main()
 {
@@ -189,26 +258,8 @@ void main()
 
     hit_info hi = trace_primary_ray(seed, ray_origin, ray_dir, ray_len);
     vertex_data vd;
-    sampled_material mat;
-    int hit_type = get_intersection_info(ray_origin, ray_dir, hi, vd, mat);
 
-    vec2 hit_color = vec2(0);
-    if(hit_type == 0)
-    { // Hit an emissive surface.
-        hit_color.r = rgb_to_luminance(mat.albedo.rgb*0.2f + mat.emission);
-        hit_color.g = 1.0f;
-    }
-    else if(hit_type == 1)
-    { // Hit a point light.
-        hit_color.r = rgb_to_luminance(mat.emission);
-        hit_color.g = 1.0f;
-    }
-    else if(hit_type == -1 && last_cascade)
-    { // Hit sky
-        // TODO read skybox
-        hit_color.r = rgb_to_luminance(mat.emission);
-        hit_color.g = 1.0f;
-    }
+    vec2 hit_color = simple_shade(ray_origin, ray_dir, hi);
 
     imageStore(cascade_target, p, vec4(hit_color,0,0));
 }

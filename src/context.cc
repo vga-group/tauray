@@ -159,7 +159,7 @@ dependency context::begin_frame()
 
     timing.host_wait();
     device& d = get_display_device();
-    (void)d.logical.waitForFences(*frame_fences[frame_index], true, UINT64_MAX);
+    (void)d.logical.waitForFences(*frame_fences[frame_index], true, UINT64_MAX-1);
 
     // Get new images
     swapchain_index = prepare_next_image(frame_index);
@@ -183,7 +183,7 @@ dependency context::begin_frame()
     d.graphics_queue.submit(submit_info, {});
 
     if(image_fences[swapchain_index])
-        (void)d.logical.waitForFences(image_fences[swapchain_index], true, UINT64_MAX);
+        (void)d.logical.waitForFences(image_fences[swapchain_index], true, UINT64_MAX-1);
     image_fences[swapchain_index] = frame_fences[frame_index];
 
     d.logical.resetFences(*frame_fences[frame_index]);
@@ -202,10 +202,6 @@ void context::end_frame(const dependencies& deps)
     dependencies local_deps = fill_end_frame_dependencies(deps);
 
     device& d = get_display_device();
-
-    std::vector<vk::PipelineStageFlags> wait_stages(
-        local_deps.size(d.id), vk::PipelineStageFlagBits::eTopOfPipe
-    );
 
     vk::TimelineSemaphoreSubmitInfo timeline_info = local_deps.get_timeline_info(d.id);
     vk::SubmitInfo submit_info = local_deps.get_submit_info(d.id, timeline_info);
