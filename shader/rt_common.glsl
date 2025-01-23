@@ -23,6 +23,7 @@ struct hit_info
     // Barycentric coordinates to the triangle that was hit.
     vec2 barycentrics;
 #ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
+    float hit_t;
     vec3 positions[3];
 #endif
 };
@@ -137,7 +138,7 @@ hit_info trace_ray_query(rayQueryEXT rq, inout uint seed)
             rayQueryGetIntersectionPrimitiveIndexEXT(rq, true),
             rayQueryGetIntersectionBarycentricsEXT(rq, true)
 #ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
-            , positions
+            , rayQueryGetIntersectionTEXT(rq, true), positions
 #endif
         );
     }
@@ -146,13 +147,15 @@ hit_info trace_ray_query(rayQueryEXT rq, inout uint seed)
             -1, rayQueryGetIntersectionPrimitiveIndexEXT(rq, true),
             vec2(rayQueryGetIntersectionTEXT(rq, true))
 #ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
-            , vec3[3](vec3(0), vec3(0), vec3(0))
+            , rayQueryGetIntersectionTEXT(rq, true),
+            vec3[3](vec3(0), vec3(0), vec3(0))
 #endif
         );
     else
         return hit_info(-1, -1, vec2(0)
 #ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
-            , vec3[3](vec3(0), vec3(0), vec3(0))
+            , rayQueryGetIntersectionTEXT(rq, true),
+            vec3[3](vec3(0), vec3(0), vec3(0))
 #endif
         );
 }

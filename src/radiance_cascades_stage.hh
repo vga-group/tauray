@@ -31,6 +31,8 @@ public:
         // Get lighting for current pass from previous pass. Requires double
         // the memory!
         bool recursive = false;
+        // Ambient brightness used for when recursive lighting isn't enabled.
+        float ambient = 0.01f;
 
         // Skips tracing rays if they did not hit anything during last frame.
         bool skip_missed_rays = true;
