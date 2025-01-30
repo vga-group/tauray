@@ -4,8 +4,9 @@
 
 // https://advances.realtimerendering.com/s2016/s2016_ltc_rnd.pdf
 
-// a and b are unit vectors on the +z hemisphere.
-float edge_integral(vec3 a, vec3 b)
+// If the angle between a and b is theta, this computes
+// theta / sin(theta) with high precision.
+float angle_per_sin_angle(vec3 a, vec3 b)
 {
     float cos_theta = dot(a, b);
     float act = abs(cos_theta);
@@ -15,25 +16,23 @@ float edge_integral(vec3 a, vec3 b)
     float theta_per_sin_theta = num/denom;
     if(cos_theta < 0.0)
         theta_per_sin_theta = 0.5 * inversesqrt(1.0 - act*act) - theta_per_sin_theta;
-    return theta_per_sin_theta * (a.x * b.y - a.y * b.x);
+    return theta_per_sin_theta;
+}
+
+// a and b are unit vectors on the +z hemisphere.
+float edge_integral(vec3 a, vec3 b)
+{
+    return angle_per_sin_angle(a, b) * (a.x * b.y - a.y * b.x);
 }
 
 vec3 edge_vector_form_factor(vec3 a, vec3 b)
 {
-    float cos_theta = dot(a, b);
-    float act = abs(cos_theta);
-    float num = fma(act, 0.01436124, 0.49788271);
-    num = fma(act, num, 0.86266946);
-    float denom = fma(4.18814979+act, act, 3.45068008);
-    float theta_per_sin_theta = num/denom;
-    if(cos_theta < 0.0)
-        theta_per_sin_theta = 0.5 * inversesqrt(1.0 - act*act) - theta_per_sin_theta;
-    return theta_per_sin_theta * cross(a, b);
+    return angle_per_sin_angle(a, b) * cross(a, b);
 }
 
 // If nothing else, transform should take vertices to tangent space. It can also
 // do the LTC transforms at the same time as needed.
-float cosine_hemisphere_poly_light(mat3 transform, vec3 pos, vec3 v[], bool double_sided)
+float cosine_hemisphere_poly_light(mat3 transform, vec3 pos, vec3 v[4], bool double_sided)
 {
     vec3 last = normalize(transform * (v[v.length()-1]-pos));
     vec3 prev = last;
