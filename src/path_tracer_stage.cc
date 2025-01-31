@@ -1,4 +1,5 @@
 #include "path_tracer_stage.hh"
+#include "radiance_cascades_stage.hh"
 #include "scene_stage.hh"
 #include "misc.hh"
 #include "environment_map.hh"
@@ -67,6 +68,9 @@ path_tracer_stage::path_tracer_stage(
     if(opt.depth_of_field)
         defines["USE_DEPTH_OF_FIELD"];
 
+    if(opt.rc_source)
+        defines["RADIANCE_CASCADES_SET"] = "2";
+
 #define TR_GBUFFER_ENTRY(name, ...)\
     if(output_target.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
     TR_GBUFFER_ENTRIES
@@ -112,7 +116,10 @@ path_tracer_stage::path_tracer_stage(
         }
     };
     desc.add(src);
-    gfx.init(src, {&desc, &ss.get_descriptors()});
+    std::vector<tr::descriptor_set_layout*> layout = {&desc, &ss.get_descriptors()};
+    if(opt.rc_source)
+        layout.push_back(&opt.rc_source->get_descriptors());
+    gfx.init(src, layout);
 }
 
 void path_tracer_stage::record_command_buffer_pass(
@@ -128,6 +135,8 @@ void path_tracer_stage::record_command_buffer_pass(
         get_descriptors(desc);
         gfx.push_descriptors(cb, desc, 0);
         gfx.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+        if(opt.rc_source)
+            gfx.set_descriptors(cb, opt.rc_source->get_descriptors(), 0, 2);
     }
 
     push_constant_buffer control;

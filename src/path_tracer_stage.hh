@@ -7,6 +7,8 @@
 namespace tr
 {
 
+class radiance_cascades_stage;
+
 class path_tracer_stage: public rt_camera_stage
 {
 public:
@@ -27,6 +29,8 @@ public:
         light_sampling_weights sampling_weights;
         bounce_sampling_mode bounce_mode = bounce_sampling_mode::MATERIAL;
         tri_light_sampling_mode tri_light_mode = tri_light_sampling_mode::HYBRID;
+
+        radiance_cascades_stage* rc_source = nullptr;
     };
 
     path_tracer_stage(

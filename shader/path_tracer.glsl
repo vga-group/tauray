@@ -7,6 +7,7 @@
 
 #include "rt.glsl"
 #include "sampling.glsl"
+#include "radiance_cascades.glsl"
 
 struct pt_vertex_data
 {
@@ -319,13 +320,22 @@ vec3 next_event_estimation(
 
         vec3 shading_light = out_dir * tbn;
         lobes = bsdf_lobes(0,0,0,0);
+#ifdef RADIANCE_CASCADES_SET
+        diffuse_brdf(shading_light, lobes);
+#else
         float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
+#endif
 
         // TODO: Check if this conditional just hurts performance
         if(any(greaterThan(contrib, vec3(0.0001f))))
             contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
+#ifdef RADIANCE_CASCADES_SET
+        float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, out_dir);
+        contrib /= nee_mis_pdf(light_pdf, rc_pdf);
+#else
         contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
+#endif
         return contrib;
     }
 #endif
@@ -463,9 +473,17 @@ void evaluate_ray(
 
         // Lastly, figure out the next ray and assign proper attenuation for it.
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+#ifdef RADIANCE_CASCADES_SET
+        uvec4 ray_sample = generate_ray_sample_uint(lsampler, bounce*2+1);
+        view = sample_radiance_cascades(ray_sample.x, v.pos, tbn[2], bsdf_pdf);
+        lobes = bsdf_lobes(0,0,0,0);
+        diffuse_brdf(view * tbn, lobes);
+        //ggx_bsdf(view * tbn, shading_view, mat, lobes);
+#else
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
         material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
         view = tbn * view;
+#endif
 
         if(bounce != 0)
             attenuation *= modulate_bsdf(mat, lobes);

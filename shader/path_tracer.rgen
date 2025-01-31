@@ -4,6 +4,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
 
 // Flags:
 // USE_NEXT_EVENT_ESTIMATION:
@@ -59,6 +60,9 @@
 #ifdef USE_REFLECTION_TARGET
 #define REFLECTION_TARGET_BINDING 11
 #endif
+
+#define printf debugPrintfEXT
+//#undef RADIANCE_CASCADES_SET
 
 layout(push_constant, scalar) uniform push_constant_buffer
 {

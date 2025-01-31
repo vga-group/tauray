@@ -34,14 +34,14 @@ vec3 edge_vector_form_factor(vec3 a, vec3 b)
 // do the LTC transforms at the same time as needed.
 float cosine_hemisphere_poly_light(mat3 transform, vec3 pos, vec3 v[4], bool double_sided)
 {
-    vec3 last = normalize(transform * (v[v.length()-1]-pos));
+    vec3 last = normalize((v[v.length()-1]-pos) * transform);
     vec3 prev = last;
     vec3 form_factor = vec3(0);
     bool behind = false;
 
     [[unroll]] for(uint i = 0; i < v.length()-1; ++i)
     {
-        vec3 d = normalize(transform * (v[i]-pos));
+        vec3 d = normalize((v[i]-pos) * transform);
         form_factor += edge_vector_form_factor(prev, d);
 
         if(i == 1)
