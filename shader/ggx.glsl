@@ -25,6 +25,14 @@
 //
 // Optimization tip: precalculate ETA, refactor transmission equations to use
 // ETA alone instead of both ior_in and ior_out.
+//
+// This separation to the inner and outer parts only exists for reuse in path
+// tracing code.
+
+void diffuse_brdf(vec3 out_dir, inout bsdf_lobes bsdf)
+{
+    bsdf.diffuse += max(out_dir.z, 0.0f) / M_PI;
+}
 
 // Also known as F
 float ggx_fresnel_schlick(float cos_d, float f0)

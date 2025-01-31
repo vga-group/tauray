@@ -21,6 +21,8 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     this->opt.scene_options.shadow_mapping = true;
 
     this->opt.pt_options.distribution.size = ctx.get_size();
+    this->opt.pt_options.distribution.strategy = DISTRIBUTION_DUPLICATE;
+    this->opt.pt_options.active_viewport_count = 1;
 
     scene_update.emplace(dev, this->opt.scene_options);
 
@@ -51,9 +53,11 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     rcv_opt.distance_field = &distance_field.value();
     gbuffer_target cur = gbuffer.get_layer_target(dev.id, 0);
 
-    rcv.emplace(*rc, cur.color, rcv_opt);
+    //rcv.emplace(*rc, cur.color, rcv_opt);
     cur = gbuffer.get_array_target(dev.id);
-    //pt.emplace(dev, *scene_update, cur, this->opt.pt_options);
+
+    this->opt.pt_options.rc_source = &*rc;
+    pt.emplace(dev, *scene_update, cur, this->opt.pt_options);
 
     std::vector<render_target> display = ctx.get_array_render_target();
     this->opt.tonemap_options.limit_to_input_layer = 0;
@@ -74,7 +78,7 @@ void rc_renderer::set_scene(scene* s)
 
 void rc_renderer::set_visualizer_pos(int cascade, int layer)
 {
-    rcv->set_position(cascade, layer);
+    //rcv->set_position(cascade, layer);
 }
 
 void rc_renderer::render()
@@ -86,8 +90,9 @@ void rc_renderer::render()
     dependencies deps = scene_update->run(display_deps);
     deps = sms->run(deps);
     deps = rc->run(deps);
-    //deps = pt->run(deps);
-    deps = rcv->run(deps);
+    pt->force_command_buffer_refresh();
+    deps = pt->run(deps);
+    //deps = rcv->run(deps);
     deps = tonemap->run(deps);
 
     ctx->end_frame(deps);
@@ -95,11 +100,7 @@ void rc_renderer::render()
 
 void rc_renderer::reset_accumulation(bool)
 {
-    //if(reset_sample_counter)
-    {
-        //rc->reset_accumulation();
-        //pt->reset_accumulated_samples();
-    }
+    pt->reset_accumulated_samples();
 }
 
 }

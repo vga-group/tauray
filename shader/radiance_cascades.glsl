@@ -103,7 +103,6 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, out float pdf
     // TODO: Maybe make this a specialization constant?
     int cascade_count = radiance_cascade_metadata.size.w;
 
-    fcoord *= cascade_size;
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), ivec3(cascade_size-0.5));
 
     mat3 ltc_irradiance_transform = create_tangent_space(normal);
@@ -128,12 +127,13 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, out float pdf
 
         vec3 corners[4] =  vec3[4](
             concentric_octahedral_mapping((p + ivec2(0,0)) * inv_probe_resolution),
-            concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution),
+            concentric_octahedral_mapping((p + ivec2(0,1)) * inv_probe_resolution),
             concentric_octahedral_mapping((p + ivec2(1,1)) * inv_probe_resolution),
-            concentric_octahedral_mapping((p + ivec2(0,1)) * inv_probe_resolution)
+            concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution)
         );
 
         float weight = value * cosine_hemisphere_poly_light(ltc_irradiance_transform, vec3(0), corners, false);
+        weight += 1e-16f;
 
         float u = generate_single_uniform_random_fast(seed);
 
@@ -174,11 +174,12 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, out float pdf
 
             vec3 corners[4] =  vec3[4](
                 concentric_octahedral_mapping((p + ivec2(0,0)) * inv_probe_resolution),
-                concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution),
+                concentric_octahedral_mapping((p + ivec2(0,1)) * inv_probe_resolution),
                 concentric_octahedral_mapping((p + ivec2(1,1)) * inv_probe_resolution),
-                concentric_octahedral_mapping((p + ivec2(0,1)) * inv_probe_resolution)
+                concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution)
             );
             float weight = value * cosine_hemisphere_poly_light(ltc_irradiance_transform, vec3(0), corners, false);
+            weight += 1e-16f;
 
             float u = generate_single_uniform_random_fast(seed);
 
@@ -220,7 +221,6 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 dir)
     // TODO: Maybe make this a specialization constant?
     int cascade_count = radiance_cascade_metadata.size.w;
 
-    fcoord *= cascade_size;
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), ivec3(cascade_size-0.5));
     vec2 tex_coord = concentric_octahedral_mapping_inverse(dir);
 
@@ -248,12 +248,13 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 dir)
 
         vec3 corners[4] =  vec3[4](
             concentric_octahedral_mapping((p + ivec2(0,0)) * inv_probe_resolution),
-            concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution),
+            concentric_octahedral_mapping((p + ivec2(0,1)) * inv_probe_resolution),
             concentric_octahedral_mapping((p + ivec2(1,1)) * inv_probe_resolution),
-            concentric_octahedral_mapping((p + ivec2(0,1)) * inv_probe_resolution)
+            concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution)
         );
 
         float weight = value * cosine_hemisphere_poly_light(ltc_irradiance_transform, vec3(0), corners, false);
+        weight += 1e-16f;
 
         sum_weight += weight;
         if(x == itex_coord.x && y == itex_coord.y)
@@ -293,11 +294,12 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 dir)
 
             vec3 corners[4] =  vec3[4](
                 concentric_octahedral_mapping((p + ivec2(0,0)) * inv_probe_resolution),
-                concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution),
+                concentric_octahedral_mapping((p + ivec2(0,1)) * inv_probe_resolution),
                 concentric_octahedral_mapping((p + ivec2(1,1)) * inv_probe_resolution),
-                concentric_octahedral_mapping((p + ivec2(0,1)) * inv_probe_resolution)
+                concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution)
             );
             float weight = value * cosine_hemisphere_poly_light(ltc_irradiance_transform, vec3(0), corners, false);
+            weight += 1e-16f;
 
             sum_weight += weight;
             if(x == itex_coord.x && y == itex_coord.y)

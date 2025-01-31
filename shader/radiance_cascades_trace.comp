@@ -51,37 +51,6 @@ float get_distance(int cascade, ivec3 coord)
     return imageLoad(distance_field, transferred_coord).r;
 }
 
-// 0 = mesh
-// 1 = point light
-// -1 = miss
-int get_intersection_info(
-    vec3 ray_origin,
-    vec3 ray_direction,
-    hit_info payload,
-    out vertex_data vd,
-    out sampled_material mat
-){
-    if(payload.instance_id >= 0)
-    { // Mesh
-        vd = get_interpolated_vertex(
-            ray_direction, payload.barycentrics,
-            payload.instance_id,
-            payload.primitive_id
-        );
-        mat = sample_material(payload.instance_id, vd);
-        mat.albedo.a = 1.0;
-
-        return 0;
-    }
-    else if(payload.primitive_id >= 0)
-    {
-    }
-    else
-    { // Miss
-        return -1;
-    }
-}
-
 hit_info trace_primary_ray(
     uint seed,
     vec3 origin,
@@ -146,7 +115,7 @@ vec2 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
             if(dot(normal, dl.dir) > 0)
                 shadow = 0.0f;
 
-            emission += color * shadow * dl.color * max(dot(normal, -dl.dir), 0);
+            emission += color * shadow * dl.color * max(dot(normal, -dl.dir), 0) / M_PI;
         }
 
         POINT_LIGHT_FOR_BEGIN(v.pos)
@@ -164,20 +133,18 @@ vec2 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
             if(dot(normal, light_dir) < 0)
                 shadow = 0.0f;
 
-            emission += color * shadow * light_color * max(dot(normal, light_dir), 0);
+            emission += color * shadow * light_color * max(dot(normal, light_dir), 0) / M_PI;
         POINT_LIGHT_FOR_END
 
         return vec2(rgb_to_luminance(emission), 1.0f);
     }
     else if(info.primitive_id >= 0)
     { // Point light
-        point_light pl;
-        pl = point_lights.lights[info.primitive_id];
+        point_light pl = point_lights.lights[info.primitive_id];
 
-        vec3 hit_pos = ray_origin + ray_direction * info.barycentrics.x;
         // No worries, radius cannot be zero -- we couldn't hit the light here
         // if it was!
-        vec3 emission = get_spotlight_intensity(pl, normalize(pl.pos-ray_origin)) * pl.color / (pl.radius * pl.radius * M_PI);
+        vec3 emission = get_spotlight_intensity(pl, ray_direction) * pl.color / (pl.radius * pl.radius * M_PI);
         return vec2(rgb_to_luminance(emission), 1.0f);
     }
     else if(pc.cascade+1 == pc.cascade_count)
@@ -240,7 +207,7 @@ void main()
     if(first_cascade) prev_dir = probe_dir;
 
     vec3 ray_origin = probe_origin + prev_dir * pc.interval_start;
-    vec3 ray_end = next_origin + probe_dir * pc.interval_end;
+    vec3 ray_end = next_origin + probe_dir * (pc.interval_end * 2.0f);
 #endif
 
     vec3 ray_dir = ray_end - ray_origin;
@@ -252,9 +219,12 @@ void main()
     {
         // TODO: This can be commented out for extra perf, it just needs to be
         // there for visualization to work when a surface isn't in vicinity.
-        imageStore(cascade_target, p, vec4(0));
+        imageStore(cascade_target, p, vec4(0,0,1,1));
         return;
     }
+
+    // TODO: Read all predecessors. If they block the ray, copy their average
+    // color and early-exit. This fills holes formed by radiance cascades!
 
     hit_info hi = trace_primary_ray(seed, ray_origin, ray_dir, ray_len);
     vertex_data vd;

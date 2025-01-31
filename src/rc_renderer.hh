@@ -43,7 +43,7 @@ private:
     std::optional<shadow_map_stage> sms;
     std::optional<radiance_cascades_stage> rc;
     std::optional<rc_visualizer_stage> rcv;
-    //std::optional<path_tracer_stage> pt;
+    std::optional<path_tracer_stage> pt;
     std::optional<tonemap_stage> tonemap;
 
     dependencies last_frame_deps;
