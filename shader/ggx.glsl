@@ -34,6 +34,24 @@ void diffuse_brdf(vec3 out_dir, inout bsdf_lobes bsdf)
     bsdf.diffuse += max(out_dir.z, 0.0f) / M_PI;
 }
 
+float diffuse_brdf_pdf(vec3 out_dir, inout bsdf_lobes bsdf)
+{
+    float pdf = max(out_dir.z, 0.0f) / M_PI;
+    bsdf.diffuse += pdf;
+    return pdf;
+}
+
+void diffuse_brdf_sample(
+    vec4 uniform_random,
+    out vec3 out_dir,
+    inout bsdf_lobes bsdf,
+    out float pdf
+){
+    out_dir = sample_cosine_hemisphere(uniform_random.xy);
+    pdf = max(out_dir.z, 0.0f) / M_PI;
+    bsdf.diffuse += pdf;
+}
+
 // Also known as F
 float ggx_fresnel_schlick(float cos_d, float f0)
 {

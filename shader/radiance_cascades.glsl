@@ -89,6 +89,51 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
     return sum.rgb;
 }
 
+float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal)
+{
+    vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
+    vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
+
+    // 0-1 inside cascade volume
+    vec3 fcoord = (origin - aabb_min) / (aabb_max - aabb_min);
+
+    ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
+    int probe_resolution = radiance_cascade_metadata.c0_angular_resolution;
+    // TODO: Maybe make this a specialization constant?
+    int cascade_count = radiance_cascade_metadata.size.w;
+
+    vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), ivec3(cascade_size-0.5));
+
+    mat3 ltc_irradiance_transform = create_tangent_space(normal);
+
+    float sum_weight = 0.0f;
+
+    float inv_probe_resolution = 1.0f / probe_resolution;
+
+    for(int x = 0; x < radiance_cascade_metadata.c0_angular_resolution; ++x)
+    for(int y = 0; y < radiance_cascade_metadata.c0_angular_resolution; ++y)
+    {
+        ivec2 p = ivec2(x, y);
+        vec3 tex_coord = cascade_coord + vec3(p * cascade_size.xy, 0);
+
+        vec2 col = textureLod(radiance_cascades[0], tex_coord, 0).rg;
+        float value = col.r;
+        float visibility = col.g;
+
+        vec3 corners[4] =  vec3[4](
+            concentric_octahedral_mapping((p + ivec2(0,0)) * inv_probe_resolution),
+            concentric_octahedral_mapping((p + ivec2(0,1)) * inv_probe_resolution),
+            concentric_octahedral_mapping((p + ivec2(1,1)) * inv_probe_resolution),
+            concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution)
+        );
+
+        float weight = value * cosine_hemisphere_poly_light_always_front(ltc_irradiance_transform, vec3(0), corners, false);
+        sum_weight += weight;
+    }
+
+    return sum_weight;
+}
+
 // Only valid inside cascade volume!
 vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, out float pdf)
 {

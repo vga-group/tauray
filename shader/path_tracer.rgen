@@ -78,53 +78,6 @@ layout(push_constant, scalar) uniform push_constant_buffer
 
 #include "path_tracer.glsl"
 
-#ifdef RADIANCE_CASCADES_SET
-float eval_radiance_cascades(vec3 origin, vec3 normal)
-{
-    vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
-    vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
-
-    // 0-1 inside cascade volume
-    vec3 fcoord = (origin - aabb_min) / (aabb_max - aabb_min);
-
-    ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
-    int probe_resolution = radiance_cascade_metadata.c0_angular_resolution;
-    // TODO: Maybe make this a specialization constant?
-    int cascade_count = radiance_cascade_metadata.size.w;
-
-    vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), ivec3(cascade_size-0.5));
-
-    mat3 ltc_irradiance_transform = create_tangent_space(normal);
-
-    float sum_weight = 0.0f;
-
-    float inv_probe_resolution = 1.0f / probe_resolution;
-
-    for(int x = 0; x < radiance_cascade_metadata.c0_angular_resolution; ++x)
-    for(int y = 0; y < radiance_cascade_metadata.c0_angular_resolution; ++y)
-    {
-        ivec2 p = ivec2(x, y);
-        vec3 tex_coord = cascade_coord + vec3(p * cascade_size.xy, 0);
-
-        vec2 col = textureLod(radiance_cascades[0], tex_coord, 0).rg;
-        float value = col.r;
-        float visibility = col.g;
-
-        vec3 corners[4] =  vec3[4](
-            concentric_octahedral_mapping((p + ivec2(0,0)) * inv_probe_resolution),
-            concentric_octahedral_mapping((p + ivec2(0,1)) * inv_probe_resolution),
-            concentric_octahedral_mapping((p + ivec2(1,1)) * inv_probe_resolution),
-            concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution)
-        );
-
-        float weight = value * cosine_hemisphere_poly_light_always_front(ltc_irradiance_transform, vec3(0), corners, false);
-        sum_weight += weight;
-    }
-
-    return sum_weight;
-}
-#endif
-
 void main()
 {
     pt_vertex_data first_hit_vertex;
@@ -160,11 +113,11 @@ void main()
         vec3 old_color = first_hit_material.albedo.rgb;
         first_hit_material.albedo.rgb = vec3(1);
 #endif
-#ifdef RADIANCE_CASCADES_SET
-        sum_color += first_hit_material.albedo.rgb * eval_radiance_cascades(first_hit_vertex.pos, first_hit_vertex.hard_normal);
-#else
+//#ifdef RADIANCE_CASCADES_SET
+//        sum_color += first_hit_material.albedo.rgb * eval_diffuse_radiance_cascades(first_hit_vertex.pos, first_hit_vertex.hard_normal);
+//#else
         sum_color += first_hit_material.emission + modulate_color(first_hit_material, diffuse.rgb, reflection.rgb);
-#endif
+//#endif
         sum_diffuse += diffuse;
         sum_reflection += reflection;
 #ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE

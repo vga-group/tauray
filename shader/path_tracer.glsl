@@ -332,7 +332,8 @@ vec3 next_event_estimation(
 #ifdef RADIANCE_CASCADES_SET
         diffuse_brdf(shading_light, lobes);
 #else
-        float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
+        //float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
+        float bsdf_pdf = diffuse_brdf_pdf(shading_light, lobes);
 #endif
 
         correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
@@ -493,7 +494,8 @@ void evaluate_ray(
         //ggx_bsdf(view * tbn, shading_view, mat, lobes);
 #else
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
-        material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
+        //material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
+        diffuse_brdf_sample(ray_sample, view, lobes, bsdf_pdf);
         view = tbn * view;
 #endif
 

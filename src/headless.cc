@@ -84,7 +84,7 @@ headless::headless(const options& opt)
     // Create the directory if it doesn't exist
     std::filesystem::path output_dir(opt.output_prefix);
     output_dir.remove_filename();
-    if(!std::filesystem::exists(output_dir))
+    if(!std::filesystem::exists(output_dir) && !output_dir.empty())
         std::filesystem::create_directories(output_dir);
 
     if(opt.viewer) init_sdl();
