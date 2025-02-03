@@ -19,6 +19,7 @@ struct trace_push_constant_buffer
     int cascade_size;
     gpu_shadow_mapping_parameters sm_params;
     float ambient;
+    int has_history;
 };
 
 struct gather_push_constant_buffer
@@ -70,10 +71,13 @@ radiance_cascades_stage::radiance_cascades_stage(
     descriptor_set& scene_ds = ss.get_descriptors();
     descriptor_set& raster_scene_ds = ss.get_raster_descriptors();
 
+    cascade_descriptors.add("radiance_cascades", {0, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    cascade_descriptors.add("radiance_cascade_metadata", {1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+
     {
         shader_source src("shader/radiance_cascades_trace.comp");
         trace_desc.add(src);
-        trace.init(src, {&trace_desc, &scene_ds, &raster_scene_ds});
+        trace.init(src, {&trace_desc, &scene_ds, &raster_scene_ds, &cascade_descriptors});
     }
 
     {
@@ -120,9 +124,6 @@ radiance_cascades_stage::radiance_cascades_stage(
             );
         }
     }
-
-    cascade_descriptors.add("radiance_cascades", {0, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
-    cascade_descriptors.add("radiance_cascade_metadata", {1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 }
 
 descriptor_set& radiance_cascades_stage::get_descriptors()
@@ -214,15 +215,17 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         });
     }
 
-    cascade_descriptors.reset(cascade_descriptors.get_mask(), 1);
-    cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
-    cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
-
     cb.pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eComputeShader,
         {}, {}, {}, barriers
     );
+    if(history_frames == 0)
+    {
+        cascade_descriptors.reset(cascade_descriptors.get_mask(), 1);
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
+        cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
+    }
 
     //==========================================================================
     // Trace pass - traces rays for radiance intervals
@@ -230,6 +233,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     trace.bind(cb);
     trace.set_descriptors(cb, ss->get_descriptors(), 0, 1);
     trace.set_descriptors(cb, ss->get_raster_descriptors(), 0, 2);
+    trace.set_descriptors(cb, cascade_descriptors, 0, 3);
 
     trace_push_constant_buffer pc;
     shadow_map_filter sm_filter = {0,0,0,0};
@@ -240,6 +244,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     pc.interval_end = 0;
     pc.c0_angular_resolution = opt.c0_probe_resolution;
     pc.ambient = opt.ambient;
+    pc.has_history = history_frames != 0;
 
     for(uint32_t cascade = 0; cascade < get_cascade_count(); ++cascade)
     {
@@ -266,6 +271,13 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
         uvec3 wg = uvec3(uvec2(cascade_size * resolution+7u)/8u, cascade_size);
         cb.dispatch(wg.x, wg.y, wg.z);
+    }
+
+    if(history_frames != 0)
+    {
+        cascade_descriptors.reset(cascade_descriptors.get_mask(), 1);
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
+        cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
     }
 
     //==========================================================================
