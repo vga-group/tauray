@@ -132,7 +132,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, out float pdf
             concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution)
         );
 
-        float weight = value * cosine_hemisphere_poly_light(ltc_irradiance_transform, vec3(0), corners, false);
+        float weight = value * cosine_hemisphere_poly_light_always_front(ltc_irradiance_transform, vec3(0), corners, false);
         weight += 1e-16f;
 
         float u = generate_single_uniform_random_fast(seed);
@@ -178,7 +178,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, out float pdf
                 concentric_octahedral_mapping((p + ivec2(1,1)) * inv_probe_resolution),
                 concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution)
             );
-            float weight = value * cosine_hemisphere_poly_light(ltc_irradiance_transform, vec3(0), corners, false);
+            float weight = value * cosine_hemisphere_poly_light_always_front(ltc_irradiance_transform, vec3(0), corners, false);
             weight += 1e-16f;
 
             float u = generate_single_uniform_random_fast(seed);
@@ -253,7 +253,7 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 dir)
             concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution)
         );
 
-        float weight = value * cosine_hemisphere_poly_light(ltc_irradiance_transform, vec3(0), corners, false);
+        float weight = value * cosine_hemisphere_poly_light_always_front(ltc_irradiance_transform, vec3(0), corners, false);
         weight += 1e-16f;
 
         sum_weight += weight;
@@ -298,7 +298,7 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 dir)
                 concentric_octahedral_mapping((p + ivec2(1,1)) * inv_probe_resolution),
                 concentric_octahedral_mapping((p + ivec2(1,0)) * inv_probe_resolution)
             );
-            float weight = value * cosine_hemisphere_poly_light(ltc_irradiance_transform, vec3(0), corners, false);
+            float weight = value * cosine_hemisphere_poly_light_always_front(ltc_irradiance_transform, vec3(0), corners, false);
             weight += 1e-16f;
 
             sum_weight += weight;

@@ -137,12 +137,9 @@ size_t radiance_cascades_stage::get_cascade_count() const
 
 float radiance_cascades_stage::get_cascade_t0(int cascade) const
 {
-    if(cascade == 0) return 0;
-
     vec3 extent = opt.volume.max - opt.volume.min;
-
     float h0 = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
-    return (1<<((cascade-1)*2)) * h0 * opt.c0_probe_resolution * 2.0f * M_PI;
+    if(cascade == 0) return h0 * sqrt(3.0f);
 
     // Relative error: (looks low-res but more consistent in motion)
     //float spatial_resolution = max(extent.x, max(extent.y, extent.z))/float(1<<(opt.log2_resolution-cascade));
@@ -151,6 +148,7 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
     //float spatial_resolution = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
     //size_t resolution = opt.c0_probe_resolution << cascade;
     //return (spatial_resolution * resolution) / M_PI;
+    return (1<<((cascade-1)*2)) * h0 * opt.c0_probe_resolution * 2.0f * M_PI;
 }
 
 vec2 radiance_cascades_stage::get_cascade_interval(int cascade) const

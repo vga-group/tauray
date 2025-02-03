@@ -58,4 +58,24 @@ float cosine_hemisphere_poly_light(mat3 transform, vec3 pos, vec3 v[4], bool dou
     return behind && !double_sided ? 0.0 : irradiance;
 }
 
+float cosine_hemisphere_poly_light_always_front(mat3 transform, vec3 pos, vec3 v[4], bool double_sided)
+{
+    vec3 last = normalize((v[v.length()-1]-pos) * transform);
+    vec3 prev = last;
+    vec3 form_factor = vec3(0);
+
+    [[unroll]] for(uint i = 0; i < v.length()-1; ++i)
+    {
+        vec3 d = normalize((v[i]-pos) * transform);
+        form_factor += edge_vector_form_factor(prev, d);
+        prev = d;
+    }
+    form_factor += edge_vector_form_factor(prev, last);
+
+    // Approx horizon clipping
+    float len = length(form_factor);
+    float irradiance = max((len*len+form_factor.z)/(len+1.0), 0.0);
+    return irradiance;
+}
+
 #endif
