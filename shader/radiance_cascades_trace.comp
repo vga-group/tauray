@@ -140,15 +140,20 @@ vec2 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
     }
     else if(info.primitive_id >= 0)
     { // Point light
+        return vec2(0.0f, 1.0f);
+        /*
         point_light pl = point_lights.lights[info.primitive_id];
 
         // No worries, radius cannot be zero -- we couldn't hit the light here
         // if it was!
         vec3 emission = get_spotlight_intensity(pl, ray_direction) * pl.color / (pl.radius * pl.radius * M_PI);
         return vec2(rgb_to_luminance(emission), 1.0f);
+        */
     }
     else if(pc.cascade+1 == pc.cascade_count)
     { // Only last cascade gets the environment lighting.
+        return vec2(0.0f, 1.0f);
+        /*
         vec4 color = scene_metadata.environment_factor;
         if(scene_metadata.environment_proj >= 0)
         {
@@ -170,6 +175,7 @@ vec2 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
         }
 
         return vec2(rgb_to_luminance(emission), 1.0f);
+        */
     }
     return vec2(0);
 }
@@ -207,7 +213,7 @@ void main()
     if(first_cascade) prev_dir = probe_dir;
 
     vec3 ray_origin = probe_origin + prev_dir * pc.interval_start;
-    vec3 ray_end = next_origin + probe_dir * (pc.interval_end * 2.0f);
+    vec3 ray_end = next_origin + probe_dir * pc.interval_end;
 #endif
 
     vec3 ray_dir = ray_end - ray_origin;
@@ -222,9 +228,6 @@ void main()
         imageStore(cascade_target, p, vec4(0,0,1,1));
         return;
     }
-
-    // TODO: Read all predecessors. If they block the ray, copy their average
-    // color and early-exit. This fills holes formed by radiance cascades!
 
     hit_info hi = trace_primary_ray(seed, ray_origin, ray_dir, ray_len);
     vertex_data vd;
