@@ -239,5 +239,5 @@ void main()
 
     vec4 hit_color = simple_shade(ray_origin, ray_dir, hi);
 
-    imageStore(cascade_target, p, hit_color);
+    imageStore(cascade_target, p, vec4(rgb_to_luminance(hit_color.rgb), hit_color.a, 0, 0));
 }

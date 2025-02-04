@@ -103,7 +103,7 @@ radiance_cascades_stage::radiance_cascades_stage(
         cascades.emplace_back(
             device_mask(dev),
             uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
-            vk::Format::eR16G16B16A16Sfloat,
+            vk::Format::eR16G16Sfloat,
             0,
             nullptr,
             vk::ImageTiling::eOptimal,
@@ -115,7 +115,7 @@ radiance_cascades_stage::radiance_cascades_stage(
             alt_cascades.emplace_back(
                 device_mask(dev),
                 uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
-                vk::Format::eR16G16B16A16Sfloat,
+                vk::Format::eR16G16Sfloat,
                 0,
                 nullptr,
                 vk::ImageTiling::eOptimal,

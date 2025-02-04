@@ -492,7 +492,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
             {
                 path_tracer_renderer::options rt_opt;
                 (path_tracer_stage::options&)rt_opt = pt_opt;
-                rt_opt.rc_opt = raca_opt;
                 rt_opt.post_process.tonemap = tonemap;
                 if(opt.temporal_reprojection > 0.0f)
                     rt_opt.post_process.temporal_reprojection =
