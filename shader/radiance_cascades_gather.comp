@@ -8,9 +8,9 @@
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
-layout(binding = 0, rgba32f) uniform readonly image3D upper_target;
-layout(binding = 1, rgba32f) uniform image3D lower_target;
-layout(binding = 2, rgba32f) uniform readonly image3D prev_lower_target;
+layout(binding = 0, rg32f) uniform readonly image3D upper_target;
+layout(binding = 1, rg32f) uniform image3D lower_target;
+layout(binding = 2, rg32f) uniform readonly image3D prev_lower_target;
 
 layout(push_constant) uniform push_constant_buffer
 {
@@ -34,23 +34,23 @@ void main()
     int base_offset = pc.cascade_size/2;
     ivec3 base_q = ivec3(upper_probe_index.xy + base_offset*upper_map_base_texel, upper_probe_index.z);
 
-    vec4 dst = imageLoad(lower_target, p);
+    vec2 dst = imageLoad(lower_target, p).rg;
     if(pc.carry_from_previous != 0)
     {
-        vec4 src_avg = vec4(0);
-        src_avg += imageLoad(upper_target, base_q+ivec3(0,0,0));
-        src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,0,0));
-        src_avg += imageLoad(upper_target, base_q+ivec3(0,base_offset,0));
-        src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,base_offset,0));
+        vec2 src_avg = vec2(0);
+        src_avg += imageLoad(upper_target, base_q+ivec3(0,0,0)).rg;
+        src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,0,0)).rg;
+        src_avg += imageLoad(upper_target, base_q+ivec3(0,base_offset,0)).rg;
+        src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,base_offset,0)).rg;
         src_avg /= 4;
 
-        dst.rgb = mix(src_avg.rgb, dst.rgb, dst.a);
+        dst.r = mix(src_avg.r, dst.r, dst.g);
     }
 
     if(pc.blend_ratio < 1.0f)
     {
-        vec4 prev = imageLoad(prev_lower_target, p);
+        vec2 prev = imageLoad(prev_lower_target, p).rg;
         dst = mix(prev, dst, pc.blend_ratio);
     }
-    imageStore(lower_target, p, dst);
+    imageStore(lower_target, p, vec4(dst,0,0));
 }

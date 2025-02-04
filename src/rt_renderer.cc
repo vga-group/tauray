@@ -46,7 +46,6 @@ rt_renderer<Pipeline>::~rt_renderer()
 
     // Ensure each pipeline is deleted before the assets they may use
     stitch.reset();
-    rc_update.reset();
 
     for(size_t i = 0; i < per_device.size(); ++i)
     {
@@ -95,9 +94,6 @@ void rt_renderer<Pipeline>::render()
 
     dependencies common_deps = scene_update->run(last_frame_deps);
     last_frame_deps.clear();
-
-    if(rc_update)
-        common_deps = rc_update->run(common_deps);
 
     for(size_t i = 0; i < devices.size(); ++i)
     {
@@ -321,15 +317,6 @@ void rt_renderer<Pipeline>::init_resources()
                 opt.distribution.strategy,
                 this->opt.active_viewport_count
             }
-        );
-    }
-
-    if(opt.rc_opt && device_count == 1)
-    {
-        rc_update.emplace(
-            ctx->get_display_device(),
-            *scene_update,
-            *opt.rc_opt
         );
     }
 
