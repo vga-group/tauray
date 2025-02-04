@@ -73,7 +73,7 @@ hit_info trace_primary_ray(
     return trace_ray_query(rq, seed);
 }
 
-vec2 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
+vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
 {
     if(info.instance_id >= 0)
     { // Hit an emissive surface.
@@ -107,6 +107,8 @@ vec2 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
         vec3 emission = o.mat.emission_factor.rgb;//pc.ambient * color;
 
         // Shade as if it was a diffuse surface.
+        // TODO: These are currently double-added from direct visibility as well.
+        /*
         for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
         {
             directional_light dl = directional_lights.lights[i];
@@ -138,28 +140,26 @@ vec2 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
 
             emission += color * shadow * light_color * max(dot(normal, light_dir), 0) / M_PI;
         POINT_LIGHT_FOR_END
+        */
 
         if(pc.has_history != 0)
             emission += color * eval_diffuse_radiance_cascades(pos, normal);
 
-        return vec2(rgb_to_luminance(emission), 1.0f);
+        return vec4(emission, 1.0f);
     }
     else if(info.primitive_id >= 0)
     { // Point light
-        return vec2(0.0f, 1.0f);
-        /*
+        //return vec4(0.0f, 0.0f, 0.0f, 1.0f);
         point_light pl = point_lights.lights[info.primitive_id];
 
         // No worries, radius cannot be zero -- we couldn't hit the light here
         // if it was!
         vec3 emission = get_spotlight_intensity(pl, ray_direction) * pl.color / (pl.radius * pl.radius * M_PI);
-        return vec2(rgb_to_luminance(emission), 1.0f);
-        */
+        return vec4(emission, 1.0f);
     }
     else if(pc.cascade+1 == pc.cascade_count)
     { // Only last cascade gets the environment lighting.
-        return vec2(0.0f, 1.0f);
-        /*
+        //return vec4(0.0f, 0.0f, 0.0f, 1.0f);
         vec4 color = scene_metadata.environment_factor;
         if(scene_metadata.environment_proj >= 0)
         {
@@ -180,10 +180,9 @@ vec2 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
             emission += color;
         }
 
-        return vec2(rgb_to_luminance(emission), 1.0f);
-        */
+        return vec4(emission, 1.0f);
     }
-    return vec2(0);
+    return vec4(0);
 }
 
 void main()
@@ -231,14 +230,14 @@ void main()
     {
         // TODO: This can be commented out for extra perf, it just needs to be
         // there for visualization to work when a surface isn't in vicinity.
-        imageStore(cascade_target, p, vec4(0,0,1,1));
+        imageStore(cascade_target, p, vec4(0,0,0,1));
         return;
     }
 
     hit_info hi = trace_primary_ray(seed, ray_origin, ray_dir, ray_len);
     vertex_data vd;
 
-    vec2 hit_color = simple_shade(ray_origin, ray_dir, hi);
+    vec4 hit_color = simple_shade(ray_origin, ray_dir, hi);
 
-    imageStore(cascade_target, p, vec4(hit_color,0,0));
+    imageStore(cascade_target, p, hit_color);
 }

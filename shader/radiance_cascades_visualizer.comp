@@ -37,6 +37,7 @@ void main()
 
         uvec4 seed = uvec4(p.x, p.y, 1025, 12);
         vec3 col = query_radiance_cascades(origin, dir, seed);
+
         /*
         if(p.x < pc.cascade_w && p.y < pc.cascade_h)
         {
