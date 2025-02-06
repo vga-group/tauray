@@ -81,6 +81,8 @@ path_tracer_stage::path_tracer_stage(
     add_defines(opt.mis_mode, defines);
     add_defines(opt.bounce_mode, defines);
     add_defines(opt.tri_light_mode, defines);
+    if(opt.rc_source)
+        opt.rc_source->add_defines(defines);
 
     get_common_defines(defines);
 

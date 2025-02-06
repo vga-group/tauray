@@ -5,7 +5,8 @@
 
 #ifdef RADIANCE_CASCADES_SET
 layout(set=RADIANCE_CASCADES_SET, binding = 0) uniform sampler3D radiance_cascades[];
-layout(set=RADIANCE_CASCADES_SET, binding = 1) uniform radiance_cascade_metadata_buffer
+layout(set=RADIANCE_CASCADES_SET, binding = 1) uniform sampler3D radiance_cascades_visibility[];
+layout(set=RADIANCE_CASCADES_SET, binding = 2) uniform radiance_cascade_metadata_buffer
 {
     vec4 aabb_min;
     vec4 aabb_max;
@@ -16,6 +17,10 @@ layout(set=RADIANCE_CASCADES_SET, binding = 1) uniform radiance_cascade_metadata
     ivec4 size;
     int c0_angular_resolution;
 } radiance_cascade_metadata;
+
+//#define RC_C0_ANGULAR_RESOLUTION
+//#define RC_C0_SPATIAL_RESOLUTION
+//#define RC_CASCADE_COUNT
 
 #include "random_sampler.glsl"
 
@@ -141,51 +146,43 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, 
 
     ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
     int probe_resolution = radiance_cascade_metadata.c0_angular_resolution;
-    // TODO: Maybe make this a specialization constant?
-    int cascade_count = radiance_cascade_metadata.size.w;
 
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
 
     ivec2 selected_cell = ivec2(0);
     float selected_weight = 0.0f;
-    float selected_value = float(0.0f);
-    float selected_visibility = 1.0f;
     float sum_weight = 0.0f;
 
     float inv_probe_resolution = 1.0f / probe_resolution;
     float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
 
-    for(int x = 0; x < radiance_cascade_metadata.c0_angular_resolution; ++x)
-    for(int y = 0; y < radiance_cascade_metadata.c0_angular_resolution; ++y)
+    for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; ++x)
+    for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; ++y)
     {
         ivec2 p = ivec2(x, y);
         vec3 tex_coord = cascade_coord + vec3(p * cascade_size.xy, 0);
 
-        vec2 col = textureLod(radiance_cascades[0], tex_coord, 0).rg;
-        float value = col.r;
-        float visibility = 1.0f - col.g;
+        float value = textureLod(radiance_cascades[0], tex_coord, 0).r;
 
         vec3 center = concentric_octahedral_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
         float cdn = dot(center, normal);
         float weight = value * max(len + cdn, 0.0f);
-        weight += 1e-16f;
-
         float u = generate_single_uniform_random_fast(seed);
 
+        weight += 1e-16f;
         sum_weight += weight;
         if(u*sum_weight < weight)
         {
             selected_cell = p;
             selected_weight = weight;
-            selected_value = value;
-            selected_visibility = visibility;
         }
     }
+    vec3 sel_coord = cascade_coord + vec3(selected_cell * cascade_size.xy, 0);
+    float total_visibility = 1.0 - textureLod(radiance_cascades_visibility[0], sel_coord, 0).r;
 
     pdf = selected_weight / sum_weight;
-    float total_visibility = selected_visibility;
 
-    for(int cascade = 1; cascade < cascade_count && total_visibility > 0; ++cascade)
+    for(int cascade = 1; cascade < RC_CASCADE_COUNT; ++cascade)
     { // Drill deeper
         cascade_size /= 2;
         probe_resolution *= 2;
@@ -194,10 +191,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, 
         cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
 
         ivec2 base_cell = selected_cell * 2;
-        float base_value = selected_value;
         selected_weight = 0.0f;
-        selected_value = 0.0f;
-        selected_visibility = 0.0f;
         sum_weight = 0.0f;
         for(int x = 0; x < 2; ++x)
         for(int y = 0; y < 2; ++y)
@@ -205,10 +199,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, 
             ivec2 p = base_cell.xy + ivec2(x, y);
             vec3 tex_coord = cascade_coord + vec3(p * cascade_size.xy, 0);
 
-            vec2 col = textureLod(radiance_cascades[cascade], tex_coord, 0).rg;
-            float value = mix(base_value, col.r, total_visibility);
-            float visibility = 1.0f - col.g;
-
+            float value = textureLod(radiance_cascades[cascade], tex_coord, 0).r;
             vec3 center = concentric_octahedral_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
             float cdn = dot(center, normal);
             float weight = rgb_to_luminance(albedo * value) * max(len + cdn, 0.0f);
@@ -221,12 +212,11 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, 
             {
                 selected_cell = p;
                 selected_weight = weight;
-                selected_value = value;
-                selected_visibility = visibility;
             }
         }
+        vec3 sel_coord = cascade_coord + vec3(selected_cell * cascade_size.xy, 0);
+        total_visibility *= 1.0 - textureLod(radiance_cascades_visibility[cascade], sel_coord, 0).r;
         pdf *= selected_weight / sum_weight;
-        total_visibility *= selected_visibility;
     }
 
     // Sample from inside the selected cell.
@@ -258,26 +248,22 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 albedo, vec3 dir)
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
     vec2 tex_coord = concentric_octahedral_mapping_inverse(dir);
 
-    ivec2 selected_cell = ivec2(0);
     float selected_weight = 0.0f;
-    float selected_value = 0.0f;
-    float selected_visibility = 1.0f;
     float sum_weight = 0.0f;
 
     float inv_probe_resolution = 1.0f / probe_resolution;
     float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
 
     ivec2 itex_coord = ivec2(tex_coord * probe_resolution);
+    vec3 sel_coord = cascade_coord + vec3(itex_coord * cascade_size.xy, 0);
+    float total_visibility = 1.0 - textureLod(radiance_cascades_visibility[0], sel_coord, 0).r;
 
     for(int x = 0; x < radiance_cascade_metadata.c0_angular_resolution; ++x)
     for(int y = 0; y < radiance_cascade_metadata.c0_angular_resolution; ++y)
     {
         ivec2 p = ivec2(x, y);
         vec3 tex_coord = cascade_coord + vec3(p * cascade_size.xy, 0);
-
-        vec2 col = textureLod(radiance_cascades[0], tex_coord, 0).rg;
-        float value = col.r;
-        float visibility = 1.0f - col.g;
+        float value = textureLod(radiance_cascades[0], tex_coord, 0).r;
 
         vec3 center = concentric_octahedral_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
         float cdn = dot(center, normal);
@@ -287,40 +273,29 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 albedo, vec3 dir)
 
         sum_weight += weight;
         if(x == itex_coord.x && y == itex_coord.y)
-        {
-            selected_cell = p;
             selected_weight = weight;
-            selected_value = value;
-            selected_visibility = visibility;
-        }
     }
 
     float pdf = selected_weight / sum_weight;
-    float total_visibility = selected_visibility;
 
-    for(int cascade = 1; cascade < cascade_count && total_visibility > 0; ++cascade)
+    for(int cascade = 1; cascade < RC_CASCADE_COUNT; ++cascade)
     { // Drill deeper
         cascade_size /= 2;
         probe_resolution *= 2;
         inv_probe_resolution *= 0.5f;
         len *= 0.25f;
         cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
-        itex_coord = ivec2(tex_coord * probe_resolution);
+        ivec2 base_cell = itex_coord * 2;
 
-        ivec2 base_cell = selected_cell * 2;
-        float base_value = selected_value;
+        itex_coord = ivec2(tex_coord * probe_resolution);
         selected_weight = 0.0f;
-        selected_value = 0.0f;
-        selected_visibility = 0.0f;
         sum_weight = 0.0f;
         for(int x = 0; x < 2; ++x)
         for(int y = 0; y < 2; ++y)
         {
             ivec2 p = base_cell.xy + ivec2(x, y);
             vec3 tex_coord = cascade_coord + vec3(p * cascade_size.xy, 0);
-            vec2 col = textureLod(radiance_cascades[cascade], tex_coord, 0).rg;
-            float value = mix(base_value, col.r, total_visibility);
-            float visibility = 1.0f - col.g;
+            float value = textureLod(radiance_cascades[cascade], tex_coord, 0).r;
 
             vec3 center = concentric_octahedral_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
             float cdn = dot(center, normal);
@@ -329,15 +304,11 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 albedo, vec3 dir)
 
             sum_weight += weight;
             if(p.x == itex_coord.x && p.y == itex_coord.y)
-            {
-                selected_cell = p;
                 selected_weight = weight;
-                selected_value = value;
-                selected_visibility = visibility;
-            }
         }
+        vec3 sel_coord = cascade_coord + vec3(itex_coord * cascade_size.xy, 0);
+        total_visibility *= 1.0 - textureLod(radiance_cascades_visibility[cascade], sel_coord, 0).r;
         pdf *= selected_weight / sum_weight;
-        total_visibility *= selected_visibility;
     }
 
     // Sample from inside the selected cell.
