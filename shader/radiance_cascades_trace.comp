@@ -10,8 +10,9 @@
 layout(local_size_x = 8, local_size_y = 8) in;
 
 //layout(binding = 0, r32f) uniform writeonly image3D cascade_target;
-layout(binding = 0, rgba32f) uniform image3D cascade_target;
-layout(binding = 1, r32f) uniform readonly image3D distance_field;
+layout(binding = 0, r32f) uniform writeonly image3D cascade_target;
+layout(binding = 1, r32f) uniform writeonly image3D cascade_target_visibility;
+layout(binding = 2, r32f) uniform readonly image3D distance_field;
 
 #define RADIANCE_CASCADES_SET 3
 #include "radiance_cascades.glsl"
@@ -230,7 +231,8 @@ void main()
     {
         // TODO: This can be commented out for extra perf, it just needs to be
         // there for visualization to work when a surface isn't in vicinity.
-        imageStore(cascade_target, p, vec4(0,0,0,1));
+        imageStore(cascade_target, p, vec4(0));
+        imageStore(cascade_target_visibility, p, vec4(0));
         return;
     }
 
@@ -239,5 +241,6 @@ void main()
 
     vec4 hit_color = simple_shade(ray_origin, ray_dir, hi);
 
-    imageStore(cascade_target, p, vec4(rgb_to_luminance(hit_color.rgb), hit_color.a, 0, 0));
+    imageStore(cascade_target, p, vec4(rgb_to_luminance(hit_color.rgb)));
+    imageStore(cascade_target_visibility, p, vec4(hit_color.a));
 }

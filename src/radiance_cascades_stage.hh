@@ -57,6 +57,7 @@ public:
     float get_cascade_t0(int cascade) const;
     vec2 get_cascade_interval(int cascade) const;
     uvec3 get_cascade_size(int cascade) const;
+    void add_defines(std::map<std::string, std::string>& defines) const;
 
     scene_stage* ss;
 private:
@@ -77,6 +78,8 @@ private:
     gpu_buffer cascades_metadata;
     std::vector<texture> cascades;
     std::vector<texture> alt_cascades;
+    std::vector<texture> cascades_visibility;
+    std::vector<texture> alt_cascades_visibility;
 };
 
 }

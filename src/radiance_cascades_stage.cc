@@ -72,19 +72,8 @@ radiance_cascades_stage::radiance_cascades_stage(
     descriptor_set& raster_scene_ds = ss.get_raster_descriptors();
 
     cascade_descriptors.add("radiance_cascades", {0, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
-    cascade_descriptors.add("radiance_cascade_metadata", {1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
-
-    {
-        shader_source src("shader/radiance_cascades_trace.comp");
-        trace_desc.add(src);
-        trace.init(src, {&trace_desc, &scene_ds, &raster_scene_ds, &cascade_descriptors});
-    }
-
-    {
-        shader_source src("shader/radiance_cascades_gather.comp");
-        gather_desc.add(src);
-        gather.init(src, {&gather_desc});
-    }
+    cascade_descriptors.add("radiance_cascades_visibility", {1, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    cascade_descriptors.add("radiance_cascade_metadata", {2, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 
     vec3 extent = opt.volume.max - opt.volume.min;
     float diagonal_range = length(extent);
@@ -103,7 +92,17 @@ radiance_cascades_stage::radiance_cascades_stage(
         cascades.emplace_back(
             device_mask(dev),
             uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
-            vk::Format::eR16G16Sfloat,
+            vk::Format::eR16Sfloat,
+            0,
+            nullptr,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
+            vk::ImageLayout::eGeneral
+        );
+        cascades_visibility.emplace_back(
+            device_mask(dev),
+            uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+            vk::Format::eR8Unorm,
             0,
             nullptr,
             vk::ImageTiling::eOptimal,
@@ -115,7 +114,17 @@ radiance_cascades_stage::radiance_cascades_stage(
             alt_cascades.emplace_back(
                 device_mask(dev),
                 uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
-                vk::Format::eR16G16Sfloat,
+                vk::Format::eR16Sfloat,
+                0,
+                nullptr,
+                vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
+                vk::ImageLayout::eGeneral
+            );
+            alt_cascades_visibility.emplace_back(
+                device_mask(dev),
+                uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+                vk::Format::eR8Unorm,
                 0,
                 nullptr,
                 vk::ImageTiling::eOptimal,
@@ -123,6 +132,21 @@ radiance_cascades_stage::radiance_cascades_stage(
                 vk::ImageLayout::eGeneral
             );
         }
+    }
+
+    std::map<std::string, std::string> defines;
+    add_defines(defines);
+
+    {
+        shader_source src("shader/radiance_cascades_trace.comp", defines);
+        trace_desc.add(src);
+        trace.init(src, {&trace_desc, &scene_ds, &raster_scene_ds, &cascade_descriptors});
+    }
+
+    {
+        shader_source src("shader/radiance_cascades_gather.comp", defines);
+        gather_desc.add(src);
+        gather.init(src, {&gather_desc});
     }
 }
 
@@ -164,6 +188,13 @@ uvec3 radiance_cascades_stage::get_cascade_size(int cascade) const
     return uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size);
 }
 
+void radiance_cascades_stage::add_defines(std::map<std::string, std::string>& defines) const
+{
+    defines["RC_C0_ANGULAR_RESOLUTION"] = std::to_string(opt.c0_probe_resolution);
+    defines["RC_C0_SPATIAL_RESOLUTION"] = std::to_string(1<<opt.log2_resolution);
+    defines["RC_CASCADE_COUNT"] = std::to_string(get_cascade_count());
+}
+
 void radiance_cascades_stage::update(uint32_t frame_index)
 {
     clear_commands();
@@ -189,15 +220,20 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
     std::vector<texture>* next_cascades = &cascades;
     std::vector<texture>* prev_cascades = nullptr;
+    std::vector<texture>* next_cascades_visibility = &cascades_visibility;
+    std::vector<texture>* prev_cascades_visibility = nullptr;
 
     if(opt.recursive || (opt.jitter_rays && opt.temporal_ratio < 1.0f))
     {
         next_cascades = (frame_index&1) ? &cascades : &alt_cascades;
         prev_cascades = (frame_index&1) ? &alt_cascades : &cascades;
+        next_cascades_visibility = (frame_index&1) ? &cascades_visibility : &alt_cascades_visibility;
+        prev_cascades_visibility = (frame_index&1) ? &alt_cascades_visibility : &cascades_visibility;
     }
 
     std::vector<vk::ImageMemoryBarrier> barriers;
     std::vector<vk::DescriptorImageInfo> dii;
+    std::vector<vk::DescriptorImageInfo> dii_visibility;
     for(size_t i = 0; i < next_cascades->size(); ++i)
     {
         barriers.push_back(vk::ImageMemoryBarrier(
@@ -207,10 +243,22 @@ void radiance_cascades_stage::update(uint32_t frame_index)
             (*next_cascades)[i].get_image(dev->id),
             {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
         ));
+        barriers.push_back(vk::ImageMemoryBarrier(
+            {}, vk::AccessFlagBits::eShaderWrite,
+            vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            (*next_cascades_visibility)[i].get_image(dev->id),
+            {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+        ));
 
         dii.push_back(vk::DescriptorImageInfo{
             cascade_sampler.get_sampler(dev->id),
             (*next_cascades)[i].get_image_view(dev->id),
+            vk::ImageLayout::eGeneral
+        });
+        dii_visibility.push_back(vk::DescriptorImageInfo{
+            cascade_sampler.get_sampler(dev->id),
+            (*next_cascades_visibility)[i].get_image_view(dev->id),
             vk::ImageLayout::eGeneral
         });
     }
@@ -224,6 +272,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     {
         cascade_descriptors.reset(cascade_descriptors.get_mask(), 1);
         cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_visibility", std::move(dii_visibility));
         cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
     }
 
@@ -249,7 +298,9 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     for(uint32_t cascade = 0; cascade < get_cascade_count(); ++cascade)
     {
         texture& target = (*next_cascades)[cascade];
+        texture& target_visibility = (*next_cascades_visibility)[cascade];
         trace_desc.set_image(dev->id, "cascade_target", {{{}, target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        trace_desc.set_image(dev->id, "cascade_target_visibility", {{{}, target_visibility.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         trace_desc.set_image(dev->id, "distance_field", {{{}, opt.distance_field->get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         trace.push_descriptors(cb, trace_desc, 0);
 
@@ -277,6 +328,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     {
         cascade_descriptors.reset(cascade_descriptors.get_mask(), 1);
         cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_visibility", std::move(dii_visibility));
         cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
     }
 
@@ -284,11 +336,11 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     // Gather pass - fills importance values for missed rays & implements
     // temporal accumulation.
     //==========================================================================
-    for(size_t i = 0; i < next_cascades->size(); ++i)
+    for(auto& b: barriers)
     {
-        barriers[i].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-        barriers[i].dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-        barriers[i].oldLayout = vk::ImageLayout::eGeneral;
+        b.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+        b.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+        b.oldLayout = vk::ImageLayout::eGeneral;
     }
 
     cb.pipelineBarrier(
@@ -304,12 +356,17 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         uint32_t cur_cascade = get_cascade_count()-1-i;
         uint32_t upper_cascade = cur_cascade+1;
         texture& cur_target = (*next_cascades)[cur_cascade];
+        texture& cur_target_visibility = (*next_cascades_visibility)[cur_cascade];
         texture& upper_target = i == 0 ? cur_target : (*next_cascades)[upper_cascade];
         texture& prev_target = prev_cascades ?
             (*prev_cascades)[cur_cascade] : cur_target;
+        texture& prev_target_visibility = prev_cascades_visibility ?
+            (*prev_cascades_visibility)[cur_cascade] : cur_target_visibility;
         gather_desc.set_image(dev->id, "upper_target", {{{}, upper_target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather_desc.set_image(dev->id, "lower_target", {{{}, cur_target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "lower_target_visibility", {{{}, cur_target_visibility.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather_desc.set_image(dev->id, "prev_lower_target", {{{}, prev_target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "prev_lower_target_visibility", {{{}, prev_target_visibility.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather.push_descriptors(cb, gather_desc, 0);
 
         size_t cascade_size = 1<<(opt.log2_resolution-cur_cascade);
@@ -328,11 +385,11 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     }
 
     // Change layout to sampleable
-    for(size_t i = 0; i < next_cascades->size(); ++i)
+    for(auto& b: barriers)
     {
-        barriers[i].srcAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-        barriers[i].dstAccessMask = {};
-        barriers[i].newLayout = vk::ImageLayout::eGeneral;
+        b.srcAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+        b.dstAccessMask = {};
+        b.newLayout = vk::ImageLayout::eGeneral;
     }
 
     cb.pipelineBarrier(
