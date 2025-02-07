@@ -8,11 +8,13 @@
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
-layout(binding = 0, r32f) uniform readonly image3D upper_target;
-layout(binding = 1, r32f) uniform image3D lower_target;
-layout(binding = 2, r32f) uniform image3D lower_target_visibility;
-layout(binding = 3, r32f) uniform readonly image3D prev_lower_target;
-layout(binding = 4, r32f) uniform readonly image3D prev_lower_target_visibility;
+layout(binding = 0, r32f) uniform readonly image2DArray upper_target;
+layout(binding = 1, r32f) uniform image2DArray lower_target;
+layout(binding = 2, r32f) uniform image2DArray lower_target_visibility;
+layout(binding = 3, r32f) uniform readonly image2DArray prev_lower_target;
+layout(binding = 4, r32f) uniform readonly image2DArray prev_lower_target_visibility;
+
+#include "radiance_cascades.glsl"
 
 layout(push_constant) uniform push_constant_buffer
 {
@@ -27,24 +29,32 @@ void main()
 {
     ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
 
-    ivec3 lower_probe_index = ivec3(p.xy%pc.cascade_size, p.z);
-    ivec2 lower_map_texel = p.xy/pc.cascade_size;
+    ivec3 lower_probe_index;
+    ivec2 lower_map_texel;
+
+    int lower_angular_resolution = pc.c0_angular_resolution << pc.cascade;
+    get_cascade_layout_inverse(p, ivec3(pc.cascade_size), lower_angular_resolution, lower_probe_index, lower_map_texel);
 
     ivec3 upper_probe_index = lower_probe_index / 2;
     ivec2 upper_map_base_texel = lower_map_texel * 2;
 
-    int base_offset = pc.cascade_size/2;
-    ivec3 base_q = ivec3(upper_probe_index.xy + base_offset*upper_map_base_texel, upper_probe_index.z);
+    int upper_cascade_size = pc.cascade_size/2;
+    int upper_probe_resolution = lower_angular_resolution*2;
 
     float dst_col = imageLoad(lower_target, p).r;
     float dst_vis = imageLoad(lower_target_visibility, p).r;
     if(pc.carry_from_previous != 0)
     {
+        ivec3 q0 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel);
+        ivec3 q1 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(1,0));
+        ivec3 q2 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(0,1));
+        ivec3 q3 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(1,1));
+
         float src_avg = 0.0f;
-        src_avg += imageLoad(upper_target, base_q+ivec3(0,0,0)).r;
-        src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,0,0)).r;
-        src_avg += imageLoad(upper_target, base_q+ivec3(0,base_offset,0)).r;
-        src_avg += imageLoad(upper_target, base_q+ivec3(base_offset,base_offset,0)).r;
+        src_avg += imageLoad(upper_target, q0).r;
+        src_avg += imageLoad(upper_target, q1).r;
+        src_avg += imageLoad(upper_target, q2).r;
+        src_avg += imageLoad(upper_target, q3).r;
         src_avg /= 4;
 
         dst_col = mix(src_avg, dst_col, dst_vis);

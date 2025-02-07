@@ -9,9 +9,8 @@
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
-//layout(binding = 0, r32f) uniform writeonly image3D cascade_target;
-layout(binding = 0, r32f) uniform writeonly image3D cascade_target;
-layout(binding = 1, r32f) uniform writeonly image3D cascade_target_visibility;
+layout(binding = 0, r32f) uniform writeonly image2DArray cascade_target;
+layout(binding = 1, r32f) uniform writeonly image2DArray cascade_target_visibility;
 layout(binding = 2, r32f) uniform readonly image3D distance_field;
 
 #define RADIANCE_CASCADES_SET 3
@@ -197,8 +196,10 @@ void main()
     int angular_resolution = pc.c0_angular_resolution << pc.cascade;
     int next_angular_resolution = pc.c0_angular_resolution << (pc.cascade+1);
 
-    ivec3 probe_index = ivec3(p.xy%pc.cascade_size, p.z);
-    ivec2 map_texel = p.xy/pc.cascade_size;
+    ivec3 probe_index;
+    ivec2 map_texel;
+
+    get_cascade_layout_inverse(p, ivec3(pc.cascade_size), angular_resolution, probe_index, map_texel);
 
     vec2 map_uv = (vec2(map_texel) + pc.jitter) / angular_resolution;
 

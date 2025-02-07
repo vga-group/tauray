@@ -92,7 +92,9 @@ radiance_cascades_stage::radiance_cascades_stage(
 
         cascades.emplace_back(
             device_mask(dev),
-            uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+            //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+            uvec2(cascade_size*resolution),
+            cascade_size,
             vk::Format::eR16Sfloat,
             0,
             nullptr,
@@ -102,7 +104,9 @@ radiance_cascades_stage::radiance_cascades_stage(
         );
         cascades_visibility.emplace_back(
             device_mask(dev),
-            uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+            //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+            uvec2(cascade_size*resolution),
+            cascade_size,
             vk::Format::eR8Unorm,
             0,
             nullptr,
@@ -114,7 +118,9 @@ radiance_cascades_stage::radiance_cascades_stage(
         {
             alt_cascades.emplace_back(
                 device_mask(dev),
-                uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+                //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+                uvec2(cascade_size*resolution),
+                cascade_size,
                 vk::Format::eR16Sfloat,
                 0,
                 nullptr,
@@ -124,7 +130,9 @@ radiance_cascades_stage::radiance_cascades_stage(
             );
             alt_cascades_visibility.emplace_back(
                 device_mask(dev),
-                uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+                //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+                uvec2(cascade_size*resolution),
+                cascade_size,
                 vk::Format::eR8Unorm,
                 0,
                 nullptr,
@@ -254,12 +262,12 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
         dii.push_back(vk::DescriptorImageInfo{
             cascade_sampler.get_sampler(dev->id),
-            (*next_cascades)[i].get_image_view(dev->id),
+            (*next_cascades)[i].get_array_image_view(dev->id),
             vk::ImageLayout::eGeneral
         });
         dii_visibility.push_back(vk::DescriptorImageInfo{
             cascade_sampler.get_sampler(dev->id),
-            (*next_cascades_visibility)[i].get_image_view(dev->id),
+            (*next_cascades_visibility)[i].get_array_image_view(dev->id),
             vk::ImageLayout::eGeneral
         });
     }
@@ -300,8 +308,8 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     {
         texture& target = (*next_cascades)[cascade];
         texture& target_visibility = (*next_cascades_visibility)[cascade];
-        trace_desc.set_image(dev->id, "cascade_target", {{{}, target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
-        trace_desc.set_image(dev->id, "cascade_target_visibility", {{{}, target_visibility.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        trace_desc.set_image(dev->id, "cascade_target", {{{}, target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        trace_desc.set_image(dev->id, "cascade_target_visibility", {{{}, target_visibility.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
         trace_desc.set_image(dev->id, "distance_field", {{{}, opt.distance_field->get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         trace.push_descriptors(cb, trace_desc, 0);
 
@@ -363,11 +371,11 @@ void radiance_cascades_stage::update(uint32_t frame_index)
             (*prev_cascades)[cur_cascade] : cur_target;
         texture& prev_target_visibility = prev_cascades_visibility ?
             (*prev_cascades_visibility)[cur_cascade] : cur_target_visibility;
-        gather_desc.set_image(dev->id, "upper_target", {{{}, upper_target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
-        gather_desc.set_image(dev->id, "lower_target", {{{}, cur_target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
-        gather_desc.set_image(dev->id, "lower_target_visibility", {{{}, cur_target_visibility.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
-        gather_desc.set_image(dev->id, "prev_lower_target", {{{}, prev_target.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
-        gather_desc.set_image(dev->id, "prev_lower_target_visibility", {{{}, prev_target_visibility.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "upper_target", {{{}, upper_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "lower_target", {{{}, cur_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "lower_target_visibility", {{{}, cur_target_visibility.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "prev_lower_target", {{{}, prev_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "prev_lower_target_visibility", {{{}, prev_target_visibility.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather.push_descriptors(cb, gather_desc, 0);
 
         size_t cascade_size = 1<<(opt.log2_resolution-cur_cascade);
