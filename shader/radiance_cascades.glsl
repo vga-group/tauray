@@ -65,8 +65,6 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
 
     ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
     ivec2 probe_resolution = ivec2(radiance_cascade_metadata.c0_angular_resolution);
-    // TODO: Maybe make this a specialization constant?
-    int cascade_count = radiance_cascade_metadata.size.w;
 
     vec4 sum = vec4(0,0,0,1);
 
@@ -79,7 +77,7 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
     sum.rgb += col.rrr * col.g * sum.a;
     sum.a *= 1.0f-col.g;
 
-    for(int cascade = 1; sum.a > 0 && cascade < cascade_count; ++cascade)
+    for(int cascade = 1; sum.a > 0 && cascade < RC_CASCADE_COUNT; ++cascade)
     {
         probe_resolution *= 2;
         cascade_size /= 2;
@@ -104,8 +102,6 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal)
 
     ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
     int probe_resolution = radiance_cascade_metadata.c0_angular_resolution;
-    // TODO: Maybe make this a specialization constant?
-    int cascade_count = radiance_cascade_metadata.size.w;
 
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
 
@@ -116,8 +112,8 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal)
     float inv_probe_resolution = 1.0f / probe_resolution;
     float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
 
-    for(int x = 0; x < radiance_cascade_metadata.c0_angular_resolution; ++x)
-    for(int y = 0; y < radiance_cascade_metadata.c0_angular_resolution; ++y)
+    [[unroll]] for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; ++x)
+    [[unroll]] for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; ++y)
     {
         ivec2 p = ivec2(x, y);
         vec3 tex_coord = cascade_coord + vec3(p * cascade_size.xy, 0);
@@ -143,24 +139,21 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, 
 
     // 0-1 inside cascade volume
     vec3 fcoord = (origin - aabb_min) / (aabb_max - aabb_min);
-
-    ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
-    int probe_resolution = radiance_cascade_metadata.c0_angular_resolution;
-
+    int cascade_size = RC_C0_SPATIAL_RESOLUTION;
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
 
     ivec2 selected_cell = ivec2(0);
     float selected_weight = 0.0f;
     float sum_weight = 0.0f;
 
-    float inv_probe_resolution = 1.0f / probe_resolution;
+    float inv_probe_resolution = 1.0f / RC_C0_ANGULAR_RESOLUTION;
     float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
 
     for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; ++x)
     for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; ++y)
     {
         ivec2 p = ivec2(x, y);
-        vec3 tex_coord = cascade_coord + vec3(p * cascade_size.xy, 0);
+        vec3 tex_coord = cascade_coord + vec3(p * cascade_size, 0);
 
         float value = textureLod(radiance_cascades[0], tex_coord, 0).r;
 
@@ -177,7 +170,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, 
             selected_weight = weight;
         }
     }
-    vec3 sel_coord = cascade_coord + vec3(selected_cell * cascade_size.xy, 0);
+    vec3 sel_coord = cascade_coord + vec3(selected_cell * cascade_size, 0);
     float total_visibility = 1.0 - textureLod(radiance_cascades_visibility[0], sel_coord, 0).r;
 
     pdf = selected_weight / sum_weight;
@@ -185,10 +178,9 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, 
     for(int cascade = 1; cascade < RC_CASCADE_COUNT; ++cascade)
     { // Drill deeper
         cascade_size /= 2;
-        probe_resolution *= 2;
         inv_probe_resolution *= 0.5f;
         len *= 0.25f;
-        cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
+        cascade_coord = clamp(cascade_coord * 0.5f, vec3(0.5), vec3(cascade_size-0.5));
 
         ivec2 base_cell = selected_cell * 2;
         selected_weight = 0.0f;
@@ -197,7 +189,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, 
         for(int y = 0; y < 2; ++y)
         {
             ivec2 p = base_cell.xy + ivec2(x, y);
-            vec3 tex_coord = cascade_coord + vec3(p * cascade_size.xy, 0);
+            vec3 tex_coord = cascade_coord + vec3(p * cascade_size, 0);
 
             float value = textureLod(radiance_cascades[cascade], tex_coord, 0).r;
             vec3 center = concentric_octahedral_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
@@ -214,7 +206,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, 
                 selected_weight = weight;
             }
         }
-        vec3 sel_coord = cascade_coord + vec3(selected_cell * cascade_size.xy, 0);
+        vec3 sel_coord = cascade_coord + vec3(selected_cell * cascade_size, 0);
         total_visibility *= 1.0 - textureLod(radiance_cascades_visibility[cascade], sel_coord, 0).r;
         pdf *= selected_weight / sum_weight;
     }
@@ -227,6 +219,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, 
 
     vec2 uv = (vec2(selected_cell) + random_offset) * inv_probe_resolution;
 
+    const int probe_resolution = RC_C0_ANGULAR_RESOLUTION<<(RC_CASCADE_COUNT-1);
     pdf *= (probe_resolution * probe_resolution) / (4 * M_PI);
     vec3 dir = concentric_octahedral_mapping(uv);
     return dir;
@@ -242,8 +235,6 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 albedo, vec3 dir)
 
     ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
     int probe_resolution = radiance_cascade_metadata.c0_angular_resolution;
-    // TODO: Maybe make this a specialization constant?
-    int cascade_count = radiance_cascade_metadata.size.w;
 
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
     vec2 tex_coord = concentric_octahedral_mapping_inverse(dir);
