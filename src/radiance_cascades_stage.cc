@@ -31,6 +31,24 @@ struct gather_push_constant_buffer
     int carry_from_previous;
 };
 
+struct live_counter_push_constant_buffer
+{
+    pvec4 base_offset;
+    pvec4 xyz_step;
+    int cascade;
+    int cascade_count;
+    float interval_end;
+    int cascade_size;
+    uint index_buffer_size;
+};
+
+struct live_dispatcher_push_constant_buffer
+{
+    int cascade;
+    int cascade_count;
+    int c0_angular_resolution;
+};
+
 struct cascade_metadata_buffer
 {
     pvec4 aabb_min;
@@ -56,11 +74,15 @@ radiance_cascades_stage::radiance_cascades_stage(
     ss(&ss),
     trace_desc(dev),
     gather_desc(dev),
+    live_counter_desc(dev),
+    live_dispatcher_desc(dev),
     cascade_descriptors(dev),
     //cascade_sampler(dev, vk::Filter::eLinear, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest, 0, false, false, false, 0.0f),
     cascade_sampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest, 0, false, false, false, 0.0f),
     trace(dev),
     gather(dev),
+    live_counter(dev),
+    live_dispatcher(dev),
     opt(opt),
     prev_cascades_valid(false),
     stage_timer(dev, "radiance cascade update"),
@@ -79,6 +101,7 @@ radiance_cascades_stage::radiance_cascades_stage(
     vec3 extent = opt.volume.max - opt.volume.min;
     float diagonal_range = length(extent);
 
+    size_t total_probes = 0;
     for(uint32_t cascade = 0; cascade <= opt.log2_resolution; ++cascade)
     {
         size_t cascade_size = 1<<(opt.log2_resolution-cascade);
@@ -89,6 +112,8 @@ radiance_cascades_stage::radiance_cascades_stage(
         // => no point in allocating or rendering the rest of the layers.
         if(interval[0] > diagonal_range)
             break;
+
+        total_probes += cascade_size * cascade_size * cascade_size;
 
         cascades.emplace_back(
             device_mask(dev),
@@ -143,6 +168,19 @@ radiance_cascades_stage::radiance_cascades_stage(
         }
     }
 
+    vk::BufferCreateInfo bufferInfo;
+    bufferInfo.size = 16 * sizeof(uint) + total_probes * sizeof(puvec3);
+    bufferInfo.usage =
+        vk::BufferUsageFlagBits::eStorageBuffer |
+        vk::BufferUsageFlagBits::eTransferDst;
+    dispatch_info_buffer = create_buffer(dev, bufferInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+
+    bufferInfo.size = 32 * sizeof(uvec4);
+    bufferInfo.usage |= vk::BufferUsageFlagBits::eIndirectBuffer;
+    dispatch_size_buffer = create_buffer(dev, bufferInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+
+    dispatch_index_max_size = total_probes;
+
     std::map<std::string, std::string> defines;
     add_defines(defines);
 
@@ -156,6 +194,18 @@ radiance_cascades_stage::radiance_cascades_stage(
         shader_source src("shader/radiance_cascades_gather.comp", defines);
         gather_desc.add(src);
         gather.init(src, {&gather_desc});
+    }
+
+    {
+        shader_source src("shader/radiance_cascades_live_counter.comp", defines);
+        live_counter_desc.add(src);
+        live_counter.init(src, {&live_counter_desc});
+    }
+
+    {
+        shader_source src("shader/radiance_cascades_live_dispatcher.comp", defines);
+        live_dispatcher_desc.add(src);
+        live_dispatcher.init(src, {&live_dispatcher_desc});
     }
 }
 
@@ -227,6 +277,9 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
     cascades_metadata.upload(dev->id, frame_index, cb);
 
+    cb.fillBuffer(dispatch_info_buffer, 0, 16 * sizeof(uint), 0);
+    cb.fillBuffer(dispatch_size_buffer, 0, VK_WHOLE_SIZE, 0);
+
     std::vector<texture>* next_cascades = &cascades;
     std::vector<texture>* prev_cascades = nullptr;
     std::vector<texture>* next_cascades_visibility = &cascades_visibility;
@@ -240,24 +293,40 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         prev_cascades_visibility = (frame_index&1) ? &alt_cascades_visibility : &cascades_visibility;
     }
 
-    std::vector<vk::ImageMemoryBarrier> barriers;
+    std::vector<vk::ImageMemoryBarrier> image_barriers;
+    std::vector<vk::BufferMemoryBarrier> buffer_barriers;
     std::vector<vk::DescriptorImageInfo> dii;
     std::vector<vk::DescriptorImageInfo> dii_visibility;
     for(size_t i = 0; i < next_cascades->size(); ++i)
     {
-        barriers.push_back(vk::ImageMemoryBarrier(
+        image_barriers.push_back(vk::ImageMemoryBarrier(
             {}, vk::AccessFlagBits::eShaderWrite,
             vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
             VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
             (*next_cascades)[i].get_image(dev->id),
             {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
         ));
-        barriers.push_back(vk::ImageMemoryBarrier(
+        image_barriers.push_back(vk::ImageMemoryBarrier(
             {}, vk::AccessFlagBits::eShaderWrite,
             vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
             VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
             (*next_cascades_visibility)[i].get_image(dev->id),
             {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+        ));
+
+        buffer_barriers.push_back(vk::BufferMemoryBarrier(
+            vk::AccessFlagBits::eTransferWrite,
+            vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead,
+            0, 0,
+            *dispatch_info_buffer,
+            0, VK_WHOLE_SIZE
+        ));
+        buffer_barriers.push_back(vk::BufferMemoryBarrier(
+            vk::AccessFlagBits::eTransferWrite,
+            vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead,
+            0, 0,
+            *dispatch_size_buffer,
+            0, VK_WHOLE_SIZE
         ));
 
         dii.push_back(vk::DescriptorImageInfo{
@@ -273,9 +342,9 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     }
 
     cb.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eAllCommands,
         vk::PipelineStageFlagBits::eComputeShader,
-        {}, {}, {}, barriers
+        {}, {}, buffer_barriers, image_barriers
     );
     if(history_frames == 0)
     {
@@ -283,6 +352,89 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
         cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_visibility", std::move(dii_visibility));
         cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
+    }
+
+    //==========================================================================
+    // Live counting & dispatch generation
+    //==========================================================================
+    // Counts the number of live probes on each cascade, and generates the
+    // necessary data for indirect dispatching the computation for those probes.
+    for(int cascade = get_cascade_count()-1; cascade >= 0; --cascade)
+    {
+        {
+            live_counter.bind(cb);
+            live_counter_desc.set_image(dev->id, "distance_field", {{{}, opt.distance_field->get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+            live_counter_desc.set_buffer(dev->id, "dispatch_info", {{*dispatch_info_buffer, 0, VK_WHOLE_SIZE}});
+            live_counter.push_descriptors(cb, live_counter_desc, 0);
+
+            size_t cascade_size = 1<<(opt.log2_resolution-cascade);
+
+            live_counter_push_constant_buffer pc;
+
+            vec3 half_step = float(1<<cascade) * (opt.volume.max-opt.volume.min)/float(2<<opt.log2_resolution);
+            pc.base_offset = pvec4(opt.volume.min + half_step, 0);
+            pc.xyz_step = pvec4(half_step * 2.0f, 0.0f);
+            pc.cascade = cascade;
+
+            vec2 interval = get_cascade_interval(cascade);
+            pc.interval_end = cascade+1 == get_cascade_count() ? 1e9 : interval[1];
+            pc.cascade_size = cascade_size;
+            pc.cascade_count = get_cascade_count();
+            pc.index_buffer_size = dispatch_index_max_size;
+
+            live_counter.push_constants(cb, pc);
+
+            if(cascade == get_cascade_count() - 1)
+            {
+                size_t parent_cascade_size = 1<<std::max(opt.log2_resolution-cascade-1, 0u);
+                cb.dispatch(((parent_cascade_size*parent_cascade_size*parent_cascade_size)+7u)/8u, 1,1);
+            }
+            else
+            {
+                cb.dispatchIndirect(*dispatch_size_buffer, sizeof(uvec4) * (cascade+1));
+            }
+        }
+
+        vk::BufferMemoryBarrier barriers[2] = {
+            {
+                vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead,
+                vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead,
+                0, 0,
+                *dispatch_info_buffer,
+                0, VK_WHOLE_SIZE
+            },
+            {
+                vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead,
+                vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead,
+                0, 0,
+                *dispatch_size_buffer,
+                0, VK_WHOLE_SIZE
+            }
+        };
+        cb.pipelineBarrier(
+            vk::PipelineStageFlagBits::eAllCommands,
+            vk::PipelineStageFlagBits::eAllCommands,
+            {}, {}, barriers, {}
+        );
+
+        {
+            live_dispatcher.bind(cb);
+            live_dispatcher_desc.set_buffer(dev->id, "dispatch_size", {{*dispatch_size_buffer, 0, VK_WHOLE_SIZE}});
+            live_dispatcher_desc.set_buffer(dev->id, "dispatch_info", {{*dispatch_info_buffer, 0, VK_WHOLE_SIZE}});
+            live_dispatcher.push_descriptors(cb, live_dispatcher_desc, 0);
+            live_dispatcher_push_constant_buffer pc;
+            pc.cascade = cascade;
+            pc.cascade_count = get_cascade_count();
+            pc.c0_angular_resolution = opt.c0_probe_resolution;
+            live_dispatcher.push_constants(cb, pc);
+            cb.dispatch(1,1,1);
+        }
+
+        cb.pipelineBarrier(
+            vk::PipelineStageFlagBits::eAllCommands,
+            vk::PipelineStageFlagBits::eAllCommands,
+            {}, {}, barriers, {}
+        );
     }
 
     //==========================================================================
@@ -296,7 +448,6 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     trace_push_constant_buffer pc;
     shadow_map_filter sm_filter = {0,0,0,0};
     pc.sm_params = create_shadow_mapping_parameters(sm_filter, *ss);
-    pc.xyz_step = pvec4((opt.volume.max-opt.volume.min)/float(2<<opt.log2_resolution), 0);
     pc.jitter = opt.jitter_rays ? r2_noise(vec2(dev->ctx->get_frame_counter())) : vec2(0.5f);
     pc.interval_start = 0;
     pc.interval_end = 0;
@@ -323,8 +474,9 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         pc.interval_start = interval[0];
         // Last iteration gets to cover the entire world.
         pc.interval_end = cascade+1 == get_cascade_count() ? 1e9 : interval[1];
-        pc.base_offset = pvec4(opt.volume.min + vec3(pc.xyz_step), 0);
-        pc.xyz_step *= 2.0f;
+        vec3 half_step = float(1<<cascade) * (opt.volume.max-opt.volume.min)/float(2<<opt.log2_resolution);
+        pc.base_offset = pvec4(opt.volume.min + half_step, 0);
+        pc.xyz_step = pvec4(half_step * 2.0f, 0.0f);
         pc.cascade_size = cascade_size;
 
         trace.push_constants(cb, pc);
@@ -345,7 +497,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     // Gather pass - fills importance values for missed rays & implements
     // temporal accumulation.
     //==========================================================================
-    for(auto& b: barriers)
+    for(auto& b: image_barriers)
     {
         b.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         b.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
@@ -355,7 +507,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     cb.pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader,
-        {}, {}, {}, barriers
+        {}, {}, {}, image_barriers
     );
 
     gather.bind(cb);
@@ -394,7 +546,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     }
 
     // Change layout to sampleable
-    for(auto& b: barriers)
+    for(auto& b: image_barriers)
     {
         b.srcAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
         b.dstAccessMask = {};
@@ -404,7 +556,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     cb.pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eBottomOfPipe,
-        {}, {}, {}, barriers
+        {}, {}, {}, image_barriers
     );
 
     stage_timer.end(cb, dev->id, frame_index);

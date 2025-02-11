@@ -65,17 +65,24 @@ private:
 
     push_descriptor_set trace_desc;
     push_descriptor_set gather_desc;
+    push_descriptor_set live_counter_desc;
+    push_descriptor_set live_dispatcher_desc;
     descriptor_set cascade_descriptors;
     sampler cascade_sampler;
     compute_pipeline trace; // Traces rays and updates probes
     compute_pipeline gather; // Propagates average brightness to missed rays.
+    compute_pipeline live_counter;
+    compute_pipeline live_dispatcher;
 
     options opt;
     bool prev_cascades_valid;
     timer stage_timer;
     int history_frames;
+    size_t dispatch_index_max_size;
 
     gpu_buffer cascades_metadata;
+    vkm<vk::Buffer> dispatch_info_buffer;
+    vkm<vk::Buffer> dispatch_size_buffer;
     std::vector<texture> cascades;
     std::vector<texture> alt_cascades;
     std::vector<texture> cascades_visibility;
