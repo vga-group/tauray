@@ -54,7 +54,7 @@ void main()
         parent_probe_index.z = x % pc.cascade_size;
 
         int i = int(gl_LocalInvocationID.y);
-        probe_index = parent_probe_index * 2 + ivec3(i,i/2,i/4)&1;
+        probe_index = parent_probe_index * 2 + (ivec3(i,i/2,i/4)&1);
     }
     else
     {
@@ -65,7 +65,7 @@ void main()
         {
             ivec3 parent_probe_index = dispatch_info.probe_indices[parent_index];
             int i = int(gl_LocalInvocationID.y);
-            probe_index = parent_probe_index * 2 + ivec3(i,i/2,i/4)&1;
+            probe_index = parent_probe_index * 2 + (ivec3(i,i/2,i/4)&1);
         }
         else
         {
@@ -79,8 +79,8 @@ void main()
     bool first_cascade = pc.cascade == 0;
 
     float dist = get_distance(pc.cascade, probe_index);
-    bool surface_in_probe_range = pc.interval_end > dist;
-    bool probe_in_surface_range = max(pc.xyz_step.x, max(pc.xyz_step.y, pc.xyz_step.z)) > dist;
+    bool surface_in_probe_range = dist < pc.interval_end;
+    bool probe_in_surface_range = dist < max(pc.xyz_step.x, max(pc.xyz_step.y, pc.xyz_step.z));
     live = live && surface_in_probe_range && probe_in_surface_range;
 
     live_count[gl_LocalInvocationIndex] = subgroupInclusiveAdd(live ? 1 : 0);

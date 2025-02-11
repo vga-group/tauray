@@ -47,5 +47,4 @@ void main()
     );
 
     uvec4 dsSize = dispatch_size.live_counter[pc.cascade];
-    debugPrintfEXT("Cascade %d: Live: %u, next: (%u, %u, %u)", pc.cascade, live_count, dsSize.x, dsSize.y, dsSize.z);
 }
