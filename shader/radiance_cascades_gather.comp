@@ -6,34 +6,65 @@
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_debug_printf : enable
 
-layout(local_size_x = 8, local_size_y = 8) in;
+//layout(local_size_x = 8, local_size_y = 8) in;
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(binding = 0, r32f) uniform readonly image2DArray upper_target;
 layout(binding = 1, r32f) uniform image2DArray lower_target;
 layout(binding = 2, r32f) uniform image2DArray lower_target_visibility;
 layout(binding = 3, r32f) uniform readonly image2DArray prev_lower_target;
 layout(binding = 4, r32f) uniform readonly image2DArray prev_lower_target_visibility;
+layout(binding = 5, scalar) buffer dispatch_info_buffer
+{
+    uint cascade_end_offset[16];
+    ivec3 probe_indices[];
+} dispatch_info;
 
 #include "radiance_cascades.glsl"
 
 layout(push_constant) uniform push_constant_buffer
 {
     int cascade;
+    int cascade_count;
     int c0_angular_resolution;
     float blend_ratio;
     int cascade_size;
     int carry_from_previous;
 } pc;
 
+bool get_probe_coordinate(out ivec2 texel_coordinate, out ivec3 probe_coordinate)
+{
+    ivec2 tile_coord = ivec2(gl_LocalInvocationID.yz);
+
+    int resolution = pc.c0_angular_resolution << pc.cascade;
+    int num_tiles_per_probe = resolution * resolution / int(gl_WorkGroupSize.y * gl_WorkGroupSize.z);
+
+    int tile_index = int(gl_GlobalInvocationID.x) % num_tiles_per_probe;
+    int probe_index = int(gl_GlobalInvocationID.x) / num_tiles_per_probe;
+
+    int tile_x_index = tile_index % int(resolution / gl_WorkGroupSize.y);
+    int tile_y_index = tile_index / int(resolution / gl_WorkGroupSize.z);
+
+    texel_coordinate = tile_coord + ivec2(gl_WorkGroupSize.y * tile_x_index, gl_WorkGroupSize.z * tile_y_index);
+
+    uint prev_end = pc.cascade+1 < pc.cascade_count ? dispatch_info.cascade_end_offset[pc.cascade+1] : 0;
+    uint cur_end = dispatch_info.cascade_end_offset[pc.cascade];
+    if(prev_end + probe_index >= cur_end)
+        return false;
+    probe_coordinate = dispatch_info.probe_indices[prev_end + probe_index];
+    return true;
+}
+
 void main()
 {
-    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    int lower_angular_resolution = pc.c0_angular_resolution << pc.cascade;
+    //get_cascade_layout_inverse(p, ivec3(pc.cascade_size), lower_angular_resolution, lower_probe_index, lower_map_texel);
 
     ivec3 lower_probe_index;
     ivec2 lower_map_texel;
-
-    int lower_angular_resolution = pc.c0_angular_resolution << pc.cascade;
-    get_cascade_layout_inverse(p, ivec3(pc.cascade_size), lower_angular_resolution, lower_probe_index, lower_map_texel);
+    if(!get_probe_coordinate(lower_map_texel, lower_probe_index))
+        return;
+    ivec3 p = get_cascade_layout(ivec3(pc.cascade_size), lower_angular_resolution, lower_probe_index, lower_map_texel);
 
     ivec3 upper_probe_index = lower_probe_index / 2;
     ivec2 upper_map_base_texel = lower_map_texel * 2;

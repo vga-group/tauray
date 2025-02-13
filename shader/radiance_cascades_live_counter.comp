@@ -47,11 +47,12 @@ void main()
     {
         ivec3 parent_probe_index;
         int x = int(gl_GlobalInvocationID.x);
-        parent_probe_index.x = x % pc.cascade_size;
-        x /= pc.cascade_size;
-        parent_probe_index.y = x % pc.cascade_size;
-        x /= pc.cascade_size;
-        parent_probe_index.z = x % pc.cascade_size;
+        int parent_cascade_size = pc.cascade_size/2;
+        parent_probe_index.x = x % parent_cascade_size;
+        x /= parent_cascade_size;
+        parent_probe_index.y = x % parent_cascade_size;
+        x /= parent_cascade_size;
+        parent_probe_index.z = x % parent_cascade_size;
 
         int i = int(gl_LocalInvocationID.y);
         probe_index = parent_probe_index * 2 + (ivec3(i,i/2,i/4)&1);
