@@ -7,11 +7,16 @@
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_debug_printf : enable
 
-layout(local_size_x = 8, local_size_y = 8) in;
+//layout(local_size_x = 8, local_size_y = 8) in;
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(binding = 0, r32f) uniform writeonly image2DArray cascade_target;
 layout(binding = 1, r32f) uniform writeonly image2DArray cascade_target_visibility;
-layout(binding = 2, r32f) uniform readonly image3D distance_field;
+layout(binding = 2, scalar) buffer dispatch_info_buffer
+{
+    uint cascade_end_offset[16];
+    ivec3 probe_indices[];
+} dispatch_info;
 
 #define RADIANCE_CASCADES_SET 3
 #include "radiance_cascades.glsl"
@@ -41,16 +46,27 @@ layout(push_constant) uniform push_constant_buffer
     int has_history;
 } pc;
 
-#define SHADOW_MAPPING_PARAMS pc.sm_params
-#define SHADOW_MAPPING_SCREEN_COORD ivec2(0)
-#include "shadow_mapping.glsl"
-
-float get_distance(int cascade, ivec3 coord)
+bool get_probe_coordinate(out ivec2 texel_coordinate, out ivec3 probe_coordinate)
 {
-    // TODO: Needs mipmaps too.
-    ivec3 transferred_coord = (coord << cascade);
-    if(cascade > 0) transferred_coord += 1<<(cascade-1);
-    return imageLoad(distance_field, transferred_coord).r;
+    ivec2 tile_coord = ivec2(gl_LocalInvocationID.yz);
+
+    int resolution = pc.c0_angular_resolution << pc.cascade;
+    int num_tiles_per_probe = resolution * resolution / int(gl_WorkGroupSize.y * gl_WorkGroupSize.z);
+
+    int tile_index = int(gl_GlobalInvocationID.x) % num_tiles_per_probe;
+    int probe_index = int(gl_GlobalInvocationID.x) / num_tiles_per_probe;
+
+    int tile_x_index = tile_index % int(resolution / gl_WorkGroupSize.y);
+    int tile_y_index = tile_index / int(resolution / gl_WorkGroupSize.z);
+
+    texel_coordinate = tile_coord + ivec2(gl_WorkGroupSize.y * tile_x_index, gl_WorkGroupSize.z * tile_y_index);
+
+    uint prev_end = pc.cascade+1 < pc.cascade_count ? dispatch_info.cascade_end_offset[pc.cascade+1] : 0;
+    uint cur_end = dispatch_info.cascade_end_offset[pc.cascade];
+    if(prev_end + probe_index >= cur_end)
+        return false;
+    probe_coordinate = dispatch_info.probe_indices[prev_end + probe_index];
+    return true;
 }
 
 hit_info trace_primary_ray(
@@ -187,7 +203,6 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
 
 void main()
 {
-    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
     uint seed = 0; // TODO
 
     bool first_cascade = pc.cascade == 0;
@@ -198,8 +213,11 @@ void main()
 
     ivec3 probe_index;
     ivec2 map_texel;
+    if(!get_probe_coordinate(map_texel, probe_index))
+        return;
 
-    get_cascade_layout_inverse(p, ivec3(pc.cascade_size), angular_resolution, probe_index, map_texel);
+    ivec3 p = get_cascade_layout(ivec3(pc.cascade_size), angular_resolution, probe_index, map_texel);
+    //get_cascade_layout_inverse(p, ivec3(pc.cascade_size), angular_resolution, probe_index, map_texel);
 
     vec2 map_uv = (vec2(map_texel) + pc.jitter) / angular_resolution;
 
@@ -226,16 +244,6 @@ void main()
     vec3 ray_dir = ray_end - ray_origin;
     float ray_len = length(ray_dir);
     ray_dir /= ray_len;
-
-    float dist = get_distance(pc.cascade, probe_index);
-    if(ray_len < dist || max(pc.xyz_step.x, max(pc.xyz_step.y, pc.xyz_step.z)) < dist)
-    {
-        // TODO: This can be commented out for extra perf, it just needs to be
-        // there for visualization to work when a surface isn't in vicinity.
-        imageStore(cascade_target, p, vec4(0));
-        imageStore(cascade_target_visibility, p, vec4(0));
-        return;
-    }
 
     hit_info hi = trace_primary_ray(seed, ray_origin, ray_dir, ray_len);
     vertex_data vd;
