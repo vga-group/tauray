@@ -26,8 +26,6 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
 
     scene_update.emplace(dev, this->opt.scene_options);
 
-    sms.emplace(dev, *scene_update, shadow_map_stage::options{});
-
     radiance_cascades_stage::options rc_opt;
     // Hardcoded for test.glb
     rc_opt.volume = {vec3(-2), vec3(2)};
@@ -88,7 +86,6 @@ void rc_renderer::render()
     ctx->get_indices(swapchain_index, frame_index);
 
     dependencies deps = scene_update->run(display_deps);
-    deps = sms->run(deps);
     deps = rc->run(deps);
     pt->force_command_buffer_refresh();
     deps = pt->run(deps);

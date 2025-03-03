@@ -77,6 +77,9 @@ private:
     options opt;
     bool prev_cascades_valid;
     timer stage_timer;
+    timer trace_timer;
+    timer gather_timer;
+    timer live_counter_timer;
     int history_frames;
     size_t dispatch_index_max_size;
 

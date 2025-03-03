@@ -40,7 +40,6 @@ private:
     std::optional<texture> distance_field;
 
     std::optional<scene_stage> scene_update;
-    std::optional<shadow_map_stage> sms;
     std::optional<radiance_cascades_stage> rc;
     std::optional<rc_visualizer_stage> rcv;
     std::optional<path_tracer_stage> pt;
