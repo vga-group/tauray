@@ -17,8 +17,6 @@ struct trace_push_constant_buffer
     float interval_end;
     int c0_angular_resolution;
     int cascade_size;
-    gpu_shadow_mapping_parameters sm_params;
-    float ambient;
     int has_history;
 };
 
@@ -87,6 +85,9 @@ radiance_cascades_stage::radiance_cascades_stage(
     opt(opt),
     prev_cascades_valid(false),
     stage_timer(dev, "radiance cascade update"),
+    trace_timer(dev, "radiance cascade trace"),
+    gather_timer(dev, "radiance cascade gather"),
+    live_counter_timer(dev, "radiance cascade live count"),
     history_frames(0),
     cascades_metadata(dev, sizeof(cascade_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer)
 {
@@ -360,6 +361,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     //==========================================================================
     // Counts the number of live probes on each cascade, and generates the
     // necessary data for indirect dispatching the computation for those probes.
+    live_counter_timer.begin(cb, dev->id, frame_index);
     for(int cascade = get_cascade_count()-1; cascade >= 0; --cascade)
     {
         {
@@ -437,23 +439,22 @@ void radiance_cascades_stage::update(uint32_t frame_index)
             {}, {}, barriers, {}
         );
     }
+    live_counter_timer.end(cb, dev->id, frame_index);
 
     //==========================================================================
     // Trace pass - traces rays for radiance intervals
     //==========================================================================
+    trace_timer.begin(cb, dev->id, frame_index);
     trace.bind(cb);
     trace.set_descriptors(cb, ss->get_descriptors(), 0, 1);
     trace.set_descriptors(cb, ss->get_raster_descriptors(), 0, 2);
     trace.set_descriptors(cb, cascade_descriptors, 0, 3);
 
     trace_push_constant_buffer pc;
-    shadow_map_filter sm_filter = {0,0,0,0};
-    pc.sm_params = create_shadow_mapping_parameters(sm_filter, *ss);
     pc.jitter = opt.jitter_rays ? r2_noise(vec2(dev->ctx->get_frame_counter())) : vec2(0.5f);
     pc.interval_start = 0;
     pc.interval_end = 0;
     pc.c0_angular_resolution = opt.c0_probe_resolution;
-    pc.ambient = opt.ambient;
     pc.has_history = history_frames != 0;
 
     for(uint32_t cascade = 0; cascade < get_cascade_count(); ++cascade)
@@ -482,8 +483,6 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
         trace.push_constants(cb, pc);
 
-        //uvec3 wg = uvec3(uvec2(cascade_size * resolution+7u)/8u, cascade_size);
-        //cb.dispatch(wg.x, wg.y, wg.z);
         cb.dispatchIndirect(*dispatch_size_buffer, sizeof(uvec4) * (16+cascade));
     }
 
@@ -494,11 +493,13 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_visibility", std::move(dii_visibility));
         cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
     }
+    trace_timer.end(cb, dev->id, frame_index);
 
     //==========================================================================
     // Gather pass - fills importance values for missed rays & implements
     // temporal accumulation.
     //==========================================================================
+    gather_timer.begin(cb, dev->id, frame_index);
     for(auto& b: image_barriers)
     {
         b.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
@@ -544,8 +545,6 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         pc.carry_from_previous = i != 0 ? 1 : 0;
         gather.push_constants(cb, pc);
 
-        //uvec3 wg = uvec3(uvec2(cascade_size * resolution+7u)/8u, cascade_size);
-        //cb.dispatch(wg.x, wg.y, wg.z);
         cb.dispatchIndirect(*dispatch_size_buffer, sizeof(uvec4) * (16+cur_cascade));
     }
 
@@ -563,6 +562,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         {}, {}, {}, image_barriers
     );
 
+    gather_timer.end(cb, dev->id, frame_index);
     stage_timer.end(cb, dev->id, frame_index);
     end_compute(cb, frame_index);
     prev_cascades_valid = true;

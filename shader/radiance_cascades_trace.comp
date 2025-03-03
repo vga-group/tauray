@@ -41,8 +41,6 @@ layout(push_constant) uniform push_constant_buffer
     float interval_end;
     int c0_angular_resolution;
     int cascade_size;
-    shadow_mapping_parameters sm_params;
-    float ambient;
     int has_history;
 } pc;
 
@@ -119,44 +117,7 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
             color *= tex_col;
         }
 
-        //vec3 emission = o.mat.emission_factor.rgb + pc.ambient * color;
-        vec3 emission = o.mat.emission_factor.rgb;//pc.ambient * color;
-
-        // Shade as if it was a diffuse surface.
-        // TODO: These are currently double-added from direct visibility as well.
-        /*
-        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
-        {
-            directional_light dl = directional_lights.lights[i];
-            float shadow = 1.0f;
-            if(dl.shadow_map_index >= 0 && dot(normal, -dl.dir) > 0)
-                shadow = calc_directional_shadow(
-                    dl.shadow_map_index, pos, normal, -dl.dir
-                );
-            if(dot(normal, dl.dir) > 0)
-                shadow = 0.0f;
-
-            emission += color * shadow * dl.color * max(dot(normal, -dl.dir), 0) / M_PI;
-        }
-
-        POINT_LIGHT_FOR_BEGIN(v.pos)
-            point_light pl = point_lights.lights[item_index];
-            vec3 light_dir;
-            float light_dist;
-            vec3 light_color;
-            get_point_light_info(pl, pos, light_dir, light_dist, light_color);
-
-            float shadow = 1.0f;
-            if(pl.shadow_map_index >= 0 && dot(normal, light_dir) > 0)
-                shadow = calc_point_shadow(
-                    pl.shadow_map_index, pos, normal, light_dir
-                );
-            if(dot(normal, light_dir) < 0)
-                shadow = 0.0f;
-
-            emission += color * shadow * light_color * max(dot(normal, light_dir), 0) / M_PI;
-        POINT_LIGHT_FOR_END
-        */
+        vec3 emission = o.mat.emission_factor.rgb;
 
         if(pc.has_history != 0)
             emission += color * eval_diffuse_radiance_cascades(pos, normal);

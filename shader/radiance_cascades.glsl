@@ -137,8 +137,7 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal)
     {
         ivec2 p = ivec2(x, y);
         ivec3 tex_coord = get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
-        vec2 col = texelFetch(radiance_cascades[0], tex_coord, 0).rg;
-        float value = col.r;
+        float value = texelFetch(radiance_cascades[0], tex_coord, 0).r;
 
         vec3 center = concentric_octahedral_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
         float cdn = dot(center, normal);
