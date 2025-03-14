@@ -33,7 +33,10 @@ rc_visualizer_stage::rc_visualizer_stage(
     layer(0),
     stage_timer(*rc.dev, "radiance cascade visualize")
 {
-    shader_source src("shader/radiance_cascades_visualizer.comp");
+    std::map<std::string, std::string> defines;
+    rc.add_defines(defines);
+
+    shader_source src("shader/radiance_cascades_visualizer.comp", defines);
     desc.add(src);
     visualize.init(src, {&desc, &rc.ss->get_descriptors(), &rc.get_descriptors()});
 }

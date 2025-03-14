@@ -2,6 +2,7 @@
 #define RADIANCE_CASCADES_GLSL
 #include "math.glsl"
 #include "color.glsl"
+#include "ltc.glsl"
 
 ivec3 get_cascade_layout(ivec3 cascade_size, int probe_resolution, ivec3 probe_coord, ivec2 probe_texel)
 {
@@ -112,7 +113,7 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
     return sum.rgb;
 }
 
-float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal)
+float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
 {
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
     vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
@@ -127,7 +128,16 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal)
 
     //mat3 ltc_irradiance_transform = create_tangent_space(normal);
 
-    float sum_contrib = 0;
+    float vdotn = dot(view, normal);
+    vec3 ltc_transform = ltc_ggx_transform(vdotn, max(roughness, 0.05f));
+
+    // TODO: Create TBN aligned with view
+    mat3 tbn = create_tangent_space(normal, view);
+
+    vec3 r = reflect(-view, normal);
+
+    float sum_diffuse = 0;
+    float sum_specular = 0;
 
     float inv_probe_resolution = 1.0f / probe_resolution;
     float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
@@ -140,11 +150,27 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal)
         float value = texelFetch(radiance_cascades[0], tex_coord, 0).r;
 
         vec3 center = concentric_octahedral_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
-        float cdn = dot(center, normal);
-        sum_contrib += value * max(len + cdn, 0.0f);
+        center = center * tbn;
+        float cdn = center.z;
+        // Diffuse
+        sum_diffuse += value * max(len + cdn, 0.0f);
+
+        // Specular
+        vec4 ltc_center = ltc_transform_dir(ltc_transform, center);
+        //cdn = ltcCenter.z;
+        //// TODO: Can't use same approximation as diffuse. Explore options.
+        //float spec_len = 2.0f * ltcCenter.w * inv_probe_resolution;
+        //sum_specular += value * max(spec_len * spec_len + cdn, 0.0f) / (spec_len + 1.0);
+        float spec_len = len * ltc_center.w;
+        sum_specular += value * spec_len * max(spec_len + ltc_center.z, 0.0f) / (spec_len + 1.0);
     }
 
-    sum_contrib *= 4.0f / (4.0f + probe_resolution * probe_resolution);
+    sum_diffuse *= 1.0f / (1.0f + 0.25f * probe_resolution * probe_resolution);
+
+    float fresnel = f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness);
+    float specular_amplitude = fresnel + f0 * ggx_albedo(vdotn, roughness) - f0;
+
+    float sum_contrib = (1.0 - fresnel) * sum_diffuse + specular_amplitude * sum_specular;
 
     return sum_contrib;
 }

@@ -113,11 +113,17 @@ void main()
         vec3 old_color = first_hit_material.albedo.rgb;
         first_hit_material.albedo.rgb = vec3(1);
 #endif
-//#ifdef RADIANCE_CASCADES_SET
-//        sum_color += first_hit_material.albedo.rgb * eval_diffuse_radiance_cascades(first_hit_vertex.pos, first_hit_vertex.hard_normal);
-//#else
+#ifdef RADIANCE_CASCADES_SET
+        sum_color += first_hit_material.albedo.rgb * eval_diffuse_radiance_cascades(
+            first_hit_vertex.pos,
+            first_hit_vertex.smooth_normal,
+            -dir,
+            first_hit_material.roughness,
+            mix(first_hit_material.f0, 1.0, first_hit_material.metallic)
+        );
+#else
         sum_color += first_hit_material.emission + modulate_color(first_hit_material, diffuse.rgb, reflection.rgb);
-//#endif
+#endif
         sum_diffuse += diffuse;
         sum_reflection += reflection;
 #ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE

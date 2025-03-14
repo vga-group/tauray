@@ -30,6 +30,17 @@ mat3 create_tangent_space(vec3 normal)
     return mat3(tangent, bitangent, normal);
 }
 
+// Creates a tangent space where x is aligned with the given view vector.
+mat3 create_tangent_space(vec3 normal, vec3 view)
+{
+    vec3 tangent = view - normal*dot(view, normal);
+    float len2 = dot(tangent, tangent);
+    if(len2 < 1e-7) tangent = create_tangent(normal);
+    tangent = normalize(tangent);
+    vec3 bitangent = cross(normal, tangent);
+    return mat3(tangent, bitangent, normal);
+}
+
 vec3 orthogonalize(vec3 a, vec3 b)
 {
     return normalize(b - dot(a, b) * a);

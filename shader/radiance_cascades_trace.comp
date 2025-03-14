@@ -99,7 +99,8 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
         vec3 pos = ray_origin + info.hit_t * ray_direction;
         instance o = instances.o[info.instance_id];
         vec3 color = o.mat.albedo_factor.rgb;
-        if(o.mat.albedo_tex_id >= 0)
+        vec2 mr = o.mat.metallic_roughness_factor.xy;
+        if(o.mat.albedo_tex_id >= 0 || o.mat.metallic_roughness_tex_id >= 0)
         {
             // Only fetch material info for textured surfaces.
             ivec3 i = ivec3(
@@ -112,15 +113,30 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
             vertex v2 = vertices[nonuniformEXT(info.instance_id)].v[i.z];
             vec3 b = vec3(1.0f - info.barycentrics.x - info.barycentrics.y, info.barycentrics);
             vec2 uv = v0.uv * b.x + v1.uv * b.y + v2.uv * b.z;
-            vec3 tex_col = sample_texture(o.mat.albedo_tex_id, uv).rgb;
-            tex_col = inverse_srgb_correction(tex_col);
-            color *= tex_col;
+            if(o.mat.albedo_tex_id >= 0)
+            {
+                vec3 tex_col = sample_texture(o.mat.albedo_tex_id, uv).rgb;
+                tex_col = inverse_srgb_correction(tex_col);
+                color *= tex_col;
+            }
+            if(o.mat.metallic_roughness_tex_id >= 0)
+                mr *= sample_texture(o.mat.metallic_roughness_tex_id, uv).bg;
         }
+        float metallic = mr[0];
+        float roughness = mr[1] * mr[1];
 
         vec3 emission = o.mat.emission_factor.rgb;
 
         if(pc.has_history != 0)
-            emission += color * eval_diffuse_radiance_cascades(pos, normal);
+        {
+            emission += color * eval_diffuse_radiance_cascades(
+                pos,
+                normal,
+                -ray_direction,
+                roughness,
+                mix(0.04, 1.0, metallic)
+            );
+        }
 
         return vec4(emission, 1.0f);
     }
