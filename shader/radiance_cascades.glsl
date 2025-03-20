@@ -113,8 +113,75 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
     return sum.rgb;
 }
 
+vec3 get_texel_corner(ivec2 texel, vec2 corner, float inv_probe_resolution, mat3 tbn)
+{
+    return concentric_octahedral_mapping((vec2(texel) + corner) * inv_probe_resolution) * tbn;
+}
+
+float eval_diffuse_radiance_cascades_split(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
+{
+    vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
+    vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
+
+    // 0-1 inside cascade volume
+    vec3 fcoord = (origin - aabb_min) / (aabb_max - aabb_min);
+
+    ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
+    int probe_resolution = radiance_cascade_metadata.c0_angular_resolution;
+
+    vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
+
+    float vdotn = dot(view, normal);
+    vec3 ltc_transform = ltc_ggx_transform(vdotn, max(roughness, 0.01f));
+    mat3 tbn = create_tangent_space(normal, view);
+
+    float inv_probe_resolution = 1.0f / probe_resolution;
+
+    float fresnel = f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness);
+    float specular_amplitude = fresnel + f0 * ggx_albedo(vdotn, roughness) - f0;
+    float nonfresnel = 1.0 - fresnel;
+    float sum_contrib = 0.0;
+
+    [[unroll]] for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; ++x)
+    [[unroll]] for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; ++y)
+    {
+        ivec2 p = ivec2(x, y);
+        ivec3 tex_coord = get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
+        float value = texelFetch(radiance_cascades[0], tex_coord, 0).r;
+
+        // TODO: Compute these ahead of time into a compressed array.
+        vec3 v[4] = {
+            get_texel_corner(p, vec2(0,0), inv_probe_resolution, tbn),
+            get_texel_corner(p, vec2(0,1), inv_probe_resolution, tbn),
+            get_texel_corner(p, vec2(1,1), inv_probe_resolution, tbn),
+            get_texel_corner(p, vec2(1,0), inv_probe_resolution, tbn)
+        };
+        v[0].z = max(v[0].z, 0.0);
+        v[1].z = max(v[1].z, 0.0);
+        v[2].z = max(v[2].z, 0.0);
+        v[3].z = max(v[3].z, 0.0);
+
+        float diff_z = 0.0f;
+        float spec_z = 0.0f;
+        for(uint i = 0; i < 4; ++i)
+        {
+            vec3 a = v[i];
+            vec3 b = v[(i+1)&3];
+            diff_z += edge_integral(a, b);
+            spec_z += edge_integral(
+                ltc_transform_dir3(ltc_transform, a),
+                ltc_transform_dir3(ltc_transform, b)
+            );
+        }
+        sum_contrib += value * (nonfresnel * max(diff_z, 0.0) + specular_amplitude * max(spec_z, 0.0));
+    }
+    return sum_contrib;
+}
+
 float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
 {
+    return eval_diffuse_radiance_cascades_split(origin, normal, view, roughness, f0);
+
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
     vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
 
@@ -129,7 +196,7 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float 
     //mat3 ltc_irradiance_transform = create_tangent_space(normal);
 
     float vdotn = dot(view, normal);
-    vec3 ltc_transform = ltc_ggx_transform(vdotn, max(roughness, 0.05f));
+    vec3 ltc_transform = ltc_ggx_transform(vdotn, max(roughness, 0.01f));
 
     // TODO: Create TBN aligned with view
     mat3 tbn = create_tangent_space(normal, view);
@@ -141,6 +208,10 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float 
 
     float inv_probe_resolution = 1.0f / probe_resolution;
     float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
+    float cross_result = inv_probe_resolution * inv_probe_resolution / (4.0f * M_PI * M_PI);
+
+
+    vec3 ltc_ref = ltc_transform_dir3(ltc_transform, vec3(0,0,1));
 
     [[unroll]] for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; ++x)
     [[unroll]] for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; ++y)
@@ -156,13 +227,70 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float 
         sum_diffuse += value * max(len + cdn, 0.0f);
 
         // Specular
-        vec4 ltc_center = ltc_transform_dir(ltc_transform, center);
+        float inv_len;
+        vec4 ltc_center = ltc_transform_dir(ltc_transform, center, inv_len);
         //cdn = ltcCenter.z;
         //// TODO: Can't use same approximation as diffuse. Explore options.
         //float spec_len = 2.0f * ltcCenter.w * inv_probe_resolution;
         //sum_specular += value * max(spec_len * spec_len + cdn, 0.0f) / (spec_len + 1.0);
-        float spec_len = len * ltc_center.w;
-        sum_specular += value * spec_len * max(spec_len + ltc_center.z, 0.0f) / (spec_len + 1.0);
+
+        //float spec_len = len * ltc_center.w;
+        //sum_specular += value * spec_len * max(spec_len + ltc_center.z, 0.0f) / (spec_len + 1.0);
+
+
+        // TODO: Accurate, but way too slow.
+        // Instead, formulate this as a disk _somehow_.
+        // Computing illumination from a disk?
+        vec3 v[4] = {
+            concentric_octahedral_mapping((vec2(p) + vec2(0,0)) * inv_probe_resolution) * tbn,
+            concentric_octahedral_mapping((vec2(p) + vec2(0,1)) * inv_probe_resolution) * tbn,
+            concentric_octahedral_mapping((vec2(p) + vec2(1,1)) * inv_probe_resolution) * tbn,
+            concentric_octahedral_mapping((vec2(p) + vec2(1,0)) * inv_probe_resolution) * tbn
+        };
+
+        vec3 last = ltc_transform_dir3(ltc_transform, v[3]);
+        vec3 prev = last;
+        vec3 form_factor = vec3(0);
+
+        for(uint i = 0; i < 3; ++i)
+        {
+            vec3 d = ltc_transform_dir3(ltc_transform, v[i]);
+            form_factor += edge_vector_form_factor(prev, d);
+            prev = d;
+        }
+        form_factor += edge_vector_form_factor(prev, last);
+
+        // Approx horizon clipping
+        float flen = length(form_factor);
+        float irradiance1 = max((flen*flen+form_factor.z)/(flen+1.0), 0.0);
+        sum_specular += value * irradiance1;
+
+        /*
+        // Computing illumination from a disk: poor quality.
+        float A1 = min(len / ltc_center.w, 1.0f);
+        float radius = sqrt(A1 - A1*A1*0.25)/(1.0-A1);
+        vec3 center_to_ray = ltc_center.xyz - dot(ltc_center.xyz, ltc_ref) * ltc_ref;
+        vec3 closest_dir = normalize(ltc_center.xyz + center_to_ray * min(radius/length(center_to_ray), 1.0));
+
+        // Main source of error:
+        // How to replace? Needs a better horizon approximation.
+        float spec_len = A1;
+        //sum_specular += value * max(spec_len * ltc_center.z / (spec_len + 1.0f), 0.0f);
+        //sum_specular += value * max(spec_len * closest_dir.z / (spec_len + 1.0f), 0.0f);
+        sum_specular += value * max(closest_dir.z, 0.0f);
+        */
+
+
+        /*
+        float spec_z = min(
+            ltc_center.z + sqrt(len * ltc_center.w * max(1.0f - ltc_center.z * ltc_center.z, 0.0f)),
+            1.0f
+        );
+        //float spec_z = min(ltc_center.z, 1.0f);
+        float spec_len = ltc_center.w * len;
+        //float irradiance2 = max(texel_area * centroid_t.w * z2, 0.0f);
+        sum_specular += value * max(spec_len * spec_z / (spec_len + 1.0f), 0.0f);
+        */
     }
 
     sum_diffuse *= 1.0f / (1.0f + 0.25f * probe_resolution * probe_resolution);

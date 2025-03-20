@@ -15,7 +15,7 @@ float angle_per_sin_angle(vec3 a, vec3 b)
     float denom = fma(4.18814979+act, act, 3.45068008);
     float theta_per_sin_theta = num/denom;
     if(cos_theta < 0.0)
-        theta_per_sin_theta = 0.5 * inversesqrt(1.0 - act*act) - theta_per_sin_theta;
+        theta_per_sin_theta = 0.5 * inversesqrt(max(1.0 - act*act, 1e-8f)) - theta_per_sin_theta;
     return theta_per_sin_theta;
 }
 
@@ -119,18 +119,29 @@ vec3 ltc_ggx_transform(
 }
 
 // xyz: transformed vector, w: jacobian
-vec4 ltc_transform_dir(vec3 transform, vec3 dir)
+vec4 ltc_transform_dir(vec3 transform, vec3 dir, out float inv_len)
 {
     vec3 new_dir = vec3(
         dir.x * transform.x + dir.z * transform.y, dir.y, dir.z * transform.z
     );
     float transformed_dir_inv_len = inversesqrt(dot(new_dir.xyz, new_dir.xyz));
+    inv_len = transformed_dir_inv_len;
     float inv_len3 =
         transformed_dir_inv_len*
         transformed_dir_inv_len*
         transformed_dir_inv_len;
     float det = abs(transform.x * transform.z);
-    return vec4(normalize(new_dir), det * inv_len3);
+    return vec4(new_dir*transformed_dir_inv_len, det * inv_len3);
+}
+
+vec3 ltc_transform_dir3(vec3 transform, vec3 dir)
+{
+    vec3 new_dir = vec3(
+        dir.x * transform.x + dir.z * transform.y,
+        dir.y,
+        dir.z * transform.z
+    );
+    return normalize(new_dir);
 }
 
 float ggx_albedo(float vdotn, float roughness)
