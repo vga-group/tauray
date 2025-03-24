@@ -115,7 +115,105 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
 
 vec3 get_texel_corner(ivec2 texel, vec2 corner, float inv_probe_resolution, mat3 tbn)
 {
-    return concentric_octahedral_mapping((vec2(texel) + corner) * inv_probe_resolution) * tbn;
+    vec3 dir = concentric_octahedral_mapping((vec2(texel) + corner) * inv_probe_resolution) * tbn;
+    dir.z = max(dir.z, 0.0);
+    return dir;
+}
+
+vec4 integrate_quad(
+    mat3 tbn,
+    vec3 ltc_transform,
+    float inv_probe_resolution,
+    int cascade,
+    ivec2 p,
+    ivec3 base_tex_coord,
+    float fresnel,
+    float specular_amplitude
+){
+    vec4 values = textureGather(radiance_cascades[cascade], vec3(base_tex_coord.xy + 1.0, base_tex_coord.z));
+    vec4 diff_z = vec4(0.0f);
+    vec4 spec_z = vec4(0.0f);
+
+    // [v00]----[v10]----[v20]
+    //   |   <-   |   <-   |
+    //   | v .w ^ | v .z ^ |
+    //   |   ->   |   ->   |
+    // [v01]----[v11]----[v21]
+    //   |   <-   |   <-   |
+    //   | v .x ^ | v .y ^ |
+    //   |   ->   |   ->   |
+    // [v02]----[v12]----[v22]
+
+    vec3 v00 = get_texel_corner(p, vec2(0,0), inv_probe_resolution, tbn);
+    vec3 v01 = get_texel_corner(p, vec2(0,1), inv_probe_resolution, tbn);
+    vec3 v02 = get_texel_corner(p, vec2(0,2), inv_probe_resolution, tbn);
+    vec3 v10 = get_texel_corner(p, vec2(1,0), inv_probe_resolution, tbn);
+    vec3 v11 = get_texel_corner(p, vec2(1,1), inv_probe_resolution, tbn);
+    vec3 v12 = get_texel_corner(p, vec2(1,2), inv_probe_resolution, tbn);
+    vec3 v20 = get_texel_corner(p, vec2(2,0), inv_probe_resolution, tbn);
+    vec3 v21 = get_texel_corner(p, vec2(2,1), inv_probe_resolution, tbn);
+    vec3 v22 = get_texel_corner(p, vec2(2,2), inv_probe_resolution, tbn);
+
+    diff_z.w += edge_integral(v10, v00);
+    diff_z.w += edge_integral(v00, v01);
+    diff_z.z += edge_integral(v21, v20);
+    diff_z.z += edge_integral(v20, v10);
+    diff_z.x += edge_integral(v01, v02);
+    diff_z.x += edge_integral(v02, v12);
+    diff_z.y += edge_integral(v12, v22);
+    diff_z.y += edge_integral(v22, v21);
+
+    float d01_11 = edge_integral(v01, v11);
+    diff_z.w += d01_11;
+    diff_z.x -= d01_11;
+
+    float d11_10 = edge_integral(v11, v10);
+    diff_z.w += d11_10;
+    diff_z.z -= d11_10;
+
+    float d11_21 = edge_integral(v11, v21);
+    diff_z.z += d11_21;
+    diff_z.y -= d11_21;
+
+    float d12_11 = edge_integral(v12, v11);
+    diff_z.x += d12_11;
+    diff_z.y -= d12_11;
+
+    v11 = ltc_transform_dir3(ltc_transform, v11);
+    v00 = ltc_transform_dir3(ltc_transform, v00);
+    v02 = ltc_transform_dir3(ltc_transform, v02);
+    v01 = ltc_transform_dir3(ltc_transform, v01);
+    spec_z.w += edge_integral(v00, v01);
+    spec_z.x += edge_integral(v01, v02);
+    float s01_11 = edge_integral(v01, v11);
+    spec_z.w += s01_11;
+    spec_z.x -= s01_11;
+
+    v20 = ltc_transform_dir3(ltc_transform, v20);
+    v10 = ltc_transform_dir3(ltc_transform, v10);
+    spec_z.w += edge_integral(v10, v00);
+    spec_z.z += edge_integral(v20, v10);
+    float s11_10 = edge_integral(v11, v10);
+    spec_z.w += s11_10;
+    spec_z.z -= s11_10;
+
+    v22 = ltc_transform_dir3(ltc_transform, v22);
+    v21 = ltc_transform_dir3(ltc_transform, v21);
+    spec_z.z += edge_integral(v21, v20);
+    spec_z.y += edge_integral(v22, v21);
+    float s11_21 = edge_integral(v11, v21);
+    spec_z.z += s11_21;
+    spec_z.y -= s11_21;
+
+    v12 = ltc_transform_dir3(ltc_transform, v12);
+    spec_z.x += edge_integral(v02, v12);
+    spec_z.y += edge_integral(v12, v22);
+    float s12_11 = edge_integral(v12, v11);
+    spec_z.x += s12_11;
+    spec_z.y -= s12_11;
+
+    vec4 sum_contrib = (1.0 - fresnel) * max(diff_z, vec4(0.0)) + specular_amplitude * max(spec_z, vec4(0.0));
+    return values * sum_contrib;
 }
 
 float eval_diffuse_radiance_cascades_split(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
@@ -136,12 +234,57 @@ float eval_diffuse_radiance_cascades_split(vec3 origin, vec3 normal, vec3 view, 
     mat3 tbn = create_tangent_space(normal, view);
 
     float inv_probe_resolution = 1.0f / probe_resolution;
-
     float fresnel = f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness);
     float specular_amplitude = fresnel + f0 * ggx_albedo(vdotn, roughness) - f0;
-    float nonfresnel = 1.0 - fresnel;
-    float sum_contrib = 0.0;
 
+    float contrib = dot(integrate_quad(
+        tbn,
+        ltc_transform,
+        inv_probe_resolution,
+        0,
+        ivec2(0,0),
+        get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), ivec2(0,0)),
+        fresnel,
+        specular_amplitude
+    ), vec4(1));
+
+    contrib += dot(integrate_quad(
+        tbn,
+        ltc_transform,
+        inv_probe_resolution,
+        0,
+        ivec2(2,0),
+        get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), ivec2(2,0)),
+        fresnel,
+        specular_amplitude
+    ), vec4(1));
+
+    contrib += dot(integrate_quad(
+        tbn,
+        ltc_transform,
+        inv_probe_resolution,
+        0,
+        ivec2(0,2),
+        get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), ivec2(0,2)),
+        fresnel,
+        specular_amplitude
+    ), vec4(1));
+
+    contrib += dot(integrate_quad(
+        tbn,
+        ltc_transform,
+        inv_probe_resolution,
+        0,
+        ivec2(2,2),
+        get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), ivec2(2,2)),
+        fresnel,
+        specular_amplitude
+    ), vec4(1));
+    return contrib;
+
+    /*
+    float sum_diff = 0.0f;
+    float sum_spec = 0.0f;
     [[unroll]] for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; ++x)
     [[unroll]] for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; ++y)
     {
@@ -149,17 +292,12 @@ float eval_diffuse_radiance_cascades_split(vec3 origin, vec3 normal, vec3 view, 
         ivec3 tex_coord = get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
         float value = texelFetch(radiance_cascades[0], tex_coord, 0).r;
 
-        // TODO: Compute these ahead of time into a compressed array.
         vec3 v[4] = {
             get_texel_corner(p, vec2(0,0), inv_probe_resolution, tbn),
             get_texel_corner(p, vec2(0,1), inv_probe_resolution, tbn),
             get_texel_corner(p, vec2(1,1), inv_probe_resolution, tbn),
-            get_texel_corner(p, vec2(1,0), inv_probe_resolution, tbn)
+            get_texel_corner(p, vec2(1,0), inv_probe_resolution, tbn),
         };
-        v[0].z = max(v[0].z, 0.0);
-        v[1].z = max(v[1].z, 0.0);
-        v[2].z = max(v[2].z, 0.0);
-        v[3].z = max(v[3].z, 0.0);
 
         float diff_z = 0.0f;
         float spec_z = 0.0f;
@@ -173,9 +311,12 @@ float eval_diffuse_radiance_cascades_split(vec3 origin, vec3 normal, vec3 view, 
                 ltc_transform_dir3(ltc_transform, b)
             );
         }
-        sum_contrib += value * (nonfresnel * max(diff_z, 0.0) + specular_amplitude * max(spec_z, 0.0));
+        sum_diff += value * max(diff_z, 0.0);
+        sum_spec += value * max(spec_z, 0.0);
     }
+    float sum_contrib = (1.0 - fresnel) * sum_diff + specular_amplitude * sum_spec;
     return sum_contrib;
+    */
 }
 
 float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
