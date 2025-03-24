@@ -10,13 +10,13 @@ float angle_per_sin_angle(vec3 a, vec3 b)
 {
     float cos_theta = dot(a, b);
     float act = abs(cos_theta);
-    float num = fma(act, 0.01436124, 0.49788271);
-    num = fma(act, num, 0.86266946);
-    float denom = fma(4.18814979+act, act, 3.45068008);
+    float num = 0.01436124 * act + 0.49788271;
+    num = num * act + 0.86266946;
+    float denom = act + 4.18814979;
+    denom = denom * act + 3.45068008;
+
     float theta_per_sin_theta = num/denom;
-    if(cos_theta < 0.0)
-        theta_per_sin_theta = 0.5 * inversesqrt(max(1.0 - act*act, 1e-8f)) - theta_per_sin_theta;
-    return theta_per_sin_theta;
+    return cos_theta < 0.0 ? 0.5 * inversesqrt(max(1.0 - act*act, 1e-6f)) - theta_per_sin_theta : theta_per_sin_theta;
 }
 
 // a and b are unit vectors on the +z hemisphere.
