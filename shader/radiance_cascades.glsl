@@ -145,13 +145,13 @@ vec4 integrate_quad(
     // [v02]----[v12]----[v22]
 
     vec3 v00 = get_texel_corner(p, vec2(0,0), inv_probe_resolution, tbn);
-    vec3 v01 = get_texel_corner(p, vec2(0,1), inv_probe_resolution, tbn);
-    vec3 v02 = get_texel_corner(p, vec2(0,2), inv_probe_resolution, tbn);
     vec3 v10 = get_texel_corner(p, vec2(1,0), inv_probe_resolution, tbn);
-    vec3 v11 = get_texel_corner(p, vec2(1,1), inv_probe_resolution, tbn);
-    vec3 v12 = get_texel_corner(p, vec2(1,2), inv_probe_resolution, tbn);
     vec3 v20 = get_texel_corner(p, vec2(2,0), inv_probe_resolution, tbn);
+    vec3 v01 = get_texel_corner(p, vec2(0,1), inv_probe_resolution, tbn);
+    vec3 v11 = get_texel_corner(p, vec2(1,1), inv_probe_resolution, tbn);
     vec3 v21 = get_texel_corner(p, vec2(2,1), inv_probe_resolution, tbn);
+    vec3 v02 = get_texel_corner(p, vec2(0,2), inv_probe_resolution, tbn);
+    vec3 v12 = get_texel_corner(p, vec2(1,2), inv_probe_resolution, tbn);
     vec3 v22 = get_texel_corner(p, vec2(2,2), inv_probe_resolution, tbn);
 
     diff_z.w += edge_integral(v10, v00);
@@ -216,7 +216,7 @@ vec4 integrate_quad(
     return values * sum_contrib;
 }
 
-float eval_diffuse_radiance_cascades_split(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
+float eval_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
 {
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
     vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
@@ -281,47 +281,11 @@ float eval_diffuse_radiance_cascades_split(vec3 origin, vec3 normal, vec3 view, 
         specular_amplitude
     ), vec4(1));
     return contrib;
-
-    /*
-    float sum_diff = 0.0f;
-    float sum_spec = 0.0f;
-    [[unroll]] for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; ++x)
-    [[unroll]] for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; ++y)
-    {
-        ivec2 p = ivec2(x, y);
-        ivec3 tex_coord = get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
-        float value = texelFetch(radiance_cascades[0], tex_coord, 0).r;
-
-        vec3 v[4] = {
-            get_texel_corner(p, vec2(0,0), inv_probe_resolution, tbn),
-            get_texel_corner(p, vec2(0,1), inv_probe_resolution, tbn),
-            get_texel_corner(p, vec2(1,1), inv_probe_resolution, tbn),
-            get_texel_corner(p, vec2(1,0), inv_probe_resolution, tbn),
-        };
-
-        float diff_z = 0.0f;
-        float spec_z = 0.0f;
-        for(uint i = 0; i < 4; ++i)
-        {
-            vec3 a = v[i];
-            vec3 b = v[(i+1)&3];
-            diff_z += edge_integral(a, b);
-            spec_z += edge_integral(
-                ltc_transform_dir3(ltc_transform, a),
-                ltc_transform_dir3(ltc_transform, b)
-            );
-        }
-        sum_diff += value * max(diff_z, 0.0);
-        sum_spec += value * max(spec_z, 0.0);
-    }
-    float sum_contrib = (1.0 - fresnel) * sum_diff + specular_amplitude * sum_spec;
-    return sum_contrib;
-    */
 }
 
 float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
 {
-    return eval_diffuse_radiance_cascades_split(origin, normal, view, roughness, f0);
+    //return eval_radiance_cascades(origin, normal, view, roughness, f0);
 
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
     vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
@@ -334,14 +298,6 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float 
 
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
 
-    //mat3 ltc_irradiance_transform = create_tangent_space(normal);
-
-    float vdotn = dot(view, normal);
-    vec3 ltc_transform = ltc_ggx_transform(vdotn, max(roughness, 0.01f));
-
-    // TODO: Create TBN aligned with view
-    mat3 tbn = create_tangent_space(normal, view);
-
     vec3 r = reflect(-view, normal);
 
     float sum_diffuse = 0;
@@ -349,10 +305,6 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float 
 
     float inv_probe_resolution = 1.0f / probe_resolution;
     float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
-    float cross_result = inv_probe_resolution * inv_probe_resolution / (4.0f * M_PI * M_PI);
-
-
-    vec3 ltc_ref = ltc_transform_dir3(ltc_transform, vec3(0,0,1));
 
     [[unroll]] for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; ++x)
     [[unroll]] for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; ++y)
@@ -362,89 +314,235 @@ float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float 
         float value = texelFetch(radiance_cascades[0], tex_coord, 0).r;
 
         vec3 center = concentric_octahedral_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
-        center = center * tbn;
-        float cdn = center.z;
+        float cdn = dot(center, normal);
         // Diffuse
         sum_diffuse += value * max(len + cdn, 0.0f);
-
-        // Specular
-        float inv_len;
-        vec4 ltc_center = ltc_transform_dir(ltc_transform, center, inv_len);
-        //cdn = ltcCenter.z;
-        //// TODO: Can't use same approximation as diffuse. Explore options.
-        //float spec_len = 2.0f * ltcCenter.w * inv_probe_resolution;
-        //sum_specular += value * max(spec_len * spec_len + cdn, 0.0f) / (spec_len + 1.0);
-
-        //float spec_len = len * ltc_center.w;
-        //sum_specular += value * spec_len * max(spec_len + ltc_center.z, 0.0f) / (spec_len + 1.0);
-
-
-        // TODO: Accurate, but way too slow.
-        // Instead, formulate this as a disk _somehow_.
-        // Computing illumination from a disk?
-        vec3 v[4] = {
-            concentric_octahedral_mapping((vec2(p) + vec2(0,0)) * inv_probe_resolution) * tbn,
-            concentric_octahedral_mapping((vec2(p) + vec2(0,1)) * inv_probe_resolution) * tbn,
-            concentric_octahedral_mapping((vec2(p) + vec2(1,1)) * inv_probe_resolution) * tbn,
-            concentric_octahedral_mapping((vec2(p) + vec2(1,0)) * inv_probe_resolution) * tbn
-        };
-
-        vec3 last = ltc_transform_dir3(ltc_transform, v[3]);
-        vec3 prev = last;
-        vec3 form_factor = vec3(0);
-
-        for(uint i = 0; i < 3; ++i)
-        {
-            vec3 d = ltc_transform_dir3(ltc_transform, v[i]);
-            form_factor += edge_vector_form_factor(prev, d);
-            prev = d;
-        }
-        form_factor += edge_vector_form_factor(prev, last);
-
-        // Approx horizon clipping
-        float flen = length(form_factor);
-        float irradiance1 = max((flen*flen+form_factor.z)/(flen+1.0), 0.0);
-        sum_specular += value * irradiance1;
-
-        /*
-        // Computing illumination from a disk: poor quality.
-        float A1 = min(len / ltc_center.w, 1.0f);
-        float radius = sqrt(A1 - A1*A1*0.25)/(1.0-A1);
-        vec3 center_to_ray = ltc_center.xyz - dot(ltc_center.xyz, ltc_ref) * ltc_ref;
-        vec3 closest_dir = normalize(ltc_center.xyz + center_to_ray * min(radius/length(center_to_ray), 1.0));
-
-        // Main source of error:
-        // How to replace? Needs a better horizon approximation.
-        float spec_len = A1;
-        //sum_specular += value * max(spec_len * ltc_center.z / (spec_len + 1.0f), 0.0f);
-        //sum_specular += value * max(spec_len * closest_dir.z / (spec_len + 1.0f), 0.0f);
-        sum_specular += value * max(closest_dir.z, 0.0f);
-        */
-
-
-        /*
-        float spec_z = min(
-            ltc_center.z + sqrt(len * ltc_center.w * max(1.0f - ltc_center.z * ltc_center.z, 0.0f)),
-            1.0f
-        );
-        //float spec_z = min(ltc_center.z, 1.0f);
-        float spec_len = ltc_center.w * len;
-        //float irradiance2 = max(texel_area * centroid_t.w * z2, 0.0f);
-        sum_specular += value * max(spec_len * spec_z / (spec_len + 1.0f), 0.0f);
-        */
     }
 
     sum_diffuse *= 1.0f / (1.0f + 0.25f * probe_resolution * probe_resolution);
+    return sum_diffuse;
+}
 
+void rc_wrs_update(inout uint seed, ivec2 p, vec4 weights, inout float sum_weight, inout float selected_weight, inout ivec2 selected_cell)
+{
+    ivec2 p_offset[4] = {
+        ivec2(0,1),
+        ivec2(1,1),
+        ivec2(1,0),
+        ivec2(0,0)
+    };
+    [[unroll]] for(int i = 0; i < 4; ++i)
+    {
+        float weight = weights[i] + 1e-16f;
+        float u = generate_single_uniform_random_fast(seed);
+        sum_weight += weight;
+        if(u*sum_weight < weight)
+        {
+            selected_cell = p + p_offset[i];
+            selected_weight = weight;
+        }
+    }
+}
+
+void rc_wrs_pdf(ivec2 p, ivec2 itex_coord, vec4 weights, inout float sum_weight, inout float selected_weight)
+{
+    ivec2 p_offset[4] = {
+        ivec2(0,1),
+        ivec2(1,1),
+        ivec2(1,0),
+        ivec2(0,0)
+    };
+    [[unroll]] for(int i = 0; i < 4; ++i)
+    {
+        float weight = weights[i] + 1e-16f;
+        ivec2 selected_cell = p + p_offset[i];
+        sum_weight += weight;
+        if(selected_cell.x == itex_coord.x && selected_cell.y == itex_coord.y)
+            selected_weight = weight;
+    }
+}
+
+vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, float roughness, float f0, out float pdf)
+{
+    vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
+    vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
+
+    // 0-1 inside cascade volume
+    vec3 fcoord = (origin - aabb_min) / (aabb_max - aabb_min);
+    int cascade_size = RC_C0_SPATIAL_RESOLUTION;
+    vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
+
+    float vdotn = dot(view, normal);
+    vec3 ltc_transform = ltc_ggx_transform(vdotn, max(roughness, 0.01f));
+    mat3 tbn = create_tangent_space(normal, view);
     float fresnel = f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness);
     float specular_amplitude = fresnel + f0 * ggx_albedo(vdotn, roughness) - f0;
 
-    float sum_contrib = (1.0 - fresnel) * sum_diffuse + specular_amplitude * sum_specular;
+    ivec2 selected_cell = ivec2(0);
+    float selected_weight = 0.0f;
+    float sum_weight = 0.0f;
 
-    return sum_contrib;
+    float inv_probe_resolution = 1.0f / RC_C0_ANGULAR_RESOLUTION;
+    float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
+
+    for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; x+=2)
+    for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; y+=2)
+    {
+        ivec2 p = ivec2(x, y);
+        ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
+
+        vec4 contrib = integrate_quad(
+            tbn,
+            ltc_transform,
+            inv_probe_resolution,
+            0,
+            p,
+            tex_coord,
+            fresnel,
+            specular_amplitude
+        );
+
+        rc_wrs_update(seed, p, contrib, sum_weight, selected_weight, selected_cell);
+    }
+
+    ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), selected_cell);
+    float total_visibility = 1.0 - texelFetch(radiance_cascades_visibility[0], sel_coord, 0).r;
+
+    pdf = selected_weight / sum_weight;
+
+    for(int cascade = 1; cascade < RC_CASCADE_COUNT; ++cascade)
+    { // Drill deeper
+        cascade_size /= 2;
+        inv_probe_resolution *= 0.5f;
+        len *= 0.25f;
+        cascade_coord = clamp(cascade_coord * 0.5f, vec3(0.5), vec3(cascade_size-0.5));
+
+        ivec2 base_cell = selected_cell * 2;
+        selected_weight = 0.0f;
+        sum_weight = 0.0f;
+
+        vec4 contrib = integrate_quad(
+            tbn,
+            ltc_transform,
+            inv_probe_resolution,
+            cascade,
+            base_cell,
+            get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), base_cell),
+            fresnel,
+            specular_amplitude
+        );
+        rc_wrs_update(seed, base_cell, contrib, sum_weight, selected_weight, selected_cell);
+
+        ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), selected_cell);
+        total_visibility *= 1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r;
+        pdf *= selected_weight / sum_weight;
+    }
+
+    // Sample from inside the selected cell.
+    vec2 random_offset = vec2(
+        generate_single_uniform_random_fast(seed),
+        generate_single_uniform_random_fast(seed)
+    );
+
+    vec2 uv = (vec2(selected_cell) + random_offset) * inv_probe_resolution;
+
+    const int probe_resolution = RC_C0_ANGULAR_RESOLUTION<<(RC_CASCADE_COUNT-1);
+    pdf *= (probe_resolution * probe_resolution) / (4 * M_PI);
+    vec3 dir = concentric_octahedral_mapping(uv);
+    return dir;
+}
+
+float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness, float f0, vec3 dir)
+{
+    vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
+    vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
+
+    // 0-1 inside cascade volume
+    vec3 fcoord = (origin - aabb_min) / (aabb_max - aabb_min);
+
+    ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
+    int probe_resolution = radiance_cascade_metadata.c0_angular_resolution;
+
+    vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
+    vec2 tex_coord = concentric_octahedral_mapping_inverse(dir);
+
+    float vdotn = dot(view, normal);
+    vec3 ltc_transform = ltc_ggx_transform(vdotn, max(roughness, 0.01f));
+    mat3 tbn = create_tangent_space(normal, view);
+    float fresnel = f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness);
+    float specular_amplitude = fresnel + f0 * ggx_albedo(vdotn, roughness) - f0;
+
+    float selected_weight = 0.0f;
+    float sum_weight = 0.0f;
+
+    float inv_probe_resolution = 1.0f / probe_resolution;
+    float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
+
+    ivec2 itex_coord = ivec2(tex_coord * probe_resolution);
+
+    ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), itex_coord);
+    float total_visibility = 1.0 - texelFetch(radiance_cascades_visibility[0], sel_coord, 0).r;
+
+    for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; x+=2)
+    for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; y+=2)
+    {
+        ivec2 p = ivec2(x, y);
+        ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
+
+        vec4 contrib = integrate_quad(
+            tbn,
+            ltc_transform,
+            inv_probe_resolution,
+            0,
+            p,
+            tex_coord,
+            fresnel,
+            specular_amplitude
+        );
+
+        rc_wrs_pdf(p, itex_coord, contrib, sum_weight, selected_weight);
+    }
+
+    float pdf = selected_weight / sum_weight;
+
+    for(int cascade = 1; cascade < RC_CASCADE_COUNT; ++cascade)
+    { // Drill deeper
+        cascade_size /= 2;
+        probe_resolution *= 2;
+        inv_probe_resolution *= 0.5f;
+        len *= 0.25f;
+        cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
+        ivec2 base_cell = itex_coord * 2;
+
+        itex_coord = ivec2(tex_coord * probe_resolution);
+        selected_weight = 0.0f;
+        sum_weight = 0.0f;
+
+        vec4 contrib = integrate_quad(
+            tbn,
+            ltc_transform,
+            inv_probe_resolution,
+            cascade,
+            base_cell,
+            get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), base_cell),
+            fresnel,
+            specular_amplitude
+        );
+
+        rc_wrs_pdf(base_cell, itex_coord, contrib, sum_weight, selected_weight);
+
+        ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), itex_coord);
+        total_visibility *= 1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r;
+        pdf *= selected_weight / sum_weight;
+    }
+
+    // Sample from inside the selected cell.
+    pdf *= (probe_resolution * probe_resolution) / (4 * M_PI);
+    return pdf;
 }
 
 // Only valid inside cascade volume!
+/*
 vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, out float pdf)
 {
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
@@ -619,6 +717,7 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 albedo, vec3 dir)
     pdf *= (probe_resolution * probe_resolution) / (4 * M_PI);
     return pdf;
 }
+*/
 #endif
 
 #endif
