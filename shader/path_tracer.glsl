@@ -302,7 +302,7 @@ void correct_lobes_for_normal_map(vec3 sample_dir, vec3 geometric_normal, inout 
 
 vec3 next_event_estimation(
     uvec4 rand_uint,
-    mat3 tbn, vec3 shading_view, sampled_material mat,
+    mat3 tbn, vec3 shading_view, vec3 view, sampled_material mat,
     pt_vertex_data v,
     inout bsdf_lobes lobes
 ){
@@ -329,12 +329,7 @@ vec3 next_event_estimation(
 
         vec3 shading_light = out_dir * tbn;
         lobes = bsdf_lobes(0,0,0,0);
-#ifdef RADIANCE_CASCADES_SET
-        diffuse_brdf(shading_light, lobes);
-#else
-        //float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
-        float bsdf_pdf = diffuse_brdf_pdf(shading_light, lobes);
-#endif
+        float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
 
         correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
 
@@ -343,7 +338,7 @@ vec3 next_event_estimation(
             contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
 #ifdef RADIANCE_CASCADES_SET
-        float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, mat.albedo.rgb, out_dir);
+        float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -view, mat.roughness, mix(0.04, 1.0, mat.metallic), out_dir);
         contrib /= nee_mis_pdf(light_pdf, rc_pdf);
 #else
         contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
@@ -462,7 +457,7 @@ void evaluate_ray(
             // Do NEE ray
             bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
             vec3 radiance = attenuation * next_event_estimation(
-                generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
+                generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view, view,
                 mat, v, lobes
             );
             if(bounce != 0)
@@ -488,14 +483,14 @@ void evaluate_ray(
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
 #ifdef RADIANCE_CASCADES_SET
         uvec4 ray_sample = generate_ray_sample_uint(lsampler, bounce*2+1);
-        view = sample_radiance_cascades(ray_sample.x, v.pos, tbn[2], mat.albedo.rgb, bsdf_pdf);
-        lobes = bsdf_lobes(0,0,0,0);
-        diffuse_brdf(view * tbn, lobes);
-        //ggx_bsdf(view * tbn, shading_view, mat, lobes);
+        view = sample_radiance_cascades(ray_sample.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic), bsdf_pdf);
+        //lobes = bsdf_lobes(0,0,0,0);
+        //diffuse_brdf(view * tbn, lobes);
+        ggx_bsdf(view * tbn, shading_view, mat, lobes);
 #else
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
-        //material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
-        diffuse_brdf_sample(ray_sample, view, lobes, bsdf_pdf);
+        material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
+        //diffuse_brdf_sample(ray_sample, view, lobes, bsdf_pdf);
         view = tbn * view;
 #endif
 
