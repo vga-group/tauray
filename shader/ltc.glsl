@@ -19,10 +19,19 @@ float angle_per_sin_angle(vec3 a, vec3 b)
     return cos_theta < 0.0 ? 0.5 * inversesqrt(max(1.0 - act*act, 1e-6f)) - theta_per_sin_theta : theta_per_sin_theta;
 }
 
+float angle_per_sin_angle_fast(vec3 a, vec3 b)
+{
+    float cos_theta = dot(a, b);
+    float num = -0.709693 * cos_theta + 3.787823;
+    num = num * cos_theta + 20.448902;
+    num = num * cos_theta + 15.951386;
+    return inversesqrt(num);
+}
+
 // a and b are unit vectors on the +z hemisphere.
 float edge_integral(vec3 a, vec3 b)
 {
-    return angle_per_sin_angle(a, b) * (a.x * b.y - a.y * b.x);
+    return angle_per_sin_angle_fast(a, b) * (a.x * b.y - a.y * b.x);
 }
 
 vec3 edge_vector_form_factor(vec3 a, vec3 b)

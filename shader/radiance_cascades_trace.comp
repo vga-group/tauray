@@ -198,7 +198,7 @@ void main()
 
     vec2 map_uv = (vec2(map_texel) + pc.jitter) / angular_resolution;
 
-    vec3 probe_dir = concentric_octahedral_mapping(map_uv);
+    vec3 probe_dir = radiance_cascade_probe_mapping(map_uv);
     vec3 probe_origin = pc.base_offset.xyz + probe_index * pc.xyz_step.xyz;
 
 #if 0
@@ -211,7 +211,7 @@ void main()
     if(last_cascade) next_origin = probe_origin;
 
     vec2 prev_map_uv = (vec2(map_texel/2) + pc.jitter) / (angular_resolution/2);
-    vec3 prev_dir = concentric_octahedral_mapping(prev_map_uv);
+    vec3 prev_dir = radiance_cascade_probe_mapping(prev_map_uv);
     if(first_cascade) prev_dir = probe_dir;
 
     vec3 ray_origin = probe_origin + prev_dir * pc.interval_start;

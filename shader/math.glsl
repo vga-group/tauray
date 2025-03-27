@@ -660,4 +660,24 @@ vec2 concentric_octahedral_mapping_inverse(vec3 dir)
     return uv;
 }
 
+vec3 octahedral_mapping(vec2 packed_normal)
+{
+    vec3 normal = vec3(
+        packed_normal.x,
+        1.0f - abs(packed_normal.x) - abs(packed_normal.y),
+        packed_normal.y
+    );
+    float ny = clamp(normal.y, -1.0f, 0.0f);
+    normal.x += normal.x > 0.0f ? ny : -ny;
+    normal.z += normal.z > 0.0f ? ny : -ny;
+    return normalize(normal);
+}
+
+vec2 octahedral_mapping_inverse(vec3 normal)
+{
+    normal /= abs(normal.x) + abs(normal.y) + abs(normal.z);
+    return normal.y >= 0.0 ?
+        normal.xz : (1 - abs(normal.zx)) * (step(vec2(0), normal.xz)*2-1);
+}
+
 #endif
