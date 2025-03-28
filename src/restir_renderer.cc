@@ -215,14 +215,12 @@ void restir_renderer::render()
 //    if((ctx->get_displayed_frame_counter() & 127) == 0)
 //        reset_accumulation(true);
 
-    
+
 
     uint32_t swapchain_index, frame_index;
     ctx->get_indices(swapchain_index, frame_index);
 
     dependencies deps = scene_update->run(display_deps);
-
-    deps.clear();
 
 
     for(auto& pv: per_view)
