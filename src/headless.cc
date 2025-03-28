@@ -298,6 +298,9 @@ void headless::save_image(uint32_t swapchain_index)
     (void)d.logical.waitForFences(*id.copy_fence, true, UINT64_MAX);
     d.logical.resetFences(*id.copy_fence);
 
+    if((id.frame_number&0x7F) != 0x7F)
+        return;
+
     // Map memory, save images
     float* all_mem = nullptr;
     vmaMapMemory(d.allocator, id.staging_buffer.get_allocation(), (void**)&all_mem);

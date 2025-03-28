@@ -211,10 +211,19 @@ void restir_renderer::set_scene(scene* s)
 void restir_renderer::render()
 {
     dependencies display_deps(ctx->begin_frame());
+
+//    if((ctx->get_displayed_frame_counter() & 127) == 0)
+//        reset_accumulation(true);
+
+    
+
     uint32_t swapchain_index, frame_index;
     ctx->get_indices(swapchain_index, frame_index);
 
     dependencies deps = scene_update->run(display_deps);
+
+    deps.clear();
+
 
     for(auto& pv: per_view)
     {
@@ -232,6 +241,15 @@ void restir_renderer::render()
     }
 
     ctx->end_frame(deps);
+}
+
+void restir_renderer::reset_accumulation(bool reset_sample_counter)
+{
+    if(reset_sample_counter)
+    {
+        for(auto& pv: per_view)
+            pv.restir->reset_accumulation();
+    }
 }
 
 }

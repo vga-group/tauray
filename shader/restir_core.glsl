@@ -687,6 +687,7 @@ bool get_intersection_info(
             info.vd.triangle_uv,
             puvdx, puvdy
         );
+
         info.mat = sample_material(payload.instance_id, info.vd, puvdx, puvdy);
 
         apply_regularization(regularization, info.mat);
@@ -1083,7 +1084,9 @@ bool generate_bsdf_vertex(
     next_domain.rc = cur_domain.rc;
     ray_cone_apply_dist(distance(cur_domain.pos, next_domain.pos), next_domain.rc);
     // TODO: Apply curvature?
-    next_domain.tbn = create_tangent_space(info.vd.mapped_normal);
+
+    next_domain.tbn = create_tangent_space(info.vd.mapped_normal); // ok
+    //next_domain.tbn = create_tangent_space(vec3(0.0f)); // ok
     next_domain.flat_normal = info.vd.hard_normal;
     next_domain.view = dir;
     next_domain.tview = view_to_tangent_space(next_domain.view, next_domain.tbn);
@@ -1210,7 +1213,6 @@ int replay_path(
 
         bool reconnected = false;
         bool bounces = replay_path_bsdf_bounce(bounce, seed, throughput, regularization, src, in_past, head_allows_reconnection, reconnected);
-        apply_regularization(regularization, src.mat);
 
         if(fail_on_reconnect && reconnected)
             return 2;
@@ -1390,7 +1392,7 @@ bool reconnection_shift_map(
         apply_regularization(regularization, mat);
         ray_cone_apply_roughness(rs.tail_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : mat.roughness, rc);
 
-        mat3 tbn = create_tangent_space(vd.mapped_normal);
+        mat3 tbn = create_tangent_space(vd.mapped_normal); //
         vec3 tview = -to.dir * tbn;
         vec3 incident_dir = rs.vertex.incident_direction * tbn;
 

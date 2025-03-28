@@ -2,6 +2,7 @@
 #define SCENE_GLSL
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_debug_printf : enable
 #include "material.glsl"
 #include "color.glsl"
 #include "camera.glsl"
@@ -118,6 +119,8 @@ sampled_material sample_material(material mat, inout vertex_data v)
             v.bitangent,
             v.smooth_normal
         );
+
+
         vec3 ts_normal = normalize(sample_texture(mat.normal_tex_id, v.uv).xyz * 2.0f - 1.0f);
         v.mapped_normal = normalize(tbn * (ts_normal * vec3(mat.normal_factor, mat.normal_factor, 1.0f)));
         // Sometimes annoying stuff happens and the normal is broken. This isn't
