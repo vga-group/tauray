@@ -2,6 +2,7 @@
 #define TAURAY_PATH_TRACER_STAGE_HH
 #include "rt_camera_stage.hh"
 #include "rt_common.hh"
+#include "compute_pipeline.hh"
 #include "descriptor_set.hh"
 
 namespace tr
@@ -51,7 +52,7 @@ protected:
 
 private:
     push_descriptor_set desc;
-    rt_pipeline gfx;
+    compute_pipeline pt_pipeline;
     options opt;
 };
 

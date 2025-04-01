@@ -1,6 +1,8 @@
 #ifndef PATH_TRACER_GLSL
 #define PATH_TRACER_GLSL
 
+#define USE_RAY_QUERIES
+
 #ifdef USE_SCREEN_MOTION_TARGET
 #define CALC_PREV_VERTEX_POS
 #endif
@@ -14,6 +16,7 @@
 #endif
 
 #include "rt.glsl"
+#include "rt_common.glsl"
 #include "sampling.glsl"
 #include "radiance_cascades.glsl"
 
@@ -39,25 +42,20 @@ struct intersection_pdf
 
 #include "ggx.glsl"
 
-#include "rt_common_payload.glsl"
-
 float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
 {
-    shadow_visibility = 1.0f;
-    traceRayEXT(
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq,
         tlas,
         gl_RayFlagsTerminateOnFirstHitEXT,
         0x02^0xFF, // Exclude lights from shadow rays
-        1,
-        0,
-        1,
         pos,
         min_dist,
         dir,
-        max_dist,
-        1
+        max_dist
     );
-    return shadow_visibility;
+
+    return trace_ray_query_visibility(rq);
 }
 
 float bsdf_mis_pdf(
@@ -98,6 +96,7 @@ float nee_mis_pdf(float nee_pdf, float bsdf_pdf)
 }
 
 bool get_intersection_info(
+    hit_info payload,
     vec3 origin,
     vec3 view,
     out pt_vertex_data v,
@@ -448,10 +447,11 @@ void evaluate_ray(
 #ifdef DEMODULATED_OUTPUT
     bsdf_lobes primary_lobes = bsdf_lobes(0,0,0,1);
 #endif
-    payload.random_seed = pcg4d(lsampler.rs.seed).x;
+    pcg4d(lsampler.rs.seed);
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
-        traceRayEXT(
+        rayQueryEXT rq;
+        rayQueryInitializeEXT(rq,
             tlas,
             gl_RayFlagsNoneEXT,
 #ifdef HIDE_LIGHTS
@@ -459,21 +459,19 @@ void evaluate_ray(
 #else
             0xFF,
 #endif
-            0,
-            0,
-            0,
             pos,
             bounce == 0 ? 0.0f : control.min_ray_dist,
             view,
-            RAY_MAX_DIST,
-            0
+            RAY_MAX_DIST
         );
+
+        hit_info payload = trace_ray_query(rq, lsampler.rs.seed.x);
 
         pt_vertex_data v;
         sampled_material mat;
         intersection_pdf nee_pdf;
         vec3 light;
-        bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
+        bool terminal = !get_intersection_info(payload, pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
