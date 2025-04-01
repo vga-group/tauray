@@ -5,6 +5,7 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_debug_printf : enable
+#extension GL_EXT_ray_query : enable
 
 // Flags:
 // USE_NEXT_EVENT_ESTIMATION:
@@ -76,11 +77,14 @@ layout(push_constant, scalar) uniform push_constant_buffer
     float regularization_gamma;
 } control;
 
+layout(local_size_x = 8, local_size_y = 8) in;
+
+#define gl_LaunchIDEXT gl_GlobalInvocationID
+#define gl_LaunchSizeEXT (gl_WorkGroupSize * gl_NumWorkGroups)
 #include "path_tracer.glsl"
 
 void main()
 {
-
 #ifdef DEMODULATED_OUTPUT
     vec4 sum_diffuse = vec4(0,0,0,0);
     vec4 sum_reflection = vec4(0,0,0,0);
@@ -127,3 +131,4 @@ void main()
 #endif
     );
 }
+
