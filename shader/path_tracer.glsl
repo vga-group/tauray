@@ -5,6 +5,14 @@
 #define CALC_PREV_VERTEX_POS
 #endif
 
+#if defined(DIFFUSE_TARGET_BINDING) && defined(REFLECTION_TARGET_BINDING) && defined(COLOR_TARGET_BINDING)
+#error "Can only output color OR demodulated diffuse & reflection, not all at the same time."
+#endif
+
+#if defined(DIFFUSE_TARGET_BINDING) || defined(REFLECTION_TARGET_BINDING)
+#define DEMODULATED_OUTPUT
+#endif
+
 #include "rt.glsl"
 #include "sampling.glsl"
 #include "radiance_cascades.glsl"
@@ -370,23 +378,76 @@ float clamp_contribution_mul(vec3 contrib)
     return 1;
 }
 
+void write_color_outputs(
+#ifdef DEMODULATED_OUTPUT
+    vec4 diffuse,
+    vec4 reflection
+#else
+    vec3 color
+#endif
+){
+    // Write all outputs
+    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+#if DISTRIBUTION_STRATEGY != 0
+    if(p != ivec3(-1))
+#endif
+    {
+        uint prev_samples = distribution.samples_accumulated + control.previous_samples;
+
+#ifdef DEMODULATED_OUTPUT
+        accumulate_gbuffer_diffuse(diffuse, p, control.samples, prev_samples);
+        accumulate_gbuffer_reflection(reflection, p, control.samples, prev_samples);
+#else
+        // TODO: Support transparent backgrounds again, somehow.
+        const float alpha = 1.0;
+        accumulate_gbuffer_color(vec4(color, alpha), p, control.samples, prev_samples);
+#endif
+    }
+}
+
+void write_hit_outputs(
+    pt_vertex_data first_hit_vertex,
+    sampled_material first_hit_material
+){
+    // Write outputs
+    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+#if DISTRIBUTION_STRATEGY != 0
+    if(p != ivec3(-1))
+#endif
+    {
+        write_gbuffer_albedo(first_hit_material.albedo, p);
+        write_gbuffer_material(first_hit_material, p);
+        write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
+        write_gbuffer_pos(first_hit_vertex.pos, p);
+        #ifdef CALC_PREV_VERTEX_POS
+        write_gbuffer_screen_motion(
+            get_camera_projection(get_prev_camera(), first_hit_vertex.prev_pos),
+            p
+        );
+        #endif
+        write_gbuffer_instance_id(first_hit_vertex.instance_id, p);
+    }
+}
+
 void evaluate_ray(
     inout local_sampler lsampler,
     vec3 pos,
     vec3 view,
-    out vec4 diffuse,
-    out vec4 reflection,
-    out pt_vertex_data first_hit_vertex,
-    out sampled_material first_hit_material
+#ifdef DEMODULATED_OUTPUT
+    inout vec4 diffuse,
+    inout vec4 reflection,
+#else
+    inout vec3 color,
+#endif
+    bool write_first_hit_info
 ){
     vec3 attenuation = vec3(1);
 
-    diffuse = vec4(0,0,0,0);
-    reflection = vec4(0,0,0,0);
-
     float regularization = 1.0f;
     float bsdf_pdf = 0.0f;
+#ifdef DEMODULATED_OUTPUT
     bsdf_lobes primary_lobes = bsdf_lobes(0,0,0,1);
+#endif
     payload.random_seed = pcg4d(lsampler.rs.seed).x;
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
@@ -431,14 +492,35 @@ void evaluate_ray(
         {
             light *= clamp_contribution_mul(light);
         }
-        add_demodulated_color(primary_lobes, light, diffuse.rgb, reflection.rgb);
 
-        if(bounce == 0)
+        if(bounce == 0 && write_first_hit_info)
         {
-            first_hit_vertex = v;
-            first_hit_material = mat;
-            first_hit_material.emission = light;
+            mat.emission = light;
+            write_hit_outputs(v, mat);
+
+        /*
+#ifdef RADIANCE_CASCADES_SET
+            color = mat.albedo.rgb * eval_diffuse_radiance_cascades(
+                v.pos,
+                v.smooth_normal,
+                -dir,
+                mat.roughness,
+                mix(mat.f0, 1.0, mat.metallic)
+            );
+            return;
+#endif
+        */
         }
+
+#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
+        mat.albedo.rgb = vec3(1);
+#endif
+
+#ifdef DEMODULATED_OUTPUT
+        add_demodulated_color(primary_lobes, light, diffuse.rgb, reflection.rgb);
+#else
+        color.rgb += light;
+#endif
 
 #ifdef PATH_SPACE_REGULARIZATION
         // Regularization strategy inspired by "Optimised Path Space Regularisation", 2021 Weier et al.
@@ -460,21 +542,22 @@ void evaluate_ray(
                 generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view, view,
                 mat, v, lobes
             );
-            if(bounce != 0)
-            {
-                radiance *= modulate_bsdf(mat, lobes);
-                radiance *= clamp_contribution_mul(radiance);
-            }
+#ifdef DEMODULATED_OUTPUT
+            if(bounce == 0) primary_lobes = lobes;
             else
-            {
-                primary_lobes = lobes;
-#ifdef INDIRECT_CLAMP_FIRST_BOUNCE
-                radiance *= clamp_contribution_mul(radiance);
 #endif
-            }
+                radiance *= modulate_bsdf(mat, lobes);
+#ifdef INDIRECT_CLAMP_FIRST_BOUNCE
+            if(bounce != 0)
+#endif
+                radiance *= clamp_contribution_mul(radiance);
+#ifdef DEMODULATED_OUTPUT
             add_demodulated_color(primary_lobes, radiance, diffuse.rgb, reflection.rgb);
             if(bounce == 1)
                 diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
+#else
+            color.rgb += radiance;
+#endif
         }
 
         if(terminal) break;
@@ -484,22 +567,21 @@ void evaluate_ray(
 #ifdef RADIANCE_CASCADES_SET
         uvec4 ray_sample = generate_ray_sample_uint(lsampler, bounce*2+1);
         view = sample_radiance_cascades(ray_sample.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic), bsdf_pdf);
-        //lobes = bsdf_lobes(0,0,0,0);
-        //diffuse_brdf(view * tbn, lobes);
         ggx_bsdf(view * tbn, shading_view, mat, lobes);
 #else
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
         material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
-        //diffuse_brdf_sample(ray_sample, view, lobes, bsdf_pdf);
         view = tbn * view;
 #endif
 
-        correct_lobes_for_normal_map(v.hard_normal, view, lobes);
+        correct_lobes_for_normal_map(view, v.hard_normal, lobes);
 
-        if(bounce != 0)
-            attenuation *= modulate_bsdf(mat, lobes);
+#ifdef DEMODULATED_OUTPUT
+        if(bounce == 0) primary_lobes = lobes;
         else
-            primary_lobes = lobes;
+#else
+            attenuation *= modulate_bsdf(mat, lobes);
+#endif
 
         float visibility = ray_visibility(view, v);
         pos = v.pos;
@@ -545,49 +627,6 @@ void get_world_camera_ray(inout local_sampler lsampler, out vec3 origin, out vec
 #endif
         origin, dir
     );
-}
-
-void write_all_outputs(
-    vec3 color,
-    vec4 diffuse,
-    vec4 reflection,
-    pt_vertex_data first_hit_vertex,
-    sampled_material first_hit_material
-){
-    // Write all outputs
-    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
-#if DISTRIBUTION_STRATEGY != 0
-    if(p != ivec3(-1))
-#endif
-    {
-        uint prev_samples = distribution.samples_accumulated + control.previous_samples;
-
-        if(prev_samples == 0)
-        { // Only write gbuffer for the first sample.
-            ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
-            write_gbuffer_albedo(first_hit_material.albedo, p);
-            write_gbuffer_material(first_hit_material, p);
-            write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
-            write_gbuffer_pos(first_hit_vertex.pos, p);
-            #ifdef CALC_PREV_VERTEX_POS
-            write_gbuffer_screen_motion(
-                get_camera_projection(get_prev_camera(), first_hit_vertex.prev_pos),
-                p
-            );
-            #endif
-            write_gbuffer_instance_id(first_hit_vertex.instance_id, p);
-        }
-
-#ifdef USE_TRANSPARENT_BACKGROUND
-        const float alpha = first_hit_material.albedo.a;
-#else
-        const float alpha = 1.0;
-#endif
-
-        accumulate_gbuffer_color(vec4(color, alpha), p, control.samples, prev_samples);
-        accumulate_gbuffer_diffuse(diffuse, p, control.samples, prev_samples);
-        accumulate_gbuffer_reflection(reflection, p, control.samples, prev_samples);
-    }
 }
 
 #endif
