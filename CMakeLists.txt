@@ -25,7 +25,7 @@ function(add_glslang)
     # This just gives us a scope so that we don't overwrite CMAKE_BUILD_TYPE.
     set(SKIP_GLSLANG_INSTALL ON CACHE BOOL "" FORCE)
     set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
-    set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
+    set(ENABLE_OPT ON CACHE BOOL "" FORCE)
     set(ENABLE_PCH OFF CACHE BOOL "" FORCE)
     set(ENABLE_CTEST OFF CACHE BOOL "" FORCE)
     set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)

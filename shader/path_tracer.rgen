@@ -80,11 +80,14 @@ layout(push_constant, scalar) uniform push_constant_buffer
 
 void main()
 {
-    pt_vertex_data first_hit_vertex;
-    sampled_material first_hit_material;
-    vec3 sum_color = vec3(0,0,0);
+
+#ifdef DEMODULATED_OUTPUT
     vec4 sum_diffuse = vec4(0,0,0,0);
     vec4 sum_reflection = vec4(0,0,0,0);
+#else
+    vec3 sum_color = vec3(0,0,0);
+#endif
+
 #if SAMPLES_PER_PASS != 1
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
 #else
@@ -103,41 +106,24 @@ void main()
         vec3 dir;
         get_world_camera_ray(lsampler, origin, dir);
 
-        vec4 diffuse, reflection;
         evaluate_ray(
             lsampler, origin, dir,
-            diffuse, reflection,
-            first_hit_vertex, first_hit_material
-        );
-#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
-        vec3 old_color = first_hit_material.albedo.rgb;
-        first_hit_material.albedo.rgb = vec3(1);
-#endif
-        /*
-#ifdef RADIANCE_CASCADES_SET
-        sum_color += first_hit_material.albedo.rgb * eval_diffuse_radiance_cascades(
-            first_hit_vertex.pos,
-            first_hit_vertex.smooth_normal,
-            -dir,
-            first_hit_material.roughness,
-            mix(first_hit_material.f0, 1.0, first_hit_material.metallic)
-        );
+#ifdef DEMODULATED_OUTPUT
+            sum_diffuse,
+            sum_reflection,
 #else
-*/
-        sum_color += first_hit_material.emission + modulate_color(first_hit_material, diffuse.rgb, reflection.rgb);
-//#endif
-        sum_diffuse += diffuse;
-        sum_reflection += reflection;
-#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
-        first_hit_material.albedo.rgb = old_color;
+            sum_color,
 #endif
+            i == 0
+        );
     }
 
-    write_all_outputs(
-        sum_color.rgb / SAMPLES_PER_PASS,
-        sum_diffuse.rgba / SAMPLES_PER_PASS,
-        sum_reflection.rgba / SAMPLES_PER_PASS,
-        first_hit_vertex,
-        first_hit_material
+    write_color_outputs(
+#ifdef DEMODULATED_OUTPUT
+        sum_diffuse.rgb / SAMPLES_PER_PASS,
+        sum_reflection.rgb / SAMPLES_PER_PASS,
+#else
+        sum_color.rgb / SAMPLES_PER_PASS
+#endif
     );
 }
