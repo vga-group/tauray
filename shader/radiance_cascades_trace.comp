@@ -68,7 +68,6 @@ bool get_probe_coordinate(out ivec2 texel_coordinate, out ivec3 probe_coordinate
 }
 
 hit_info trace_primary_ray(
-    uint seed,
     vec3 origin,
     vec3 dir,
     float len
@@ -84,6 +83,7 @@ hit_info trace_primary_ray(
         len
     );
 
+    uint seed = 0;
     return trace_ray_query(rq, seed);
 }
 
@@ -92,8 +92,8 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
     if(info.instance_id >= 0)
     { // Hit an emissive surface.
         vec3 normal = normalize(cross(
-            info.positions[1]- info.positions[0],
-            info.positions[2]- info.positions[0]
+            info.positions[1] - info.positions[0],
+            info.positions[2] - info.positions[0]
         ));
         if(dot(normal, ray_direction) > 0) normal = -normal;
         vec3 pos = ray_origin + info.hit_t * ray_direction;
@@ -137,12 +137,10 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
                 mix(0.04, 1.0, metallic)
             );
         }
-
         return vec4(emission, 1.0f);
     }
     else if(info.primitive_id >= 0)
     { // Point light
-        //return vec4(0.0f, 0.0f, 0.0f, 1.0f);
         point_light pl = point_lights.lights[info.primitive_id];
 
         // No worries, radius cannot be zero -- we couldn't hit the light here
@@ -152,7 +150,6 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
     }
     else if(pc.cascade+1 == pc.cascade_count)
     { // Only last cascade gets the environment lighting.
-        //return vec4(0.0f, 0.0f, 0.0f, 1.0f);
         vec4 color = scene_metadata.environment_factor;
         if(scene_metadata.environment_proj >= 0)
         {
@@ -172,7 +169,6 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
             vec3 color = visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
             emission += color;
         }
-
         return vec4(emission, 1.0f);
     }
     return vec4(0);
@@ -180,8 +176,6 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
 
 void main()
 {
-    uint seed = 0; // TODO
-
     bool first_cascade = pc.cascade == 0;
     bool last_cascade = pc.cascade+1 == pc.cascade_count;
 
@@ -222,8 +216,7 @@ void main()
     float ray_len = length(ray_dir);
     ray_dir /= ray_len;
 
-    hit_info hi = trace_primary_ray(seed, ray_origin, ray_dir, ray_len);
-    vertex_data vd;
+    hit_info hi = trace_primary_ray(ray_origin, ray_dir, ray_len);
 
     vec4 hit_color = simple_shade(ray_origin, ray_dir, hi);
 
