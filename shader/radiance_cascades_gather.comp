@@ -47,8 +47,12 @@ bool get_probe_coordinate(out ivec2 texel_coordinate, out ivec3 probe_coordinate
 
     texel_coordinate = tile_coord + ivec2(gl_WorkGroupSize.y * tile_x_index, gl_WorkGroupSize.z * tile_y_index);
 
-    uint prev_end = pc.cascade+1 < pc.cascade_count ? dispatch_info.cascade_end_offset[pc.cascade+1] : 0;
+    uint prev_end = dispatch_info.cascade_end_offset[pc.cascade+1];
     uint cur_end = dispatch_info.cascade_end_offset[pc.cascade];
+
+    if(pc.cascade+1 >= pc.cascade_count)
+        prev_end = 0;
+
     if(prev_end + probe_index >= cur_end)
         return false;
     probe_coordinate = dispatch_info.probe_indices[prev_end + probe_index];
@@ -72,6 +76,16 @@ void main()
     int upper_cascade_size = pc.cascade_size/2;
     int upper_probe_resolution = lower_angular_resolution*2;
 
+    ivec3 q0 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel);
+    ivec3 q1 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(1,0));
+    ivec3 q2 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(0,1));
+    ivec3 q3 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(1,1));
+
+    float r0 = imageLoad(upper_target, q0).r;
+    float r1 = imageLoad(upper_target, q1).r;
+    float r2 = imageLoad(upper_target, q2).r;
+    float r3 = imageLoad(upper_target, q3).r;
+
     float dst_col = imageLoad(lower_target, p).r;
     float dst_vis = imageLoad(lower_target_visibility, p).r;
     float prev_col = imageLoad(prev_lower_target, p).r;
@@ -79,18 +93,7 @@ void main()
 
     if(pc.carry_from_previous != 0)
     {
-        ivec3 q0 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel);
-        ivec3 q1 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(1,0));
-        ivec3 q2 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(0,1));
-        ivec3 q3 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(1,1));
-
-        float src_avg = 0.0f;
-        src_avg += imageLoad(upper_target, q0).r;
-        src_avg += imageLoad(upper_target, q1).r;
-        src_avg += imageLoad(upper_target, q2).r;
-        src_avg += imageLoad(upper_target, q3).r;
-        src_avg /= 4;
-
+        float src_avg = (r0+r1+r2+r3) * 0.25f;
         dst_col = mix(src_avg, dst_col, dst_vis);
     }
 
