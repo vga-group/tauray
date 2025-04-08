@@ -59,8 +59,12 @@ bool get_probe_coordinate(out ivec2 texel_coordinate, out ivec3 probe_coordinate
 
     texel_coordinate = tile_coord + ivec2(gl_WorkGroupSize.y * tile_x_index, gl_WorkGroupSize.z * tile_y_index);
 
-    uint prev_end = pc.cascade+1 < pc.cascade_count ? dispatch_info.cascade_end_offset[pc.cascade+1] : 0;
+    uint prev_end = dispatch_info.cascade_end_offset[pc.cascade+1];
     uint cur_end = dispatch_info.cascade_end_offset[pc.cascade];
+
+    if(pc.cascade+1 >= pc.cascade_count)
+        prev_end = 0;
+
     if(prev_end + probe_index >= cur_end)
         return false;
     probe_coordinate = dispatch_info.probe_indices[prev_end + probe_index];
