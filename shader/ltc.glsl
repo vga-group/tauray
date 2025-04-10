@@ -1,6 +1,7 @@
 #ifndef LTC_GLSL
 #define LTC_GLSL
 #include "math.glsl"
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable
 
 // https://advances.realtimerendering.com/s2016/s2016_ltc_rnd.pdf
 
@@ -32,11 +33,30 @@ float angle_per_sin_angle_fast(float cos_theta)
     return inversesqrt(num);
 }
 
+f16vec2 angle_per_sin_angle_fast(f16vec2 cos_theta)
+{
+    f16vec2 num = f16vec2(3.787823) * cos_theta + f16vec2(19.739209);
+    num = num * cos_theta + f16vec2(15.951386);
+    return inversesqrt(num);
+}
+
 // a and b are unit vectors on the +z hemisphere.
 float edge_integral(vec3 a, vec3 b)
 {
     float cos_theta = dot(a, b);
     return angle_per_sin_angle_fast(cos_theta) * (a.x * b.y - a.y * b.x);
+}
+
+f16vec2 edge_integral(
+    f16vec2 ax,
+    f16vec2 ay,
+    f16vec2 az,
+    f16vec2 bx,
+    f16vec2 by,
+    f16vec2 bz
+){
+    f16vec2 cos_theta = ax * bx + ay * by + az * bz;
+    return angle_per_sin_angle_fast(cos_theta) * (ax * by - ay * bx);
 }
 
 vec3 edge_vector_form_factor(vec3 a, vec3 b)
@@ -156,6 +176,28 @@ vec3 ltc_transform_dir3(vec3 transform, vec3 dir)
         dir.z * transform.z
     );
     return normalize(new_dir);
+}
+
+// "SIMD" version for half-precision.
+void ltc_transform_dir3(
+    f16vec3 transform,
+    f16vec2 dir_x,
+    f16vec2 dir_y,
+    f16vec2 dir_z,
+    out f16vec2 x,
+    out f16vec2 y,
+    out f16vec2 z
+){
+    x = dir_x * transform.x + dir_z * transform.y;
+    y = dir_y;
+    z = dir_z * transform.z;
+
+    f16vec2 len2 = x * x + y * y + z * z + f16vec2(0.0004);
+    f16vec2 inv_len = inversesqrt(len2);
+
+    x = x * inv_len;
+    y = y * inv_len;
+    z = z * inv_len;
 }
 
 float ggx_albedo(float vdotn, float roughness)
