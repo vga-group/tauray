@@ -496,18 +496,18 @@ void evaluate_ray(
             mat.emission = light;
             write_hit_outputs(v, mat);
 
-        /*
+            /*
 #ifdef RADIANCE_CASCADES_SET
             color = mat.albedo.rgb * eval_diffuse_radiance_cascades(
                 v.pos,
                 v.smooth_normal,
-                -dir,
+                -view,
                 mat.roughness,
                 mix(mat.f0, 1.0, mat.metallic)
             );
             return;
 #endif
-        */
+            */
         }
 
 #ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE

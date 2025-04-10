@@ -76,6 +76,47 @@ vec3 radiance_cascade_probe_mapping(vec2 u)
     //return concentric_octahedral_mapping(clamp(u, vec2(0.0f), vec2(1.0f)));
 }
 
+void octahedral_mapping(
+    f16vec2 packed_normal_x,
+    f16vec2 packed_normal_y,
+    out f16vec2 normal_x,
+    out f16vec2 normal_y,
+    out f16vec2 normal_z
+){
+    normal_x = packed_normal_x;
+    normal_y = f16vec2(1.0) - abs(packed_normal_x) - abs(packed_normal_y);
+    normal_z = packed_normal_y;
+
+    f16vec2 ny = clamp(normal_y, f16vec2(-1.0), f16vec2(0.0));
+    normal_x = normal_x + mix(-ny, ny, greaterThan(normal_x, f16vec2(0.0)));
+    normal_z = normal_z + mix(-ny, ny, greaterThan(normal_z, f16vec2(0.0)));
+
+    f16vec2 len2 = normal_x * normal_x + normal_y * normal_y + normal_z * normal_z;
+    f16vec2 inv_len = inversesqrt(len2);
+
+    normal_x = normal_x * inv_len;
+    normal_y = normal_y * inv_len;
+    normal_z = normal_z * inv_len;
+}
+
+
+void radiance_cascade_probe_mapping(
+    f16vec2 u_x,
+    f16vec2 u_y,
+    out f16vec2 normal_x,
+    out f16vec2 normal_y,
+    out f16vec2 normal_z
+){
+    octahedral_mapping(
+        u_x * f16vec2(2.0) - f16vec2(1.0),
+        u_y * f16vec2(2.0) - f16vec2(1.0),
+        normal_x,
+        normal_y,
+        normal_z
+    );
+    //return concentric_octahedral_mapping(clamp(u, vec2(0.0f), vec2(1.0f)));
+}
+
 vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
 {
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
@@ -132,6 +173,36 @@ vec3 get_texel_corner(ivec2 texel, vec2 corner, float inv_probe_resolution, mat3
     return dir;
 }
 
+void get_texel_corner(
+    f16vec2 base,
+    f16vec2 corner_x,
+    f16vec2 corner_y,
+    float16_t inv_probe_resolution,
+    f16vec3 tangent,
+    f16vec3 bitangent,
+    f16vec3 normal,
+    out f16vec2 result_x,
+    out f16vec2 result_y,
+    out f16vec2 result_z
+){
+    f16vec2 u_x = corner_x * inv_probe_resolution + base.x;
+    f16vec2 u_y = corner_y * inv_probe_resolution + base.y;
+    f16vec2 dir_x;
+    f16vec2 dir_y;
+    f16vec2 dir_z;
+    radiance_cascade_probe_mapping(
+        u_x,
+        u_y,
+        dir_x,
+        dir_y,
+        dir_z
+    );
+
+    result_x = dir_x * tangent.x + dir_y * tangent.y + dir_z * tangent.z;
+    result_y = dir_x * bitangent.x + dir_y * bitangent.y + dir_z * bitangent.z;
+    result_z = max(dir_x * normal.x + dir_y * normal.y + dir_z * normal.z, f16vec2(0.0));
+}
+
 vec4 integrate_quad(
     mat3 tbn,
     vec3 ltc_transform,
@@ -173,21 +244,21 @@ vec4 integrate_quad(
     diff_z.y += edge_integral(v12, v22);
     diff_z.y += edge_integral(v22, v21);
 
-    float d01_11 = edge_integral(v01, v11);
-    diff_z.w += d01_11;
-    diff_z.x -= d01_11;
-
-    float d11_10 = edge_integral(v11, v10);
-    diff_z.w += d11_10;
-    diff_z.z -= d11_10;
+    float d11_01 = edge_integral(v11, v01);
+    diff_z.w -= d11_01;
+    diff_z.x += d11_01;
 
     float d11_21 = edge_integral(v11, v21);
     diff_z.z += d11_21;
     diff_z.y -= d11_21;
 
-    float d12_11 = edge_integral(v12, v11);
-    diff_z.x += d12_11;
-    diff_z.y -= d12_11;
+    float d11_10 = edge_integral(v11, v10);
+    diff_z.w += d11_10;
+    diff_z.z -= d11_10;
+
+    float d11_12 = edge_integral(v11, v12);
+    diff_z.x -= d11_12;
+    diff_z.y += d11_12;
 
     v11 = ltc_transform_dir3(ltc_transform, v11);
     v00 = ltc_transform_dir3(ltc_transform, v00);
@@ -227,6 +298,125 @@ vec4 integrate_quad(
     return values * sum_contrib;
 }
 
+f16vec4 integrate_quad_half_precision(
+    f16vec3 tangent,
+    f16vec3 bitangent,
+    f16vec3 normal,
+    f16vec3 ltc_transform,
+    float16_t inv_probe_resolution,
+    int cascade,
+    f16vec2 base,
+    ivec3 base_tex_coord,
+    float16_t flip_fresnel,
+    float16_t specular_amplitude
+){
+    // [v00]----[v10]----[v20]
+    //   |   <-   |   <-   |
+    //   | v .z ^ | v .x ^ |
+    //   |   ->   |   ->   |
+    // [v01]----[v11]----[v21]
+    //   |   <-   |   <-   |
+    //   | v .y ^ | v .w ^ |
+    //   |   ->   |   ->   |
+    // [v02]----[v12]----[v22]
+
+    // To keep things simple, there should be no shared edges between the pairs
+    // here. v11 is the only one that gets orphaned, but since there's an
+    // odd number of vectors here, that'll happen anyway.
+    f16vec2 h00_h22_x, h00_h22_y, h00_h22_z;
+    get_texel_corner(
+        base, f16vec2(0,2), f16vec2(0,2), inv_probe_resolution,
+        tangent, bitangent, normal,
+        h00_h22_x, h00_h22_y, h00_h22_z
+    );
+
+    f16vec2 h10_h12_x, h10_h12_y, h10_h12_z;
+    get_texel_corner(
+        base, f16vec2(1,1), f16vec2(0,2), inv_probe_resolution,
+        tangent, bitangent, normal,
+        h10_h12_x, h10_h12_y, h10_h12_z
+    );
+
+    f16vec2 h20_h02_x, h20_h02_y, h20_h02_z;
+    get_texel_corner(
+        base, f16vec2(2,0), f16vec2(0,2), inv_probe_resolution,
+        tangent, bitangent, normal,
+        h20_h02_x, h20_h02_y, h20_h02_z
+    );
+
+    f16vec2 h21_h01_x, h21_h01_y, h21_h01_z;
+    get_texel_corner(
+        base, f16vec2(2,0), f16vec2(1,1), inv_probe_resolution,
+        tangent, bitangent, normal,
+        h21_h01_x, h21_h01_y, h21_h01_z
+    );
+
+    f16vec2 h11_h11_x, h11_h11_y, h11_h11_z;
+    get_texel_corner(
+        base, f16vec2(1,1), f16vec2(1,1), inv_probe_resolution,
+        tangent, bitangent, normal,
+        h11_h11_x, h11_h11_y, h11_h11_z
+    );
+
+    f16vec4 diff_z = f16vec4(0.0f);
+    f16vec2 r = edge_integral(h10_h12_x, h10_h12_y, h10_h12_z, h00_h22_x, h00_h22_y, h00_h22_z);
+    diff_z.zw += r.xy;
+
+    r = edge_integral(h20_h02_x, h20_h02_y, h20_h02_z, h10_h12_x, h10_h12_y, h10_h12_z);
+    diff_z.xy += r.xy;
+
+    r = edge_integral(h21_h01_x, h21_h01_y, h21_h01_z, h20_h02_x, h20_h02_y, h20_h02_z);
+    diff_z.xy += r.xy;
+
+    r = edge_integral(h00_h22_x, h00_h22_y, h00_h22_z, h21_h01_x.yx, h21_h01_y.yx, h21_h01_z.yx);
+    diff_z.zw += r.xy;
+
+    r = edge_integral(h11_h11_x, h11_h11_y, h11_h11_z, h21_h01_x, h21_h01_y, h21_h01_z);
+    diff_z.xy += r.xy;
+    diff_z.zw -= r.yx;
+
+    r = edge_integral(h11_h11_x, h11_h11_y, h11_h11_z, h10_h12_x, h10_h12_y, h10_h12_z);
+    diff_z.xy -= r.xy;
+    diff_z.zw += r.xy;
+
+    ltc_transform_dir3(ltc_transform, h00_h22_x, h00_h22_y, h00_h22_z, h00_h22_x, h00_h22_y, h00_h22_z);
+    ltc_transform_dir3(ltc_transform, h10_h12_x, h10_h12_y, h10_h12_z, h10_h12_x, h10_h12_y, h10_h12_z);
+    ltc_transform_dir3(ltc_transform, h20_h02_x, h20_h02_y, h20_h02_z, h20_h02_x, h20_h02_y, h20_h02_z);
+    ltc_transform_dir3(ltc_transform, h21_h01_x, h21_h01_y, h21_h01_z, h21_h01_x, h21_h01_y, h21_h01_z);
+    ltc_transform_dir3(ltc_transform, h11_h11_x, h11_h11_y, h11_h11_z, h11_h11_x, h11_h11_y, h11_h11_z);
+
+    f16vec4 spec_z = f16vec4(0.0f);
+    r = edge_integral(h10_h12_x, h10_h12_y, h10_h12_z, h00_h22_x, h00_h22_y, h00_h22_z);
+    spec_z.zw += r.xy;
+
+    r = edge_integral(h20_h02_x, h20_h02_y, h20_h02_z, h10_h12_x, h10_h12_y, h10_h12_z);
+    spec_z.xy += r.xy;
+
+    r = edge_integral(h21_h01_x, h21_h01_y, h21_h01_z, h20_h02_x, h20_h02_y, h20_h02_z);
+    spec_z.xy += r.xy;
+
+    r = edge_integral(h00_h22_x, h00_h22_y, h00_h22_z, h21_h01_x.yx, h21_h01_y.yx, h21_h01_z.yx);
+    spec_z.zw += r.xy;
+
+    r = edge_integral(h11_h11_x, h11_h11_y, h11_h11_z, h21_h01_x, h21_h01_y, h21_h01_z);
+    spec_z.xy += r.xy;
+    spec_z.zw -= r.yx;
+
+    r = edge_integral(h11_h11_x, h11_h11_y, h11_h11_z, h10_h12_x, h10_h12_y, h10_h12_z);
+    spec_z.xy -= r.xy;
+    spec_z.zw += r.xy;
+
+    //x <- y
+    //y <- w
+    //z <- x
+    //w <- z
+    diff_z = diff_z.ywxz;
+    spec_z = spec_z.ywxz;
+    f16vec4 sum_contrib = flip_fresnel * max(diff_z, f16vec4(0.0)) + specular_amplitude * max(spec_z, f16vec4(0.0));
+    f16vec4 values = f16vec4(textureGather(radiance_cascades[cascade], vec3(base_tex_coord.xy + 1.0, base_tex_coord.z)));
+    return values * sum_contrib;
+}
+
 float eval_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
 {
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
@@ -241,27 +431,33 @@ float eval_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughnes
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
 
     float vdotn = dot(view, normal);
-    vec3 ltc_transform = ltc_ggx_transform(vdotn, max(roughness, 0.01f));
+    f16vec3 ltc_transform = f16vec3(ltc_ggx_transform(vdotn, max(roughness, 0.01f)));
     mat3 tbn = create_tangent_space(normal, view);
+    f16vec3 tangent = f16vec3(tbn[0]);
+    f16vec3 bitangent = f16vec3(tbn[1]);
+    f16vec3 hnormal = f16vec3(tbn[2]);
 
-    float inv_probe_resolution = 1.0f / probe_resolution;
-    float fresnel = f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness);
-    float specular_amplitude = fresnel + f0 * ggx_albedo(vdotn, roughness) - f0;
+    float16_t inv_probe_resolution = float16_t(1.0f / probe_resolution);
+    float16_t fresnel = float16_t(f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness));
+    float16_t specular_amplitude = fresnel + float16_t(f0 * ggx_albedo(vdotn, roughness) - f0);
+    float16_t flip_fresnel = float16_t(1.0) - fresnel;
 
-    float contrib = 0;
+    float16_t contrib = float16_t(0);
     for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; x+=2)
     for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; y+=2)
     {
-        contrib += dot(integrate_quad(
-            tbn,
+        contrib += dot(integrate_quad_half_precision(
+            tangent,
+            bitangent,
+            hnormal,
             ltc_transform,
             inv_probe_resolution,
             0,
-            ivec2(x,y),
+            f16vec2(x,y) * inv_probe_resolution,
             get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), ivec2(x,y)),
-            fresnel,
+            flip_fresnel,
             specular_amplitude
-        ), vec4(1));
+        ), f16vec4(1));
     }
     return contrib;
 }
@@ -269,41 +465,6 @@ float eval_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughnes
 float eval_diffuse_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
 {
     return eval_radiance_cascades(origin, normal, view, roughness, f0);
-
-    vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
-    vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
-
-    // 0-1 inside cascade volume
-    vec3 fcoord = (origin - aabb_min) / (aabb_max - aabb_min);
-
-    ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
-    int probe_resolution = radiance_cascade_metadata.c0_angular_resolution;
-
-    vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
-
-    vec3 r = reflect(-view, normal);
-
-    float sum_diffuse = 0;
-    float sum_specular = 0;
-
-    float inv_probe_resolution = 1.0f / probe_resolution;
-    float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
-
-    [[unroll]] for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; ++x)
-    [[unroll]] for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; ++y)
-    {
-        ivec2 p = ivec2(x, y);
-        ivec3 tex_coord = get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
-        float value = texelFetch(radiance_cascades[0], tex_coord, 0).r;
-
-        vec3 center = radiance_cascade_probe_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
-        float cdn = dot(center, normal);
-        // Diffuse
-        sum_diffuse += value * max(len + cdn, 0.0f);
-    }
-
-    sum_diffuse *= 1.0f / (1.0f + 0.25f * probe_resolution * probe_resolution);
-    return sum_diffuse;
 }
 
 void rc_wrs_update(inout uint seed, ivec2 p, vec4 weights, inout float sum_weight, inout float selected_weight, inout ivec2 selected_cell)
@@ -357,17 +518,20 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
 
     float vdotn = dot(view, normal);
-    vec3 ltc_transform = ltc_ggx_transform(vdotn, max(roughness, 0.01f));
+    f16vec3 ltc_transform = f16vec3(ltc_ggx_transform(vdotn, max(roughness, 0.01f)));
     mat3 tbn = create_tangent_space(normal, view);
-    float fresnel = f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness);
-    float specular_amplitude = fresnel + f0 * ggx_albedo(vdotn, roughness) - f0;
+    f16vec3 tangent = f16vec3(tbn[0]);
+    f16vec3 bitangent = f16vec3(tbn[1]);
+    f16vec3 hnormal = f16vec3(tbn[2]);
+    float16_t fresnel = float16_t(f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness));
+    float16_t specular_amplitude = fresnel + float16_t(f0 * ggx_albedo(vdotn, roughness) - f0);
+    float16_t flip_fresnel = float16_t(1.0) - fresnel;
 
     ivec2 selected_cell = ivec2(0);
     float selected_weight = 0.0f;
     float sum_weight = 0.0f;
 
-    float inv_probe_resolution = 1.0f / RC_C0_ANGULAR_RESOLUTION;
-    float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
+    float16_t inv_probe_resolution = float16_t(1.0f / RC_C0_ANGULAR_RESOLUTION);
 
     for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; x+=2)
     for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; y+=2)
@@ -375,14 +539,16 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
         ivec2 p = ivec2(x, y);
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
 
-        vec4 contrib = integrate_quad(
-            tbn,
+        vec4 contrib = integrate_quad_half_precision(
+            tangent,
+            bitangent,
+            hnormal,
             ltc_transform,
             inv_probe_resolution,
             0,
-            p,
+            f16vec2(x,y) * inv_probe_resolution,
             tex_coord,
-            fresnel,
+            flip_fresnel,
             specular_amplitude
         );
 
@@ -397,22 +563,23 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
     for(int cascade = 1; cascade < RC_CASCADE_COUNT; ++cascade)
     { // Drill deeper
         cascade_size /= 2;
-        inv_probe_resolution *= 0.5f;
-        len *= 0.25f;
+        inv_probe_resolution *= float16_t(0.5f);
         cascade_coord = clamp(cascade_coord * 0.5f, vec3(0.5), vec3(cascade_size-0.5));
 
         ivec2 base_cell = selected_cell * 2;
         selected_weight = 0.0f;
         sum_weight = 0.0f;
 
-        vec4 contrib = integrate_quad(
-            tbn,
+        vec4 contrib = integrate_quad_half_precision(
+            tangent,
+            bitangent,
+            hnormal,
             ltc_transform,
             inv_probe_resolution,
             cascade,
-            base_cell,
+            f16vec2(base_cell) * inv_probe_resolution,
             get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), base_cell),
-            fresnel,
+            flip_fresnel,
             specular_amplitude
         );
         rc_wrs_update(seed, base_cell, contrib, sum_weight, selected_weight, selected_cell);
@@ -451,16 +618,20 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
     vec2 tex_coord = radiance_cascade_probe_mapping_inverse(dir);
 
     float vdotn = dot(view, normal);
-    vec3 ltc_transform = ltc_ggx_transform(vdotn, max(roughness, 0.01f));
+    f16vec3 ltc_transform = f16vec3(ltc_ggx_transform(vdotn, max(roughness, 0.01f)));
     mat3 tbn = create_tangent_space(normal, view);
-    float fresnel = f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness);
-    float specular_amplitude = fresnel + f0 * ggx_albedo(vdotn, roughness) - f0;
+    f16vec3 tangent = f16vec3(tbn[0]);
+    f16vec3 bitangent = f16vec3(tbn[1]);
+    f16vec3 hnormal = f16vec3(tbn[2]);
+
+    float16_t fresnel = float16_t(f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness));
+    float16_t specular_amplitude = fresnel + float16_t(f0 * ggx_albedo(vdotn, roughness) - f0);
+    float16_t flip_fresnel = float16_t(1.0) - fresnel;
 
     float selected_weight = 0.0f;
     float sum_weight = 0.0f;
 
-    float inv_probe_resolution = 1.0f / probe_resolution;
-    float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
+    float16_t inv_probe_resolution = float16_t(1.0f / RC_C0_ANGULAR_RESOLUTION);
 
     ivec2 itex_coord = ivec2(tex_coord * probe_resolution);
 
@@ -473,14 +644,16 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
         ivec2 p = ivec2(x, y);
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
 
-        vec4 contrib = integrate_quad(
-            tbn,
+        vec4 contrib = integrate_quad_half_precision(
+            tangent,
+            bitangent,
+            hnormal,
             ltc_transform,
             inv_probe_resolution,
             0,
-            p,
+            f16vec2(x,y) * inv_probe_resolution,
             tex_coord,
-            fresnel,
+            flip_fresnel,
             specular_amplitude
         );
 
@@ -493,8 +666,7 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
     { // Drill deeper
         cascade_size /= 2;
         probe_resolution *= 2;
-        inv_probe_resolution *= 0.5f;
-        len *= 0.25f;
+        inv_probe_resolution *= float16_t(0.5f);
         cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
         ivec2 base_cell = itex_coord * 2;
 
@@ -502,14 +674,16 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
         selected_weight = 0.0f;
         sum_weight = 0.0f;
 
-        vec4 contrib = integrate_quad(
-            tbn,
+        vec4 contrib = integrate_quad_half_precision(
+            tangent,
+            bitangent,
+            hnormal,
             ltc_transform,
             inv_probe_resolution,
             cascade,
-            base_cell,
+            f16vec2(base_cell) * inv_probe_resolution,
             get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), base_cell),
-            fresnel,
+            flip_fresnel,
             specular_amplitude
         );
 
@@ -525,183 +699,6 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
     return pdf;
 }
 
-// Only valid inside cascade volume!
-/*
-vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 albedo, out float pdf)
-{
-    vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
-    vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
-
-    // 0-1 inside cascade volume
-    vec3 fcoord = (origin - aabb_min) / (aabb_max - aabb_min);
-    int cascade_size = RC_C0_SPATIAL_RESOLUTION;
-    vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
-
-    ivec2 selected_cell = ivec2(0);
-    float selected_weight = 0.0f;
-    float sum_weight = 0.0f;
-
-    float inv_probe_resolution = 1.0f / RC_C0_ANGULAR_RESOLUTION;
-    float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
-
-    for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; ++x)
-    for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; ++y)
-    {
-        ivec2 p = ivec2(x, y);
-        ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
-        float value = texelFetch(radiance_cascades[0], tex_coord, 0).r;
-
-        vec3 center = radiance_cascade_probe_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
-        float cdn = dot(center, normal);
-        float weight = value * max(len + cdn, 0.0f);
-        float u = generate_single_uniform_random_fast(seed);
-
-        weight += 1e-16f;
-        sum_weight += weight;
-        if(u*sum_weight < weight)
-        {
-            selected_cell = p;
-            selected_weight = weight;
-        }
-    }
-    ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), selected_cell);
-    float total_visibility = 1.0 - texelFetch(radiance_cascades_visibility[0], sel_coord, 0).r;
-
-    pdf = selected_weight / sum_weight;
-
-    for(int cascade = 1; cascade < RC_CASCADE_COUNT; ++cascade)
-    { // Drill deeper
-        cascade_size /= 2;
-        inv_probe_resolution *= 0.5f;
-        len *= 0.25f;
-        cascade_coord = clamp(cascade_coord * 0.5f, vec3(0.5), vec3(cascade_size-0.5));
-
-        ivec2 base_cell = selected_cell * 2;
-        selected_weight = 0.0f;
-        sum_weight = 0.0f;
-        for(int x = 0; x < 2; ++x)
-        for(int y = 0; y < 2; ++y)
-        {
-            ivec2 p = base_cell.xy + ivec2(x, y);
-            ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), p);
-
-            float value = texelFetch(radiance_cascades[cascade], tex_coord, 0).r;
-            vec3 center = radiance_cascade_probe_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
-            float cdn = dot(center, normal);
-            float weight = rgb_to_luminance(albedo * value) * max(len + cdn, 0.0f);
-            weight += 1e-16f;
-
-            float u = generate_single_uniform_random_fast(seed);
-
-            sum_weight += weight;
-            if(u*sum_weight < weight)
-            {
-                selected_cell = p;
-                selected_weight = weight;
-            }
-        }
-        ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), selected_cell);
-        total_visibility *= 1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r;
-        pdf *= selected_weight / sum_weight;
-    }
-
-    // Sample from inside the selected cell.
-    vec2 random_offset = vec2(
-        generate_single_uniform_random_fast(seed),
-        generate_single_uniform_random_fast(seed)
-    );
-
-    vec2 uv = (vec2(selected_cell) + random_offset) * inv_probe_resolution;
-
-    const int probe_resolution = RC_C0_ANGULAR_RESOLUTION<<(RC_CASCADE_COUNT-1);
-    pdf *= (probe_resolution * probe_resolution) / (4 * M_PI);
-    vec3 dir = radiance_cascade_probe_mapping(uv);
-    return dir;
-}
-
-float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 albedo, vec3 dir)
-{
-    vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
-    vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
-
-    // 0-1 inside cascade volume
-    vec3 fcoord = (origin - aabb_min) / (aabb_max - aabb_min);
-
-    ivec3 cascade_size = radiance_cascade_metadata.size.xyz;
-    int probe_resolution = radiance_cascade_metadata.c0_angular_resolution;
-
-    vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
-    vec2 tex_coord = radiance_cascade_probe_mapping_inverse(dir);
-
-    float selected_weight = 0.0f;
-    float sum_weight = 0.0f;
-
-    float inv_probe_resolution = 1.0f / probe_resolution;
-    float len = 4.0f * inv_probe_resolution * inv_probe_resolution;
-
-    ivec2 itex_coord = ivec2(tex_coord * probe_resolution);
-
-    ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), itex_coord);
-    float total_visibility = 1.0 - texelFetch(radiance_cascades_visibility[0], sel_coord, 0).r;
-
-    for(int x = 0; x < radiance_cascade_metadata.c0_angular_resolution; ++x)
-    for(int y = 0; y < radiance_cascade_metadata.c0_angular_resolution; ++y)
-    {
-        ivec2 p = ivec2(x, y);
-        ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
-        float value = texelFetch(radiance_cascades[0], tex_coord, 0).r;
-
-        vec3 center = radiance_cascade_probe_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
-        float cdn = dot(center, normal);
-        float weight = rgb_to_luminance(albedo * value) * max(len + cdn, 0.0f);
-
-        weight += 1e-16f;
-
-        sum_weight += weight;
-        if(x == itex_coord.x && y == itex_coord.y)
-            selected_weight = weight;
-    }
-
-    float pdf = selected_weight / sum_weight;
-
-    for(int cascade = 1; cascade < RC_CASCADE_COUNT; ++cascade)
-    { // Drill deeper
-        cascade_size /= 2;
-        probe_resolution *= 2;
-        inv_probe_resolution *= 0.5f;
-        len *= 0.25f;
-        cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
-        ivec2 base_cell = itex_coord * 2;
-
-        itex_coord = ivec2(tex_coord * probe_resolution);
-        selected_weight = 0.0f;
-        sum_weight = 0.0f;
-        for(int x = 0; x < 2; ++x)
-        for(int y = 0; y < 2; ++y)
-        {
-            ivec2 p = base_cell.xy + ivec2(x, y);
-            ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), p);
-            float value = texelFetch(radiance_cascades[cascade], tex_coord, 0).r;
-
-            vec3 center = radiance_cascade_probe_mapping((vec2(p) + 0.5f) * inv_probe_resolution);
-            float cdn = dot(center, normal);
-            float weight = rgb_to_luminance(albedo * value) * max(len + cdn, 0.0f);
-            weight += 1e-16f;
-
-            sum_weight += weight;
-            if(p.x == itex_coord.x && p.y == itex_coord.y)
-                selected_weight = weight;
-        }
-        ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), itex_coord);
-        total_visibility *= 1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r;
-        pdf *= selected_weight / sum_weight;
-    }
-
-    // Sample from inside the selected cell.
-    pdf *= (probe_resolution * probe_resolution) / (4 * M_PI);
-    return pdf;
-}
-*/
 #endif
 
 #endif
