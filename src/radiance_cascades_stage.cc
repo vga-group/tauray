@@ -366,7 +366,11 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     {
         {
             live_counter.bind(cb);
-            live_counter_desc.set_image(dev->id, "distance_field", {{{}, opt.distance_field->get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+            live_counter_desc.set_image(dev->id, "distance_field", {{
+                {},
+                opt.distance_field->get_mip_image_view(dev->id, cascade),
+                vk::ImageLayout::eGeneral
+            }});
             live_counter_desc.set_buffer(dev->id, "dispatch_info", {{*dispatch_info_buffer, 0, VK_WHOLE_SIZE}});
             live_counter.push_descriptors(cb, live_counter_desc, 0);
 

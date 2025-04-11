@@ -209,12 +209,13 @@ texture::texture(
     void* data,
     vk::ImageTiling tiling,
     vk::ImageUsageFlags usage,
-    vk::ImageLayout layout
+    vk::ImageLayout layout,
+    bool data_contains_mipmaps
 ):  dim(dim), array_layers(1), fmt(fmt), type(vk::ImageType::e3D),
     tiling(tiling), usage(usage), layout(layout),
     msaa(vk::SampleCountFlagBits::e1), opaque(false), buffers(dev)
 {
-    create(data_size, data);
+    create(data_size, data, data_contains_mipmaps);
 }
 
 texture::texture(texture&& other)
@@ -262,6 +263,20 @@ vk::ImageView texture::get_layer_image_view(
 vk::ImageView texture::get_image_view(device_id id) const
 {
     return get_layer_image_view(id, 0);
+}
+
+vk::ImageView texture::get_mip_image_view(device_id id, uint32_t mipmap_index) const
+{
+    vk::ImageViewType view_type = type == vk::ImageType::e3D ?
+            vk::ImageViewType::e3D :
+            vk::ImageViewType::e2D;
+    return get_mipmap_view(id, texture_view_params{
+        0,
+        1,
+        mipmap_index,
+        1,
+        view_type
+    });
 }
 
 vk::Image texture::get_image(device_id id) const
@@ -528,7 +543,7 @@ void texture::load_from_file(const std::string& path)
     create(pixel_data.size(), pixel_data.data());
 }
 
-void texture::create(size_t data_size, void* data)
+void texture::create(size_t data_size, void* data, bool data_contains_mipmaps)
 {
     mip_levels = data ? calculate_mipmap_count(uvec2(dim.x, dim.y)) : 1;
     vk::ImageCreateInfo img_info{
@@ -551,7 +566,8 @@ void texture::create(size_t data_size, void* data)
             img_info,
             layout,
             data_size,
-            data
+            data,
+            data_contains_mipmaps
         );
     }
 }
