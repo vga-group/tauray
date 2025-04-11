@@ -30,10 +30,7 @@ layout(push_constant) uniform push_constant_buffer
 
 float get_distance(int cascade, ivec3 coord)
 {
-    // TODO: Needs mipmaps too.
-    ivec3 transferred_coord = (coord << cascade);
-    if(cascade > 0) transferred_coord += 1<<(cascade-1);
-    return imageLoad(distance_field, transferred_coord).r;
+    return imageLoad(distance_field, coord).r;
 }
 
 shared uint live_count[gl_WorkGroupSize.x*gl_WorkGroupSize.y];

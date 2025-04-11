@@ -100,7 +100,8 @@ vkm<vk::Image> sync_create_gpu_image(
     vk::ImageCreateInfo info,
     vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal,
     size_t data_size = 0,
-    void* data = nullptr
+    void* data = nullptr,
+    bool data_contains_mipmaps = false
 );
 
 // The hammer for all problems (if you don't care about performance at all)

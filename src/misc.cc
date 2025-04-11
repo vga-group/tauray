@@ -1,5 +1,6 @@
 #include "misc.hh"
 #include "context.hh"
+#include <vulkan/vulkan_format_traits.hpp>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -387,12 +388,34 @@ void deduce_layout_access_stage(
     }
 }
 
+
+size_t get_format_channels(vk::Format format)
+{
+    return vk::componentCount(format);
+}
+
+size_t get_format_channel_size(vk::Format format, unsigned channel_index)
+{
+    if(channel_index >= get_format_channels(format))
+        return 0;
+    return vk::componentBits(format, channel_index)/8;
+}
+
+size_t get_format_size(vk::Format format)
+{
+    size_t size = 0;
+    for(size_t i = 0; i < get_format_channels(format); ++i)
+        size += vk::componentBits(format, i);
+    return size/8;
+}
+
 vkm<vk::Image> sync_create_gpu_image(
     device& dev,
     vk::ImageCreateInfo info,
     vk::ImageLayout final_layout,
     size_t data_size,
-    void* data
+    void* data,
+    bool data_contains_mipmaps
 ){
     vk::Image img;
     VmaAllocation alloc;
@@ -451,44 +474,74 @@ vkm<vk::Image> sync_create_gpu_image(
             staging_buffer, img, vk::ImageLayout::eTransferDstOptimal, 1, &region
         );
 
-        // Generate mipmaps.
         ivec3 sz = ivec3(info.extent.width, info.extent.height, info.extent.depth);
-        for(uint32_t i = 1; i < info.mipLevels; ++i)
+        if(data_contains_mipmaps)
         {
+            size_t fmt_size = get_format_size(info.format);
+            region.bufferOffset += sz.x * sz.y * sz.z * fmt_size;
+            for(uint32_t i = 1; i < info.mipLevels; ++i)
+            {
+                sz = max(sz/2, ivec3(1));
+                info.extent.width = sz.x;
+                info.extent.height = sz.y;
+                info.extent.depth = sz.z;
+                region.imageExtent = info.extent;
+
+                region.imageSubresource.mipLevel = i;
+                cb.copyBufferToImage(
+                    staging_buffer, img, vk::ImageLayout::eTransferDstOptimal, 1, &region
+                );
+
+                region.bufferOffset += sz.x * sz.y * sz.z * fmt_size;
+            }
+
             transition_image_layout(
                 cb, img, info.format,
                 vk::ImageLayout::eTransferDstOptimal,
-                vk::ImageLayout::eTransferSrcOptimal,
-                i-1, 1
-            );
-            ivec3 next_sz = max(sz/2, ivec3(1));
-            vk::ImageAspectFlags mask = deduce_aspect_mask(info.format);
-            vk::ImageBlit blit(
-                {mask, i-1, 0, 1},
-                {{{0,0,0}, {sz.x,sz.y,sz.z}}},
-                {mask, i, 0, 1},
-                {{{0,0,0}, {next_sz.x,next_sz.y,next_sz.z}}}
-            );
-            cb.blitImage(
-                img, vk::ImageLayout::eTransferSrcOptimal,
-                img, vk::ImageLayout::eTransferDstOptimal,
-                blit, vk::Filter::eLinear
-            );
-            sz = next_sz;
-            transition_image_layout(
-                cb, img, info.format,
-                vk::ImageLayout::eTransferSrcOptimal,
                 final_layout,
-                i-1, 1
+                0, info.mipLevels
             );
         }
+        else
+        {
+            // Generate mipmaps.
+            for(uint32_t i = 1; i < info.mipLevels; ++i)
+            {
+                transition_image_layout(
+                    cb, img, info.format,
+                    vk::ImageLayout::eTransferDstOptimal,
+                    vk::ImageLayout::eTransferSrcOptimal,
+                    i-1, 1
+                );
+                ivec3 next_sz = max(sz/2, ivec3(1));
+                vk::ImageAspectFlags mask = deduce_aspect_mask(info.format);
+                vk::ImageBlit blit(
+                    {mask, i-1, 0, 1},
+                    {{{0,0,0}, {sz.x,sz.y,sz.z}}},
+                    {mask, i, 0, 1},
+                    {{{0,0,0}, {next_sz.x,next_sz.y,next_sz.z}}}
+                );
+                cb.blitImage(
+                    img, vk::ImageLayout::eTransferSrcOptimal,
+                    img, vk::ImageLayout::eTransferDstOptimal,
+                    blit, vk::Filter::eLinear
+                );
+                sz = next_sz;
+                transition_image_layout(
+                    cb, img, info.format,
+                    vk::ImageLayout::eTransferSrcOptimal,
+                    final_layout,
+                    i-1, 1
+                );
+            }
 
-        transition_image_layout(
-            cb, img, info.format,
-            vk::ImageLayout::eTransferDstOptimal,
-            final_layout,
-            info.mipLevels-1, 1
-        );
+            transition_image_layout(
+                cb, img, info.format,
+                vk::ImageLayout::eTransferDstOptimal,
+                final_layout,
+                info.mipLevels-1, 1
+            );
+        }
 
         end_command_buffer(dev, cb);
 

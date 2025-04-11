@@ -57,7 +57,8 @@ public:
         void* data = nullptr,
         vk::ImageTiling tiling = vk::ImageTiling::eOptimal,
         vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eSampled,
-        vk::ImageLayout layout = vk::ImageLayout::eGeneral
+        vk::ImageLayout layout = vk::ImageLayout::eGeneral,
+        bool data_contains_mipmaps = false
     );
     texture(const context& other) = delete;
     texture(texture&& other);
@@ -65,6 +66,7 @@ public:
     vk::ImageView get_array_image_view(device_id id) const;
     vk::ImageView get_layer_image_view(device_id id, uint32_t layer_index) const;
     vk::ImageView get_image_view(device_id id) const;
+    vk::ImageView get_mip_image_view(device_id id, uint32_t mipmap_index) const;
     vk::Image get_image(device_id id) const;
 
     vk::Format get_format() const;
@@ -93,7 +95,7 @@ protected:
 private:
     // Also creates mip chain.
     void load_from_file(const std::string& path);
-    void create(size_t data_size, void* data);
+    void create(size_t data_size, void* data, bool data_contains_mipmaps = false);
     vk::ImageView get_mipmap_view(device_id id, texture_view_params params) const;
 
     uvec3 dim;

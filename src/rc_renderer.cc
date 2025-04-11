@@ -27,7 +27,7 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     scene_update.emplace(dev, this->opt.scene_options);
 
     radiance_cascades_stage::options rc_opt;
-    // Hardcoded for test.glb
+    // Hardcoded for test.glb. TODO: Use scene bounding volume.
     rc_opt.volume = {vec3(-2), vec3(2)};
 
     std::vector<uint8_t> distance_field_data = load_binary_file("test/test-distance-field.raw");
@@ -38,7 +38,9 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
         distance_field_data.size(),
         distance_field_data.data(),
         vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
+        vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage,
+        vk::ImageLayout::eGeneral,
+        true
     ));
     rc_opt.distance_field = &distance_field.value();
 
