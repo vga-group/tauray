@@ -682,6 +682,14 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 ropt.pt_options = pt_opt;
                 ropt.tonemap_options = tonemap;
 
+                if(opt.distance_field.empty())
+                {
+                    TR_ERR("--distance-field=<path> is required for radiance cascade path guiding");
+                    return nullptr;
+                }
+
+                ropt.distance_field_path = opt.distance_field;
+
                 return new rc_renderer(ctx, ropt);
             }
         };

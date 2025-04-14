@@ -28,18 +28,16 @@ public:
         bool jitter_rays = true;
         // Only effective with jittering enabled
         float temporal_ratio = 0.01f;
+
         // Get lighting for current pass from previous pass. Requires double
         // the memory!
         bool recursive = false;
+
         // Ambient brightness used for when recursive lighting isn't enabled.
         float ambient = 0.01f;
 
         // Skips tracing rays if they did not hit anything during last frame.
         bool skip_missed_rays = true;
-
-        // Use rasterizer-style direct illumination (requires shadow maps to be
-        // available). If disabled, DI is path traced.
-        bool use_raster_di = false;
 
         // If path traced DI is enabled, this controls how many DI rays are done
         // per pass.
