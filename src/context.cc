@@ -430,6 +430,9 @@ void context::init_devices()
         if(props.apiVersion < VK_API_VERSION_1_2)
             continue;
 
+        if(props.deviceType == vk::PhysicalDeviceType::eCpu && !opt.disable_ray_tracing)
+            continue;
+
         auto feats_pack = physical.getFeatures2<
             vk::PhysicalDeviceFeatures2,
             vk::PhysicalDeviceVulkan11Features,
