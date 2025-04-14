@@ -27,16 +27,35 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     scene_update.emplace(dev, this->opt.scene_options);
 
     radiance_cascades_stage::options rc_opt;
-    // Hardcoded for test.glb. TODO: Use scene bounding volume.
-    rc_opt.volume = {vec3(-2), vec3(2)};
+    std::vector<uint8_t> distance_field_data = load_binary_file(opt.distance_field_path);
+    uint8_t* dfdata = distance_field_data.data();
+    memcpy(&rc_opt.volume.min, dfdata, sizeof(float)*3);
+    dfdata += sizeof(float)*3;
+    memcpy(&rc_opt.volume.max, dfdata, sizeof(float)*3);
+    dfdata += sizeof(float)*3;
+    vec3 resolution;
+    memcpy(&resolution, dfdata, sizeof(float)*3);
+    dfdata += sizeof(float)*3;
 
-    std::vector<uint8_t> distance_field_data = load_binary_file("test/test-distance-field.raw");
+    printf("Distance field:\n");
+    printf("    Resolution: %u x %u x %u\n", uint(resolution.x), uint(resolution.y), uint(resolution.z));
+    printf("    Range: [%f, %f, %f] - [%f, %f, %f]\n",
+        rc_opt.volume.min.x,
+        rc_opt.volume.min.y,
+        rc_opt.volume.min.z,
+        rc_opt.volume.max.x,
+        rc_opt.volume.max.y,
+        rc_opt.volume.max.z
+    );
+
+    rc_opt.log2_resolution = round(log2(resolution.x));
+
     distance_field.emplace(texture(
         dev,
-        uvec3(256),
+        uvec3(resolution),
         vk::Format::eR32Sfloat,
-        distance_field_data.size(),
-        distance_field_data.data(),
+        distance_field_data.data()+distance_field_data.size()-dfdata,
+        dfdata,
         vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage,
         vk::ImageLayout::eGeneral,

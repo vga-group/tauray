@@ -20,6 +20,7 @@ public:
         scene_stage::options scene_options;
         path_tracer_stage::options pt_options;
         tonemap_stage::options tonemap_options;
+        std::string distance_field_path;
     };
 
     rc_renderer(context& ctx, const options& opt);

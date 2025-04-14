@@ -561,7 +561,11 @@
         TR_STRUCT_OPT_BOOL(assume_unchanged_acceleration_structures, false) \
         TR_STRUCT_OPT_BOOL(assume_unchanged_reconnection_radiance, false) \
         TR_STRUCT_OPT_BOOL(assume_unchanged_temporal_visibility, false) \
-    )
+    ) \
+    TR_STRING_OPT(distance_field, \
+        "Specifies a distance field to use.", \
+        "" \
+    ) \
 //==============================================================================
 // END OF OPTIONS
 //==============================================================================
