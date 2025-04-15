@@ -122,7 +122,8 @@ radiance_cascades_stage::radiance_cascades_stage(
             //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
             uvec2(cascade_size*resolution),
             cascade_size,
-            vk::Format::eR16Sfloat,
+            //vk::Format::eR16Sfloat,
+            vk::Format::eR32Sfloat,
             0,
             nullptr,
             vk::ImageTiling::eOptimal,
@@ -148,7 +149,8 @@ radiance_cascades_stage::radiance_cascades_stage(
                 //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
                 uvec2(cascade_size*resolution),
                 cascade_size,
-                vk::Format::eR16Sfloat,
+                //vk::Format::eR16Sfloat,
+                vk::Format::eR32Sfloat,
                 0,
                 nullptr,
                 vk::ImageTiling::eOptimal,
@@ -225,7 +227,28 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
 {
     vec3 extent = opt.volume.max - opt.volume.min;
     float h0 = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
-    if(cascade == 0) return h0 * sqrt(3.0f);
+
+    const vec2 octahedral_theta_table[] = {
+        vec2(7.853982e-01, 1.570796e+00),
+        vec2(3.217506e-01, 9.553166e-01),
+        vec2(1.418971e-01, 5.148060e-01),
+        vec2(6.656816e-02, 2.631283e-01),
+        vec2(3.224688e-02, 1.323247e-01),
+        vec2(1.587168e-02, 6.625893e-02),
+        vec2(7.873853e-03, 3.314159e-02),
+        vec2(3.921549e-03, 1.657231e-02),
+        vec2(1.956945e-03, 8.286344e-03),
+        vec2(9.775168e-04, 4.143196e-03),
+        vec2(4.885197e-04, 2.071601e-03),
+        vec2(2.442002e-04, 1.035801e-03),
+        vec2(1.220852e-04, 5.179005e-04),
+        vec2(6.103888e-05, 2.589502e-04)
+    };
+
+    return (1<<cascade) * h0 / sin(octahedral_theta_table[cascade].x);
+
+    /*
+    if(cascade == 0) return 0.5f * h0 * sqrt(3.0f);
 
     // Relative error: (looks low-res but more consistent in motion)
     //float spatial_resolution = max(extent.x, max(extent.y, extent.z))/float(1<<(opt.log2_resolution-cascade));
@@ -235,6 +258,7 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
     //size_t resolution = opt.c0_probe_resolution << cascade;
     //return (spatial_resolution * resolution) / M_PI;
     return (1<<((cascade-1)*2)) * h0 * opt.c0_probe_resolution * 2.0f * M_PI;
+    */
 }
 
 vec2 radiance_cascades_stage::get_cascade_interval(int cascade) const
@@ -393,7 +417,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
             if(cascade == get_cascade_count() - 1)
             {
-                size_t parent_cascade_size = 1<<std::max(opt.log2_resolution-cascade-1, 0u);
+                size_t parent_cascade_size = max(cascade_size >> 1, size_t(1));
                 cb.dispatch(((parent_cascade_size*parent_cascade_size*parent_cascade_size)+7u)/8u, 1,1);
             }
             else

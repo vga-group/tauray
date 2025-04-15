@@ -66,7 +66,7 @@ ivec2 octahedral_wrap(ivec2 p, ivec2 size)
 
 vec2 radiance_cascade_probe_mapping_inverse(vec3 dir)
 {
-    return octahedral_pack(dir) * 0.5f + 0.5f;
+    return octahedral_mapping_inverse(dir) * 0.5f + 0.5f;
     //return concentric_octahedral_mapping_inverse(dir);
 }
 
@@ -147,9 +147,10 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
     ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution)), ivec2(probe_resolution));
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
     ivec3 tex_coord = get_cascade_layout(cascade_size, probe_resolution, ivec3(cascade_coord), p);
-    vec2 col = texelFetch(radiance_cascades[0], tex_coord, 0).rg;
-    sum.rgb += col.rrr * col.g * sum.a;
-    sum.a *= 1.0f-col.g;
+    float col = texelFetch(radiance_cascades[0], tex_coord, 0).r;
+    float vis = texelFetch(radiance_cascades_visibility[0], tex_coord, 0).r;
+    sum.rgb += col.rrr * vis * sum.a;
+    sum.a *= 1.0f-vis;
 
     for(int cascade = 1; sum.a > 0 && cascade < RC_CASCADE_COUNT; ++cascade)
     {
@@ -159,9 +160,10 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
         ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution)), ivec2(probe_resolution));
         vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
         ivec3 tex_coord = get_cascade_layout(cascade_size, probe_resolution, ivec3(cascade_coord), p);
-        vec2 col = texelFetch(radiance_cascades[cascade], tex_coord, 0).rg;
-        sum.rgb += col.rrr * col.g * sum.a;
-        sum.a *= 1.0f-col.g;
+        col = texelFetch(radiance_cascades[cascade], tex_coord, 0).r;
+        vis = texelFetch(radiance_cascades_visibility[cascade], tex_coord, 0).r;
+        sum.rgb += col.rrr * vis * sum.a;
+        sum.a *= 1.0f-vis;
     }
     return sum.rgb;
 }
@@ -312,8 +314,9 @@ f16vec4 integrate_quad_half_precision(
     spec_z.zw += r.xy;
 
     f16vec4 sum_contrib = flip_fresnel * max(diff_z, f16vec4(0.0)) + specular_amplitude * max(spec_z, f16vec4(0.0));
+    sum_contrib = max(diff_z, f16vec4(0.0));
     f16vec4 values = f16vec4(textureGather(radiance_cascades[cascade], vec3(base_tex_coord.xy + 1.0, base_tex_coord.z)).zxwy);
-    return values * sum_contrib;
+    return sum_contrib * (values + f16vec4(1e-4));
 }
 
 float eval_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
@@ -373,15 +376,27 @@ float16_t generate_single_uniform_random_fp16(inout uint seed)
 
 void rc_wrs_update(inout uint seed, ivec2 p, f16vec4 weights, inout float16_t sum_weight, inout float16_t selected_weight, inout ivec2 selected_cell)
 {
-    weights += f16vec4(1e-4);
+    //weights += f16vec4(1e-4);
     f16vec2 weight2 = weights.xy + weights.zw;
     float16_t weight = weight2.x + weight2.y;
     float16_t u = generate_single_uniform_random_fp16(seed);
     sum_weight += weight;
-    if(u*sum_weight < weight)
+    if(u*sum_weight <= weight)
     {
-        float16_t q = generate_single_uniform_random_fp16(seed) * weight;
         selected_cell = p;
+
+        float16_t q = generate_single_uniform_random_fp16(seed);
+
+        if (weight == float16_t(0))
+        {
+            int i = min(int(q * float16_t(4)), 3);
+            selected_cell.x += i&1;
+            selected_cell.y += i>>1;
+            selected_weight = float16_t(0.0);
+            return;
+        }
+
+        q *= weight;
 
         if(q > weight2.x) // q > x+z
         {
@@ -400,7 +415,7 @@ void rc_wrs_update(inout uint seed, ivec2 p, f16vec4 weights, inout float16_t su
 
 void rc_wrs_pdf(ivec2 p, ivec2 itex_coord, f16vec4 weights, inout float16_t sum_weight, inout float16_t selected_weight)
 {
-    weights += f16vec4(1e-4);
+    //weights += f16vec4(1e-4);
     f16vec2 weight2 = weights.xy + weights.zw;
     float16_t weight = weight2.x + weight2.y;
     sum_weight += weight;
@@ -459,9 +474,8 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
     }
 
     ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), selected_cell);
-    float total_visibility = 1.0 - texelFetch(radiance_cascades_visibility[0], sel_coord, 0).r;
 
-    pdf = selected_weight / sum_weight;
+    pdf = sum_weight == float16_t(0) ? 1.0 : float(selected_weight) / float(sum_weight);
 
     for(int cascade = 1; cascade < RC_CASCADE_COUNT; ++cascade)
     { // Drill deeper
@@ -488,8 +502,8 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
         rc_wrs_update(seed, base_cell, contrib, sum_weight, selected_weight, selected_cell);
 
         ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), selected_cell);
-        total_visibility *= 1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r;
-        pdf *= selected_weight / sum_weight;
+        if (selected_weight != float16_t(0))
+            pdf *= float(selected_weight) / float(sum_weight);
     }
 
     // Sample from inside the selected cell.
@@ -501,6 +515,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
     vec2 uv = (vec2(selected_cell) + random_offset) * inv_probe_resolution;
 
     const int probe_resolution = RC_C0_ANGULAR_RESOLUTION<<(RC_CASCADE_COUNT-1);
+    //const int probe_resolution = RC_C0_ANGULAR_RESOLUTION;
     pdf *= (probe_resolution * probe_resolution) / (4 * M_PI);
     vec3 dir = radiance_cascade_probe_mapping(uv);
     return dir;
@@ -539,7 +554,6 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
     ivec2 itex_coord = ivec2(tex_coord * probe_resolution);
 
     ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), itex_coord);
-    float total_visibility = 1.0 - texelFetch(radiance_cascades_visibility[0], sel_coord, 0).r;
 
     for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; x+=2)
     for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; y+=2)
@@ -563,7 +577,7 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
         rc_wrs_pdf(p, itex_coord, contrib, sum_weight, selected_weight);
     }
 
-    float pdf = selected_weight / sum_weight;
+    float pdf = sum_weight == float16_t(0) ? 1.0 : float(selected_weight) / float(sum_weight);
 
     for(int cascade = 1; cascade < RC_CASCADE_COUNT; ++cascade)
     { // Drill deeper
@@ -593,8 +607,7 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
         rc_wrs_pdf(base_cell, itex_coord, contrib, sum_weight, selected_weight);
 
         ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), itex_coord);
-        total_visibility *= 1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r;
-        pdf *= selected_weight / sum_weight;
+        pdf *= sum_weight == float16_t(0) ? 1.0 : float(selected_weight) / float(sum_weight);
     }
 
     // Sample from inside the selected cell.
