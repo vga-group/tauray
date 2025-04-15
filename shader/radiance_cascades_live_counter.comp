@@ -103,7 +103,7 @@ void main()
 
     if(live)
     {
-        uint write_index = base_offset + live_count[gl_LocalInvocationIndex] - (live ? 1 : 0);
+        uint write_index = base_offset + live_count[gl_LocalInvocationIndex] - 1;
         if(write_index < pc.index_buffer_size)
             dispatch_info.probe_indices[write_index] = probe_index;
     }
