@@ -10,6 +10,7 @@ struct trace_push_constant_buffer
 {
     pvec4 base_offset;
     pvec4 xyz_step;
+    pvec4 origin_jitter;
     pvec2 jitter;
     int cascade;
     int cascade_count;
@@ -17,6 +18,7 @@ struct trace_push_constant_buffer
     float interval_end;
     int c0_angular_resolution;
     int cascade_size;
+    gpu_shadow_mapping_parameters sm_params;
     int has_history;
 };
 
@@ -188,6 +190,9 @@ radiance_cascades_stage::radiance_cascades_stage(
     std::map<std::string, std::string> defines;
     add_defines(defines);
 
+    if(opt.use_raster_di)
+        defines["USE_RASTER_DI"];
+
     {
         shader_source src("shader/radiance_cascades_trace.comp", defines);
         trace_desc.add(src);
@@ -245,20 +250,7 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
         vec2(6.103888e-05, 2.589502e-04)
     };
 
-    return (1<<cascade) * h0 / sin(octahedral_theta_table[cascade].x);
-
-    /*
-    if(cascade == 0) return 0.5f * h0 * sqrt(3.0f);
-
-    // Relative error: (looks low-res but more consistent in motion)
-    //float spatial_resolution = max(extent.x, max(extent.y, extent.z))/float(1<<(opt.log2_resolution-cascade));
-
-    // Constant error: (original radiance cascades paper?)
-    //float spatial_resolution = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
-    //size_t resolution = opt.c0_probe_resolution << cascade;
-    //return (spatial_resolution * resolution) / M_PI;
-    return (1<<((cascade-1)*2)) * h0 * opt.c0_probe_resolution * 2.0f * M_PI;
-    */
+    return (1<<cascade) * h0 / tan(octahedral_theta_table[cascade].x);
 }
 
 vec2 radiance_cascades_stage::get_cascade_interval(int cascade) const
@@ -479,7 +471,10 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     trace.set_descriptors(cb, cascade_descriptors, 0, 3);
 
     trace_push_constant_buffer pc;
+    shadow_map_filter sm_filter = {0,0,0,0};
+    pc.sm_params = create_shadow_mapping_parameters(sm_filter, *ss);
     pc.jitter = opt.jitter_rays ? r2_noise(vec2(dev->ctx->get_frame_counter())) : vec2(0.5f);
+    pc.origin_jitter = vec4(opt.jitter_rays ? r3_noise(vec3(dev->ctx->get_frame_counter()))-0.5f : vec3(0.0f), 0.0f);
     pc.interval_start = 0;
     pc.interval_end = 0;
     pc.c0_angular_resolution = opt.c0_probe_resolution;

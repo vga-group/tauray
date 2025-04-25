@@ -681,4 +681,16 @@ vec2 octahedral_mapping_inverse(vec3 normal)
         normal.xz : (1 - abs(normal.zx)) * (step(vec2(0), normal.xz)*2-1);
 }
 
+float octahedral_mapping_abs_jacobian_det(vec2 packed_normal)
+{
+    float u = abs(packed_normal.x);
+    float v = abs(packed_normal.y);
+
+    float d = u*u + u*v + v*v;
+    float t = 1.0f - u - v;
+    d = (t < 0.0f ? 2.0f : 1.0f) * t + d;
+    d = 2.0f * d - 1.0f;
+    return d * sqrt(d);
+}
+
 #endif

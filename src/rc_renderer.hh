@@ -19,6 +19,7 @@ public:
     {
         scene_stage::options scene_options;
         path_tracer_stage::options pt_options;
+        radiance_cascades_stage::options rc_options;
         tonemap_stage::options tonemap_options;
         std::string distance_field_path;
     };
@@ -41,6 +42,7 @@ private:
     std::optional<texture> distance_field;
 
     std::optional<scene_stage> scene_update;
+    std::optional<shadow_map_stage> sms;
     std::optional<radiance_cascades_stage> rc;
     std::optional<rc_visualizer_stage> rcv;
     std::optional<path_tracer_stage> pt;

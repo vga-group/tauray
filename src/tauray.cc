@@ -681,6 +681,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 ropt.scene_options = scene_options;
                 ropt.pt_options = pt_opt;
                 ropt.tonemap_options = tonemap;
+                ropt.rc_options.use_raster_di = opt.radiance_cascades.shadow_mapped;
 
                 if(opt.distance_field.empty())
                 {

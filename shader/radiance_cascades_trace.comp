@@ -34,6 +34,7 @@ layout(push_constant) uniform push_constant_buffer
 {
     vec4 base_offset;
     vec4 xyz_step;
+    vec4 origin_jitter;
     vec2 jitter;
     int cascade;
     int cascade_count;
@@ -41,8 +42,13 @@ layout(push_constant) uniform push_constant_buffer
     float interval_end;
     int c0_angular_resolution;
     int cascade_size;
+    shadow_mapping_parameters sm_params;
     int has_history;
 } pc;
+
+#define SHADOW_MAPPING_PARAMS pc.sm_params
+#define SHADOW_MAPPING_SCREEN_COORD ivec2(0)
+#include "shadow_mapping.glsl"
 
 bool get_probe_coordinate(out ivec2 texel_coordinate, out ivec3 probe_coordinate)
 {
@@ -131,6 +137,43 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
 
         vec3 emission = o.mat.emission_factor.rgb;
 
+
+#ifdef USE_RASTER_DI
+        // Shade as if it was a diffuse surface.
+        // TODO: Try to allow specularity as well.
+        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+        {
+            directional_light dl = directional_lights.lights[i];
+            float shadow = 1.0f;
+            if(dl.shadow_map_index >= 0 && dot(normal, -dl.dir) > 0)
+                shadow = calc_directional_shadow(
+                    dl.shadow_map_index, pos, normal, -dl.dir
+                );
+            if(dot(normal, dl.dir) > 0)
+                shadow = 0.0f;
+
+            emission += color * shadow * dl.color * max(dot(normal, -dl.dir), 0) / M_PI;
+        }
+
+        POINT_LIGHT_FOR_BEGIN(v.pos)
+            point_light pl = point_lights.lights[item_index];
+            vec3 light_dir;
+            float light_dist;
+            vec3 light_color;
+            get_point_light_info(pl, pos, light_dir, light_dist, light_color);
+
+            float shadow = 1.0f;
+            if(pl.shadow_map_index >= 0 && dot(normal, light_dir) > 0)
+                shadow = calc_point_shadow(
+                    pl.shadow_map_index, pos, normal, light_dir
+                );
+            if(dot(normal, light_dir) < 0)
+                shadow = 0.0f;
+
+            emission += color * shadow * light_color * max(dot(normal, light_dir), 0) / M_PI;
+        POINT_LIGHT_FOR_END
+#endif
+
         if(pc.has_history != 0)
         {
             emission += color * eval_diffuse_radiance_cascades(
@@ -145,12 +188,16 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
     }
     else if(info.primitive_id >= 0)
     { // Point light
+#ifdef USE_RASTER_DI
+        return vec4(vec3(0), 1.0f);
+#else
         point_light pl = point_lights.lights[info.primitive_id];
 
         // No worries, radius cannot be zero -- we couldn't hit the light here
         // if it was!
         vec3 emission = get_spotlight_intensity(pl, ray_direction) * pl.color / (pl.radius * pl.radius * M_PI);
         return vec4(emission, 1.0f);
+#endif
     }
     else if(pc.cascade+1 == pc.cascade_count)
     { // Only last cascade gets the environment lighting.
@@ -164,6 +211,7 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
         }
         vec3 emission = color.rgb;
 
+#ifndef USE_RASTER_DI
         for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
         {
             directional_light dl = directional_lights.lights[i];
@@ -173,6 +221,7 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
             vec3 color = visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
             emission += color;
         }
+#endif
         return vec4(emission, 1.0f);
     }
     return vec4(0);
@@ -194,12 +243,15 @@ void main()
     ivec3 p = get_cascade_layout(ivec3(pc.cascade_size), angular_resolution, probe_index, map_texel);
     //get_cascade_layout_inverse(p, ivec3(pc.cascade_size), angular_resolution, probe_index, map_texel);
 
-    vec2 map_uv = (vec2(map_texel) + pc.jitter) / angular_resolution;
+    //vec2 map_uv = (vec2(map_texel) + pc.jitter) / angular_resolution;
+    vec2 map_uv = (vec2(map_texel) + 0.5 + (pc.jitter-0.5) * 2.0) / angular_resolution;
 
     vec3 probe_dir = radiance_cascade_probe_mapping(map_uv);
-    vec3 probe_origin = pc.base_offset.xyz + probe_index * pc.xyz_step.xyz;
+    //vec3 probe_origin = pc.base_offset.xyz + (probe_index + 2.0 * pc.origin_jitter.xyz) * pc.xyz_step.xyz;
+    vec3 probe_origin = pc.base_offset.xyz + (probe_index + pc.origin_jitter.xyz) * pc.xyz_step.xyz;
+    //vec3 probe_origin = pc.base_offset.xyz + probe_index * pc.xyz_step.xyz;
 
-#if 0
+#if 1
     vec3 ray_origin = probe_origin + probe_dir * pc.interval_start;
     vec3 ray_end = probe_origin + probe_dir * pc.interval_end;
 #else
