@@ -39,9 +39,10 @@ public:
         // Skips tracing rays if they did not hit anything during last frame.
         bool skip_missed_rays = true;
 
-        // If path traced DI is enabled, this controls how many DI rays are done
-        // per pass.
-        size_t di_samples = 1;
+        // Use rasterizer-style direct illumination (requires shadow maps to be
+        // available). If disabled, DI uses radiance cascades and can have a 
+        // multitude of issues due to that.
+        bool use_raster_di = false;
     };
 
     radiance_cascades_stage(

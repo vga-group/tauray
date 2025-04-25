@@ -566,6 +566,10 @@
         "Specifies a distance field to use.", \
         "" \
     ) \
+    TR_STRUCT_OPT(radiance_cascades, \
+        "Parameters for radiance cascades", \
+        TR_STRUCT_OPT_BOOL(shadow_mapped, true) \
+    )
 //==============================================================================
 // END OF OPTIONS
 //==============================================================================
