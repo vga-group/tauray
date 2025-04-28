@@ -94,7 +94,7 @@ void main()
     if(pc.carry_from_previous != 0)
     {
         float src_avg = (r0+r1+r2+r3) * 0.25f;
-        dst_col = mix(src_avg, dst_col, dst_vis);
+        dst_col = dst_col + src_avg * (1.0f - dst_vis);
     }
 
     if(pc.blend_ratio < 1.0f)
