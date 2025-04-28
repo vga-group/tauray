@@ -243,8 +243,8 @@ void main()
     ivec3 p = get_cascade_layout(ivec3(pc.cascade_size), angular_resolution, probe_index, map_texel);
     //get_cascade_layout_inverse(p, ivec3(pc.cascade_size), angular_resolution, probe_index, map_texel);
 
-    //vec2 map_uv = (vec2(map_texel) + pc.jitter) / angular_resolution;
-    vec2 map_uv = (vec2(map_texel) + 0.5 + (pc.jitter-0.5) * 2.0) / angular_resolution;
+    //vec2 map_uv = (vec2(map_texel) + 0.5 + (pc.jitter-0.5) * 2.0) / angular_resolution;
+    vec2 map_uv = (vec2(map_texel) + pc.jitter) / angular_resolution;
 
     vec3 probe_dir = radiance_cascade_probe_mapping(map_uv);
     //vec3 probe_origin = pc.base_offset.xyz + (probe_index + 2.0 * pc.origin_jitter.xyz) * pc.xyz_step.xyz;
