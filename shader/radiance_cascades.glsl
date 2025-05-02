@@ -121,6 +121,56 @@ void radiance_cascade_probe_mapping(
     //return concentric_octahedral_mapping(clamp(u, vec2(0.0f), vec2(1.0f)));
 }
 
+vec3 nearest_dir_on_arc(vec3 ref, vec3 arc_start, vec3 arc_end)
+{
+    vec3 normal = cross(arc_start, arc_end);
+    float len2 = dot(normal, normal);
+    vec3 q = normalize(ref * len2 - normal * dot(normal, ref));
+
+    vec3 delta = arc_start - arc_end;
+    float d_arc2 = dot(delta, delta);
+    delta = arc_start - q;
+    float d_start2 = dot(delta, delta);
+    delta = arc_end - q;
+    float d_end2 = dot(delta, delta);
+
+    if (d_start2 < d_arc2 && d_end2 < d_arc2)
+        return q;
+    return d_start2 > d_end2 ? arc_end : arc_start;
+}
+
+// poly must be convex, clockwise and vertices normalized.
+vec3 maximal_dir_on_texel(vec3 poly[4], vec3 target)
+{
+    // Check if peak is inside polygon.
+    if (
+        dot(cross(poly[0], poly[1]), target) > 0 &&
+        dot(cross(poly[1], poly[2]), target) > 0 &&
+        dot(cross(poly[2], poly[3]), target) > 0 &&
+        dot(cross(poly[3], poly[0]), target) > 0
+    ) return target;
+
+    vec3 maxq = poly[0];
+    float maxd = dot(poly[0], target);
+    vec3 q = nearest_dir_on_arc(target, poly[0], poly[1]);
+    float d = dot(q, target);
+    if(d > maxd) { maxq = q; maxd = d; }
+
+    q = nearest_dir_on_arc(target, poly[1], poly[2]);
+    d = dot(q, target);
+    if(d > maxd) { maxq = q; maxd = d; }
+
+    q = nearest_dir_on_arc(target, poly[2], poly[3]);
+    d = dot(q, target);
+    if(d > maxd) { maxq = q; maxd = d; }
+
+    q = nearest_dir_on_arc(target, poly[3], poly[0]);
+    d = dot(q, target);
+
+    if(d > maxd) { maxq = q; maxd = d; }
+    return maxq;
+}
+
 vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
 {
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
