@@ -168,6 +168,12 @@ vec4 ltc_transform_dir(vec3 transform, vec3 dir, out float inv_len)
     return vec4(new_dir*transformed_dir_inv_len, det * inv_len3);
 }
 
+float ltc_eval(vec3 transform, vec3 dir)
+{
+    vec4 transformed_dir = ltc_transform_dir(transform, dir);
+    return transformed_dir.w * max(0.0f, transformed_dir.z) / M_PI;
+}
+
 vec3 ltc_transform_dir3(vec3 transform, vec3 dir)
 {
     vec3 new_dir = vec3(
@@ -198,6 +204,38 @@ void ltc_transform_dir3(
     x = x * inv_len;
     y = y * inv_len;
     z = z * inv_len;
+}
+
+// Find direction of the LTC lobe's peak. This is non-trivial due to the
+// jacobian moving it around a bit.
+vec3 ltc_maxdir(vec3 transform)
+{
+    if(transform.x == 0)
+        return vec3(1, 0, 0);
+
+    float inv_x2 = 1.0 / (transform.x*transform.x);
+    float y = transform.y * transform.y * inv_x2;
+    float z = transform.z * transform.z * inv_x2;
+
+    float k = 9*(y+z)*(y+z);
+    float a = -9+18*(z-y)-k;
+    float b = 3+12*(y-z)+k;
+    float c = 5-10*y-6*z;
+
+    float x = (1.0f + 1.0f/(max(y+z-1, 1.0f/3.0f)))*(0.5/3.0f);
+    for(int i = 0; i < 3; ++i)
+    {
+        float ax = a*x;
+        float fx = ((ax + b) * x + c) * x + 1;
+        float dfx = (3*ax + 2*b) * x + c;
+        float ddfx = 6*ax + 2*b;
+
+        // Newton
+        //x = x-fx/dfx;
+        // Halley
+        x = x-(2*fx*dfx)/(2*dfx*dfx-fx*ddfx);
+    }
+    return vec3(-sqrt(1-x), 0, sqrt(x));
 }
 
 float ggx_albedo(float vdotn, float roughness)
