@@ -569,6 +569,7 @@
     TR_STRUCT_OPT(radiance_cascades, \
         "Parameters for radiance cascades", \
         TR_STRUCT_OPT_BOOL(shadow_mapped, true) \
+        TR_STRUCT_OPT_BOOL(visualizer, false) \
     )
 //==============================================================================
 // END OF OPTIONS

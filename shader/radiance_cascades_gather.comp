@@ -99,7 +99,12 @@ void main()
 
     if(pc.blend_ratio < 1.0f)
     {
-        dst_col = mix(prev_col, dst_col, pc.blend_ratio);
+        // This is used to bias result towards the larger value, which reduces
+        // underestimation and thus fireflies. Big exponents increase overall
+        // noise level, though.
+        const float biasexponent = 2;
+        dst_col = pow(mix(pow(prev_col, biasexponent), pow(dst_col, biasexponent), pc.blend_ratio), 1.0/biasexponent);
+        //dst_col = max(prev_col, dst_col);
         dst_vis = mix(prev_vis, dst_vis, pc.blend_ratio);
     }
     imageStore(lower_target, p, vec4(dst_col));

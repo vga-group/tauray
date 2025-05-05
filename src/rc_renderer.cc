@@ -13,6 +13,7 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
 
     gbuffer_spec gs;
     gs.color_present = true;
+    gs.color_format = vk::Format::eR32G32B32A32Sfloat;
     gs.set_all_usage(vk::ImageUsageFlagBits::eStorage|vk::ImageUsageFlagBits::eSampled);
 
     this->opt.scene_options.shadow_mapping = false;
@@ -76,12 +77,16 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     rcv_opt.distance_field = &distance_field.value();
     gbuffer_target cur = gbuffer.get_layer_target(dev.id, 0);
 
-    //rcv.emplace(*rc, cur.color, rcv_opt);
+    if(opt.enable_visualizer)
+        rcv.emplace(*rc, cur.color, rcv_opt);
 
     cur = gbuffer.get_array_target(dev.id);
 
-    this->opt.pt_options.rc_source = &*rc;
-    pt.emplace(dev, *scene_update, cur, this->opt.pt_options);
+    if(!opt.enable_visualizer)
+    {
+        this->opt.pt_options.rc_source = &*rc;
+        pt.emplace(dev, *scene_update, cur, this->opt.pt_options);
+    }
 
     std::vector<render_target> display = ctx.get_array_render_target();
     this->opt.tonemap_options.limit_to_input_layer = 0;
@@ -121,8 +126,10 @@ void rc_renderer::render()
     }
     deps = rc->run(deps);
     pt->force_command_buffer_refresh();
-    deps = pt->run(deps);
-    //deps = rcv->run(deps);
+    if(opt.enable_visualizer)
+        deps = rcv->run(deps);
+    else
+        deps = pt->run(deps);
     deps = tonemap->run(deps);
 
     ctx->end_frame(deps);

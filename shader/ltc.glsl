@@ -170,7 +170,8 @@ vec4 ltc_transform_dir(vec3 transform, vec3 dir, out float inv_len)
 
 float ltc_eval(vec3 transform, vec3 dir)
 {
-    vec4 transformed_dir = ltc_transform_dir(transform, dir);
+    float dummy;
+    vec4 transformed_dir = ltc_transform_dir(transform, dir, dummy);
     return transformed_dir.w * max(0.0f, transformed_dir.z) / M_PI;
 }
 

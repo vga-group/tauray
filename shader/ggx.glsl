@@ -194,6 +194,9 @@ void ggx_bsdf(
     sampled_material mat,
     inout bsdf_lobes bsdf
 ){
+#if 1
+    diffuse_brdf_pdf(out_dir, bsdf);
+#else
     float cos_l = out_dir.z; // dot(normal, out_dir)
     float cos_v = view_dir.z; // dot(normal, view_dir)
 
@@ -232,6 +235,7 @@ void ggx_bsdf(
         // source is inside the volume...
         bsdf.transmission += -cos_l * abs(cos_d * cos_o) * mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * geometry * distribution / (denom * denom);
     }
+#endif
 }
 
 // Eric Heitz. A Simpler and Exact Sampling Routine for the GGX Distribution of
@@ -403,8 +407,13 @@ void ggx_bsdf_sample(
     inout bsdf_lobes bsdf,
     out float pdf
 ){
+#if 1
+    //return diffuse_brdf_pdf(out_dir, bsdf);
+    diffuse_brdf_sample(uniform_random, out_dir, bsdf, pdf);
+#else
     uint lobe_index;
     ggx_bsdf_sample_core(uniform_random, view_dir, mat, out_dir, bsdf, true, pdf, lobe_index);
+#endif
 }
 
 void ggx_bsdf_sample_lobe(
@@ -515,7 +524,11 @@ float ggx_bsdf_pdf(
     sampled_material mat,
     inout bsdf_lobes bsdf
 ){
+#if 1
+    return diffuse_brdf_pdf(out_dir, bsdf);
+#else
     return ggx_bsdf_lobe_pdf(MATERIAL_LOBE_ALL, out_dir, view_dir, mat, bsdf);
+#endif
 }
 
 void material_bsdf_sample(
