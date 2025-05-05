@@ -484,6 +484,7 @@ void evaluate_ray(
         }
 
         light = attenuation * mis_weight * (mat.emission + light);
+
 #ifndef INDIRECT_CLAMP_FIRST_BOUNCE
         if(bounce != 0)
 #endif
@@ -573,6 +574,15 @@ void evaluate_ray(
 #endif
 
         correct_lobes_for_normal_map(view, v.hard_normal, lobes);
+
+        //color = -view.zzz;
+        //return;
+
+        if(bsdf_pdf < 0)
+            break;
+            //color = view.yyy;
+            //return;
+        //if (any(isnan(color)))// || isnan(bsdf_pdf) || isinf(bsdf_pdf))
 
 #ifdef DEMODULATED_OUTPUT
         if(bounce == 0) primary_lobes = lobes;

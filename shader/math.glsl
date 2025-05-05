@@ -693,4 +693,8 @@ float octahedral_mapping_abs_jacobian_det(vec2 packed_normal)
     return d * sqrt(d);
 }
 
+bvec2 and(bvec2 a, bvec2 b) { return mix(b, a, b); }
+bvec3 and(bvec3 a, bvec3 b) { return mix(b, a, b); }
+bvec4 and(bvec4 a, bvec4 b) { return mix(b, a, b); }
+
 #endif

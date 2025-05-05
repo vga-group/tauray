@@ -22,6 +22,8 @@ public:
         radiance_cascades_stage::options rc_options;
         tonemap_stage::options tonemap_options;
         std::string distance_field_path;
+
+        bool enable_visualizer = false;
     };
 
     rc_renderer(context& ctx, const options& opt);
