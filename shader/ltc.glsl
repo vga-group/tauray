@@ -236,6 +236,7 @@ vec3 ltc_maxdir(vec3 transform)
         // Halley
         x = x-(2*fx*dfx)/(2*dfx*dfx-fx*ddfx);
     }
+    x = clamp(x, 0.0f, 1.0f);
     return vec3(-sqrt(1-x), 0, sqrt(x));
 }
 

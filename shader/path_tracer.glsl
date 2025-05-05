@@ -345,7 +345,10 @@ vec3 next_event_estimation(
             contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
 #ifdef RADIANCE_CASCADES_SET
-        float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -view, mat.roughness, mix(0.04, 1.0, mat.metallic), out_dir);
+        float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -view, mat.roughness,
+            mix(0.04, 1.0, mat.metallic),
+            rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
+            out_dir);
         contrib /= nee_mis_pdf(light_pdf, rc_pdf);
 #else
         contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
@@ -565,7 +568,8 @@ void evaluate_ray(
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
 #ifdef RADIANCE_CASCADES_SET
         uvec4 ray_sample = generate_ray_sample_uint(lsampler, bounce*2+1);
-        view = sample_radiance_cascades(ray_sample.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic), bsdf_pdf);
+        view = sample_radiance_cascades(ray_sample.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic),
+            rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic), bsdf_pdf);
         ggx_bsdf(view * tbn, shading_view, mat, lobes);
 #else
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
