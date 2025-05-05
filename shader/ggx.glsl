@@ -194,7 +194,7 @@ void ggx_bsdf(
     sampled_material mat,
     inout bsdf_lobes bsdf
 ){
-#if 1
+#if 0
     diffuse_brdf_pdf(out_dir, bsdf);
 #else
     float cos_l = out_dir.z; // dot(normal, out_dir)
@@ -407,8 +407,7 @@ void ggx_bsdf_sample(
     inout bsdf_lobes bsdf,
     out float pdf
 ){
-#if 1
-    //return diffuse_brdf_pdf(out_dir, bsdf);
+#if 0
     diffuse_brdf_sample(uniform_random, out_dir, bsdf, pdf);
 #else
     uint lobe_index;
@@ -524,7 +523,7 @@ float ggx_bsdf_pdf(
     sampled_material mat,
     inout bsdf_lobes bsdf
 ){
-#if 1
+#if 0
     return diffuse_brdf_pdf(out_dir, bsdf);
 #else
     return ggx_bsdf_lobe_pdf(MATERIAL_LOBE_ALL, out_dir, view_dir, mat, bsdf);
