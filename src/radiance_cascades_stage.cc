@@ -94,7 +94,7 @@ radiance_cascades_stage::radiance_cascades_stage(
     cascades_metadata(dev, sizeof(cascade_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer)
 {
     bool has_prev_cascades =
-        opt.recursive || (opt.jitter_rays && opt.temporal_ratio < 1.0f);
+        opt.recursive || (opt.jitter && opt.temporal_ratio < 1.0f);
     descriptor_set& scene_ds = ss.get_descriptors();
     descriptor_set& raster_scene_ds = ss.get_raster_descriptors();
 
@@ -303,7 +303,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     std::vector<texture>* next_cascades_visibility = &cascades_visibility;
     std::vector<texture>* prev_cascades_visibility = nullptr;
 
-    if(opt.recursive || (opt.jitter_rays && opt.temporal_ratio < 1.0f))
+    if(opt.recursive || (opt.jitter && opt.temporal_ratio < 1.0f))
     {
         next_cascades = (frame_index&1) ? &cascades : &alt_cascades;
         prev_cascades = (frame_index&1) ? &alt_cascades : &cascades;
@@ -378,13 +378,17 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     // Counts the number of live probes on each cascade, and generates the
     // necessary data for indirect dispatching the computation for those probes.
     live_counter_timer.begin(cb, dev->id, frame_index);
+
+    int df_mip_offset = int(calculate_mipmap_count(opt.distance_field->get_size())) - opt.log2_resolution-1;
+    assert(df_mip_offset >= 0);
+
     for(int cascade = get_cascade_count()-1; cascade >= 0; --cascade)
     {
         {
             live_counter.bind(cb);
             live_counter_desc.set_image(dev->id, "distance_field", {{
                 {},
-                opt.distance_field->get_mip_image_view(dev->id, cascade),
+                opt.distance_field->get_mip_image_view(dev->id, cascade + df_mip_offset),
                 vk::ImageLayout::eGeneral
             }});
             live_counter_desc.set_buffer(dev->id, "dispatch_info", {{*dispatch_info_buffer, 0, VK_WHOLE_SIZE}});
@@ -473,8 +477,8 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     trace_push_constant_buffer pc;
     shadow_map_filter sm_filter = {0,0,0,0};
     pc.sm_params = create_shadow_mapping_parameters(sm_filter, *ss);
-    pc.jitter = opt.jitter_rays ? r2_noise(vec2(dev->ctx->get_frame_counter())) : vec2(0.5f);
-    pc.origin_jitter = vec4(opt.jitter_rays ? r3_noise(vec3(dev->ctx->get_frame_counter()))-0.5f : vec3(0.0f), 0.0f);
+    pc.jitter = opt.jitter ? r2_noise(vec2(dev->ctx->get_frame_counter())) : vec2(0.5f);
+    pc.origin_jitter = vec4(opt.jitter ? r3_noise(vec3(dev->ctx->get_frame_counter()))-0.5f : vec3(0.0f), 0.0f);
     pc.interval_start = 0;
     pc.interval_end = 0;
     pc.c0_angular_resolution = opt.c0_probe_resolution;

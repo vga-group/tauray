@@ -53,7 +53,12 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
         this->opt.rc_options.volume.max.z
     );
 
-    this->opt.rc_options.log2_resolution = round(log2(resolution.x));
+    int max_res = round(log2(resolution.x));
+    if (this->opt.rc_options.log2_resolution > max_res)
+    {
+        TR_WARN("Cannot have a higher c0 density than distance field!");
+        this->opt.rc_options.log2_resolution = max_res;
+    }
 
     distance_field.emplace(texture(
         dev,

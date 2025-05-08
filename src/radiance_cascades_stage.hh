@@ -25,7 +25,7 @@ public:
         // x2 => 4x computation needed, general resolution doubled
         uint32_t c0_probe_resolution = 4; // 4x4 = 16 rays per probe
 
-        bool jitter_rays = true;
+        bool jitter = true;
         // Only effective with jittering enabled
         float temporal_ratio = 0.01f;
 
@@ -35,9 +35,6 @@ public:
 
         // Ambient brightness used for when recursive lighting isn't enabled.
         float ambient = 0.01f;
-
-        // Skips tracing rays if they did not hit anything during last frame.
-        bool skip_missed_rays = true;
 
         // Use rasterizer-style direct illumination (requires shadow maps to be
         // available). If disabled, DI uses radiance cascades and can have a 

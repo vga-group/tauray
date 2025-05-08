@@ -35,7 +35,11 @@ float angle_per_sin_angle_fast(float cos_theta)
 
 f16vec2 angle_per_sin_angle_fast(f16vec2 cos_theta)
 {
-    f16vec2 num = f16vec2(3.787823) * cos_theta + f16vec2(19.739209);
+    //f16vec2 num = f16vec2(3.787823) * cos_theta + f16vec2(19.739209);
+    //num = num * cos_theta + f16vec2(15.951386);
+
+    f16vec2 num = f16vec2(-0.709693) * cos_theta + f16vec2(3.787823);
+    num = num * cos_theta + f16vec2(20.448902);
     num = num * cos_theta + f16vec2(15.951386);
     return inversesqrt(num);
 }
@@ -153,13 +157,12 @@ vec3 ltc_ggx_transform(
 }
 
 // xyz: transformed vector, w: jacobian
-vec4 ltc_transform_dir(vec3 transform, vec3 dir, out float inv_len)
+vec4 ltc_transform_dir(vec3 transform, vec3 dir)
 {
     vec3 new_dir = vec3(
         dir.x * transform.x + dir.z * transform.y, dir.y, dir.z * transform.z
     );
     float transformed_dir_inv_len = inversesqrt(dot(new_dir.xyz, new_dir.xyz));
-    inv_len = transformed_dir_inv_len;
     float inv_len3 =
         transformed_dir_inv_len*
         transformed_dir_inv_len*
@@ -168,10 +171,27 @@ vec4 ltc_transform_dir(vec3 transform, vec3 dir, out float inv_len)
     return vec4(new_dir*transformed_dir_inv_len, det * inv_len3);
 }
 
+vec4 ltc_inv_transform_dir(vec3 transform, vec3 dir)
+{
+    vec3 new_dir = vec3(
+        dir.x * transform.z - dir.z * transform.y,
+        dir.y * transform.x * transform.z,
+        dir.z * transform.x
+    );
+
+    float transformed_dir_inv_len = inversesqrt(dot(new_dir, new_dir));
+    float det = transform.x * transform.z;
+    float inv_len3 =
+        transformed_dir_inv_len *
+        transformed_dir_inv_len *
+        transformed_dir_inv_len;
+    //return vec4(new_dir*transformed_dir_inv_len, det * det * inv_len3);
+    return vec4(new_dir*transformed_dir_inv_len, det * det * inv_len3);
+}
+
 float ltc_eval(vec3 transform, vec3 dir)
 {
-    float dummy;
-    vec4 transformed_dir = ltc_transform_dir(transform, dir, dummy);
+    vec4 transformed_dir = ltc_transform_dir(transform, dir);
     return transformed_dir.w * max(0.0f, transformed_dir.z) / M_PI;
 }
 

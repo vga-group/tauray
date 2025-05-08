@@ -103,7 +103,6 @@ void octahedral_mapping(
     normal_z = normal_z * inv_len;
 }
 
-
 void radiance_cascade_probe_mapping(
     f16vec2 u_x,
     f16vec2 u_y,
@@ -494,9 +493,12 @@ vec3 rc_texel_sample(
     f16vec3 bitangent,
     f16vec3 normal,
     f16vec3 ltc_transform,
+    float diffuse_weight,
+    float specular_weight,
+    f16vec2 brdf_weight,
     inout float pdf
 ){
-#if 0
+#if 1
     // [v00]----[v10]
     //   |   <-   |
     //   | v    ^ |
@@ -517,6 +519,22 @@ vec3 rc_texel_sample(
         h01_h10_x, h01_h10_y, h01_h10_z
     );
 
+    float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
+    if (sum_brdf_weight <= 0)
+    {
+        pdf = -1.0f;
+        return vec3(0);
+    }
+    float specular_prob = specular_weight * brdf_weight.y * M_PI / sum_brdf_weight;
+    bool sample_specular = generate_single_uniform_random_fast(seed) < specular_prob;
+
+    // TODO: This approach is biased, possibly due to reusing the poor solid
+    // angle estimates. Re-try specular only with exact math and check.
+    if (sample_specular)
+    {
+        ltc_transform_dir3(ltc_transform, h00_h11_x, h00_h11_y, h00_h11_z, h00_h11_x, h00_h11_y, h00_h11_z);
+        ltc_transform_dir3(ltc_transform, h01_h10_x, h01_h10_y, h01_h10_z, h01_h10_x, h01_h10_y, h01_h10_z);
+    }
     vec3 polygon[5] = {
         vec3(h00_h11_x[0], h00_h11_y[0], h00_h11_z[0]),
         vec3(h01_h10_x[0], h01_h10_y[0], h01_h10_z[0]),
@@ -525,32 +543,48 @@ vec3 rc_texel_sample(
         vec3(0)
     };
     uint vertex_count = clip_polygon(4, polygon);
-    projected_solid_angle_polygon_t diffuse_poly = prepare_projected_solid_angle_polygon_sampling(vertex_count, polygon);
+    projected_solid_angle_polygon_t chosen_poly = prepare_projected_solid_angle_polygon_sampling(vertex_count, polygon);
+
+    // Partial but not perfect fix for bias.
+    float new_sum_brdf_weight;
+    if(sample_specular)
+        new_sum_brdf_weight = diffuse_weight * brdf_weight.x;
+    else
+        new_sum_brdf_weight = specular_weight * brdf_weight.y;
+
+    new_sum_brdf_weight *= M_PI;
+    new_sum_brdf_weight += (sample_specular ? specular_weight : diffuse_weight) * chosen_poly.projected_solid_angle;
+    pdf *= 1.0f / new_sum_brdf_weight;
+
+    /*
+    pdf *= 1.0f / sum_brdf_weight;
+    */
 
     vec2 uv = vec2(
         generate_single_uniform_random_fast(seed),
         generate_single_uniform_random_fast(seed)
     );
 
-    vec3 r = sample_projected_solid_angle_polygon(diffuse_poly, uv);
+    vec3 r = sample_projected_solid_angle_polygon(chosen_poly, uv);
 
-    //if (!(diffuse_poly.projected_solid_angle > 0))
-    //{
-    //    printf("zero (%.3f, %.3f, %.3f), (%.3f, %.3f, %.3f), (%.3f, %.3f, %.3f), (%.3f, %.3f, %.3f) (%f, %u, %u, %e)",
-    //        polygon[0].x, polygon[0].y, polygon[0].z,
-    //        polygon[1].x, polygon[1].y, polygon[1].z,
-    //        polygon[2].x, polygon[2].y, polygon[2].z,
-    //        polygon[3].x, polygon[3].y, polygon[3].z,
-    //        diffuse_poly.projected_solid_angle,
-    //        vertex_count,
-    //        (polygon[0].z>0?1:0)+ (polygon[1].z>0?1:0)+ (polygon[2].z>0?1:0)+ (polygon[3].z>0?1:0),
-    //        pdf
-    //    );
-    //}
-    if (diffuse_poly.projected_solid_angle <= 0 || r.z == 0)
-        pdf = -1.0f;
+    float specular_density = 1.0f;
+    if (sample_specular)
+    { // Specular sample
+        vec4 outdir = ltc_inv_transform_dir(vec3(ltc_transform), r);
+        specular_density = max(r.z, 0.0f) / outdir.w;
+        r = outdir.xyz;
+    }
     else
-        pdf *= r.z / diffuse_poly.projected_solid_angle;
+    { // Diffuse sample
+        vec4 outdir = ltc_transform_dir(vec3(ltc_transform), r);
+        specular_density = max(outdir.z, 0.0f) * outdir.w;
+    }
+
+    pdf *= specular_weight * specular_density + diffuse_weight * r.z;
+
+    if(pdf <= 0.0 || r.z <= 0.0 || chosen_poly.projected_solid_angle <= 0)
+        pdf = -1.0f;
+
     vec3 dir = vec3(
         r.x * tangent.x + r.y * bitangent.x + r.z * normal.x,
         r.x * tangent.y + r.y * bitangent.y + r.z * normal.y,
@@ -581,42 +615,31 @@ float rc_texel_pdf(
     f16vec3 bitangent,
     f16vec3 normal,
     f16vec3 ltc_transform,
+    float diffuse_weight,
+    float specular_weight,
+    f16vec2 brdf_weight,
     float pdf
 ){
-#if 0
+#if 1
+    if (tdir.z < 0)
+        return 0.0f;
+
     // [v00]----[v10]
     //   |   <-   |
     //   | v    ^ |
     //   |   ->   |
     // [v01]----[v11]
-    f16vec2 h00_h11_x, h00_h11_y, h00_h11_z;
-    get_unclamped_texel_corner(
-        f16vec2(selected_cell) * inv_probe_resolution, f16vec2(0,1), f16vec2(0,1),
-        inv_probe_resolution,
-        tangent, bitangent, normal,
-        h00_h11_x, h00_h11_y, h00_h11_z
-    );
-    f16vec2 h01_h10_x, h01_h10_y, h01_h10_z;
-    get_unclamped_texel_corner(
-        f16vec2(selected_cell) * inv_probe_resolution, f16vec2(0,1), f16vec2(1,0),
-        inv_probe_resolution,
-        tangent, bitangent, normal,
-        h01_h10_x, h01_h10_y, h01_h10_z
-    );
+    float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
 
-    vec3 polygon[5] = {
-        vec3(h00_h11_x[0], h00_h11_y[0], h00_h11_z[0]),
-        vec3(h01_h10_x[0], h01_h10_y[0], h01_h10_z[0]),
-        vec3(h00_h11_x[1], h00_h11_y[1], h00_h11_z[1]),
-        vec3(h01_h10_x[1], h01_h10_y[1], h01_h10_z[1]),
-        vec3(0)
-    };
-    uint vertex_count = clip_polygon(4, polygon);
-    projected_solid_angle_polygon_t diffuse_poly = prepare_projected_solid_angle_polygon_sampling(vertex_count, polygon);
+    float balance_weight = 1.0f/sum_brdf_weight;
+    pdf *= balance_weight;
+    if (sum_brdf_weight <= 0.0f)
+        pdf = 0.0f;
 
-    if (diffuse_poly.projected_solid_angle == 0)
-        return 0;
-    pdf *= tdir.z / diffuse_poly.projected_solid_angle;
+    vec4 spec_dir = ltc_transform_dir(vec3(ltc_transform), tdir);
+    float specular_density = max(spec_dir.z, 0.0f) * spec_dir.w;
+    pdf *= specular_weight * specular_density + diffuse_weight * tdir.z;
+
     return pdf;
 #else
     pdf *= probe_resolution * probe_resolution * 0.25f * octahedral_mapping_abs_jacobian_det(uv*2.0-1.0);
@@ -624,15 +647,15 @@ float rc_texel_pdf(
 #endif
 }
 
-f16vec4 integrate_quad_half_precision(
+void integrate_quad_half_precision(
     f16vec3 tangent,
     f16vec3 bitangent,
     f16vec3 normal,
     f16vec3 ltc_transform,
     float16_t inv_probe_resolution,
     f16vec2 base,
-    float16_t flip_fresnel,
-    float16_t specular_amplitude
+    out f16vec4 diffuse,
+    out f16vec4 specular
 ){
     // [v00]----[v10]----[v20]
     //   |   <-   |   <-   |
@@ -731,28 +754,27 @@ f16vec4 integrate_quad_half_precision(
     spec_z.zw += r.xy;
 
     // Bias slightly up to squash fireflies from underestimated texels
-    diff_z = pow(diff_z, f16vec4(0.5f));
-    spec_z = pow(spec_z, f16vec4(0.5f));
-
-    f16vec4 sum_contrib = flip_fresnel * max(diff_z, f16vec4(0.0)) + specular_amplitude * max(spec_z, f16vec4(0.0));
-    //f16vec4 sum_contrib = max(diff_z, f16vec4(0.0));
+    //diff_z = pow(diff_z, f16vec4(0.5f));
+    //spec_z = pow(spec_z, f16vec4(0.5f));
 
     // Mask out quads that are below the horizon.
     // These get included often due to rounding errors in our half-precision
     // approximate math.
+    f16vec4 mask = f16vec4(1.0f);
     if (h11_h11_z.x == float16_t(0))
     {
         if (h00_h22_z.x == float16_t(0) && h10_h12_z.x == float16_t(0) && h21_h01_z.y == float16_t(0))
-            sum_contrib.z = float16_t(0);
+            mask.z = float16_t(0);
         if (h10_h12_z.x == float16_t(0) && h20_h02_z.x == float16_t(0) && h21_h01_z.x == float16_t(0))
-            sum_contrib.x = float16_t(0);
+            mask.x = float16_t(0);
         if (h21_h01_z.y == float16_t(0) && h20_h02_z.y == float16_t(0) && h10_h12_z.y == float16_t(0))
-            sum_contrib.y = float16_t(0);
+            mask.y = float16_t(0);
         if (h10_h12_z.y == float16_t(0) && h21_h01_z.x == float16_t(0) && h00_h22_z.y == float16_t(0))
-            sum_contrib.w = float16_t(0);
+            mask.w = float16_t(0);
     }
 
-    return sum_contrib;
+    diffuse = max(diff_z * mask, f16vec4(0.0));
+    specular = max(spec_z * mask, f16vec4(0.0));
 }
 
 f16vec4 max_brdf_contrib_half_precision(
@@ -923,16 +945,19 @@ float eval_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughnes
     {
         ivec3 base_tex_coord = get_cascade_layout(cascade_size, RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), ivec2(x, y));
         f16vec4 values = f16vec4(textureGather(radiance_cascades[0], vec3(base_tex_coord.xy + 1.0, base_tex_coord.z)).zxwy);
-        contrib += dot(integrate_quad_half_precision(
+        f16vec4 diffuse;
+        f16vec4 specular;
+        integrate_quad_half_precision(
             tangent,
             bitangent,
             hnormal,
             ltc_transform,
             inv_probe_resolution,
             f16vec2(x,y) * inv_probe_resolution,
-            flip_fresnel,
-            specular_amplitude
-        ), values);
+            diffuse,
+            specular
+        );
+        contrib += dot(flip_fresnel * diffuse + specular_amplitude * specular, values);
     }
     return contrib;
 }
@@ -955,7 +980,10 @@ void rc_wrs_update(
     inout float16_t selected_weight,
     inout ivec2 selected_cell,
     f16vec4 values,
-    inout float16_t selected_value
+    inout float16_t selected_value,
+    f16vec4 diffuse,
+    f16vec4 specular,
+    inout f16vec2 selected_brdf
 ){
     f16vec2 weight2 = weights.xy + weights.zw;
     float16_t weight = weight2.x + weight2.y;
@@ -1000,6 +1028,9 @@ void rc_wrs_update(
         selected_value = selected_offset.y == 0 ?
             (selected_offset.x == 0 ? values.z : values.x) :
             (selected_offset.x == 0 ? values.y : values.w);
+        selected_brdf = selected_offset.y == 0 ?
+            (selected_offset.x == 0 ? f16vec2(diffuse.z, specular.z) : f16vec2(diffuse.x, specular.x)) :
+            (selected_offset.x == 0 ? f16vec2(diffuse.y, specular.y) : f16vec2(diffuse.w, specular.w));
         selected_cell = p + selected_offset;
     }
 }
@@ -1011,7 +1042,10 @@ void rc_wrs_pdf(
     inout float16_t sum_weight,
     inout float16_t selected_weight,
     f16vec4 values,
-    inout float16_t selected_value
+    inout float16_t selected_value,
+    f16vec4 diffuse,
+    f16vec4 specular,
+    inout f16vec2 selected_brdf
 ){
     f16vec2 weight2 = weights.xy + weights.zw;
     float16_t weight = weight2.x + weight2.y;
@@ -1023,6 +1057,9 @@ void rc_wrs_pdf(
     selected_value = selected_offset.y == 0 ?
         (selected_offset.x == 0 ? values.z : values.x) :
         (selected_offset.x == 0 ? values.y : values.w);
+    selected_brdf = selected_offset.y == 0 ?
+        (selected_offset.x == 0 ? f16vec2(diffuse.z, specular.z) : f16vec2(diffuse.x, specular.x)) :
+        (selected_offset.x == 0 ? f16vec2(diffuse.y, specular.y) : f16vec2(diffuse.w, specular.w));
 }
 
 vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, float roughness, float f0, float albedo, out float pdf)
@@ -1049,6 +1086,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
     ivec2 selected_cell = ivec2(0);
     float16_t selected_weight = float16_t(0);
     float16_t selected_value = float16_t(0.0f);
+    f16vec2 selected_brdf = f16vec2(0);
     float16_t sum_weight = float16_t(0.0f);
 
     float16_t inv_probe_resolution = float16_t(1.0f / RC_C0_ANGULAR_RESOLUTION);
@@ -1060,17 +1098,20 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
 
         f16vec4 values = f16vec4(textureGather(radiance_cascades[0], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
-        f16vec4 contrib = values * integrate_quad_half_precision(
+        f16vec4 diffuse;
+        f16vec4 specular;
+        integrate_quad_half_precision(
             tangent,
             bitangent,
             hnormal,
             ltc_transform,
             inv_probe_resolution,
             f16vec2(x,y) * inv_probe_resolution,
-            flip_fresnel,
-            specular_amplitude
+            diffuse,
+            specular
         );
-        rc_wrs_update(seed, p, contrib, sum_weight, selected_weight, selected_cell, values, selected_value);
+        f16vec4 contrib = values * (flip_fresnel * diffuse + specular_amplitude * specular);
+        rc_wrs_update(seed, p, contrib, sum_weight, selected_weight, selected_cell, values, selected_value, diffuse, specular, selected_brdf);
     }
 
     ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), selected_cell);
@@ -1093,17 +1134,20 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
         f16vec4 values = f16vec4(textureGather(radiance_cascades[cascade], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
         values = max(selected_value - dot(values, f16vec4(0.25)) * total_visibility, float16_t(0)) + values * total_visibility;
 
-        f16vec4 contrib = values * integrate_quad_half_precision(
+        f16vec4 diffuse;
+        f16vec4 specular;
+        integrate_quad_half_precision(
             tangent,
             bitangent,
             hnormal,
             ltc_transform,
             inv_probe_resolution,
             f16vec2(base_cell) * inv_probe_resolution,
-            flip_fresnel,
-            specular_amplitude
+            diffuse,
+            specular
         );
-        rc_wrs_update(seed, base_cell, contrib, sum_weight, selected_weight, selected_cell, values, selected_value);
+        f16vec4 contrib = values * (flip_fresnel * diffuse + specular_amplitude * specular);
+        rc_wrs_update(seed, base_cell, contrib, sum_weight, selected_weight, selected_cell, values, selected_value, diffuse, specular, selected_brdf);
 
         ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), selected_cell);
         total_visibility *= float16_t(1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r);
@@ -1111,9 +1155,23 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
             pdf *= float(selected_weight) / float(sum_weight);
     }
 
+    //const int probe_resolution = int(round(1.0 / inv_probe_resolution)); //RC_C0_ANGULAR_RESOLUTION<<(RC_CASCADE_COUNT-1);
     const int probe_resolution = RC_C0_ANGULAR_RESOLUTION<<(RC_CASCADE_COUNT-1);
     //const int probe_resolution = RC_C0_ANGULAR_RESOLUTION;
-    return rc_texel_sample(seed, selected_cell, probe_resolution, inv_probe_resolution, tangent, bitangent, hnormal, ltc_transform, pdf);
+    return rc_texel_sample(
+        seed,
+        selected_cell,
+        probe_resolution,
+        inv_probe_resolution,
+        tangent,
+        bitangent,
+        hnormal,
+        ltc_transform,
+        flip_fresnel,
+        specular_amplitude,
+        selected_brdf,
+        pdf
+    );
 }
 
 float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness, float f0, float albedo, vec3 dir)
@@ -1145,6 +1203,7 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
 
     float16_t selected_weight = float16_t(0);
     float16_t selected_value = float16_t(0);
+    f16vec2 selected_brdf = f16vec2(0);
     float16_t sum_weight = float16_t(0);
 
     float16_t inv_probe_resolution = float16_t(1.0f / RC_C0_ANGULAR_RESOLUTION);
@@ -1161,18 +1220,21 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
         f16vec4 values = f16vec4(textureGather(radiance_cascades[0], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
 
-        f16vec4 contrib = values * integrate_quad_half_precision(
+        f16vec4 diffuse;
+        f16vec4 specular;
+        integrate_quad_half_precision(
             tangent,
             bitangent,
             hnormal,
             ltc_transform,
             inv_probe_resolution,
             f16vec2(x,y) * inv_probe_resolution,
-            flip_fresnel,
-            specular_amplitude
+            diffuse,
+            specular
         );
+        f16vec4 contrib = values * (flip_fresnel * diffuse + specular_amplitude * specular);
 
-        rc_wrs_pdf(p, itex_coord, contrib, sum_weight, selected_weight, values, selected_value);
+        rc_wrs_pdf(p, itex_coord, contrib, sum_weight, selected_weight, values, selected_value, diffuse, specular, selected_brdf);
     }
 
     float pdf = sum_weight == float16_t(0) ? 1.0 : float(selected_weight) / float(sum_weight);
@@ -1197,22 +1259,39 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
         ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), itex_coord);
         total_visibility *= float16_t(1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r);
 
-        f16vec4 contrib = values * integrate_quad_half_precision(
+        f16vec4 diffuse;
+        f16vec4 specular;
+        integrate_quad_half_precision(
             tangent,
             bitangent,
             hnormal,
             ltc_transform,
             inv_probe_resolution,
             f16vec2(base_cell) * inv_probe_resolution,
-            flip_fresnel,
-            specular_amplitude
+            diffuse,
+            specular
         );
-        rc_wrs_pdf(base_cell, itex_coord, contrib, sum_weight, selected_weight, values, selected_value);
+        f16vec4 contrib = values * (flip_fresnel * diffuse + specular_amplitude * specular);
+        rc_wrs_pdf(base_cell, itex_coord, contrib, sum_weight, selected_weight, values, selected_value, diffuse, specular, selected_brdf);
 
         pdf *= sum_weight == float16_t(0) ? 1.0 : float(selected_weight) / float(sum_weight);
     }
 
-    return rc_texel_pdf(itex_coord, tex_coord, dir*tbn, probe_resolution, inv_probe_resolution, tangent, bitangent, hnormal, ltc_transform, pdf);
+    return rc_texel_pdf(
+        itex_coord,
+        tex_coord,
+        dir*tbn,
+        probe_resolution,
+        inv_probe_resolution,
+        tangent,
+        bitangent,
+        hnormal,
+        ltc_transform,
+        flip_fresnel,
+        specular_amplitude,
+        selected_brdf,
+        pdf
+    );
 }
 
 #endif
