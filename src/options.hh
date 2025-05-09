@@ -574,6 +574,7 @@
         TR_STRUCT_OPT_BOOL(recursive, true) \
         TR_STRUCT_OPT_INT(c0, 4, 4, 16) \
         TR_STRUCT_OPT_INT(gridsize, 7, 1, 10) \
+        TR_STRUCT_OPT_BOOL(bsdf_texel, true) \
     )
 //==============================================================================
 // END OF OPTIONS

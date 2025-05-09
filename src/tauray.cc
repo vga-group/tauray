@@ -687,6 +687,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 ropt.rc_options.log2_resolution = opt.radiance_cascades.gridsize;
                 ropt.rc_options.recursive = opt.radiance_cascades.recursive;
                 ropt.rc_options.ambient = (opt.ambient.r+opt.ambient.g+opt.ambient.b)/3.0f;
+                ropt.rc_options.bsdf_sample_texel = opt.radiance_cascades.bsdf_texel;
                 ropt.enable_visualizer = opt.radiance_cascades.visualizer;
 
                 if(opt.distance_field.empty())

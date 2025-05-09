@@ -208,17 +208,19 @@ bool get_intersection_info(
     }
 }
 
-vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, out float pdf)
+vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, out float pdf, out int hit_type)
 {
     float point_prob, triangle_prob, dir_prob, envmap_prob;
     get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
 
     vec4 u = vec4(rand_uint) * INV_UINT32_MAX;
 
+    hit_type = -1;
     if(false) {}
 #ifdef NEE_SAMPLE_POINT_LIGHTS
     else if((u.w -= point_prob) < 0)
     { // Sample point light
+        hit_type = 0;
         const int light_count = int(scene_metadata.point_light_count);
         int light_index = 0;
         float weight = 0;
@@ -234,6 +236,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
     else if((u.w -= triangle_prob) < 0)
     { // Sample triangle light
+        hit_type = 3;
         const int light_count = int(scene_metadata.tri_light_count);
         int light_index = clamp(int(u.z*light_count), 0, light_count-1);
         tri_light tl = tri_lights.lights[light_index];
@@ -273,6 +276,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
 #ifdef NEE_SAMPLE_ENVMAP
     else if((u.w -= envmap_prob) < 0)
     { // Sample envmap
+        hit_type = 2;
         vec3 color = sample_environment_map(rand_uint.xyz, out_dir, out_length, pdf);
         pdf *= envmap_prob;
         return color;
@@ -281,6 +285,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
 #ifdef NEE_SAMPLE_DIRECTIONAL_LIGHTS
     else if((u.w -= dir_prob) < 0)
     { // Sample directional light
+        hit_type = 1;
         const int light_count = int(scene_metadata.directional_light_count);
         int light_index = clamp(int(u.z*light_count), 0, light_count-1);
 
@@ -332,7 +337,10 @@ vec3 next_event_estimation(
         float out_length = 0.0f;
         float light_pdf;
         // Sample lights
-        vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf);
+        int hit_type = -1;
+        vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf, hit_type);
+        bool opaque = mat.transmittance < 0.0001f;
+        if(dot(v.hard_normal, out_dir) < 0 && opaque) contrib = vec3(0);
 
         vec3 shading_light = out_dir * tbn;
         lobes = bsdf_lobes(0,0,0,0);
@@ -345,7 +353,9 @@ vec3 next_event_estimation(
             contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
 #ifdef RADIANCE_CASCADES_SET
-        float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -view, mat.roughness,
+        float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -view, 
+            hit_type < 2,
+            mat.roughness,
             mix(0.04, 1.0, mat.metallic),
             rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
             out_dir);

@@ -193,6 +193,9 @@ radiance_cascades_stage::radiance_cascades_stage(
     if(opt.use_raster_di)
         defines["USE_RASTER_DI"];
 
+    if(opt.recursive)
+        defines["RECURSIVE_LIGHTING"];
+
     {
         shader_source src("shader/radiance_cascades_trace.comp", defines);
         trace_desc.add(src);
@@ -270,6 +273,10 @@ void radiance_cascades_stage::add_defines(std::map<std::string, std::string>& de
     defines["RC_C0_ANGULAR_RESOLUTION"] = std::to_string(opt.c0_probe_resolution);
     defines["RC_C0_SPATIAL_RESOLUTION"] = std::to_string(1<<opt.log2_resolution);
     defines["RC_CASCADE_COUNT"] = std::to_string(get_cascade_count());
+    if (opt.bsdf_sample_texel)
+        defines["RC_BSDF_SAMPLE_TEXEL"];
+    if (opt.use_raster_di)
+        defines["RC_USE_RASTER_DI"];
 }
 
 void radiance_cascades_stage::update(uint32_t frame_index)

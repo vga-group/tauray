@@ -498,7 +498,7 @@ vec3 rc_texel_sample(
     f16vec2 brdf_weight,
     inout float pdf
 ){
-#if 1
+#ifdef RC_BSDF_SAMPLE_TEXEL
     // [v00]----[v10]
     //   |   <-   |
     //   | v    ^ |
@@ -520,11 +520,6 @@ vec3 rc_texel_sample(
     );
 
     float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
-    if (sum_brdf_weight <= 0)
-    {
-        pdf = -1.0f;
-        return vec3(0);
-    }
     float specular_prob = specular_weight * brdf_weight.y * M_PI / sum_brdf_weight;
     bool sample_specular = generate_single_uniform_random_fast(seed) < specular_prob;
 
@@ -582,7 +577,7 @@ vec3 rc_texel_sample(
 
     pdf *= specular_weight * specular_density + diffuse_weight * r.z;
 
-    if(pdf <= 0.0 || r.z <= 0.0 || chosen_poly.projected_solid_angle <= 0)
+    if(pdf <= 0.0 || r.z <= 0.0 || chosen_poly.projected_solid_angle <= 0 || sum_brdf_weight <= 0)
         pdf = -1.0f;
 
     vec3 dir = vec3(
@@ -620,7 +615,7 @@ float rc_texel_pdf(
     f16vec2 brdf_weight,
     float pdf
 ){
-#if 1
+#ifdef RC_BSDF_SAMPLE_TEXEL
     if (tdir.z < 0)
         return 0.0f;
 
@@ -1073,7 +1068,7 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
 
     float vdotn = dot(view, normal);
-    f16vec3 ltc_transform = f16vec3(ltc_ggx_transform(vdotn, max(roughness, 0.01f)));
+    f16vec3 ltc_transform = f16vec3(ltc_ggx_transform(vdotn, max(roughness, 0.001f)));
     f16vec3 specular_peak = f16vec3(ltc_maxdir(vec3(ltc_transform)));
     mat3 tbn = create_tangent_space(normal, view);
     f16vec3 tangent = f16vec3(tbn[0]);
@@ -1174,8 +1169,14 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
     );
 }
 
-float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness, float f0, float albedo, vec3 dir)
+float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, bool light, float roughness, float f0, float albedo, vec3 dir)
 {
+#ifdef RC_USE_RASTER_DI
+    // Directional and point lights are skipped in the RC sampling and left to
+    // NEE, so no PDF for those.
+    if (light)
+        return 0.0f;
+#endif
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
     vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
 
@@ -1189,7 +1190,7 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, float roughness
     vec2 tex_coord = radiance_cascade_probe_mapping_inverse(dir);
 
     float vdotn = dot(view, normal);
-    f16vec3 ltc_transform = f16vec3(ltc_ggx_transform(vdotn, max(roughness, 0.01f)));
+    f16vec3 ltc_transform = f16vec3(ltc_ggx_transform(vdotn, max(roughness, 0.001f)));
     f16vec3 specular_peak = f16vec3(ltc_maxdir(vec3(ltc_transform)));
 
     mat3 tbn = create_tangent_space(normal, view);
