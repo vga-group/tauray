@@ -41,6 +41,12 @@ f16vec2 angle_per_sin_angle_fast(f16vec2 cos_theta)
     f16vec2 num = f16vec2(-0.709693) * cos_theta + f16vec2(3.787823);
     num = num * cos_theta + f16vec2(20.448902);
     num = num * cos_theta + f16vec2(15.951386);
+
+    //f16vec2 num = f16vec2(0.386375) * cos_theta + f16vec2(-0.709693);
+    //num = num * cos_theta + f16vec2(3.346251);
+    //num = num * cos_theta + f16vec2(20.448902);
+    //num = num * cos_theta + f16vec2(16.006583);
+
     return inversesqrt(num);
 }
 

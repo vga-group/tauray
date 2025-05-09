@@ -40,6 +40,11 @@ public:
         // available). If disabled, DI uses radiance cascades and can have a 
         // multitude of issues due to that.
         bool use_raster_di = false;
+
+        // Use texel-constrained BSDF sampling instead of uniformly sampling in
+        // chosen texel. Has notable performance cost, but helps a bit with
+        // specular reflections.
+        bool bsdf_sample_texel = false;
     };
 
     radiance_cascades_stage(
