@@ -102,7 +102,7 @@ void main()
         // This is used to bias result towards the larger value, which reduces
         // underestimation and thus fireflies. Big exponents increase overall
         // noise level, though.
-        const float biasexponent = 2;
+        const float biasexponent = 1;
         dst_col = pow(mix(pow(prev_col, biasexponent), pow(dst_col, biasexponent), pc.blend_ratio), 1.0/biasexponent);
 
         // TODO: to try: compute both max and avg, then in sampling, use

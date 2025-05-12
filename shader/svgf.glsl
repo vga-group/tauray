@@ -361,7 +361,7 @@ float get_plane_distance_weight(vec3 Xref, vec3 X, vec3 N, float inv_frustum_siz
 #define DISOCCLUSION_FIX_ENABLED 1
 #define DISOCCLUSION_FIX_USE_EDGE_STOPPERS 1
 
-#define FIREFLY_SUPPRESSION_ENABLED 1
+#define FIREFLY_SUPPRESSION_ENABLED 0
 
 #define ATROUS_ENABLED 1
 
