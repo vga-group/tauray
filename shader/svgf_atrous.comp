@@ -87,7 +87,6 @@ void main()
 
     if(variance_diff <= 1e-5 && control.iteration <= 1) variance_diff = 1e30;
     if(variance_spec <= 1e-5 && control.iteration <= 1) variance_spec = 1e30;
-    //variance_diff = variance_spec = 1e30;
 
     float luminance_std_dev_diff = sqrt(variance_diff);
     float luminance_std_dev_spec = sqrt(variance_spec);
