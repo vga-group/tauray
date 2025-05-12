@@ -124,8 +124,8 @@ void main()
 
     write_color_outputs(
 #ifdef DEMODULATED_OUTPUT
-        sum_diffuse.rgb / SAMPLES_PER_PASS,
-        sum_reflection.rgb / SAMPLES_PER_PASS
+        sum_diffuse / SAMPLES_PER_PASS,
+        sum_reflection / SAMPLES_PER_PASS
 #else
         sum_color.rgb / SAMPLES_PER_PASS
 #endif

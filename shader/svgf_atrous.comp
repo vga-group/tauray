@@ -283,7 +283,6 @@ void main()
         vec2 gradient = imageLoad(temporal_gradient, p).rg;
         imageStore(final_output, p, vec4(vec3(gradient.y), 1.0));
 #elif FINAL_OUTPUT == OUTPUT_RAW_INPUT
-
 #endif
     }
     else

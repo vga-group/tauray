@@ -474,6 +474,17 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     if(ctx.get_devices().size() == 1)
         pt_opt.distribution.strategy = DISTRIBUTION_DUPLICATE;
 
+    svgf_stage::options svgf_opt{};
+    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
+    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
+    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
+    svgf_opt.sigma_l = opt.svgf.sigma_l;
+    svgf_opt.sigma_n = opt.svgf.sigma_n;
+    svgf_opt.sigma_z = opt.svgf.sigma_z;
+    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
+    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
+
+
     if(auto rtype = std::get_if<feature_stage::feature>(&opt.renderer))
     {
         feature_renderer::options rt_opt;
@@ -507,18 +518,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     ctx.get_display_count()
                 );
                 if (opt.denoiser == options::denoiser_type::SVGF)
-                {
-                    svgf_stage::options svgf_opt{};
-                    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
-                    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
-                    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
-                    svgf_opt.sigma_l = opt.svgf.sigma_l;
-                    svgf_opt.sigma_n = opt.svgf.sigma_n;
-                    svgf_opt.sigma_z = opt.svgf.sigma_z;
-                    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
-                    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
-                }
                 else if (opt.denoiser == options::denoiser_type::BMFR)
                     rt_opt.post_process.bmfr = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY };
                 rt_opt.scene_options = scene_options;
@@ -547,19 +547,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     opt.spatial_reprojection,
                     ctx.get_display_count()
                 );
-                if(opt.denoiser == options::denoiser_type::SVGF)
-                {
-                    svgf_stage::options svgf_opt{};
-                    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
-                    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
-                    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
-                    svgf_opt.sigma_l = opt.svgf.sigma_l;
-                    svgf_opt.sigma_n = opt.svgf.sigma_n;
-                    svgf_opt.sigma_z = opt.svgf.sigma_z;
-                    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
-                    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
+                if (opt.denoiser == options::denoiser_type::SVGF)
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
-                }
                 else if(opt.denoiser == options::denoiser_type::BMFR)
                     rt_opt.post_process.bmfr = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY };
                 rt_opt.scene_options = scene_options;
@@ -658,20 +647,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
                 if(opt.taa.sequence_length > 1)
                     re_opt.taa_options = taa;
-
                 if (opt.denoiser == options::denoiser_type::SVGF)
-                {
-                    svgf_stage::options svgf_opt{};
-                    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
-                    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
-                    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
-                    svgf_opt.sigma_l = opt.svgf.sigma_l;
-                    svgf_opt.sigma_n = opt.svgf.sigma_n;
-                    svgf_opt.sigma_z = opt.svgf.sigma_z;
-                    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
-                    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
                     re_opt.svgf_options = svgf_opt;
-                }
 
                 return new restir_renderer(ctx, re_opt);
             }
@@ -697,6 +674,11 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 }
 
                 ropt.distance_field_path = opt.distance_field;
+
+                if(opt.taa.sequence_length > 1)
+                    ropt.taa_options = taa;
+                if (opt.denoiser == options::denoiser_type::SVGF)
+                    ropt.svgf_options = svgf_opt;
 
                 return new rc_renderer(ctx, ropt);
             }
