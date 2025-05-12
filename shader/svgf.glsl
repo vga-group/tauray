@@ -5,10 +5,6 @@
 #include "camera.glsl"
 #include "gbuffer.glsl"
 
-#define INPUT_TEMPORAL_GRADIENTS (1<<0)
-#define INPUT_CONFIDENCE (1<<1)
-#define INPUT_CURVATURE (1<<2)
-
 layout(push_constant) uniform push_constant_buffer
 {
     ivec2 size;
@@ -21,7 +17,6 @@ layout(push_constant) uniform push_constant_buffer
     float sigma_l;
     float temporal_alpha_color;
     float temporal_alpha_moments;
-    uint input_mask;
 } control;
 
 bool is_in_screen(ivec2 p)
