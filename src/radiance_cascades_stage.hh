@@ -45,6 +45,10 @@ public:
         // chosen texel. Has notable performance cost, but helps a bit with
         // specular reflections.
         bool bsdf_sample_texel = false;
+
+        // 0.0f = texel tracks average
+        // 1.0f = texel tracks maximum
+        float avg_bias = 0.0f;
     };
 
     radiance_cascades_stage(

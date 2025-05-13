@@ -575,6 +575,7 @@
         TR_STRUCT_OPT_BOOL(recursive, true) \
         TR_STRUCT_OPT_INT(c0, 4, 4, 16) \
         TR_STRUCT_OPT_INT(gridsize, 7, 1, 10) \
+        TR_STRUCT_OPT_FLOAT(avg_bias, 0.0f, 0.0f, 1.0f) \
         TR_STRUCT_OPT_BOOL(bsdf_texel, true) \
     )
 //==============================================================================

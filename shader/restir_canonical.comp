@@ -59,7 +59,21 @@ void sample_path_nee_leaf(
     rand32.w += 7u;
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     vec3 tdir = candidate_dir * src.tbn;
-    float bsdf_pdf = ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
+    float bsdf_pdf;
+#ifdef RADIANCE_CASCADES_SET
+    ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
+    bsdf_pdf = radiance_cascades_pdf(
+        src.pos, src.tbn[2], -src.view,
+        vertex.instance_id >= MISS_INSTANCE_ID,
+        src.mat.roughness,
+        mix(0.04, 1.0, src.mat.metallic),
+        rgb_to_luminance(src.mat.albedo.rgb) * (1.0-src.mat.metallic),
+        candidate_dir,
+        MATERIAL_LOBE_ALL
+    );
+#else
+    bsdf_pdf = ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
+#endif
 
     // If the sampled light is infinitesimal, there's no way for the BSDF
     // sampling to sample it. So the PDF is set to zero.
@@ -149,8 +163,23 @@ bool sample_path_bsdf_bounce(
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     float bsdf_pdf = 0;
     float bsdf_mis_pdf = 0;
+#ifdef RADIANCE_CASCADES_SET
+    vec3 dir = sample_radiance_cascades(
+        rand32.x, src.pos, src.tbn[2],
+        -src.view,
+        src.mat.roughness, mix(0.04, 1.0, src.mat.metallic),
+        rgb_to_luminance(src.mat.albedo.rgb) * (1.0-src.mat.metallic),
+        bsdf_pdf,
+        sampled_lobe
+    );
+    ggx_bsdf_lobe_pdf(sampled_lobe, dir * src.tbn, src.tview, src.mat, lobes);
+#else
     ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
     vec3 dir = src.tbn * tdir;
+#endif
+
+    if(bsdf_pdf < 0)
+        return false;
 
     if(candidate.head_length + candidate.tail_length == 0)
         bias_ray_origin(src.pos, sampled_lobe == MATERIAL_LOBE_TRANSMISSION, src);

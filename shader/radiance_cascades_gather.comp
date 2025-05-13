@@ -102,13 +102,15 @@ void main()
         // This is used to bias result towards the larger value, which reduces
         // underestimation and thus fireflies. Big exponents increase overall
         // noise level, though.
-        const float biasexponent = 1;
+#ifdef BIAS_EXPONENT
+        const float biasexponent = BIAS_EXPONENT;
         dst_col = pow(mix(pow(prev_col, biasexponent), pow(dst_col, biasexponent), pc.blend_ratio), 1.0/biasexponent);
-
+#else
         // TODO: to try: compute both max and avg, then in sampling, use
         // 2*max-max*max/avg. That can also be precomputed into yet another
         // texture if necessary.
-        //dst_col = max(prev_col, dst_col);
+        dst_col = max(prev_col, dst_col);
+#endif
         dst_vis = mix(prev_vis, dst_vis, pc.blend_ratio);
     }
     imageStore(lower_target, p, vec4(dst_col));
