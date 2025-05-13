@@ -484,6 +484,24 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
     svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
 
+    restir_stage::options restir_opt{};
+    restir_opt.sampling_weights = sampling_weights;
+    restir_opt.max_bounces = opt.max_ray_depth-1;
+    restir_opt.regularization_gamma = opt.regularization;
+    restir_opt.max_confidence = opt.restir.max_confidence;
+    restir_opt.temporal_reuse = opt.restir.temporal_reuse;
+    restir_opt.canonical_samples = opt.restir.canonical_samples;
+    restir_opt.spatial_samples = opt.restir.spatial_samples;
+    restir_opt.spatial_sample_oriented_disk = opt.restir.sample_spatial_disk;
+    restir_opt.shift_map = opt.restir.shift_mapping_type;
+    restir_opt.passes = opt.restir.passes;
+    restir_opt.reconnection_scale = opt.restir.reconnection_scale;
+    restir_opt.max_spatial_search_radius = opt.restir.max_search_radius;
+    restir_opt.min_spatial_search_radius = opt.restir.min_search_radius;
+    restir_opt.assume_unchanged_material = opt.restir.assume_unchanged_material;
+    restir_opt.assume_unchanged_acceleration_structures = opt.restir.assume_unchanged_acceleration_structures;
+    restir_opt.assume_unchanged_reconnection_radiance = opt.restir.assume_unchanged_reconnection_radiance;
+    restir_opt.assume_unchanged_temporal_visibility = opt.restir.assume_unchanged_temporal_visibility;
 
     if(auto rtype = std::get_if<feature_stage::feature>(&opt.renderer))
     {
@@ -625,23 +643,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.sh_options = sh;
                 re_opt.sh_options.max_ray_depth = 4;
                 re_opt.sm_filter = sm_filter;
-                re_opt.restir_options.sampling_weights = sampling_weights;
-                re_opt.restir_options.max_bounces = opt.max_ray_depth-1;
-                re_opt.restir_options.regularization_gamma = opt.regularization;
-                re_opt.restir_options.max_confidence = opt.restir.max_confidence;
-                re_opt.restir_options.temporal_reuse = opt.restir.temporal_reuse;
-                re_opt.restir_options.canonical_samples = opt.restir.canonical_samples;
-                re_opt.restir_options.spatial_samples = opt.restir.spatial_samples;
-                re_opt.restir_options.spatial_sample_oriented_disk = opt.restir.sample_spatial_disk;
-                re_opt.restir_options.shift_map = opt.restir.shift_mapping_type;
-                re_opt.restir_options.passes = opt.restir.passes;
-                re_opt.restir_options.reconnection_scale = opt.restir.reconnection_scale;
-                re_opt.restir_options.max_spatial_search_radius = opt.restir.max_search_radius;
-                re_opt.restir_options.min_spatial_search_radius = opt.restir.min_search_radius;
-                re_opt.restir_options.assume_unchanged_material = opt.restir.assume_unchanged_material;
-                re_opt.restir_options.assume_unchanged_acceleration_structures = opt.restir.assume_unchanged_acceleration_structures;
-                re_opt.restir_options.assume_unchanged_reconnection_radiance = opt.restir.assume_unchanged_reconnection_radiance;
-                re_opt.restir_options.assume_unchanged_temporal_visibility = opt.restir.assume_unchanged_temporal_visibility;
+                re_opt.restir_options = restir_opt;
                 re_opt.restir_options.shade_all_explicit_lights = *rtype == options::RESTIR_HYBRID;
                 re_opt.restir_options.shade_fake_indirect = *rtype == options::RESTIR_HYBRID && has_sh_grids;
 
@@ -653,10 +655,14 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 return new restir_renderer(ctx, re_opt);
             }
         case options::RC:
+        case options::RC_RESTIR:
             {
                 rc_renderer::options ropt;
                 ropt.scene_options = scene_options;
-                ropt.pt_options = pt_opt;
+                if(*rtype == options::RC_RESTIR)
+                    ropt.restir_options = restir_opt;
+                else
+                    ropt.pt_options = pt_opt;
                 ropt.tonemap_options = tonemap;
                 ropt.rc_options.use_raster_di = opt.radiance_cascades.shadow_mapped;
                 ropt.rc_options.jitter = opt.radiance_cascades.jitter;

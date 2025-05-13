@@ -32,6 +32,14 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
         this->opt.pt_options->distribution.size = ctx.get_size();
         this->opt.pt_options->distribution.strategy = DISTRIBUTION_DUPLICATE;
         this->opt.pt_options->active_viewport_count = 1;
+        this->opt.restir_options.reset();
+    }
+    else if(this->opt.restir_options)
+    {
+        this->opt.restir_options->max_bounces = max(this->opt.restir_options->max_bounces, 1u);
+        this->opt.restir_options->demodulated_output = opt.svgf_options.has_value();
+        this->opt.restir_options->camera_index = 0;
+        this->opt.restir_options->expect_taa_jitter = opt.taa_options.has_value();
     }
 
     gbuffer_spec gs;
@@ -58,18 +66,15 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
 
         if(opt.restir_options || opt.taa_options || opt.svgf_options)
         {
+            gs.curvature_present = true;
             gs.screen_motion_present = true;
             gs.flat_normal_present = true;
         }
 
-        if(opt.svgf_options)
+        if(opt.svgf_options && opt.restir_options)
         {
-            gs.curvature_present = true;
-            if(opt.restir_options)
-            {
-                gs.confidence_present = true;
-                gs.temporal_gradient_present = true;
-            }
+            gs.confidence_present = true;
+            gs.temporal_gradient_present = true;
         }
     }
 
@@ -201,10 +206,9 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
             cur.color.layout = vk::ImageLayout::eGeneral;
         }
 
-        cur = current_gbuffer.get_array_target(dev.id);
-
         if(this->opt.pt_options)
         {
+            cur = current_gbuffer.get_array_target(dev.id);
             gbuffer_target old = cur;
             if(need_full_gbuffer)
             {
@@ -218,6 +222,14 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
             this->opt.pt_options->rc_source = &*rc;
             pt.emplace(dev, *scene_update, cur, *this->opt.pt_options);
             cur = old;
+        }
+        else if(this->opt.restir_options)
+        {
+            cur = current_gbuffer.get_layer_target(dev.id, 0);
+            gbuffer_target prev = prev_gbuffer.get_layer_target(dev.id, 0);
+            restir.emplace(dev, *scene_update, cur, prev, *this->opt.restir_options);
+
+            cur = current_gbuffer.get_array_target(dev.id);
         }
 
         gbuffer_target prev;
