@@ -157,6 +157,7 @@
         {"restir", options::RESTIR}, \
         {"restir-hybrid", options::RESTIR_HYBRID}, \
         {"rc", options::RC}, \
+        {"rc-restir", options::RC_RESTIR}, \
         {"albedo", feature_stage::ALBEDO}, \
         {"world-normal", feature_stage::WORLD_NORMAL}, \
         {"view-normal", feature_stage::VIEW_NORMAL}, \
@@ -658,7 +659,8 @@ struct options
         DSHGI_CLIENT,
         RESTIR,
         RESTIR_HYBRID,
-        RC
+        RC,
+        RC_RESTIR
     };
     using renderer_option_type = std::variant<
         tr::options::basic_pipeline_type, feature_stage::feature>;
