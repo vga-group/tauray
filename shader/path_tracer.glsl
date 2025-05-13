@@ -345,7 +345,8 @@ vec3 next_event_estimation(
             mat.roughness,
             mix(0.04, 1.0, mat.metallic),
             rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
-            out_dir);
+            out_dir
+        );
         contrib /= nee_mis_pdf(light_pdf, rc_pdf);
 #else
         contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);

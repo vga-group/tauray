@@ -1,4 +1,5 @@
 #include "restir_stage.hh"
+#include "radiance_cascades_stage.hh"
 #include "scene_stage.hh"
 #include "gbuffer.hh"
 #include "log.hh"
@@ -363,31 +364,39 @@ restir_stage::restir_stage(
     set.set_binding_params("spatial_candidates", 1, vk::DescriptorBindingFlagBits::ePartiallyBound); \
     set.set_binding_params("mis_data", 1, vk::DescriptorBindingFlagBits::ePartiallyBound);
 
+    if(opt.rc_source)
+    {
+        defines["RADIANCE_CASCADES_SET"] = "3";
+        opt.rc_source->add_defines(defines);
+    }
+
     { // CANONICAL
         shader_source shader = {"shader/restir_canonical.comp", defines};
         SET_BINDING_PARAMS(canonical_set);
-        canonical.init(
-            shader,
-            {
-                &canonical_set,
-                &ss.get_descriptors(),
-                &ss.get_raster_descriptors()
-            }
-        );
+        std::vector<tr::descriptor_set_layout*> layout = {
+            &canonical_set,
+            &ss.get_descriptors(),
+            &ss.get_raster_descriptors()
+        };
+        if(opt.rc_source)
+            layout.push_back(&opt.rc_source->get_descriptors());
+        canonical.init(shader, layout);
     }
 
     { // TEMPORAL
+        if(opt.rc_source) defines["RADIANCE_CASCADES_SET"] = "4";
         shader_source shader = {"shader/restir_temporal.comp", defines};
         SET_BINDING_PARAMS(temporal_set);
-        temporal.init(
-            shader,
-            {
-                &temporal_set,
-                &ss.get_descriptors(),
-                &ss.get_raster_descriptors(),
-                &ss.get_temporal_tables()
-            }
-        );
+        std::vector<tr::descriptor_set_layout*> layout = {
+            &temporal_set,
+            &ss.get_descriptors(),
+            &ss.get_raster_descriptors(),
+            &ss.get_temporal_tables()
+        };
+        if(opt.rc_source)
+            layout.push_back(&opt.rc_source->get_descriptors());
+        temporal.init(shader, layout);
+        if(opt.rc_source) defines["RADIANCE_CASCADES_SET"] = "3";
     }
 
     if(opt.spatial_samples > 0)
@@ -431,27 +440,27 @@ restir_stage::restir_stage(
     { // SPATIAL TRACE
         shader_source shader = {"shader/restir_spatial_trace.comp", defines};
         SET_BINDING_PARAMS(spatial_trace_set);
-        spatial_trace.init(
-            shader,
-            {
-                &spatial_trace_set,
-                &ss.get_descriptors(),
-                &ss.get_raster_descriptors()
-            }
-        );
+        std::vector<tr::descriptor_set_layout*> layout = {
+            &spatial_trace_set,
+            &ss.get_descriptors(),
+            &ss.get_raster_descriptors()
+        };
+        if(opt.rc_source)
+            layout.push_back(&opt.rc_source->get_descriptors());
+        spatial_trace.init(shader, layout);
     }
 
     { // SPATIAL GATHER
         shader_source shader = {"shader/restir_spatial_gather.comp", defines};
         SET_BINDING_PARAMS(spatial_gather_set);
-        spatial_gather.init(
-            shader,
-            {
-                &spatial_gather_set,
-                &ss.get_descriptors(),
-                &ss.get_raster_descriptors()
-            }
-        );
+        std::vector<tr::descriptor_set_layout*> layout = {
+            &spatial_gather_set,
+            &ss.get_descriptors(),
+            &ss.get_raster_descriptors()
+        };
+        if(opt.rc_source)
+            layout.push_back(&opt.rc_source->get_descriptors());
+        spatial_gather.init(shader, layout);
     }
 
     if(opt.demodulated_output)
@@ -762,6 +771,8 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_i
         canonical.push_descriptors(cmd, canonical_set, 0);
         canonical.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
         canonical.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
+        if(opt.rc_source)
+            canonical.set_descriptors(cmd, opt.rc_source->get_descriptors(), 0, 3);
 
         canonical_push_constant_buffer pc;
         pc.config = config;
@@ -803,6 +814,8 @@ void restir_stage::record_canonical_pass(vk::CommandBuffer cmd, uint32_t frame_i
         temporal.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
         temporal.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
         temporal.set_descriptors(cmd, scene_data->get_temporal_tables(), 0, 3);
+        if(opt.rc_source)
+            temporal.set_descriptors(cmd, opt.rc_source->get_descriptors(), 0, 4);
 
         temporal_push_constant_buffer pc;
         pc.config = config;
@@ -861,6 +874,8 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t frame_ind
         spatial_trace.push_descriptors(cmd, spatial_trace_set, 0);
         spatial_trace.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
         spatial_trace.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
+        if(opt.rc_source)
+            spatial_trace.set_descriptors(cmd, opt.rc_source->get_descriptors(), 0, 3);
 
         spatial_trace_push_constant_buffer pc;
         pc.config = config;
@@ -923,6 +938,8 @@ void restir_stage::record_spatial_pass(vk::CommandBuffer cmd, uint32_t frame_ind
         spatial_gather.push_descriptors(cmd, spatial_gather_set, 0);
         spatial_gather.set_descriptors(cmd, scene_data->get_descriptors(), 0, 1);
         spatial_gather.set_descriptors(cmd, scene_data->get_raster_descriptors(), 0, 2);
+        if(opt.rc_source)
+            spatial_gather.set_descriptors(cmd, opt.rc_source->get_descriptors(), 0, 3);
 
         spatial_gather_push_constant_buffer pc;
         pc.config = config;

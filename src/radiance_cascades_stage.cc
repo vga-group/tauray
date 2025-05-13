@@ -196,6 +196,9 @@ radiance_cascades_stage::radiance_cascades_stage(
     if(opt.recursive)
         defines["RECURSIVE_LIGHTING"];
 
+    if(opt.avg_bias < 1.0)
+        defines["BIAS_EXPONENT"] = std::to_string(1.0/(1.0-opt.avg_bias));
+
     {
         shader_source src("shader/radiance_cascades_trace.comp", defines);
         trace_desc.add(src);

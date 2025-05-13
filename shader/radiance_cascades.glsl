@@ -497,7 +497,18 @@ vec3 rc_texel_sample(
     float specular_weight,
     f16vec2 brdf_weight,
     inout float pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    , out uint sampled_lobe
+#endif
 ){
+    float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
+    float specular_prob = specular_weight * brdf_weight.y * M_PI / sum_brdf_weight;
+    bool sample_specular = generate_single_uniform_random_fast(seed) < specular_prob;
+
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    sampled_lobe = sample_specular ? MATERIAL_LOBE_REFLECTION : MATERIAL_LOBE_DIFFUSE;
+#endif
+
 #ifdef RC_BSDF_SAMPLE_TEXEL
     // [v00]----[v10]
     //   |   <-   |
@@ -519,12 +530,6 @@ vec3 rc_texel_sample(
         h01_h10_x, h01_h10_y, h01_h10_z
     );
 
-    float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
-    float specular_prob = specular_weight * brdf_weight.y * M_PI / sum_brdf_weight;
-    bool sample_specular = generate_single_uniform_random_fast(seed) < specular_prob;
-
-    // TODO: This approach is biased, possibly due to reusing the poor solid
-    // angle estimates. Re-try specular only with exact math and check.
     if (sample_specular)
     {
         ltc_transform_dir3(ltc_transform, h00_h11_x, h00_h11_y, h00_h11_z, h00_h11_x, h00_h11_y, h00_h11_z);
@@ -540,20 +545,7 @@ vec3 rc_texel_sample(
     uint vertex_count = clip_polygon(4, polygon);
     projected_solid_angle_polygon_t chosen_poly = prepare_projected_solid_angle_polygon_sampling(vertex_count, polygon);
 
-    // Partial but not perfect fix for bias.
-    float new_sum_brdf_weight;
-    if(sample_specular)
-        new_sum_brdf_weight = diffuse_weight * brdf_weight.x;
-    else
-        new_sum_brdf_weight = specular_weight * brdf_weight.y;
-
-    new_sum_brdf_weight *= M_PI;
-    new_sum_brdf_weight += (sample_specular ? specular_weight : diffuse_weight) * chosen_poly.projected_solid_angle;
-    pdf *= 1.0f / new_sum_brdf_weight;
-
-    /*
     pdf *= 1.0f / sum_brdf_weight;
-    */
 
     vec2 uv = vec2(
         generate_single_uniform_random_fast(seed),
@@ -562,20 +554,32 @@ vec3 rc_texel_sample(
 
     vec3 r = sample_projected_solid_angle_polygon(chosen_poly, uv);
 
-    float specular_density = 1.0f;
+    float mis_mul = 0.0f;
     if (sample_specular)
     { // Specular sample
         vec4 outdir = ltc_inv_transform_dir(vec3(ltc_transform), r);
-        specular_density = max(r.z, 0.0f) / outdir.w;
+        float specular_density = max(r.z, 0.0f) / outdir.w;
         r = outdir.xyz;
+        mis_mul =
+            specular_weight * specular_density
+#ifndef RC_SAMPLE_SINGLE_LOBE
+            + diffuse_weight * r.z
+#endif
+            ;
     }
     else
     { // Diffuse sample
         vec4 outdir = ltc_transform_dir(vec3(ltc_transform), r);
-        specular_density = max(outdir.z, 0.0f) * outdir.w;
+        float specular_density = max(outdir.z, 0.0f) * outdir.w;
+        mis_mul =
+            diffuse_weight * r.z
+#ifndef RC_SAMPLE_SINGLE_LOBE
+            + specular_weight * specular_density
+#endif
+            ;
     }
 
-    pdf *= specular_weight * specular_density + diffuse_weight * r.z;
+    pdf *= mis_mul;
 
     if(pdf <= 0.0 || r.z <= 0.0 || chosen_poly.projected_solid_angle <= 0 || sum_brdf_weight <= 0)
         pdf = -1.0f;
@@ -594,6 +598,10 @@ vec3 rc_texel_sample(
     uv = (vec2(selected_cell) + uv) * inv_probe_resolution;
 
     pdf *= probe_resolution * probe_resolution * 0.25f * octahedral_mapping_abs_jacobian_det(uv*2.0-1.0);
+
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    pdf *= sample_specular ? specular_prob : (1.0-specular_prob);
+#endif
 
     vec3 dir = radiance_cascade_probe_mapping(uv);
     return dir;
@@ -614,7 +622,12 @@ float rc_texel_pdf(
     float specular_weight,
     f16vec2 brdf_weight,
     float pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    , uint sampled_lobe
+#endif
 ){
+    float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
+
 #ifdef RC_BSDF_SAMPLE_TEXEL
     if (tdir.z < 0)
         return 0.0f;
@@ -624,8 +637,6 @@ float rc_texel_pdf(
     //   | v    ^ |
     //   |   ->   |
     // [v01]----[v11]
-    float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
-
     float balance_weight = 1.0f/sum_brdf_weight;
     pdf *= balance_weight;
     if (sum_brdf_weight <= 0.0f)
@@ -633,11 +644,27 @@ float rc_texel_pdf(
 
     vec4 spec_dir = ltc_transform_dir(vec3(ltc_transform), tdir);
     float specular_density = max(spec_dir.z, 0.0f) * spec_dir.w;
-    pdf *= specular_weight * specular_density + diffuse_weight * tdir.z;
+    float mis_mul = 0.0;
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    if(sampled_lobe == MATERIAL_LOBE_REFLECTION || sampled_lobe == MATERIAL_LOBE_ALL)
+        mis_mul += specular_weight * specular_density;
+    if(sampled_lobe == MATERIAL_LOBE_DIFFUSE || sampled_lobe == MATERIAL_LOBE_ALL)
+        mis_mul += diffuse_weight * tdir.z;
+#else
+    mis_mul = specular_weight * specular_density + diffuse_weight * tdir.z;
+#endif
 
+    pdf *= mis_mul;
     return pdf;
 #else
     pdf *= probe_resolution * probe_resolution * 0.25f * octahedral_mapping_abs_jacobian_det(uv*2.0-1.0);
+
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    float specular_prob = specular_weight * brdf_weight.y * M_PI / sum_brdf_weight;
+    if(sampled_lobe != MATERIAL_LOBE_ALL)
+        pdf *= sampled_lobe == MATERIAL_LOBE_REFLECTION ? specular_prob : (1.0-specular_prob);
+#endif
+
     return pdf;
 #endif
 }
@@ -1057,8 +1084,19 @@ void rc_wrs_pdf(
         (selected_offset.x == 0 ? f16vec2(diffuse.y, specular.y) : f16vec2(diffuse.w, specular.w));
 }
 
-vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, float roughness, float f0, float albedo, out float pdf)
-{
+vec3 sample_radiance_cascades(
+    uint seed,
+    vec3 origin,
+    vec3 normal,
+    vec3 view,
+    float roughness,
+    float f0,
+    float albedo,
+    out float pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    , out uint sampled_lobe
+#endif
+){
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
     vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
 
@@ -1166,11 +1204,25 @@ vec3 sample_radiance_cascades(uint seed, vec3 origin, vec3 normal, vec3 view, fl
         specular_amplitude,
         selected_brdf,
         pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+        , sampled_lobe
+#endif
     );
 }
 
-float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, bool light, float roughness, float f0, float albedo, vec3 dir)
-{
+float radiance_cascades_pdf(
+    vec3 origin,
+    vec3 normal,
+    vec3 view,
+    bool light,
+    float roughness,
+    float f0,
+    float albedo,
+    vec3 dir
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    , uint sampled_lobe
+#endif
+){
 #ifdef RC_USE_RASTER_DI
     // Directional and point lights are skipped in the RC sampling and left to
     // NEE, so no PDF for those.
@@ -1292,6 +1344,9 @@ float radiance_cascades_pdf(vec3 origin, vec3 normal, vec3 view, bool light, flo
         specular_amplitude,
         selected_brdf,
         pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+        , sampled_lobe
+#endif
     );
 }
 
