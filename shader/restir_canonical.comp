@@ -87,10 +87,16 @@ void sample_path_nee_leaf(
 #ifdef USE_PRIMARY_SAMPLE_SPACE
     throughput /= nee_pdf;
 #endif
+    float vis = test_visibility(rand32.w, src.pos, candidate_dir, candidate_dist, src.flat_normal);
 
-    throughput *= test_visibility(rand32.w, src.pos, candidate_dir, candidate_dist, src.flat_normal);
+    throughput *= vis;
 
     total_throughput *= throughput;
+    if(candidate.tail_length == 1)
+    {
+        // No BRDF but include visibility still.
+        tail_throughput *= vis;
+    }
     if(candidate.tail_length > 1)
         tail_throughput *= throughput;
 
@@ -162,6 +168,7 @@ bool sample_path_bsdf_bounce(
     uint sampled_lobe = 0;
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     float bsdf_pdf = 0;
+    float bsdf_mis_pdf = 0;
 #ifdef RADIANCE_CASCADES_SET
     vec3 dir = sample_radiance_cascades(
         rand32.x, src.pos, src.tbn[2],
@@ -169,11 +176,12 @@ bool sample_path_bsdf_bounce(
         src.mat.roughness, mix(0.04, 1.0, src.mat.metallic),
         rgb_to_luminance(src.mat.albedo.rgb) * (1.0-src.mat.metallic),
         bsdf_pdf,
+        bsdf_mis_pdf,
         sampled_lobe
     );
     ggx_bsdf_lobe_pdf(sampled_lobe, dir * src.tbn, src.tview, src.mat, lobes);
 #else
-    ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, sampled_lobe);
+    ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
     vec3 dir = src.tbn * tdir;
 #endif
 
@@ -252,7 +260,7 @@ bool sample_path_bsdf_bounce(
     vec3 value = total_throughput * vertex.radiance_estimate;
     float target_function_value = target_function(primary_bsdf, value); // p^(X_i)
 
-    float resampling_mis_weight = bsdf_pdf / (CANONICAL_SAMPLES * bsdf_pdf + CANONICAL_SAMPLES * nee_pdf); // m_i(X_i)
+    float resampling_mis_weight = bsdf_mis_pdf / (CANONICAL_SAMPLES * bsdf_mis_pdf + CANONICAL_SAMPLES * nee_pdf); // m_i(X_i)
 #ifdef USE_PRIMARY_SAMPLE_SPACE
     float ucw = 1.0f;
 #else
