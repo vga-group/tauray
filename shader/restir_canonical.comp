@@ -87,10 +87,16 @@ void sample_path_nee_leaf(
 #ifdef USE_PRIMARY_SAMPLE_SPACE
     throughput /= nee_pdf;
 #endif
+    float vis = test_visibility(rand32.w, src.pos, candidate_dir, candidate_dist, src.flat_normal);
 
-    throughput *= test_visibility(rand32.w, src.pos, candidate_dir, candidate_dist, src.flat_normal);
+    throughput *= vis;
 
     total_throughput *= throughput;
+    if(candidate.tail_length == 1)
+    {
+        // No BRDF but include visibility still.
+        tail_throughput *= vis;
+    }
     if(candidate.tail_length > 1)
         tail_throughput *= throughput;
 
@@ -170,6 +176,7 @@ bool sample_path_bsdf_bounce(
         src.mat.roughness, mix(0.04, 1.0, src.mat.metallic),
         rgb_to_luminance(src.mat.albedo.rgb) * (1.0-src.mat.metallic),
         bsdf_pdf,
+        bsdf_mis_pdf,
         sampled_lobe
     );
     ggx_bsdf_lobe_pdf(sampled_lobe, dir * src.tbn, src.tview, src.mat, lobes);

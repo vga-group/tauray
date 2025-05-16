@@ -133,6 +133,19 @@ void bias_ray(inout vec3 pos, inout vec3 dir, inout float len, in domain d)
 #endif
 }
 
+vec3 bias_ray_shading_dir(vec3 dir, float len, in domain d)
+{
+#ifndef USE_POSITION
+    bool exit_below = dot(dir, d.flat_normal) < 0;
+    vec3 pos = d.pos;
+    vec3 target = pos + dir * len;
+    bias_ray_origin(pos, exit_below, d);
+    return normalize(target - pos);
+#else
+    return dir;
+#endif
+}
+
 #ifdef RESTIR_TEMPORAL
 sampled_material get_prev_material(ivec2 p)
 {
@@ -481,8 +494,9 @@ vec3 shade_explicit_lights(
 }
 #endif
 
-float test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
-{
+float test_visibility(
+    uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal
+){
     rayQueryEXT rq;
     rayQueryInitializeEXT(rq,
         tlas,
@@ -717,8 +731,12 @@ bool resolve_reconnection_vertex(
         }
         vd.mapped_normal = vd.smooth_normal;
 
+        vec3 shading_dir = to.dir;
+        if(rs.head_length == 0)
+            shading_dir = bias_ray_shading_dir(to.dir, to.dist, to_domain);
+
         to.lobes = bsdf_lobes(0,0,0,0);
-        vec3 tdir = to.dir * to_domain.tbn;
+        vec3 tdir = shading_dir * to_domain.tbn;
 #ifdef RADIANCE_CASCADES_SET
         ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
         to.bsdf_pdf = radiance_cascades_pdf(
@@ -727,7 +745,7 @@ bool resolve_reconnection_vertex(
             to_domain.mat.roughness,
             mix(0.04, 1.0, to_domain.mat.metallic),
             rgb_to_luminance(to_domain.mat.albedo.rgb) * (1.0-to_domain.mat.metallic),
-            to.dir,
+            shading_dir,
             rs.head_lobe
         );
 #else
@@ -758,8 +776,13 @@ bool resolve_reconnection_vertex(
 #endif
     }
 
+
+    vec3 shading_dir = to.dir;
+    if(rs.head_length == 0)
+        shading_dir = bias_ray_shading_dir(to.dir, to.dist, to_domain);
+
     to.lobes = bsdf_lobes(0,0,0,0);
-    vec3 tdir = to.dir * to_domain.tbn;
+    vec3 tdir = shading_dir * to_domain.tbn;
 #ifdef RADIANCE_CASCADES_SET
     ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
     to.bsdf_pdf = radiance_cascades_pdf(
@@ -768,7 +791,7 @@ bool resolve_reconnection_vertex(
         to_domain.mat.roughness,
         mix(0.04, 1.0, to_domain.mat.metallic),
         rgb_to_luminance(to_domain.mat.albedo.rgb) * (1.0-to_domain.mat.metallic),
-        to.dir,
+        shading_dir,
         rs.head_lobe
     );
 #else
@@ -1389,6 +1412,7 @@ bool replay_path_bsdf_bounce(
         src.mat.roughness, mix(0.04, 1.0, src.mat.metallic),
         rgb_to_luminance(src.mat.albedo.rgb) * (1.0-src.mat.metallic),
         bsdf_pdf,
+        bsdf_mis_pdf,
         sampled_lobe
     );
     ggx_bsdf_lobe_pdf(sampled_lobe, dir * src.tbn, src.tview, src.mat, lobes);
@@ -1500,10 +1524,7 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
         uint sampled_lobe = 0;
         float bsdf_pdf = 0.0f;
-<<<<<<< HEAD
         float bsdf_mis_pdf = 0;
-        ggx_bsdf_sample_lobe(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
-=======
 #ifdef RADIANCE_CASCADES_SET
         vec3 dir = sample_radiance_cascades(
             rand32.x, tail_domain.pos, tail_domain.tbn[2],
@@ -1511,12 +1532,12 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
             tail_domain.mat.roughness, mix(0.04, 1.0, tail_domain.mat.metallic),
             rgb_to_luminance(tail_domain.mat.albedo.rgb) * (1.0-tail_domain.mat.metallic),
             bsdf_pdf,
+            bsdf_mis_pdf,
             sampled_lobe
         );
         ggx_bsdf_lobe_pdf(sampled_lobe, dir * tail_domain.tbn, tail_domain.tview, tail_domain.mat, lobes);
 #else
-        ggx_bsdf_sample_lobe(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf, sampled_lobe);
->>>>>>> 98b99ab (WIP ReSTIR RC integration)
+        ggx_bsdf_sample_lobe(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
         vec3 dir = tail_domain.tbn * tdir;
 #endif
         update_regularization(bsdf_pdf, regularization);
@@ -1614,6 +1635,7 @@ bool reconnection_shift_map(
 
     float regularization = 1;
     resolved_vertex to;
+
     if(!resolve_reconnection_vertex(rs, !cur_to_prev, to_domain, regularization, to))
     {
         // Failed to reconnect, vertex may have ceased to exist.
