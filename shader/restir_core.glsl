@@ -737,8 +737,9 @@ bool resolve_reconnection_vertex(
 
         to.lobes = bsdf_lobes(0,0,0,0);
         vec3 tdir = shading_dir * to_domain.tbn;
+        float regularization_pdf;
 #ifdef RADIANCE_CASCADES_SET
-        ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
+        regularization_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
         to.bsdf_pdf = radiance_cascades_pdf(
             to_domain.pos, to_domain.tbn[2], -to_domain.view,
             false,
@@ -749,9 +750,9 @@ bool resolve_reconnection_vertex(
             rs.head_lobe
         );
 #else
-        to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
+        regularization_pdf = to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
 #endif
-        update_regularization(to.bsdf_pdf, regularization);
+        update_regularization(regularization_pdf, regularization);
 
         ray_cone rc = to_domain.rc;
         ray_cone_apply_dist(to.dist, rc);
@@ -783,8 +784,9 @@ bool resolve_reconnection_vertex(
 
     to.lobes = bsdf_lobes(0,0,0,0);
     vec3 tdir = shading_dir * to_domain.tbn;
+    float regularization_pdf;
 #ifdef RADIANCE_CASCADES_SET
-    ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
+    regularization_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
     to.bsdf_pdf = radiance_cascades_pdf(
         to_domain.pos, to_domain.tbn[2], -to_domain.view,
         rs.vertex.instance_id >= MISS_INSTANCE_ID,
@@ -795,9 +797,9 @@ bool resolve_reconnection_vertex(
         rs.head_lobe
     );
 #else
-    to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
+    regularization_pdf = to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
 #endif
-    update_regularization(to.bsdf_pdf, regularization);
+    update_regularization(regularization_pdf, regularization);
     return true;
 }
 #endif
@@ -1405,6 +1407,7 @@ bool replay_path_bsdf_bounce(
     uint sampled_lobe = 0;
     float bsdf_pdf = 0;
     float bsdf_mis_pdf = 0;
+    float regularization_pdf = 0;
 #ifdef RADIANCE_CASCADES_SET
     vec3 dir = sample_radiance_cascades(
         rand32.x, src.pos, src.tbn[2],
@@ -1415,16 +1418,17 @@ bool replay_path_bsdf_bounce(
         bsdf_mis_pdf,
         sampled_lobe
     );
-    ggx_bsdf_lobe_pdf(sampled_lobe, dir * src.tbn, src.tview, src.mat, lobes);
+    regularization_pdf = ggx_bsdf_lobe_pdf(sampled_lobe, dir * src.tbn, src.tview, src.mat, lobes);
 #else
     ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
+    regularization_pdf = bsdf_pdf;
     vec3 dir = src.tbn * tdir;
 #endif
 
     if(bounce_index == 0)
         bias_ray_origin(src.pos, sampled_lobe == MATERIAL_LOBE_TRANSMISSION, src);
 
-    update_regularization(bsdf_pdf, regularization);
+    update_regularization(regularization_pdf, regularization);
     ray_cone_apply_roughness(sampled_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : src.mat.roughness, src.rc);
     if(bsdf_pdf == 0) bsdf_pdf = 1;
 
@@ -1525,6 +1529,7 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
         uint sampled_lobe = 0;
         float bsdf_pdf = 0.0f;
         float bsdf_mis_pdf = 0;
+        float regularization_pdf = 0.0f;
 #ifdef RADIANCE_CASCADES_SET
         vec3 dir = sample_radiance_cascades(
             rand32.x, tail_domain.pos, tail_domain.tbn[2],
@@ -1535,12 +1540,13 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
             bsdf_mis_pdf,
             sampled_lobe
         );
-        ggx_bsdf_lobe_pdf(sampled_lobe, dir * tail_domain.tbn, tail_domain.tview, tail_domain.mat, lobes);
+        regularization_pdf = ggx_bsdf_lobe_pdf(sampled_lobe, dir * tail_domain.tbn, tail_domain.tview, tail_domain.mat, lobes);
 #else
         ggx_bsdf_sample_lobe(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
+        regularization_pdf = bsdf_pdf;
         vec3 dir = tail_domain.tbn * tdir;
 #endif
-        update_regularization(bsdf_pdf, regularization);
+        update_regularization(regularization_pdf, regularization);
 
         if(bsdf_pdf == 0) bsdf_pdf = 1;
 
@@ -1687,16 +1693,7 @@ bool reconnection_shift_map(
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
         float pdf;
 #ifdef RADIANCE_CASCADES_SET
-        ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
-        pdf = radiance_cascades_pdf(
-            vd.pos, vd.mapped_normal, -to.dir,
-            rs.vertex.instance_id >= MISS_INSTANCE_ID,
-            mat.roughness,
-            mix(0.04, 1.0, mat.metallic),
-            rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
-            rs.vertex.incident_direction,
-            rs.tail_lobe
-        );
+        pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
 #else
         pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
 #endif
@@ -1919,9 +1916,9 @@ bool hybrid_shift_map(
 
         // Turn radiance into to.emission
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+        float regularization_pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
         float bsdf_pdf;
 #ifdef RADIANCE_CASCADES_SET
-        ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
         bsdf_pdf = radiance_cascades_pdf(
             vd.pos, tbn[2], -to.dir,
             rs.vertex.instance_id >= MISS_INSTANCE_ID,
@@ -1932,10 +1929,10 @@ bool hybrid_shift_map(
             rs.tail_lobe
         );
 #else
-        bsdf_pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
+        bsdf_pdf = regularization_pdf;
 #endif
         v1_pdf = rs.tail_lobe == MATERIAL_LOBE_ALL ? rs.tail_nee_pdf : bsdf_pdf;
-        update_regularization(bsdf_pdf, regularization);
+        update_regularization(regularization_pdf, regularization);
         vec3 bsdf = modulate_bsdf(mat, lobes);
 
         // Optionally, update radiance based on tail path in the timeframe of
