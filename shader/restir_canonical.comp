@@ -169,6 +169,7 @@ bool sample_path_bsdf_bounce(
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     float bsdf_pdf = 0;
     float bsdf_mis_pdf = 0;
+    float regularization_pdf = 0;
 #ifdef RADIANCE_CASCADES_SET
     vec3 dir = sample_radiance_cascades(
         rand32.x, src.pos, src.tbn[2],
@@ -179,9 +180,10 @@ bool sample_path_bsdf_bounce(
         bsdf_mis_pdf,
         sampled_lobe
     );
-    ggx_bsdf_lobe_pdf(sampled_lobe, dir * src.tbn, src.tview, src.mat, lobes);
+    regularization_pdf = ggx_bsdf_lobe_pdf(sampled_lobe, dir * src.tbn, src.tview, src.mat, lobes);
 #else
     ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
+    regularization_pdf = bsdf_pdf;
     vec3 dir = src.tbn * tdir;
 #endif
 
@@ -191,7 +193,7 @@ bool sample_path_bsdf_bounce(
     if(candidate.head_length + candidate.tail_length == 0)
         bias_ray_origin(src.pos, sampled_lobe == MATERIAL_LOBE_TRANSMISSION, src);
 
-    update_regularization(bsdf_pdf, regularization);
+    update_regularization(regularization_pdf, regularization);
     ray_cone_apply_roughness(sampled_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : src.mat.roughness, src.rc);
 
     vec3 throughput = get_bounce_throughput(
