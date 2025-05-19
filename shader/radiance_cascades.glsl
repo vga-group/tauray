@@ -1239,6 +1239,9 @@ float radiance_cascades_pdf(
     if (light)
         return 0.0f;
 #endif
+    if(dot(dir, dir) == 0.0f)
+        return 0.0f;
+
     vec3 aabb_min = radiance_cascade_metadata.aabb_min.xyz;
     vec3 aabb_max = radiance_cascade_metadata.aabb_max.xyz;
 

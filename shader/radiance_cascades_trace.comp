@@ -85,7 +85,7 @@ hit_info trace_primary_ray(
     rayQueryEXT rq;
     rayQueryInitializeEXT(rq,
         tlas,
-        gl_RayFlagsOpaqueEXT,
+        gl_RayFlagsOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
         0xFF,
         origin,
         0,
