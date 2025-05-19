@@ -239,6 +239,10 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
     vec3 extent = opt.volume.max - opt.volume.min;
     float h0 = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
 
+    float min_t0 = sqrt(
+        extent.x * extent.x + extent.y * extent.y + extent.z * extent.z
+    )/float(1<<opt.log2_resolution);
+
     const vec2 octahedral_theta_table[] = {
         vec2(7.853982e-01, 1.570796e+00),
         vec2(3.217506e-01, 9.553166e-01),
@@ -256,7 +260,7 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
         vec2(6.103888e-05, 2.589502e-04)
     };
 
-    return (1<<cascade) * h0 / tan(octahedral_theta_table[cascade].x);
+    return max((1<<cascade) * h0 / tan(octahedral_theta_table[cascade].x), min_t0);
 }
 
 vec2 radiance_cascades_stage::get_cascade_interval(int cascade) const
