@@ -236,12 +236,24 @@ size_t radiance_cascades_stage::get_cascade_count() const
 
 float radiance_cascades_stage::get_cascade_t0(int cascade) const
 {
+    // If we jitter, it's OK to start the cascade from 0 length. Imagine the
+    // below situation:
+    //
+    // +----------+ <---- C0 grid cell
+    // |          |
+    // |   #<------------ receiver surface
+    // |   #      |
+    // |   #_____<----- lit surface
+    // |          |
+    // +----------+
+    //
+    // If a lit surface is inside a grid cell and can illuminate a surface in
+    // that same cell, ray length for c0 should be 0 so that the surface can get
+    // proper representation.
+    if(opt.jitter && cascade == 0) return 0.0f;
+
     vec3 extent = opt.volume.max - opt.volume.min;
     float h0 = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
-
-    float min_t0 = sqrt(
-        extent.x * extent.x + extent.y * extent.y + extent.z * extent.z
-    )/float(1<<opt.log2_resolution);
 
     const vec2 octahedral_theta_table[] = {
         vec2(7.853982e-01, 1.570796e+00),
@@ -260,7 +272,7 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
         vec2(6.103888e-05, 2.589502e-04)
     };
 
-    return max((1<<cascade) * h0 / tan(octahedral_theta_table[cascade].x), min_t0);
+    return (1<<cascade) * h0 / tan(octahedral_theta_table[cascade].x);
 }
 
 vec2 radiance_cascades_stage::get_cascade_interval(int cascade) const

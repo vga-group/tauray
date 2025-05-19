@@ -1429,8 +1429,8 @@ void scene_stage::update(uint32_t frame_index)
                             {}, offset, 1<<0, 0, // Hit group 0 for triangle meshes.
                             {}, blas.get_blas_address(dev.id)
                         );
-                        if(!blas.is_backface_culled())
-                            inst.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
+                        //if(!blas.is_backface_culled())
+                        //    inst.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
 
                         mat4 global_transform = group.static_transformable ?
                             mat4(1) : transpose(instances[offset].transform);
