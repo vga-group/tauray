@@ -301,6 +301,17 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
     return vec3(0);
 }
 
+void correct_lobes_for_normal_map(vec3 sample_dir, vec3 geometric_normal, inout bsdf_lobes lobes)
+{
+    if(dot(geometric_normal, sample_dir) < 0)
+    {
+        lobes.diffuse = 0;
+        lobes.dielectric_reflection = 0;
+        lobes.metallic_reflection = 0;
+    }
+    else lobes.transmission = 0;
+}
+
 vec3 next_event_estimation(
     uvec4 rand_uint,
     mat3 tbn, vec3 shading_view, vec3 view, sampled_material mat,
@@ -334,6 +345,8 @@ vec3 next_event_estimation(
         vec3 shading_light = out_dir * tbn;
         lobes = bsdf_lobes(0,0,0,0);
         float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
+
+        correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
 
         // TODO: Check if this conditional just hurts performance
         if(any(greaterThan(contrib, vec3(0.0001f))))
@@ -454,7 +467,8 @@ void evaluate_ray(
         rayQueryEXT rq;
         rayQueryInitializeEXT(rq,
             tlas,
-            gl_RayFlagsNoneEXT,
+            //gl_RayFlagsNoneEXT,
+            gl_RayFlagsCullBackFacingTrianglesEXT,
 #ifdef HIDE_LIGHTS
             bounce == 0 ? 0xFF^0x02 : 0xFF,
 #else
@@ -573,6 +587,8 @@ void evaluate_ray(
         material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
         view = tbn * view;
 #endif
+
+        correct_lobes_for_normal_map(view, v.hard_normal, lobes);
 
         //color = -view.zzz;
         //return;

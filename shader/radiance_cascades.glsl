@@ -94,13 +94,6 @@ void octahedral_mapping(
     f16vec2 ny = clamp(normal_y, f16vec2(-1.0), f16vec2(0.0));
     normal_x = normal_x + mix(-ny, ny, greaterThan(normal_x, f16vec2(0.0)));
     normal_z = normal_z + mix(-ny, ny, greaterThan(normal_z, f16vec2(0.0)));
-
-    f16vec2 len2 = normal_x * normal_x + normal_y * normal_y + normal_z * normal_z;
-    f16vec2 inv_len = inversesqrt(len2);
-
-    normal_x = normal_x * inv_len;
-    normal_y = normal_y * inv_len;
-    normal_z = normal_z * inv_len;
 }
 
 void radiance_cascade_probe_mapping(
@@ -118,236 +111,6 @@ void radiance_cascade_probe_mapping(
         normal_z
     );
     //return concentric_octahedral_mapping(clamp(u, vec2(0.0f), vec2(1.0f)));
-}
-
-vec3 nearest_dir_on_arc(vec3 ref, vec3 arc_start, vec3 arc_end)
-{
-    vec3 normal = cross(arc_start, arc_end);
-    float len2 = dot(normal, normal);
-    vec3 q = normalize(ref * len2 - normal * dot(normal, ref));
-
-    vec3 delta = arc_start - arc_end;
-    float d_arc2 = dot(delta, delta);
-    delta = arc_start - q;
-    float d_start2 = dot(delta, delta);
-    delta = arc_end - q;
-    float d_end2 = dot(delta, delta);
-
-    if (d_start2 < d_arc2 && d_end2 < d_arc2)
-        return q;
-    return d_start2 > d_end2 ? arc_end : arc_start;
-}
-
-// poly must be convex, clockwise and vertices normalized.
-vec3 maximal_dir_on_texel(vec3 poly[4], vec3 target)
-{
-    // Check if peak is inside polygon.
-    if (
-        dot(cross(poly[0], poly[1]), target) > 0 &&
-        dot(cross(poly[1], poly[2]), target) > 0 &&
-        dot(cross(poly[2], poly[3]), target) > 0 &&
-        dot(cross(poly[3], poly[0]), target) > 0
-    ) return target;
-
-    vec3 maxq = poly[0];
-    float maxd = dot(poly[0], target);
-    vec3 q = nearest_dir_on_arc(target, poly[0], poly[1]);
-    float d = dot(q, target);
-    if(d > maxd) { maxq = q; maxd = d; }
-
-    q = nearest_dir_on_arc(target, poly[1], poly[2]);
-    d = dot(q, target);
-    if(d > maxd) { maxq = q; maxd = d; }
-
-    q = nearest_dir_on_arc(target, poly[2], poly[3]);
-    d = dot(q, target);
-    if(d > maxd) { maxq = q; maxd = d; }
-
-    q = nearest_dir_on_arc(target, poly[3], poly[0]);
-    d = dot(q, target);
-
-    if(d > maxd) { maxq = q; maxd = d; }
-    return maxq;
-}
-
-void nearest_dir_on_arc_half_precision(
-    f16vec2 ref_x,
-    f16vec2 ref_y,
-    f16vec2 ref_z,
-    f16vec2 arc_start_x,
-    f16vec2 arc_start_y,
-    f16vec2 arc_start_z,
-    f16vec2 arc_end_x,
-    f16vec2 arc_end_y,
-    f16vec2 arc_end_z,
-    out f16vec2 nearest_x,
-    out f16vec2 nearest_y,
-    out f16vec2 nearest_z
-){
-    //vec3 normal = cross(arc_start, arc_end);
-    f16vec2 normal_x = arc_start_y * arc_end_z - arc_end_y * arc_start_z;
-    f16vec2 normal_y = arc_start_z * arc_end_x - arc_end_z * arc_start_x;
-    f16vec2 normal_z = arc_start_x * arc_end_y - arc_end_x * arc_start_y;
-
-    f16vec2 len2 = normal_x * normal_x + normal_y * normal_y + normal_z * normal_z;
-    f16vec2 ndotr = normal_x * ref_x + normal_y * ref_y + normal_z * ref_z;
-
-    f16vec2 q_x = ref_x * len2 - normal_x * ndotr;
-    f16vec2 q_y = ref_y * len2 - normal_y * ndotr;
-    f16vec2 q_z = ref_z * len2 - normal_z * ndotr;
-    f16vec2 inv_len = inversesqrt(q_x*q_x + q_y*q_y + q_z*q_z);
-    q_x *= inv_len;
-    q_y *= inv_len;
-    q_z *= inv_len;
-
-    f16vec2 delta_x = arc_start_x - arc_end_x;
-    f16vec2 delta_y = arc_start_y - arc_end_y;
-    f16vec2 delta_z = arc_start_z - arc_end_z;
-    f16vec2 d_arc2 = delta_x * delta_x + delta_y * delta_y + delta_z * delta_z;
-
-    delta_x = arc_start_x - q_x;
-    delta_y = arc_start_y - q_y;
-    delta_z = arc_start_z - q_z;
-    f16vec2 d_start2 = delta_x * delta_x + delta_y * delta_y + delta_z * delta_z;
-
-    delta_x = arc_end_x - q_x;
-    delta_y = arc_end_y - q_y;
-    delta_z = arc_end_z - q_z;
-    f16vec2 d_end2 = delta_x * delta_x + delta_y * delta_y + delta_z * delta_z;
-
-    bvec2 q_cond = and(lessThan(d_start2, d_arc2), lessThan(d_end2, d_arc2));
-
-    bvec2 end_cond = greaterThan(d_start2, d_end2);
-    nearest_x = mix(mix(arc_start_x, arc_end_x, end_cond), q_x, q_cond);
-    nearest_y = mix(mix(arc_start_y, arc_end_y, end_cond), q_y, q_cond);
-    nearest_z = mix(mix(arc_start_z, arc_end_z, end_cond), q_z, q_cond);
-}
-
-f16vec2 dotcross(
-    f16vec2 x1,
-    f16vec2 y1,
-    f16vec2 z1,
-    f16vec2 x2,
-    f16vec2 y2,
-    f16vec2 z2,
-    f16vec2 tx,
-    f16vec2 ty,
-    f16vec2 tz
-){
-    return
-        (y1 * z2 - y2 * z1) * tx +
-        (z1 * x2 - z2 * x1) * ty +
-        (x1 * y2 - x2 * y1) * tz;
-}
-
-void maximal_dir_on_texel_half_precision(
-    f16vec2 poly_x[4],
-    f16vec2 poly_y[4],
-    f16vec2 poly_z[4],
-    f16vec2 target_x,
-    f16vec2 target_y,
-    f16vec2 target_z,
-    out f16vec2 result_x,
-    out f16vec2 result_y,
-    out f16vec2 result_z
-){
-    nearest_dir_on_arc_half_precision(
-        target_x,
-        target_y,
-        target_z,
-        poly_x[0],
-        poly_y[0],
-        poly_z[0],
-        poly_x[1],
-        poly_y[1],
-        poly_z[1],
-        result_x, result_y, result_z
-    );
-    f16vec2 maxd = result_x * target_x + result_y * target_y + result_z * target_z;
-
-    f16vec2 q_x;
-    f16vec2 q_y;
-    f16vec2 q_z;
-
-    nearest_dir_on_arc_half_precision(
-        target_x,
-        target_y,
-        target_z,
-        poly_x[1],
-        poly_y[1],
-        poly_z[1],
-        poly_x[2],
-        poly_y[2],
-        poly_z[2],
-        q_x, q_y, q_z
-    );
-    f16vec2 d = q_x * target_x + q_y * target_y + q_z * target_z;
-    result_x = mix(result_x, q_x, greaterThan(d, maxd));
-    result_y = mix(result_y, q_y, greaterThan(d, maxd));
-    result_z = mix(result_z, q_z, greaterThan(d, maxd));
-    maxd = max(maxd, d);
-
-    nearest_dir_on_arc_half_precision(
-        target_x,
-        target_y,
-        target_z,
-        poly_x[2],
-        poly_y[2],
-        poly_z[2],
-        poly_x[3],
-        poly_y[3],
-        poly_z[3],
-        q_x, q_y, q_z
-    );
-    d = q_x * target_x + q_y * target_y + q_z * target_z;
-    result_x = mix(result_x, q_x, greaterThan(d, maxd));
-    result_y = mix(result_y, q_y, greaterThan(d, maxd));
-    result_z = mix(result_z, q_z, greaterThan(d, maxd));
-    maxd = max(maxd, d);
-
-    nearest_dir_on_arc_half_precision(
-        target_x,
-        target_y,
-        target_z,
-        poly_x[3],
-        poly_y[3],
-        poly_z[3],
-        poly_x[0],
-        poly_y[0],
-        poly_z[0],
-        q_x, q_y, q_z
-    );
-    d = q_x * target_x + q_y * target_y + q_z * target_z;
-    result_x = mix(result_x, q_x, greaterThan(d, maxd));
-    result_y = mix(result_y, q_y, greaterThan(d, maxd));
-    result_z = mix(result_z, q_z, greaterThan(d, maxd));
-    maxd = max(maxd, d);
-
-    bvec2 dc0 = greaterThan(dotcross(
-        poly_x[0], poly_y[0], poly_z[0],
-        poly_x[1], poly_y[1], poly_z[1],
-        target_x, target_y, target_z
-    ), f16vec2(0));
-    bvec2 dc1 = greaterThan(dotcross(
-        poly_x[1], poly_y[1], poly_z[1],
-        poly_x[2], poly_y[2], poly_z[2],
-        target_x, target_y, target_z
-    ), f16vec2(0));
-    bvec2 dc2 = greaterThan(dotcross(
-        poly_x[2], poly_y[2], poly_z[2],
-        poly_x[3], poly_y[3], poly_z[3],
-        target_x, target_y, target_z
-    ), f16vec2(0));
-    bvec2 dc3 = greaterThan(dotcross(
-        poly_x[3], poly_y[3], poly_z[3],
-        poly_x[0], poly_y[0], poly_z[0],
-        target_x, target_y, target_z
-    ), f16vec2(0));
-    bvec2 pass = and(and(dc0, dc1), and(dc2, dc3));
-
-    result_x = mix(result_x, target_x, pass);
-    result_y = mix(result_y, target_y, pass);
-    result_z = mix(result_z, target_z, pass);
 }
 
 f16vec2 ltc_eval(
@@ -415,13 +178,6 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
     return sum.rgb;
 }
 
-vec3 get_texel_corner(ivec2 texel, vec2 corner, float inv_probe_resolution, mat3 tbn)
-{
-    vec3 dir = radiance_cascade_probe_mapping((vec2(texel) + corner) * inv_probe_resolution) * tbn;
-    dir.z = max(dir.z, 0.0);
-    return dir;
-}
-
 void get_unclamped_texel_corner(
     f16vec2 base,
     f16vec2 corner_x,
@@ -450,6 +206,13 @@ void get_unclamped_texel_corner(
     result_x = dir_x * tangent.x + dir_y * tangent.y + dir_z * tangent.z;
     result_y = dir_x * bitangent.x + dir_y * bitangent.y + dir_z * bitangent.z;
     result_z = dir_x * normal.x + dir_y * normal.y + dir_z * normal.z;
+
+    f16vec2 len2 = result_x * result_x + result_y * result_y + result_z * result_z;
+    f16vec2 inv_len = inversesqrt(len2 + f16vec2(0.0004));
+
+    result_x = result_x * inv_len;
+    result_y = result_y * inv_len;
+    result_z = result_z * inv_len;
 }
 
 void get_texel_corner(
@@ -462,22 +225,31 @@ void get_texel_corner(
     f16vec3 normal,
     out f16vec2 result_x,
     out f16vec2 result_y,
-    inout f16vec2 result_z
+    out f16vec2 result_z
 ){
-    get_unclamped_texel_corner(
-        base,
-        corner_x,
-        corner_y,
-        inv_probe_resolution,
-        tangent,
-        bitangent,
-        normal,
-        result_x,
-        result_y,
-        result_z
+    f16vec2 u_x = corner_x * inv_probe_resolution + base.x;
+    f16vec2 u_y = corner_y * inv_probe_resolution + base.y;
+    f16vec2 dir_x;
+    f16vec2 dir_y;
+    f16vec2 dir_z;
+    radiance_cascade_probe_mapping(
+        u_x,
+        u_y,
+        dir_x,
+        dir_y,
+        dir_z
     );
 
-    result_z = max(result_z, f16vec2(0.0));
+    result_x = dir_x * tangent.x + dir_y * tangent.y + dir_z * tangent.z;
+    result_y = dir_x * bitangent.x + dir_y * bitangent.y + dir_z * bitangent.z;
+    result_z = max(dir_x * normal.x + dir_y * normal.y + dir_z * normal.z, f16vec2(0.0));
+
+    f16vec2 len2 = result_x * result_x + result_y * result_y + result_z * result_z;
+    f16vec2 inv_len = inversesqrt(len2 + f16vec2(0.0004));
+
+    result_x = result_x * inv_len;
+    result_y = result_y * inv_len;
+    result_z = result_z * inv_len;
 }
 
 #ifndef printf
@@ -783,10 +555,6 @@ void integrate_quad_half_precision(
     spec_z.xy -= r.xy;
     spec_z.zw += r.xy;
 
-    // Bias slightly up to squash fireflies from underestimated texels
-    //diff_z = pow(diff_z, f16vec4(0.5f));
-    //spec_z = pow(spec_z, f16vec4(0.5f));
-
     // Mask out quads that are below the horizon.
     // These get included often due to rounding errors in our half-precision
     // approximate math.
@@ -805,143 +573,6 @@ void integrate_quad_half_precision(
 
     diffuse = max(diff_z * mask, f16vec4(0.0));
     specular = max(spec_z * mask, f16vec4(0.0));
-}
-
-f16vec4 max_brdf_contrib_half_precision(
-    f16vec3 tangent,
-    f16vec3 bitangent,
-    f16vec3 normal,
-    f16vec3 ltc_transform,
-    float16_t inv_probe_resolution,
-    f16vec2 base,
-    float16_t flip_fresnel,
-    float16_t specular_amplitude,
-    f16vec3 specular_peak
-){
-    // [v00]----[v10]----[v20]
-    //   |   <-   |   <-   |
-    //   | v .z ^ | v .x ^ |
-    //   |   ->   |   ->   |
-    // [v01]----[v11]----[v21]
-    //   |   <-   |   <-   |
-    //   | v .y ^ | v .w ^ |
-    //   |   ->   |   ->   |
-    // [v02]----[v12]----[v22]
-
-    // To keep things simple, there should be no shared edges between the pairs
-    // here. v11 is the only one that gets orphaned, but since there's an
-    // odd number of vectors here, that'll happen anyway.
-    f16vec2 h00_h22_x, h00_h22_y, h00_h22_z;
-    get_unclamped_texel_corner(
-        base, f16vec2(0,2), f16vec2(0,2), inv_probe_resolution,
-        tangent, bitangent, normal,
-        h00_h22_x, h00_h22_y, h00_h22_z
-    );
-
-    f16vec2 h10_h12_x, h10_h12_y, h10_h12_z;
-    get_unclamped_texel_corner(
-        base, f16vec2(1,1), f16vec2(0,2), inv_probe_resolution,
-        tangent, bitangent, normal,
-        h10_h12_x, h10_h12_y, h10_h12_z
-    );
-
-    f16vec2 h20_h02_x, h20_h02_y, h20_h02_z;
-    get_unclamped_texel_corner(
-        base, f16vec2(2,0), f16vec2(0,2), inv_probe_resolution,
-        tangent, bitangent, normal,
-        h20_h02_x, h20_h02_y, h20_h02_z
-    );
-
-    f16vec2 h21_h01_x, h21_h01_y, h21_h01_z;
-    get_unclamped_texel_corner(
-        base, f16vec2(2,0), f16vec2(1,1), inv_probe_resolution,
-        tangent, bitangent, normal,
-        h21_h01_x, h21_h01_y, h21_h01_z
-    );
-
-    f16vec2 h11_h11_x, h11_h11_y, h11_h11_z;
-    get_unclamped_texel_corner(
-        base, f16vec2(1,1), f16vec2(1,1), inv_probe_resolution,
-        tangent, bitangent, normal,
-        h11_h11_x, h11_h11_y, h11_h11_z
-    );
-
-    f16vec4 diff_z = f16vec4(0.0f);
-    f16vec4 spec_z = f16vec4(0.0f);
-
-    f16vec2 rx;
-    f16vec2 ry;
-    f16vec2 rz;
-    maximal_dir_on_texel_half_precision(
-        f16vec2[4](h00_h22_x, h10_h12_x, h11_h11_x, h21_h01_x.yx),
-        f16vec2[4](h00_h22_y, h10_h12_y, h11_h11_y, h21_h01_y.yx),
-        f16vec2[4](h00_h22_z, h10_h12_z, h11_h11_z, h21_h01_z.yx),
-        f16vec2(0,0),
-        f16vec2(0,0),
-        f16vec2(1,1),
-        rx, ry, rz
-    );
-    diff_z.zw = max(rz, f16vec2(0));
-    maximal_dir_on_texel_half_precision(
-        f16vec2[4](h10_h12_x, h20_h02_x, h21_h01_x, h11_h11_x),
-        f16vec2[4](h10_h12_y, h20_h02_y, h21_h01_y, h11_h11_y),
-        f16vec2[4](h10_h12_z, h20_h02_z, h21_h01_z, h11_h11_z),
-        f16vec2(0,0),
-        f16vec2(0,0),
-        f16vec2(1,1),
-        rx, ry, rz
-    );
-    diff_z.xy = max(rz, f16vec2(0));
-
-    //ltc_transform_dir3(ltc_transform, h00_h22_x, h00_h22_y, h00_h22_z, h00_h22_x, h00_h22_y, h00_h22_z);
-    //ltc_transform_dir3(ltc_transform, h10_h12_x, h10_h12_y, h10_h12_z, h10_h12_x, h10_h12_y, h10_h12_z);
-    //ltc_transform_dir3(ltc_transform, h20_h02_x, h20_h02_y, h20_h02_z, h20_h02_x, h20_h02_y, h20_h02_z);
-    //ltc_transform_dir3(ltc_transform, h21_h01_x, h21_h01_y, h21_h01_z, h21_h01_x, h21_h01_y, h21_h01_z);
-    //ltc_transform_dir3(ltc_transform, h11_h11_x, h11_h11_y, h11_h11_z, h11_h11_x, h11_h11_y, h11_h11_z);
-
-    maximal_dir_on_texel_half_precision(
-        f16vec2[4](h00_h22_x, h10_h12_x, h11_h11_x, h21_h01_x.yx),
-        f16vec2[4](h00_h22_y, h10_h12_y, h11_h11_y, h21_h01_y.yx),
-        f16vec2[4](h00_h22_z, h10_h12_z, h11_h11_z, h21_h01_z.yx),
-        f16vec2(specular_peak.x),
-        f16vec2(specular_peak.y),
-        f16vec2(specular_peak.z),
-        rx, ry, rz
-    );
-    spec_z.zw = ltc_eval(ltc_transform, rx, ry, rz);
-    //spec_z.zw = max(rz, f16vec2(0));
-    maximal_dir_on_texel_half_precision(
-        f16vec2[4](h10_h12_x, h20_h02_x, h21_h01_x, h11_h11_x),
-        f16vec2[4](h10_h12_y, h20_h02_y, h21_h01_y, h11_h11_y),
-        f16vec2[4](h10_h12_z, h20_h02_z, h21_h01_z, h11_h11_z),
-        f16vec2(specular_peak.x),
-        f16vec2(specular_peak.y),
-        f16vec2(specular_peak.z),
-        rx, ry, rz
-    );
-    spec_z.xy = ltc_eval(ltc_transform, rx, ry, rz);
-    //spec_z.xy = max(rz, f16vec2(0));
-
-    // Deal with rounding errors.
-    f16vec4 sum_contrib = flip_fresnel * max(diff_z, f16vec4(0.0)) + specular_amplitude * max(spec_z, f16vec4(0.0));
-    //f16vec4 sum_contrib = max(diff_z, f16vec4(0.0));
-
-    // Mask out quads that are below the horizon.
-    // These get included often due to rounding errors in our half-precision
-    // approximate math.
-    //if (h11_h11_z.x == float16_t(0))
-    //{
-    //    if (h00_h22_z.x == float16_t(0) && h10_h12_z.x == float16_t(0) && h21_h01_z.y == float16_t(0))
-    //        sum_contrib.z = float16_t(0);
-    //    if (h10_h12_z.x == float16_t(0) && h20_h02_z.x == float16_t(0) && h21_h01_z.x == float16_t(0))
-    //        sum_contrib.x = float16_t(0);
-    //    if (h21_h01_z.y == float16_t(0) && h20_h02_z.y == float16_t(0) && h10_h12_z.y == float16_t(0))
-    //        sum_contrib.y = float16_t(0);
-    //    if (h10_h12_z.y == float16_t(0) && h21_h01_z.x == float16_t(0) && h00_h22_z.y == float16_t(0))
-    //        sum_contrib.w = float16_t(0);
-    //}
-
-    return sum_contrib;
 }
 
 float eval_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)
@@ -1122,8 +753,8 @@ vec3 sample_radiance_cascades(
     f16vec3 bitangent = f16vec3(tbn[1]);
     f16vec3 hnormal = f16vec3(tbn[2]);
     float16_t fresnel = float16_t(f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness));
-    float16_t specular_amplitude = fresnel + float16_t(f0 * ggx_albedo(vdotn, roughness) - f0);
-    float16_t flip_fresnel = (float16_t(1.0) - fresnel) * float16_t(albedo);
+    float16_t specular_amplitude = fresnel * float16_t(ggx_albedo(vdotn, roughness));
+    float16_t flip_fresnel = (float16_t(1.0) - fresnel) * float16_t(albedo/M_PI);
 
     ivec2 selected_cell = ivec2(0);
     float16_t selected_weight = float16_t(0);
@@ -1264,8 +895,8 @@ float radiance_cascades_pdf(
     f16vec3 hnormal = f16vec3(tbn[2]);
 
     float16_t fresnel = float16_t(f0 + (1.0 - f0) * ggx_fresnel(vdotn, roughness));
-    float16_t specular_amplitude = fresnel + float16_t(f0 * ggx_albedo(vdotn, roughness) - f0);
-    float16_t flip_fresnel = (float16_t(1.0) - fresnel) * float16_t(albedo);
+    float16_t specular_amplitude = fresnel * float16_t(ggx_albedo(vdotn, roughness));
+    float16_t flip_fresnel = (float16_t(1.0) - fresnel) * float16_t(albedo / M_PI);
 
     float16_t selected_weight = float16_t(0);
     float16_t selected_value = float16_t(0);
