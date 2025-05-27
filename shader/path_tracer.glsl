@@ -467,7 +467,8 @@ void evaluate_ray(
         rayQueryEXT rq;
         rayQueryInitializeEXT(rq,
             tlas,
-            gl_RayFlagsNoneEXT,
+            //gl_RayFlagsNoneEXT,
+            gl_RayFlagsCullBackFacingTrianglesEXT,
 #ifdef HIDE_LIGHTS
             bounce == 0 ? 0xFF^0x02 : 0xFF,
 #else
