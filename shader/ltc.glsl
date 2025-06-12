@@ -47,7 +47,7 @@ f16vec2 angle_per_sin_angle_fast(f16vec2 cos_theta)
     //num = num * cos_theta + f16vec2(20.448902);
     //num = num * cos_theta + f16vec2(16.006583);
 
-    return inversesqrt(num);
+    return inversesqrt(max(num, f16vec2(1e-6f)));
 }
 
 // a and b are unit vectors on the +z hemisphere.

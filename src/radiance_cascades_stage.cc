@@ -81,6 +81,7 @@ radiance_cascades_stage::radiance_cascades_stage(
     //cascade_sampler(dev, vk::Filter::eLinear, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest, 0, false, false, false, 0.0f),
     cascade_sampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest, 0, false, false, false, 0.0f),
     trace(dev),
+    trace_c0(dev),
     gather(dev),
     live_counter(dev),
     live_dispatcher(dev),
@@ -206,6 +207,12 @@ radiance_cascades_stage::radiance_cascades_stage(
     }
 
     {
+        defines["USE_BACKFACE_CULLING"];
+        shader_source src("shader/radiance_cascades_trace.comp", defines);
+        trace_c0.init(src, {&trace_desc, &scene_ds, &raster_scene_ds, &cascade_descriptors});
+    }
+
+    {
         shader_source src("shader/radiance_cascades_gather.comp", defines);
         gather_desc.add(src);
         gather.init(src, {&gather_desc});
@@ -255,28 +262,33 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
     vec3 extent = opt.volume.max - opt.volume.min;
 
     const vec2 octahedral_theta_table[] = {
-        vec2(7.853982e-01, 1.570796e+00),
-        vec2(3.217506e-01, 9.553166e-01),
-        vec2(1.418971e-01, 5.148060e-01),
-        vec2(6.656816e-02, 2.631283e-01),
-        vec2(3.224688e-02, 1.323247e-01),
-        vec2(1.587168e-02, 6.625893e-02),
-        vec2(7.873853e-03, 3.314159e-02),
-        vec2(3.921549e-03, 1.657231e-02),
-        vec2(1.956945e-03, 8.286344e-03),
-        vec2(9.775168e-04, 4.143196e-03),
-        vec2(4.885197e-04, 2.071601e-03),
-        vec2(2.442002e-04, 1.035801e-03),
-        vec2(1.220852e-04, 5.179005e-04),
-        vec2(6.103888e-05, 2.589502e-04)
+        vec2(1.570796e+00, 3.141593e+00), // 2
+        vec2(7.853982e-01, 1.570796e+00), // 4
+        vec2(3.217506e-01, 9.553166e-01), // 8
+        vec2(1.418971e-01, 5.148060e-01), // 16
+        vec2(6.656816e-02, 2.631283e-01), // 32
+        vec2(3.224688e-02, 1.323247e-01), // 64
+        vec2(1.587168e-02, 6.625893e-02), // 128
+        vec2(7.873853e-03, 3.314159e-02), // 256
+        vec2(3.921549e-03, 1.657231e-02), // 512
+        vec2(1.956945e-03, 8.286344e-03), // 1024
+        vec2(9.775168e-04, 4.143196e-03), // 2048
+        vec2(4.885197e-04, 2.071601e-03), // 4096
+        vec2(2.442002e-04, 1.035801e-03), // 8192
+        vec2(1.220852e-04, 5.179005e-04), // 16384
+        vec2(6.103888e-05, 2.589502e-04)  // 32768
     };
+
+    int i = cascade;
+
+    i += findMSB(opt.c0_probe_resolution)-1;
 
     /*
     float h0 = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
     return (1<<cascade) * h0 / tan(octahedral_theta_table[cascade].x);
     */
     float h = (1<<(cascade-1)) * length(extent) / float(1<<opt.log2_resolution);
-    return h / (tan(octahedral_theta_table[cascade].y/2.0f));
+    return h / (tan(octahedral_theta_table[i].y/2.0f));
 }
 
 vec2 radiance_cascades_stage::get_cascade_interval(int cascade) const
@@ -499,10 +511,6 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     // Trace pass - traces rays for radiance intervals
     //==========================================================================
     trace_timer.begin(cb, dev->id, frame_index);
-    trace.bind(cb);
-    trace.set_descriptors(cb, ss->get_descriptors(), 0, 1);
-    trace.set_descriptors(cb, ss->get_raster_descriptors(), 0, 2);
-    trace.set_descriptors(cb, cascade_descriptors, 0, 3);
 
     trace_push_constant_buffer pc;
     shadow_map_filter sm_filter = {0,0,0,0};
@@ -516,6 +524,13 @@ void radiance_cascades_stage::update(uint32_t frame_index)
 
     for(uint32_t cascade = 0; cascade < get_cascade_count(); ++cascade)
     {
+        auto& trace = cascade == 0 ? this->trace_c0 : this->trace;
+
+        trace.bind(cb);
+        trace.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+        trace.set_descriptors(cb, ss->get_raster_descriptors(), 0, 2);
+        trace.set_descriptors(cb, cascade_descriptors, 0, 3);
+
         texture& target = (*next_cascades)[cascade];
         texture& target_visibility = (*next_cascades_visibility)[cascade];
         trace_desc.set_image(dev->id, "cascade_target", {{{}, target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});

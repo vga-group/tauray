@@ -75,6 +75,7 @@ private:
     descriptor_set cascade_descriptors;
     sampler cascade_sampler;
     compute_pipeline trace; // Traces rays and updates probes
+    compute_pipeline trace_c0; // Traces rays and updates probes (cascade 0)
     compute_pipeline gather; // Propagates average brightness to missed rays.
     compute_pipeline live_counter;
     compute_pipeline live_dispatcher;
