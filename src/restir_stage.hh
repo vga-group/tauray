@@ -174,6 +174,8 @@ public:
 
         bool expect_taa_jitter = false;
 
+        bool use_ray_cones = false;
+
         radiance_cascades_stage* rc_source = nullptr;
     };
 

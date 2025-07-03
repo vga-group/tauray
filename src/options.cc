@@ -510,6 +510,10 @@ bool parse_config_options(const char* config_str, fs::path relative_path, option
             print_options(opt, param == "full");
             continue;
         }
+        else if(identifier == "scene")
+        {
+            opt.scene_paths.push_back(arg);
+        }
 #define TR_BOOL_OPT(name, description, default) \
         else if(identifier == DASHIFY(name)) \
             opt.name = parse_toggle(DASHIFY(name), arg);
