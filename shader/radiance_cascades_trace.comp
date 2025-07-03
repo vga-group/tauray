@@ -85,11 +85,13 @@ hit_info trace_primary_ray(
     rayQueryEXT rq;
     rayQueryInitializeEXT(rq,
         tlas,
-#ifdef USE_BACKFACE_CULLING
+//        gl_RayFlagsOpaqueEXT,
         gl_RayFlagsOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
-#else
-        gl_RayFlagsOpaqueEXT,
-#endif
+//#ifdef USE_BACKFACE_CULLING
+//        gl_RayFlagsOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
+//#else
+//        gl_RayFlagsOpaqueEXT,
+//#endif
         0xFF,
         origin,
         0,
@@ -233,6 +235,19 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
     return vec4(0);
 }
 
+float correct_ray_origin(vec3 origin, vec3 dir, vec3 cell_size)
+{
+    vec3 inv_dir = 1.0 / dir;
+    vec3 pmax = cell_size * 0.5;
+    vec3 pmin = -pmax;
+
+    vec3 t0 = (pmin - origin) * inv_dir;
+    vec3 t1 = (pmax - origin) * inv_dir;
+
+    vec3 maxs = max(t0,t1);
+    return min(maxs.x, min(maxs.y, maxs.z));
+}
+
 void main()
 {
     bool first_cascade = pc.cascade == 0;
@@ -258,8 +273,14 @@ void main()
     //vec3 probe_origin = pc.base_offset.xyz + probe_index * pc.xyz_step.xyz;
 
 #if 1
-    vec3 ray_origin = probe_origin + probe_dir * pc.interval_start;
-    vec3 ray_end = probe_origin + probe_dir * pc.interval_end;
+    //float edge_t = correct_ray_origin(pc.origin_jitter.xyz * pc.xyz_step.xyz, probe_dir, pc.xyz_step.xyz);
+    //float start_t = edge_t + pc.interval_start;
+    //float end_t = edge_t + pc.interval_end;
+    float start_t = pc.interval_start;
+    float end_t = pc.interval_end;
+
+    vec3 ray_origin = probe_origin + probe_dir * start_t;
+    vec3 ray_end = probe_origin + probe_dir * end_t;
 #else
     // With bilinear & forking fixes
     ivec3 next_index = ivec3(probe_index.xyz/2);

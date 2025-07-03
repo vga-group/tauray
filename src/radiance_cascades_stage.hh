@@ -27,7 +27,7 @@ public:
 
         bool jitter = true;
         // Only effective with jittering enabled
-        float temporal_ratio = 0.01f;
+        float temporal_ratio = 0.005f;
 
         // Get lighting for current pass from previous pass. Requires double
         // the memory!
