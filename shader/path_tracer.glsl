@@ -333,6 +333,7 @@ vec3 next_event_estimation(
         || scene_metadata.environment_proj >= 0
 #endif
     ){
+        /*
         vec3 out_dir;
         float out_length = 0.0f;
         float light_pdf;
@@ -349,7 +350,7 @@ vec3 next_event_estimation(
         correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
 
         // TODO: Check if this conditional just hurts performance
-        if(any(greaterThan(contrib, vec3(0.0001f))))
+        //if(any(greaterThan(contrib, vec3(0.0001f))))
             contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
 #ifdef RADIANCE_CASCADES_SET
@@ -364,6 +365,21 @@ vec3 next_event_estimation(
 #else
         contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
 #endif
+        */
+        directional_light dl = directional_lights.lights[0];
+        float out_length = RAY_MAX_DIST;
+        vec3 contrib = dl.color;
+        vec3 out_dir = -dl.dir;
+        if(dot(v.hard_normal, out_dir) < 0) contrib = vec3(0);
+
+        vec3 shading_light = out_dir * tbn;
+        lobes = bsdf_lobes(0,0,0,0);
+        ggx_brdf(shading_light, shading_view, mat, lobes);
+
+        correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
+
+        contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
+
         return contrib;
     }
 #endif
@@ -487,6 +503,21 @@ void evaluate_ray(
         intersection_pdf nee_pdf;
         vec3 light;
         bool terminal = !get_intersection_info(payload, pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
+
+        /*
+#ifdef printf
+        if(gl_GlobalInvocationID.x == 960 && gl_GlobalInvocationID.y == 540 && bounce == 0)
+        {
+            printf(
+                "Hit pos: (%f, %f, %f) view dir: (%f, %f, %f), normal: (%f, %f, %f), roughness: %f\n",
+                v.pos.x, v.pos.y, v.pos.z,
+                view.x, view.y, view.z,
+                v.mapped_normal.x, v.mapped_normal.y, v.mapped_normal.z,
+                mat.roughness
+            );
+        }
+#endif
+        */
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
