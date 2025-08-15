@@ -154,7 +154,8 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
 
     vec2 uv = radiance_cascade_probe_mapping_inverse(dir);
 
-    ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution)), ivec2(probe_resolution));
+    //ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution)), ivec2(probe_resolution));
+    ivec2 p = ivec2(uv * probe_resolution);
     vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
     ivec3 tex_coord = get_cascade_layout(cascade_size, probe_resolution, ivec3(cascade_coord), p);
     float col = texelFetch(radiance_cascades[0], tex_coord, 0).r;
@@ -167,7 +168,8 @@ vec3 query_radiance_cascades(vec3 origin, vec3 dir, uvec4 seed)
         probe_resolution *= 2;
         cascade_size /= 2;
 
-        ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution)), ivec2(probe_resolution));
+        //ivec2 p = octahedral_wrap(ivec2(floor(uv * probe_resolution)), ivec2(probe_resolution));
+        ivec2 p = ivec2(uv * probe_resolution);
         vec3 cascade_coord = clamp(fcoord * cascade_size, vec3(0.5), vec3(cascade_size-0.5));
         ivec3 tex_coord = get_cascade_layout(cascade_size, probe_resolution, ivec3(cascade_coord), p);
         col = texelFetch(radiance_cascades[cascade], tex_coord, 0).r;
@@ -712,15 +714,18 @@ void rc_wrs_pdf(
     float16_t weight = weight2.x + weight2.y;
     sum_weight += weight;
     ivec2 selected_offset = itex_coord - p;
-    selected_weight = selected_offset.y == 0 ?
-        (selected_offset.x == 0 ? weights.z : weights.x) :
-        (selected_offset.x == 0 ? weights.y : weights.w);
-    selected_value = selected_offset.y == 0 ?
-        (selected_offset.x == 0 ? values.z : values.x) :
-        (selected_offset.x == 0 ? values.y : values.w);
-    selected_brdf = selected_offset.y == 0 ?
-        (selected_offset.x == 0 ? f16vec2(diffuse.z, specular.z) : f16vec2(diffuse.x, specular.x)) :
-        (selected_offset.x == 0 ? f16vec2(diffuse.y, specular.y) : f16vec2(diffuse.w, specular.w));
+    if(selected_offset.x >= 0 && selected_offset.y >= 0 && selected_offset.x <= 1 && selected_offset.y <= 1)
+    {
+        selected_weight = selected_offset.y == 0 ?
+            (selected_offset.x == 0 ? weights.z : weights.x) :
+            (selected_offset.x == 0 ? weights.y : weights.w);
+        selected_value = selected_offset.y == 0 ?
+            (selected_offset.x == 0 ? values.z : values.x) :
+            (selected_offset.x == 0 ? values.y : values.w);
+        selected_brdf = selected_offset.y == 0 ?
+            (selected_offset.x == 0 ? f16vec2(diffuse.z, specular.z) : f16vec2(diffuse.x, specular.x)) :
+            (selected_offset.x == 0 ? f16vec2(diffuse.y, specular.y) : f16vec2(diffuse.w, specular.w));
+    }
 }
 
 vec3 sample_radiance_cascades(
