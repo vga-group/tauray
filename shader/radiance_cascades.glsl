@@ -752,7 +752,6 @@ vec3 sample_radiance_cascades(
 
     float vdotn = dot(view, normal);
     f16vec3 ltc_transform = f16vec3(ltc_ggx_transform(vdotn, max(roughness, 0.001f)));
-    f16vec3 specular_peak = f16vec3(ltc_maxdir(vec3(ltc_transform)));
     mat3 tbn = create_tangent_space(normal, view);
     f16vec3 tangent = f16vec3(tbn[0]);
     f16vec3 bitangent = f16vec3(tbn[1]);
@@ -892,7 +891,6 @@ float radiance_cascades_pdf(
 
     float vdotn = dot(view, normal);
     f16vec3 ltc_transform = f16vec3(ltc_ggx_transform(vdotn, max(roughness, 0.001f)));
-    f16vec3 specular_peak = f16vec3(ltc_maxdir(vec3(ltc_transform)));
 
     mat3 tbn = create_tangent_space(normal, view);
     f16vec3 tangent = f16vec3(tbn[0]);
