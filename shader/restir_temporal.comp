@@ -10,6 +10,7 @@ layout(local_size_x = DISPATCH_WIDTH, local_size_y = DISPATCH_HEIGHT) in;
 
 #define RESTIR_TEMPORAL
 #define RAY_TRACING
+#define printf debugPrintfEXT
 #include "restir.glsl"
 
 layout(push_constant) uniform push_constant_buffer
