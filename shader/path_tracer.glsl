@@ -610,6 +610,10 @@ void evaluate_ray(
 
         if(terminal) break;
 
+        // Only NEE for last bounce, to match SIByl for measurements.
+        if(bounce+2 == MAX_BOUNCES)
+            break;
+
         // Lastly, figure out the next ray and assign proper attenuation for it.
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
 #ifdef RADIANCE_CASCADES_SET
