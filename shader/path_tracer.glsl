@@ -47,8 +47,9 @@ float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
     rayQueryEXT rq;
     rayQueryInitializeEXT(rq,
         tlas,
-        gl_RayFlagsTerminateOnFirstHitEXT,
-        0x02^0xFF, // Exclude lights from shadow rays
+        gl_RayFlagsCullNoOpaqueEXT|gl_RayFlagsTerminateOnFirstHitEXT,
+        //0x02^0xFF, // Exclude lights from shadow rays
+        0xFF,
         pos,
         min_dist,
         dir,
@@ -378,7 +379,8 @@ vec3 next_event_estimation(
 
         correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
 
-        contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
+        if(any(greaterThan(contrib, vec3(0.0001f))))
+            contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
         return contrib;
     }
@@ -483,7 +485,8 @@ void evaluate_ray(
         rayQueryEXT rq;
         rayQueryInitializeEXT(rq,
             tlas,
-            gl_RayFlagsNoneEXT,
+            //gl_RayFlagsNoneEXT,
+            gl_RayFlagsCullNoOpaqueEXT,
             //gl_RayFlagsCullBackFacingTrianglesEXT,
 #ifdef HIDE_LIGHTS
             bounce == 0 ? 0xFF^0x02 : 0xFF,

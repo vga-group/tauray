@@ -86,7 +86,7 @@ hit_info trace_primary_ray(
     rayQueryInitializeEXT(rq,
         tlas,
 //        gl_RayFlagsOpaqueEXT,
-        gl_RayFlagsOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
+        gl_RayFlagsCullNoOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
 //#ifdef USE_BACKFACE_CULLING
 //        gl_RayFlagsOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
 //#else
