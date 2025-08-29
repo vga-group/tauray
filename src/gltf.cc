@@ -192,7 +192,7 @@ std::vector<animation::sample<T>> read_animation_accessors(
 
 texture* get_texture(tinygltf::Model& model, scene_assets& md, int index)
 {
-    if(index == -1) return nullptr;
+    if(index == -1) return md.textures.back().get();
     return md.textures[model.textures[index].source].get();
 }
 
@@ -527,6 +527,7 @@ scene_assets load_gltf(
     if(!loader.LoadBinaryFromFile(&gltf_model, &err, &warn, path))
         throw std::runtime_error(err);
 
+
     for(tinygltf::Image& image: gltf_model.images)
     {
         if(image.bufferView != -1)
@@ -576,6 +577,20 @@ scene_assets load_gltf(
             md.textures.emplace_back(new texture(dev, image.uri));
         }
     }
+
+    uint8_t placeholder_data[4] = {255,255,255,255};
+    md.textures.emplace_back(new texture(
+        dev,
+        uvec2(1, 1),
+        1,
+        vk::Format::eR8G8B8A8Unorm,
+        4,
+        placeholder_data,
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eSampled,
+        vk::ImageLayout::eShaderReadOnlyOptimal
+    ));
+    md.textures.back()->set_opaque(true);
 
     // Add animations
     node_meta_info meta;
