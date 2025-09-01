@@ -258,8 +258,10 @@ void get_texel_corner(
 #define printf
 #endif
 
-vec3 rc_texel_sample(
+vec3 rc_brdf_texel_sample(
     inout uint seed,
+    bool sample_specular,
+    float specular_prob,
     ivec2 selected_cell,
     int probe_resolution,
     float16_t inv_probe_resolution,
@@ -269,22 +271,12 @@ vec3 rc_texel_sample(
     f16vec3 ltc_transform,
     float diffuse_weight,
     float specular_weight,
-    f16vec2 brdf_weight,
+    float sum_brdf_weight,
     inout float pdf
 #ifdef RC_SAMPLE_SINGLE_LOBE
-    , out float mis_pdf,
-    out uint sampled_lobe
+    , out float mis_pdf
 #endif
 ){
-    float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
-    float specular_prob = specular_weight * brdf_weight.y * M_PI / sum_brdf_weight;
-    bool sample_specular = generate_single_uniform_random_fast(seed) < specular_prob;
-
-#ifdef RC_SAMPLE_SINGLE_LOBE
-    sampled_lobe = sample_specular ? MATERIAL_LOBE_REFLECTION : MATERIAL_LOBE_DIFFUSE;
-#endif
-
-#ifdef RC_BSDF_SAMPLE_TEXEL
     // [v00]----[v10]
     //   |   <-   |
     //   | v    ^ |
@@ -371,7 +363,20 @@ vec3 rc_texel_sample(
         r.x * tangent.z + r.y * bitangent.z + r.z * normal.z
     );
     return dir;
-#else
+}
+
+vec3 rc_uniform_texel_sample(
+    inout uint seed,
+    bool sample_specular,
+    float specular_prob,
+    ivec2 selected_cell,
+    int probe_resolution,
+    float16_t inv_probe_resolution,
+    inout float pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    , out float mis_pdf
+#endif
+){
     vec2 uv = vec2(
         generate_single_uniform_random_fast(seed),
         generate_single_uniform_random_fast(seed)
@@ -387,18 +392,104 @@ vec3 rc_texel_sample(
 
     vec3 dir = radiance_cascade_probe_mapping(uv);
     return dir;
-#endif
 }
 
-float rc_texel_pdf(
+vec3 rc_texel_sample(
+    inout uint seed,
     ivec2 selected_cell,
-    vec2 uv,
-    vec3 tdir,
     int probe_resolution,
     float16_t inv_probe_resolution,
     f16vec3 tangent,
     f16vec3 bitangent,
     f16vec3 normal,
+    f16vec3 ltc_transform,
+    float roughness,
+    float diffuse_weight,
+    float specular_weight,
+    f16vec2 brdf_weight,
+    inout float pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    , out float mis_pdf,
+    out uint sampled_lobe
+#endif
+){
+    float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
+    float specular_prob = specular_weight * brdf_weight.y * M_PI / sum_brdf_weight;
+    bool sample_specular = generate_single_uniform_random_fast(seed) < specular_prob;
+
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    sampled_lobe = sample_specular ? MATERIAL_LOBE_REFLECTION : MATERIAL_LOBE_DIFFUSE;
+#endif
+
+#ifdef RC_SAMPLE_TEXEL_UNIFORM
+    return rc_uniform_texel_sample(
+        seed, sample_specular, specular_prob, selected_cell, probe_resolution,
+        inv_probe_resolution, pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+        , mis_pdf
+#endif
+    );
+#endif
+#ifdef RC_SAMPLE_TEXEL_BRDF
+    return rc_brdf_texel_sample(
+        seed,
+        sample_specular,
+        specular_prob,
+        selected_cell,
+        probe_resolution,
+        inv_probe_resolution,
+        tangent,
+        bitangent,
+        normal,
+        ltc_transform,
+        diffuse_weight,
+        specular_weight,
+        sum_brdf_weight,
+        pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+        , mis_pdf
+#endif
+    );
+#endif
+#ifdef RC_SAMPLE_TEXEL_HYBRID
+    if(roughness < 0.1)
+    {
+        return rc_brdf_texel_sample(
+            seed,
+            sample_specular,
+            specular_prob,
+            selected_cell,
+            probe_resolution,
+            inv_probe_resolution,
+            tangent,
+            bitangent,
+            normal,
+            ltc_transform,
+            diffuse_weight,
+            specular_weight,
+            sum_brdf_weight,
+            pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+            , mis_pdf
+#endif
+        );
+    }
+    else
+    {
+        return rc_uniform_texel_sample(
+            seed, sample_specular, specular_prob, selected_cell, probe_resolution,
+            inv_probe_resolution, pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+            , mis_pdf
+#endif
+        );
+    }
+#endif
+}
+
+float rc_brdf_texel_pdf(
+    vec2 uv,
+    vec3 tdir,
     f16vec3 ltc_transform,
     float diffuse_weight,
     float specular_weight,
@@ -410,7 +501,6 @@ float rc_texel_pdf(
 ){
     float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
 
-#ifdef RC_BSDF_SAMPLE_TEXEL
     if (tdir.z < 0)
         return 0.0f;
 
@@ -438,7 +528,21 @@ float rc_texel_pdf(
 
     pdf *= mis_mul;
     return pdf;
-#else
+}
+
+float rc_uniform_texel_pdf(
+    vec2 uv,
+    int probe_resolution,
+    float diffuse_weight,
+    float specular_weight,
+    f16vec2 brdf_weight,
+    float pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    , uint sampled_lobe
+#endif
+){
+    float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
+
     pdf *= probe_resolution * probe_resolution * 0.25f * octahedral_mapping_abs_jacobian_det(uv*2.0-1.0);
 
 #ifdef RC_SAMPLE_SINGLE_LOBE
@@ -448,6 +552,81 @@ float rc_texel_pdf(
 #endif
 
     return pdf;
+}
+
+float rc_texel_pdf(
+    vec2 uv,
+    vec3 tdir,
+    int probe_resolution,
+    f16vec3 ltc_transform,
+    float roughness,
+    float diffuse_weight,
+    float specular_weight,
+    f16vec2 brdf_weight,
+    float pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+    , uint sampled_lobe
+#endif
+){
+#ifdef RC_SAMPLE_TEXEL_BRDF
+    return rc_brdf_texel_pdf(
+        uv,
+        tdir,
+        ltc_transform,
+        diffuse_weight,
+        specular_weight,
+        brdf_weight,
+        pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+        , sampled_lobe
+#endif
+    );
+#endif
+
+#ifdef RC_SAMPLE_TEXEL_UNIFORM
+    return rc_uniform_texel_pdf(
+        uv,
+        probe_resolution,
+        diffuse_weight,
+        specular_weight,
+        brdf_weight,
+        pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+        , sampled_lobe
+#endif
+    );
+#endif
+
+#ifdef RC_SAMPLE_TEXEL_HYBRID
+    if(roughness < 0.1)
+    {
+        return rc_brdf_texel_pdf(
+            uv,
+            tdir,
+            ltc_transform,
+            diffuse_weight,
+            specular_weight,
+            brdf_weight,
+            pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+            , sampled_lobe
+#endif
+        );
+    }
+    else
+    {
+        return rc_uniform_texel_pdf(
+            uv,
+            probe_resolution,
+            diffuse_weight,
+            specular_weight,
+            brdf_weight,
+            pdf
+#ifdef RC_SAMPLE_SINGLE_LOBE
+            , sampled_lobe
+#endif
+        );
+    }
 #endif
 }
 
@@ -512,6 +691,7 @@ void integrate_quad_half_precision(
     f16vec4 diff_z = f16vec4(0.0f);
     f16vec2 r = edge_integral(h10_h12_x, h10_h12_y, h10_h12_z, h00_h22_x, h00_h22_y, h00_h22_z);
     diff_z.zw += r.xy;
+
 
     r = edge_integral(h20_h02_x, h20_h02_y, h20_h02_z, h10_h12_x, h10_h12_y, h10_h12_z);
     diff_z.xy += r.xy;
@@ -788,6 +968,7 @@ vec3 sample_radiance_cascades(
             specular
         );
         f16vec4 contrib = values * (flip_fresnel * diffuse + specular_amplitude * specular);
+
         rc_wrs_update(seed, p, contrib, sum_weight, selected_weight, selected_cell, values, selected_value, diffuse, specular, selected_brdf);
     }
 
@@ -844,6 +1025,7 @@ vec3 sample_radiance_cascades(
         bitangent,
         hnormal,
         ltc_transform,
+        roughness,
         flip_fresnel,
         specular_amplitude,
         selected_brdf,
@@ -978,15 +1160,11 @@ float radiance_cascades_pdf(
     }
 
     return rc_texel_pdf(
-        itex_coord,
         tex_coord,
         dir*tbn,
         probe_resolution,
-        inv_probe_resolution,
-        tangent,
-        bitangent,
-        hnormal,
         ltc_transform,
+        roughness,
         flip_fresnel,
         specular_amplitude,
         selected_brdf,

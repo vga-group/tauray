@@ -576,7 +576,13 @@
         TR_STRUCT_OPT_INT(c0, 4, 4, 16) \
         TR_STRUCT_OPT_INT(gridsize, 7, 1, 10) \
         TR_STRUCT_OPT_FLOAT(avg_bias, 0.0f, 0.0f, 1.0f) \
-        TR_STRUCT_OPT_BOOL(bsdf_texel, true) \
+        TR_STRUCT_OPT_ENUM(texel, \
+            radiance_cascades_stage::texel_sampling_type, \
+            radiance_cascades_stage::HYBRID, \
+            {"uniform", radiance_cascades_stage::UNIFORM}, \
+            {"brdf", radiance_cascades_stage::BRDF}, \
+            {"hybrid", radiance_cascades_stage::HYBRID} \
+        ) \
     )
 //==============================================================================
 // END OF OPTIONS
@@ -586,6 +592,7 @@
 #include "headless.hh"
 #include "tonemap_stage.hh"
 #include "path_tracer_stage.hh"
+#include "radiance_cascades_stage.hh"
 #include "restir_stage.hh"
 #include "rt_renderer.hh"
 #include "rt_common.hh"

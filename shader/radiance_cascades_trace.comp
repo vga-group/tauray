@@ -8,7 +8,11 @@
 #extension GL_EXT_debug_printf : enable
 
 //layout(local_size_x = 8, local_size_y = 8) in;
+#if RC_C0_ANGULAR_RESOLUTION == 2
+layout(local_size_x = 16, local_size_y = 2, local_size_z = 2) in;
+#else
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+#endif
 
 layout(binding = 0, r32f) uniform writeonly image2DArray cascade_target;
 layout(binding = 1, r32f) uniform writeonly image2DArray cascade_target_visibility;
