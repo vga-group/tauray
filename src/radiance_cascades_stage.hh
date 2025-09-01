@@ -12,6 +12,13 @@ namespace tr
 class radiance_cascades_stage: public single_device_stage
 {
 public:
+    enum texel_sampling_type
+    {
+        UNIFORM = 0,
+        BRDF,
+        HYBRID
+    };
+
     struct options
     {
         aabb volume;
@@ -41,10 +48,8 @@ public:
         // multitude of issues due to that.
         bool use_raster_di = false;
 
-        // Use texel-constrained BSDF sampling instead of uniformly sampling in
-        // chosen texel. Has notable performance cost, but helps a bit with
-        // specular reflections.
-        bool bsdf_sample_texel = false;
+        // Adjusts how samples are taken at the individual texel level.
+        texel_sampling_type texel_sampling = UNIFORM;
 
         // 0.0f = texel tracks average
         // 1.0f = texel tracks maximum
