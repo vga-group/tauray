@@ -89,12 +89,12 @@ hit_info trace_primary_ray(
     rayQueryEXT rq;
     rayQueryInitializeEXT(rq,
         tlas,
+        gl_RayFlagsCullBackFacingTrianglesEXT,
+//#ifdef USE_BACKFACE_CULLING
 //        gl_RayFlagsCullNoOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
-#ifdef USE_BACKFACE_CULLING
-        gl_RayFlagsCullNoOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
-#else
-        gl_RayFlagsCullNoOpaqueEXT,
-#endif
+//#else
+//        gl_RayFlagsCullNoOpaqueEXT,
+//#endif
         0xFF,
         origin,
         0,
@@ -114,7 +114,9 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
             info.positions[1] - info.positions[0],
             info.positions[2] - info.positions[0]
         ));
-        if(dot(normal, ray_direction) > 0) normal = -normal;
+        if(dot(normal, ray_direction) > 0)
+            //normal = -normal;
+            return vec4(0,0,0, 1.0f);
         vec3 pos = ray_origin + info.hit_t * ray_direction;
         instance o = instances.o[info.instance_id];
         vec3 color = o.mat.albedo_factor.rgb;
