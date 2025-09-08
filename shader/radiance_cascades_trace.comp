@@ -89,13 +89,12 @@ hit_info trace_primary_ray(
     rayQueryEXT rq;
     rayQueryInitializeEXT(rq,
         tlas,
-//        gl_RayFlagsOpaqueEXT,
+//        gl_RayFlagsCullNoOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
+#ifdef USE_BACKFACE_CULLING
         gl_RayFlagsCullNoOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
-//#ifdef USE_BACKFACE_CULLING
-//        gl_RayFlagsOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
-//#else
-//        gl_RayFlagsOpaqueEXT,
-//#endif
+#else
+        gl_RayFlagsCullNoOpaqueEXT,
+#endif
         0xFF,
         origin,
         0,
@@ -252,6 +251,18 @@ float correct_ray_origin(vec3 origin, vec3 dir, vec3 cell_size)
     return min(maxs.x, min(maxs.y, maxs.z));
 }
 
+float sphere_outer_intersection(
+    vec3 sphere_pos, float sphere_radius, vec3 ray_origin, vec3 ray_direction
+){
+    vec3 oc = ray_origin - sphere_pos;
+    float a = dot(ray_direction, ray_direction);
+    float b = 2.0f * dot(oc, ray_direction);
+    float c = dot(oc, oc) - sphere_radius * sphere_radius;
+    float discriminant = b * b - 4.0f * a * c;
+    if(discriminant < 0) return -1.0f;
+    else return (-b + sqrt(discriminant)) / (2.0f * a);
+}
+
 void main()
 {
     bool first_cascade = pc.cascade == 0;
@@ -286,17 +297,18 @@ void main()
     vec3 ray_origin = probe_origin + probe_dir * start_t;
     vec3 ray_end = probe_origin + probe_dir * end_t;
 #else
-    // With bilinear & forking fixes
+    vec3 cell_origin = pc.base_offset.xyz + probe_index * pc.xyz_step.xyz;
     ivec3 next_index = ivec3(probe_index.xyz/2);
     vec3 next_origin = pc.base_offset.xyz + 0.5f * pc.xyz_step.xyz + next_index * pc.xyz_step.xyz * 2.0f;
     if(last_cascade) next_origin = probe_origin;
 
-    vec2 prev_map_uv = (vec2(map_texel/2) + pc.jitter) / (angular_resolution/2);
-    vec3 prev_dir = radiance_cascade_probe_mapping(prev_map_uv);
-    if(first_cascade) prev_dir = probe_dir;
+    // We determine the ray length based on the "near-shell" of the next cascade.
+    // This avoids light leaking issues quite well, but not perfectly.
+    float start_t = max(sphere_outer_intersection(cell_origin, pc.interval_start, probe_origin, probe_dir), 0);
+    float end_t = max(sphere_outer_intersection(next_origin, pc.interval_end, probe_origin, probe_dir), 0);
 
-    vec3 ray_origin = probe_origin + prev_dir * pc.interval_start;
-    vec3 ray_end = next_origin + probe_dir * pc.interval_end;
+    vec3 ray_origin = probe_origin + probe_dir * start_t;
+    vec3 ray_end = probe_origin + probe_dir * end_t;
 #endif
 
     vec3 ray_dir = ray_end - ray_origin;
