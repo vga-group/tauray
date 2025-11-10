@@ -4,6 +4,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_ray_query : enable
 
 #define INDIRECT_CLAMP_FIRST_BOUNCE
 #define HIDE_LIGHTS
@@ -36,6 +37,19 @@ layout(binding = 1, set = 0) uniform grid_data_buffer
 #include "path_tracer.glsl"
 #include "spherical_harmonics.glsl"
 
+float correct_ray_origin(vec3 origin, vec3 dir, vec3 cell_size)
+{
+    vec3 inv_dir = 1.0 / dir;
+    vec3 pmax = cell_size * 0.5;
+    vec3 pmin = -pmax;
+
+    vec3 t0 = (pmin - origin) * inv_dir;
+    vec3 t1 = (pmax - origin) * inv_dir;
+
+    vec3 maxs = max(t0,t1);
+    return min(maxs.x, min(maxs.y, maxs.z));
+}
+
 void main()
 {
     uvec3 probe_index = uvec3(gl_LaunchIDEXT.xyz);
@@ -63,14 +77,17 @@ void main()
     #error "Unknown filter type"
     #endif
 
-        vec3 local_pos = ((vec3(probe_index) + pos_offset * control.film_radius + 0.5f)/vec3(grid.grid_size)) * 2.0f - 1.0f;
-        vec3 global_pos = (grid.transform * vec4(local_pos, 1.0f)).xyz;
-
         // Random sampling the sphere may seem like a good idea, but it introduces
         // so much noise that the result never seems stable.
         vec3 local_ray_dir = even_sample_sphere(
             int(sample_index), int(total_samples), vec2(grid.rotation_x, grid.rotation_y)
         );
+
+        vec3 local_pos = ((vec3(probe_index) + pos_offset * control.film_radius + 0.5f)/vec3(grid.grid_size)) * 2.0f - 1.0f;
+
+        local_pos += correct_ray_origin(vec3(0), local_ray_dir, 0.5/vec3(grid.grid_size)) * local_ray_dir;
+
+        vec3 global_pos = (grid.transform * vec4(local_pos, 1.0f)).xyz;
 
         vec3 global_ray_dir = normalize(
             (grid.normal_transform * vec4(local_ray_dir, 0.0f)).xyz
@@ -78,12 +95,9 @@ void main()
 
         pt_vertex_data first_hit_vertex;
         sampled_material first_hit_material;
-        vec4 diffuse, reflection;
+        vec3 sum_color = vec3(0,0,0);
 
-        evaluate_ray(
-            ls, global_pos, global_ray_dir,
-            diffuse, reflection, first_hit_vertex, first_hit_material
-        );
+        evaluate_ray(ls, global_pos, global_ray_dir, sum_color, false);
 
         // There is no need to be able to represent distances further than one
         // irradiance volume voxel, because probes cannot be used further than that.
@@ -92,7 +106,7 @@ void main()
             0.0, SQRT3
         );
 
-        vec4 coefs = vec4(modulate_color(first_hit_material, diffuse.rgb, reflection.rgb), dist) * coef_mult;
+        vec4 coefs = vec4(sum_color, dist) * coef_mult;
         sh_probe local_probe = eval_sh_basis(local_ray_dir, coefs);
         if(i == 0) sum_probe = local_probe;
         else for(int l = 0; l < SH_COEF_COUNT; ++l)

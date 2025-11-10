@@ -101,6 +101,7 @@ bool get_intersection_info(
     hit_info payload,
     vec3 origin,
     vec3 view,
+    bool include_directional_lights,
     out pt_vertex_data v,
     out intersection_pdf nee_pdf,
     out sampled_material mat,
@@ -178,7 +179,7 @@ bool get_intersection_info(
 
         mat.emission = vec3(0);
         light = vec3(0);
-        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+        for(uint i = 0; include_directional_lights && i < scene_metadata.directional_light_count; ++i)
         {
             directional_light dl = directional_lights.lights[i];
             if(dl.dir_cutoff >= 1.0f)
@@ -394,6 +395,7 @@ float clamp_contribution_mul(vec3 contrib)
     return 1;
 }
 
+#ifdef DISTRIBUTION_DATA_BINDING
 void write_color_outputs(
 #ifdef DEMODULATED_OUTPUT
     vec4 diffuse,
@@ -444,6 +446,7 @@ void write_hit_outputs(
         write_gbuffer_instance_id(first_hit_vertex.instance_id, p);
     }
 }
+#endif
 
 void evaluate_ray(
     inout local_sampler lsampler,
@@ -491,7 +494,11 @@ void evaluate_ray(
         sampled_material mat;
         intersection_pdf nee_pdf;
         vec3 light;
-        bool terminal = !get_intersection_info(payload, pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
+        bool include_directional_lights = false;
+#ifdef HIDE_LIGHTS
+        if (bounce == 0) include_directional_lights = false;
+#endif
+        bool terminal = !get_intersection_info(payload, pos, view, include_directional_lights, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
@@ -515,7 +522,9 @@ void evaluate_ray(
         if(bounce == 0 && write_first_hit_info)
         {
             mat.emission = light;
+#ifdef DISTRIBUTION_DATA_BINDING
             write_hit_outputs(v, mat);
+#endif
         }
 
 #ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
@@ -562,6 +571,7 @@ void evaluate_ray(
             if(bounce == 1)
                 diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
 #else
+            //if(bounce != 0)
             color.rgb += radiance;
 #endif
         }
@@ -649,7 +659,7 @@ void evaluate_ray_matched(
         sampled_material mat;
         intersection_pdf nee_pdf;
         vec3 light;
-        bool terminal = !get_intersection_info(payload, pos, view, v, nee_pdf, mat, light);
+        bool terminal = !get_intersection_info(payload, pos, view, true, v, nee_pdf, mat, light);
 
         if(terminal) break;
 

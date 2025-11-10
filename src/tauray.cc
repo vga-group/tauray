@@ -639,6 +639,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
             {
                 restir_renderer::options re_opt;
                 re_opt.scene_options = scene_options;
+                re_opt.scene_options.alloc_sh_grids = *rtype == options::RESTIR_HYBRID && has_sh_grids;
                 re_opt.tonemap_options = tonemap;
                 re_opt.sh_options = sh;
                 re_opt.sh_options.max_ray_depth = 4;

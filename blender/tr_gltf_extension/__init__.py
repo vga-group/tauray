@@ -115,8 +115,6 @@ class glTF2ExportUserExtension:
                 probe_data["resolution_y"] = probe.grid_resolution_z
                 probe_data["resolution_z"] = probe.grid_resolution_y
             probe_data["radius"] = probe.influence_distance
-            probe_data["clip_near"] = probe.clip_start
-            probe_data["clip_far"] = probe.clip_end
             data["light_probe"] = probe_data
 
         if blender_object.type == 'MESH':

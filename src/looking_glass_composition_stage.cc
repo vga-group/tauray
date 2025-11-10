@@ -19,7 +19,7 @@ namespace tr
 
 looking_glass_composition_stage::looking_glass_composition_stage(
     device& dev,
-    render_target& input,
+    std::vector<render_target>& input_frames,
     std::vector<render_target>& output_frames,
     const options& opt
 ):  single_device_stage(dev, single_device_stage::COMMAND_BUFFER_PER_SWAPCHAIN_IMAGE),
@@ -43,20 +43,20 @@ looking_glass_composition_stage::looking_glass_composition_stage(
         // Record command buffer
         vk::CommandBuffer cb = begin_graphics();
 
-        input.transition_layout_temporary(cb, vk::ImageLayout::eShaderReadOnlyOptimal, true, true);
+        input_frames[i].transition_layout_temporary(cb, vk::ImageLayout::eShaderReadOnlyOptimal, true, true);
         output_frames[i].transition_layout_temporary(cb, vk::ImageLayout::eGeneral, true);
         output_frames[i].layout = vk::ImageLayout::eGeneral;
 
         //stage_timer.begin(cb, i);
 
         comp.bind(cb);
-        desc.set_image(dev.id, "in_color", {{input_sampler.get_sampler(dev.id), input.view, vk::ImageLayout::eShaderReadOnlyOptimal}});
+        desc.set_image(dev.id, "in_color", {{input_sampler.get_sampler(dev.id), input_frames[i].view, vk::ImageLayout::eShaderReadOnlyOptimal}});
         desc.set_image(dev.id, "out_color", {{{}, output_frames[i].view, vk::ImageLayout::eGeneral}});
         comp.push_descriptors(cb, desc, 0);
 
         push_constant_buffer control;
         control.output_size = output_frames[i].size;
-        control.viewport_size = input.size;
+        control.viewport_size = input_frames[i].size;
         control.viewport_count = opt.viewport_count;
         control.calibration_info = vec4(
             opt.pitch,
@@ -76,8 +76,8 @@ looking_glass_composition_stage::looking_glass_composition_stage(
         output_frames[i].transition_layout_temporary(cb, vk::ImageLayout::ePresentSrcKHR);
         output_frames[i].layout = vk::ImageLayout::ePresentSrcKHR;
         end_graphics(cb, 0, i);
+        input_frames[i].layout = vk::ImageLayout::eShaderReadOnlyOptimal;
     }
-    input.layout = vk::ImageLayout::eShaderReadOnlyOptimal;
 }
 
 }

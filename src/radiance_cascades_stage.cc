@@ -288,7 +288,7 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
     return (1<<cascade) * h0 / tan(octahedral_theta_table[cascade].x);
     */
     float h = (1<<(cascade-1)) * length(extent) / float(1<<opt.log2_resolution);
-    return h / (tan(octahedral_theta_table[i].y/2.0f));
+    return h / (tan(2.0f * octahedral_theta_table[i].x));
 }
 
 vec2 radiance_cascades_stage::get_cascade_interval(int cascade) const

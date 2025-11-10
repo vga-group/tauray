@@ -95,7 +95,7 @@ sampled_material sample_material(material mat, inout vertex_data v)
 {
     sampled_material res;
     res.albedo = mat.albedo_factor;
-    //if(mat.albedo_tex_id >= 0)
+    if(mat.albedo_tex_id >= 0)
     {
         vec4 tex_col = sample_texture(mat.albedo_tex_id, v.uv);
         tex_col.rgb = inverse_srgb_correction(tex_col.rgb);
@@ -103,7 +103,7 @@ sampled_material sample_material(material mat, inout vertex_data v)
     }
 
     vec2 mr = mat.metallic_roughness_factor.xy;
-    //if(mat.metallic_roughness_tex_id >= 0)
+    if(mat.metallic_roughness_tex_id >= 0)
         mr *= sample_texture(mat.metallic_roughness_tex_id, v.uv).bg;
     res.metallic = mr.x;
     // Squaring the roughness is just a thing artists like for some reason,
@@ -111,7 +111,6 @@ sampled_material sample_material(material mat, inout vertex_data v)
     // we square the roughness here.
     res.roughness = mr.y * mr.y;
 
-    /*
     if(mat.normal_tex_id >= 0)
     {
         mat3 tbn = mat3(
@@ -128,10 +127,9 @@ sampled_material sample_material(material mat, inout vertex_data v)
             v.smooth_normal : v.mapped_normal;
     }
 
-    */
     res.emission = mat.emission_factor.rgb;
-    //if(mat.emission_tex_id >= 0)
-    //    res.emission *= sample_texture(mat.emission_tex_id, v.uv).rgb;
+    if(mat.emission_tex_id >= 0)
+        res.emission *= sample_texture(mat.emission_tex_id, v.uv).rgb;
 
     res.transmittance = mat.transmittance;
     if(v.back_facing && res.transmittance > 0.0001f)
