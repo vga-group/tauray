@@ -25,7 +25,7 @@ public:
 
     looking_glass_composition_stage(
         device& dev,
-        render_target& input,
+        std::vector<render_target>& input_frames,
         std::vector<render_target>& output_frames,
         const options& opt
     );

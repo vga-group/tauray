@@ -215,7 +215,7 @@ material create_material(
     );
 
     m.normal_factor = 1.0f;
-    m.normal_tex.first = get_texture(model, md, mat.normalTexture.index);
+    m.normal_tex.first = mat.normalTexture.index < 0 ? nullptr : get_texture(model, md, mat.normalTexture.index);
 
     m.ior = 1.45f;
 
@@ -439,6 +439,7 @@ void load_gltf_node(
             directional_light dl;
             dl.set_color(color);
             dl.set_angle(degrees(meta.light_angle));
+            //dl.set_angle(0);
             s.attach(id, std::move(dl));
         }
         else if(l.type == "point")
@@ -464,7 +465,7 @@ void load_gltf_node(
     {
         tinygltf::Value light_probe = tr_data->Get("light_probe");
         std::string type = light_probe.Get("type").Get<std::string>();
-        if(type == "GRID") // Irradiance volume
+        if(type == "VOLUME" || type =="GRID") // Irradiance volume
         {
             uvec3 res;
             res.x = light_probe.Get("resolution_x").GetNumberAsDouble();

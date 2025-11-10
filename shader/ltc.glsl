@@ -35,6 +35,8 @@ float angle_per_sin_angle_fast(float cos_theta)
 
 f16vec2 angle_per_sin_angle_fast(f16vec2 cos_theta)
 {
+    //cos_theta = max(cos_theta, f16vec2(-0.999f));
+
     //f16vec2 num = f16vec2(3.787823) * cos_theta + f16vec2(19.739209);
     //num = num * cos_theta + f16vec2(15.951386);
 
