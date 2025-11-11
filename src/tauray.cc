@@ -503,6 +503,16 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     restir_opt.assume_unchanged_reconnection_radiance = opt.restir.assume_unchanged_reconnection_radiance;
     restir_opt.assume_unchanged_temporal_visibility = opt.restir.assume_unchanged_temporal_visibility;
 
+    radiance_cascades_stage::options rc_options{};
+    rc_options.use_raster_di = opt.radiance_cascades.shadow_mapped;
+    rc_options.jitter = opt.radiance_cascades.jitter;
+    rc_options.c0_probe_resolution = opt.radiance_cascades.c0;
+    rc_options.log2_resolution = opt.radiance_cascades.gridsize;
+    rc_options.recursive = opt.radiance_cascades.recursive;
+    rc_options.ambient = (opt.ambient.r+opt.ambient.g+opt.ambient.b)/3.0f;
+    rc_options.texel_sampling = opt.radiance_cascades.texel;
+    rc_options.avg_bias = opt.radiance_cascades.avg_bias;
+
     if(auto rtype = std::get_if<feature_stage::feature>(&opt.renderer))
     {
         feature_renderer::options rt_opt;
@@ -648,6 +658,13 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.restir_options.shade_all_explicit_lights = *rtype == options::RESTIR_HYBRID;
                 re_opt.restir_options.shade_fake_indirect = *rtype == options::RESTIR_HYBRID && has_sh_grids;
 
+                if(!opt.distance_field.empty())
+                {
+                    re_opt.rc_options = rc_options;
+                    re_opt.rc_options->use_raster_di = *rtype == options::RESTIR_HYBRID;
+                    re_opt.distance_field_path = opt.distance_field;
+                }
+
                 if(opt.taa.sequence_length > 1)
                     re_opt.taa_options = taa;
                 if (opt.denoiser == options::denoiser_type::SVGF)
@@ -665,14 +682,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 else
                     ropt.pt_options = pt_opt;
                 ropt.tonemap_options = tonemap;
-                ropt.rc_options.use_raster_di = opt.radiance_cascades.shadow_mapped;
-                ropt.rc_options.jitter = opt.radiance_cascades.jitter;
-                ropt.rc_options.c0_probe_resolution = opt.radiance_cascades.c0;
-                ropt.rc_options.log2_resolution = opt.radiance_cascades.gridsize;
-                ropt.rc_options.recursive = opt.radiance_cascades.recursive;
-                ropt.rc_options.ambient = (opt.ambient.r+opt.ambient.g+opt.ambient.b)/3.0f;
-                ropt.rc_options.texel_sampling = opt.radiance_cascades.texel;
-                ropt.rc_options.avg_bias = opt.radiance_cascades.avg_bias;
+                ropt.rc_options = rc_options;
                 ropt.enable_visualizer = opt.radiance_cascades.visualizer;
 
                 if(opt.distance_field.empty())

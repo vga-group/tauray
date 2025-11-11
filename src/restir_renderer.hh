@@ -10,6 +10,7 @@
 #include "tonemap_stage.hh"
 #include "shadow_map_stage.hh"
 #include "gbuffer_copy_stage.hh"
+#include "radiance_cascades_stage.hh"
 #include "svgf_stage.hh"
 #include "taa_stage.hh"
 #include "device_transfer.hh"
@@ -29,11 +30,14 @@ public:
         // If shade_fake_indirect is set and scene contains SH grids, hybrid
         // DDISH-GI rendering is used.
         restir_stage::options restir_options;
+        std::optional<radiance_cascades_stage::options> rc_options;
         std::optional<svgf_stage::options> svgf_options;
         std::optional<taa_stage::options> taa_options;
         tonemap_stage::options tonemap_options;
         sh_renderer::options sh_options; // For raster hybrid
         shadow_map_filter sm_filter; // For raster hybrid
+
+        std::string distance_field_path;
     };
 
     restir_renderer(context& ctx, const options& opt);
@@ -49,6 +53,7 @@ private:
     options opt;
 
     std::optional<scene_stage> scene_update;
+    std::optional<texture> distance_field;
 
     struct per_device_data
     {
@@ -56,6 +61,7 @@ private:
         gbuffer_texture prev_gbuffer;
 
         std::unique_ptr<shadow_map_stage> sms;
+        std::unique_ptr<radiance_cascades_stage> rc;
     };
 
     // If re-rendering each SH probe on every GPU is a perf issue, we should
