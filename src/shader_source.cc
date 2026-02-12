@@ -1,11 +1,9 @@
 #include "shader_source.hh"
+#include <glslang/Public/ResourceLimits.h>
 #include <glslang/Public/ShaderLang.h>
 #include <SPIRV/GlslangToSpv.h>
 #include <StandAlone/DirStackFileIncluder.h>
 
-// Yeah, I know this is horribly ugly. It's just how we get
-// DefaultTBuiltInResource.
-#include <StandAlone/ResourceLimits.cpp>
 #include "spirv_reflect.h"
 
 #include <filesystem>
@@ -127,7 +125,7 @@ shader_source::shader_source(
         shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
         shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_5);
 
-        TBuiltInResource resources = glslang::DefaultTBuiltInResource;
+        const TBuiltInResource* resources = GetDefaultResources();
 
         EShMessages messages = (EShMessages)(EShMsgSpvRules|EShMsgVulkanRules);
 
@@ -136,7 +134,7 @@ shader_source::shader_source(
         includer.pushExternalLocalDirectory(dir_path);
 
         // Compiling
-        if(!shader.parse(&resources, 100, ENoProfile, false, false, messages, includer))
+        if(!shader.parse(resources, 100, ENoProfile, false, false, messages, includer))
             throw std::runtime_error(
                 "Failed to compile " + path + ": " + shader.getInfoLog()
             );

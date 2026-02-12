@@ -264,7 +264,7 @@ vk::Instance context::create_instance(
     const vk::InstanceCreateInfo& info,
     PFN_vkGetInstanceProcAddr
 ){
-    return vk::createInstance({info}, nullptr, vk::DispatchLoaderStatic());
+    return vk::createInstance({info}, nullptr, vk::detail::DispatchLoaderStatic());
 }
 
 vk::Device context::create_device(
@@ -282,7 +282,7 @@ void context::init_vulkan(PFN_vkGetInstanceProcAddr getInstanceProcAddr)
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
         std::vector<vk::LayerProperties> available_layers =
-            vk::enumerateInstanceLayerProperties(vk::DispatchLoaderStatic());
+            vk::enumerateInstanceLayerProperties(vk::detail::DispatchLoaderStatic());
 
         for(
             auto it = validation_layers.begin();
@@ -335,7 +335,7 @@ void context::init_vulkan(PFN_vkGetInstanceProcAddr getInstanceProcAddr)
 
     instance = create_instance(instance_info, getInstanceProcAddr);
 
-    vk::defaultDispatchLoaderDynamic.init(instance, getInstanceProcAddr);
+    vk::detail::defaultDispatchLoaderDynamic.init(instance, getInstanceProcAddr);
 
     if(opt.enable_vulkan_validation)
     {

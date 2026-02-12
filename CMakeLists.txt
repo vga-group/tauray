@@ -30,6 +30,7 @@ function(add_glslang)
     set(ENABLE_CTEST OFF CACHE BOOL "" FORCE)
     set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
     set(ENABLE_SPVREMAPPER OFF CACHE BOOL "" FORCE)
+    set(ALLOW_EXTERNAL_SPIRV_TOOLS ON CACHE BOOL "" FORCE)
     set(BUILD_SHARED_LIBS OFF)
     set(CMAKE_CXX_FLAGS "-Iexternal")
     set(CMAKE_BUILD_TYPE Release)
@@ -170,7 +171,7 @@ target_include_directories(tauray-core PUBLIC SYSTEM
     "external/SPIRV-Headers/include"
     "external/Vulkan-Headers/include"
 )
-target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp)
+target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang glslang-default-resource-limits SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp)
 target_link_libraries(tauray PUBLIC tauray-core SDL2::SDL2main)
 
 if(MSVC)
