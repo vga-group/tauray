@@ -117,6 +117,7 @@ void main()
 #endif
         dst_vis = mix(prev_vis, dst_vis, pc.blend_ratio);
     }
+
     imageStore(lower_target, p, vec4(dst_col));
     imageStore(lower_target_visibility, p, vec4(dst_vis));
 }

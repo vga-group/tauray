@@ -661,7 +661,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if(!opt.distance_field.empty())
                 {
                     re_opt.rc_options = rc_options;
-                    re_opt.rc_options->use_raster_di = *rtype == options::RESTIR_HYBRID;
                     re_opt.distance_field_path = opt.distance_field;
                 }
 
