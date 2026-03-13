@@ -4,6 +4,7 @@ layout (triangles) in;
 layout (triangle_strip, max_vertices = 3) out;
 
 layout(location = 0) out int orientation;
+layout(location = 1) out vec2 z_range;
 
 void main()
 {
@@ -35,6 +36,8 @@ void main()
     a.z = a.z * 0.5 + 0.5;
     b.z = b.z * 0.5 + 0.5;
     c.z = c.z * 0.5 + 0.5;
+
+    z_range = vec2(min(min(a.z,b.z),c.z), max(max(a.z, b.z), c.z));
 
     gl_Position = vec4(a, 1.0);
     EmitVertex();
