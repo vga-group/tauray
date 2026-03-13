@@ -24,7 +24,7 @@ public:
         aabb volume;
 
         // Used for culling dead probes
-        texture* distance_field = nullptr;
+        texture* occupancy = nullptr;
 
         // +1 => 8x computation needed, general resolution doubled, less fudge
         // in smallest cascade.

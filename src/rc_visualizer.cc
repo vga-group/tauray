@@ -58,7 +58,6 @@ void rc_visualizer_stage::update(uint32_t frame_index)
     visualize.set_descriptors(cb, rc->ss->get_descriptors(), 0, 1);
     visualize.set_descriptors(cb, rc->get_descriptors(), 0, 2);
     desc.set_image(dev->id, "target", {{{}, output.view, vk::ImageLayout::eGeneral}});
-    desc.set_image(dev->id, "distance_field", {{{}, opt.distance_field->get_image_view(dev->id), vk::ImageLayout::eGeneral}});
     desc.set_image(dev->id, "occupancy_map", {{{}, opt.occupancy_map->get_image_view(dev->id), vk::ImageLayout::eGeneral}});
     visualize.push_descriptors(cb, desc, 0);
 

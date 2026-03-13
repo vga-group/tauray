@@ -117,6 +117,29 @@ void apply_transform(scene& s, const mat4& transform)
     });
 }
 
+// This can be really slow. Don't call it every frame.
+aabb compute_aabb(scene& s)
+{
+    aabb volume = {vec3(FLT_MAX), vec3(-FLT_MAX)};
+    s.foreach([&](transformable& t, model& mod){
+        mat4 transform = t.get_global_transform();
+
+        for (model::vertex_group& vg: mod)
+        {
+            if (!vg.m) continue;
+
+            for (mesh::vertex& v: vg.m->get_vertices())
+            {
+                vec3 p = transform * vec4(v.pos, 1.0);
+
+                volume.min = min(volume.min, p);
+                volume.max = max(volume.max, p);
+            }
+        }
+    });
+    return volume;
+}
+
 scene_data load_scenes(context& ctx, const options& opt)
 {
     // The frame client does not need scene data :D
@@ -374,6 +397,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         }
     });
 
+    aabb scene_aabb = compute_aabb(s);
+
     scene_stage::options scene_options;
     scene_options.max_instances = get_instance_count(s);
     scene_options.max_samplers = get_sampler_count(s);
@@ -512,6 +537,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_options.ambient = (opt.ambient.r+opt.ambient.g+opt.ambient.b)/3.0f;
     rc_options.texel_sampling = opt.radiance_cascades.texel;
     rc_options.avg_bias = opt.radiance_cascades.avg_bias;
+    rc_options.volume = scene_aabb;
 
     if(auto rtype = std::get_if<feature_stage::feature>(&opt.renderer))
     {
@@ -658,12 +684,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 re_opt.restir_options.shade_all_explicit_lights = *rtype == options::RESTIR_HYBRID;
                 re_opt.restir_options.shade_fake_indirect = *rtype == options::RESTIR_HYBRID && has_sh_grids;
 
-                if(!opt.distance_field.empty())
-                {
-                    re_opt.rc_options = rc_options;
-                    re_opt.distance_field_path = opt.distance_field;
-                }
-
                 if(opt.taa.sequence_length > 1)
                     re_opt.taa_options = taa;
                 if (opt.denoiser == options::denoiser_type::SVGF)
@@ -683,14 +703,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 ropt.tonemap_options = tonemap;
                 ropt.rc_options = rc_options;
                 ropt.enable_visualizer = opt.radiance_cascades.visualizer;
-
-                if(opt.distance_field.empty())
-                {
-                    TR_ERR("--distance-field=<path> is required for radiance cascade path guiding");
-                    return nullptr;
-                }
-
-                ropt.distance_field_path = opt.distance_field;
 
                 if(opt.taa.sequence_length > 1)
                     ropt.taa_options = taa;
