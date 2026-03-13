@@ -137,6 +137,10 @@ aabb compute_aabb(scene& s)
             }
         }
     });
+
+    vec3 radius = volume.max - volume.min;
+    volume.min -= radius * 0.01f;
+    volume.max += radius * 0.01f;
     return volume;
 }
 
