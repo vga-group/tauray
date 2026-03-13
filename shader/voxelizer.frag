@@ -3,6 +3,7 @@
 layout(binding = 0, r32ui) uniform writeonly uimage3D occupancy;
 
 layout(location = 0) flat in int orientation;
+layout(location = 1) flat in vec2 z_range;
 
 void main()
 {
@@ -14,9 +15,9 @@ void main()
 
     p.y = occupancy_size.y-1-p.y;
 
-    int min_z = int((gl_FragCoord.z - depth_range * 0.5) * occupancy_size.z);
+    int min_z = int(max(gl_FragCoord.z - depth_range * 0.5, z_range.x) * occupancy_size.z);
     int mid_z = int(gl_FragCoord.z * occupancy_size.z);
-    int max_z = int((gl_FragCoord.z + depth_range * 0.5) * occupancy_size.z);
+    int max_z = int(min(gl_FragCoord.z + depth_range * 0.5, z_range.y) * occupancy_size.z);
 
     min_z = max(min_z, mid_z-1);
     max_z = min(max_z, mid_z+1);
