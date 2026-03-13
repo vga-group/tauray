@@ -42,6 +42,7 @@ struct raster_shader_sources
 {
     shader_source vert = {};
     shader_source frag = {};
+    shader_source geom = {};
 };
 
 struct rt_shader_sources

@@ -252,6 +252,7 @@ get_push_constant_ranges(const raster_shader_sources& src)
     std::vector<vk::PushConstantRange> ranges;
     append_shader_pc_ranges(ranges, src.vert);
     append_shader_pc_ranges(ranges, src.frag);
+    append_shader_pc_ranges(ranges, src.geom);
     return ranges;
 }
 

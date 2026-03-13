@@ -545,7 +545,7 @@ void texture::load_from_file(const std::string& path)
 
 void texture::create(size_t data_size, void* data, bool data_contains_mipmaps)
 {
-    mip_levels = data ? calculate_mipmap_count(uvec2(dim.x, dim.y)) : 1;
+    mip_levels = data || data_contains_mipmaps ? calculate_mipmap_count(uvec2(dim.x, dim.y)) : 1;
     vk::ImageCreateInfo img_info{
         {},
         type,

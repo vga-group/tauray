@@ -433,7 +433,8 @@ vkm<vk::Image> sync_create_gpu_image(
 
         vk::CommandBuffer cb = begin_command_buffer(dev);
         transition_image_layout(
-            cb, img, info.format, vk::ImageLayout::eUndefined, final_layout
+            cb, img, info.format, vk::ImageLayout::eUndefined, final_layout,
+            0, info.mipLevels
         );
         end_command_buffer(dev, cb);
     }

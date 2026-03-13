@@ -90,6 +90,7 @@ void descriptor_set_layout::add(const raster_shader_sources& data, uint32_t targ
 {
     add(data.vert, target_set_index);
     add(data.frag, target_set_index);
+    add(data.geom, target_set_index);
 }
 
 void descriptor_set_layout::add(const rt_shader_sources& data, uint32_t target_set_index)

@@ -20,6 +20,7 @@ layout(push_constant) uniform push_constant_buffer
 
 layout(binding = 0, rgba32f) uniform writeonly image2D target;
 layout(binding = 1, r32f) uniform readonly image3D distance_field;
+layout(binding = 2, r32f) uniform readonly image3D occupancy_map;
 #define SCENE_SET 1
 #define GET_INTERSECTION_TRIANGLE_POSITIONS
 #define RAY_TRACING
@@ -151,7 +152,7 @@ void main()
 
     if(p.x < pc.display_w && p.y < pc.display_h)
     {
-#if 1
+#if 0
         vec2 uv = vec2(vec2(p) + 0.5f) / vec2(pc.display_w, pc.display_h);
 
         // Staircase
@@ -211,7 +212,7 @@ void main()
 
         imageStore(target, p, vec4(pdf,pdf,pdf, 1.0f));
         //imageStore(target, p, vec4(eval_dir(origin, dir, view, tbn, roughness), 1.0f));
-#else
+#elif 0
         const camera_data cam = camera.pairs[gl_GlobalInvocationID.z].current;
         vec3 origin;
         vec3 dir;
@@ -221,6 +222,25 @@ void main()
         vec3 col = query_radiance_cascades(origin, dir, seed);
 
         imageStore(target, p, vec4(col, 1.0f));
+#else
+        vec2 uv = vec2(vec2(p) + 0.5f) / vec2(pc.display_w, pc.display_h);
+        uv.y = 1.0 - uv.y;
+
+        vec4 col;
+        if (uv.x < 0.5)
+        {
+            uv.x *= 2.0;
+            ivec3 texcoord = ivec3(ivec2(uv * imageSize(distance_field).xy), pc.layer);
+            col = imageLoad(distance_field, texcoord).x == 0 ? vec4(1.0,0.0,0.0, 0.0) : vec4(0.0,0.0,0.0,0.0);
+        }
+        else
+        {
+            uv.x = (uv.x-0.5)*2.0;
+            ivec3 texcoord = ivec3(ivec2(uv * imageSize(occupancy_map).xy), pc.layer);
+            col = imageLoad(occupancy_map, texcoord);
+        }
+        col.a = 1.0;
+        imageStore(target, p, col);
 #endif
     }
 }

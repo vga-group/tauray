@@ -159,6 +159,7 @@ add_library(tauray-core STATIC
   src/tracing.cc
   src/transformable.cc
   src/vkm.cc
+  src/voxelizer.cc
   src/window.cc
   src/z_pass_stage.cc
 )
