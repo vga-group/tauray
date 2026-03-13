@@ -218,7 +218,8 @@ void main()
     curvature = abs(imageLoad(in_curvature, p).r);
 #endif
     vec2 temporal_gradient = gather_temporal_gradients_5x5(p, world_pos, view_pos, flat_normal, curr_camera, frustum_size);
-    temporal_gradient = pow(temporal_gradient, vec2(8.0f, 1.0f));
+    //temporal_gradient = pow(temporal_gradient, vec2(8.0f, 1.0f));
+    temporal_gradient = vec2(1);
 
     // Early out on first frame to avoid reading garbage from potentially uninitialized buffers
     // Note Tauray frame counter starts from 1

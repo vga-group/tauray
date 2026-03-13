@@ -27,6 +27,9 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         this->opt.restir_options.sampling_weights.point_lights = 0;
     }
 
+    if(this->opt.rc_options && this->opt.rc_options->use_raster_di)
+        this->opt.scene_options.shadow_mapping = true;
+
     if(!this->opt.restir_options.assume_unchanged_acceleration_structures)
         this->opt.scene_options.track_prev_tlas = true;
 
@@ -70,7 +73,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         }
 
         distance_field.emplace(texture(
-            device_mask::all(ctx),
+            display_device,
             uvec3(resolution),
             vk::Format::eR32Sfloat,
             distance_field_data.data()+distance_field_data.size()-dfdata,
@@ -134,12 +137,10 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         per_device[i].prev_gbuffer.reset(devices[i], ctx.get_size(), view_count);
         per_device[i].prev_gbuffer.add(gs, vk::ImageLayout::eGeneral);
 
-        if(this->opt.restir_options.shade_all_explicit_lights)
+        if(this->opt.restir_options.shade_all_explicit_lights || (this->opt.rc_options && this->opt.rc_options->use_raster_di))
             per_device[i].sms.reset(new shadow_map_stage(devices[i], *scene_update, shadow_map_stage::options{}));
         if(this->opt.rc_options)
-        {
             per_device[i].rc.reset(new radiance_cascades_stage(devices[i], *scene_update, *this->opt.rc_options));
-        }
     }
     if(this->opt.restir_options.shade_all_explicit_lights && this->opt.restir_options.shade_fake_indirect)
         sh.reset(new sh_renderer(dev, *scene_update, this->opt.sh_options));
@@ -406,7 +407,7 @@ void restir_renderer::render()
 
     for(auto& pd: per_device)
     {
-        if(opt.restir_options.shade_all_explicit_lights)
+        if(pd.sms)
             deps = pd.sms->run(deps);
         if(pd.rc)
             deps = pd.rc->run(deps);
