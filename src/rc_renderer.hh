@@ -31,7 +31,6 @@ public:
         std::optional<svgf_stage::options> svgf_options;
         std::optional<taa_stage::options> taa_options;
         tonemap_stage::options tonemap_options;
-        std::string distance_field_path;
 
         bool enable_visualizer = false;
     };
@@ -52,7 +51,6 @@ private:
     gbuffer_texture current_gbuffer;
     gbuffer_texture prev_gbuffer;
 
-    std::optional<texture> distance_field;
     std::optional<texture> taa_input_target;
 
     std::optional<scene_stage> scene_update;

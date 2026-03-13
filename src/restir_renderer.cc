@@ -44,6 +44,8 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     if(this->opt.rc_options.has_value())
     {
+        this->opt.rc_options.reset();
+        /*
         std::vector<uint8_t> distance_field_data = load_binary_file(opt.distance_field_path);
         uint8_t* dfdata = distance_field_data.data();
         memcpy(&this->opt.rc_options->volume.min, dfdata, sizeof(float)*3);
@@ -84,6 +86,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
             true
         ));
         this->opt.rc_options->distance_field = &distance_field.value();
+        */
     }
 
     bool has_taa = this->opt.taa_options.has_value();

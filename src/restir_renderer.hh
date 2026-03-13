@@ -36,8 +36,6 @@ public:
         tonemap_stage::options tonemap_options;
         sh_renderer::options sh_options; // For raster hybrid
         shadow_map_filter sm_filter; // For raster hybrid
-
-        std::string distance_field_path;
     };
 
     restir_renderer(context& ctx, const options& opt);

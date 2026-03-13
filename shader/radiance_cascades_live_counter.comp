@@ -10,7 +10,7 @@
 // gl_LocalInvocationID.y = child probe index
 layout(local_size_x = 8, local_size_y = 8) in;
 
-layout(binding = 0, r32f) uniform readonly image3D distance_field;
+layout(binding = 0, r32f) uniform readonly image3D occupancy_map;
 layout(binding = 1, scalar) buffer dispatch_info_buffer
 {
     uint cascade_end_offset[16];
@@ -28,9 +28,9 @@ layout(push_constant) uniform push_constant_buffer
     uint index_buffer_size;
 } pc;
 
-float get_distance(int cascade, ivec3 coord)
+bool get_live(int cascade, ivec3 coord)
 {
-    return imageLoad(distance_field, coord).r;
+    return imageLoad(occupancy_map, coord).r == 1.0;
 }
 
 shared uint live_count[gl_WorkGroupSize.x*gl_WorkGroupSize.y];
@@ -76,10 +76,7 @@ void main()
 
     bool first_cascade = pc.cascade == 0;
 
-    float dist = get_distance(pc.cascade, probe_index);
-    bool surface_in_probe_range = dist < pc.interval_end;
-    bool probe_in_surface_range = dist == 0;
-    live = live && probe_in_surface_range;
+    live = live && get_live(pc.cascade, probe_index);
 
     live_count[gl_LocalInvocationIndex] = subgroupInclusiveAdd(live ? 1 : 0);
 

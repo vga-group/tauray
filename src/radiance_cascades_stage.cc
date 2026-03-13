@@ -425,16 +425,15 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     // necessary data for indirect dispatching the computation for those probes.
     live_counter_timer.begin(cb, dev->id, frame_index);
 
-    int df_mip_offset = int(calculate_mipmap_count(opt.distance_field->get_size())) - opt.log2_resolution-1;
-    assert(df_mip_offset >= 0);
+    assert(calculate_mipmap_count(opt.occupancy->get_size()) == opt.log2_resolution+1);
 
     for(int cascade = get_cascade_count()-1; cascade >= 0; --cascade)
     {
         {
             live_counter.bind(cb);
-            live_counter_desc.set_image(dev->id, "distance_field", {{
+            live_counter_desc.set_image(dev->id, "occupancy_map", {{
                 {},
-                opt.distance_field->get_mip_image_view(dev->id, cascade + df_mip_offset),
+                opt.occupancy->get_mip_image_view(dev->id, cascade),
                 vk::ImageLayout::eGeneral
             }});
             live_counter_desc.set_buffer(dev->id, "dispatch_info", {{*dispatch_info_buffer, 0, VK_WHOLE_SIZE}});

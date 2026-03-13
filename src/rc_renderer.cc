@@ -99,19 +99,7 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
         sms.emplace(dev, *scene_update, shadow_map_stage::options{});
     }
 
-    std::vector<uint8_t> distance_field_data = load_binary_file(opt.distance_field_path);
-    uint8_t* dfdata = distance_field_data.data();
-    memcpy(&this->opt.rc_options.volume.min, dfdata, sizeof(float)*3);
-    dfdata += sizeof(float)*3;
-    memcpy(&this->opt.rc_options.volume.max, dfdata, sizeof(float)*3);
-    dfdata += sizeof(float)*3;
-    vec3 resolution;
-    memcpy(&resolution, dfdata, sizeof(float)*3);
-    dfdata += sizeof(float)*3;
-
-    printf("Distance field:\n");
-    printf("    Resolution: %u x %u x %u\n", uint(resolution.x), uint(resolution.y), uint(resolution.z));
-    printf("    Range: [%f, %f, %f] - [%f, %f, %f]\n",
+    printf("Scene AABB: [%f, %f, %f] - [%f, %f, %f]\n",
         this->opt.rc_options.volume.min.x,
         this->opt.rc_options.volume.min.y,
         this->opt.rc_options.volume.min.z,
@@ -120,27 +108,8 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
         this->opt.rc_options.volume.max.z
     );
 
-    int max_res = round(log2(resolution.x));
-    if (this->opt.rc_options.log2_resolution > max_res)
-    {
-        TR_WARN("Cannot have a higher c0 density than distance field!");
-        this->opt.rc_options.log2_resolution = max_res;
-    }
-
-    distance_field.emplace(texture(
-        dev,
-        uvec3(resolution),
-        vk::Format::eR32Sfloat,
-        distance_field_data.data()+distance_field_data.size()-dfdata,
-        dfdata,
-        vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage,
-        vk::ImageLayout::eGeneral,
-        true
-    ));
-    this->opt.rc_options.distance_field = &distance_field.value();
-
-    voxelizer.emplace(dev, *scene_update, voxelizer_stage::options{int(resolution.x), this->opt.rc_options.volume});
+    voxelizer.emplace(dev, *scene_update, voxelizer_stage::options{int(1 << this->opt.rc_options.log2_resolution), this->opt.rc_options.volume});
+    this->opt.rc_options.occupancy = &voxelizer->get_map();
 
     current_gbuffer.reset(dev, ctx.get_size(), 1);
     current_gbuffer.add(gs, vk::ImageLayout::eGeneral);
@@ -154,7 +123,6 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     rc.emplace(dev, *scene_update, this->opt.rc_options);
 
     rc_visualizer_stage::options rcv_opt;
-    rcv_opt.distance_field = &distance_field.value();
     rcv_opt.occupancy_map = &voxelizer->get_map();
     gbuffer_target cur = current_gbuffer.get_layer_target(dev.id, 0);
 

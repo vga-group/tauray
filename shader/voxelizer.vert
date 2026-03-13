@@ -22,5 +22,4 @@ void main()
     vec3 pos = vec3(o.model * vec4(in_pos, 1.0f));
     vec3 projected_coord = pos * control.scale.xyz + control.offset.xyz;
     gl_Position = vec4(projected_coord, 1.0);
-
 }

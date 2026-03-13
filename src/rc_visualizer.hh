@@ -11,7 +11,6 @@ class rc_visualizer_stage: public single_device_stage
 public:
     struct options
     {
-        texture* distance_field;
         texture* occupancy_map;
     };
 
