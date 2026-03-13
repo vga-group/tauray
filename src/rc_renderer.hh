@@ -14,6 +14,7 @@
 #include "rc_visualizer.hh"
 #include "radiance_cascades_stage.hh"
 #include "shadow_map_stage.hh"
+#include "voxelizer.hh"
 
 namespace tr
 {
@@ -55,6 +56,7 @@ private:
     std::optional<texture> taa_input_target;
 
     std::optional<scene_stage> scene_update;
+    std::optional<voxelizer_stage> voxelizer;
     std::optional<shadow_map_stage> sms;
     std::optional<radiance_cascades_stage> rc;
     std::optional<envmap_stage> envmap;

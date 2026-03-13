@@ -29,6 +29,7 @@ struct device
     vk::PhysicalDeviceAccelerationStructurePropertiesKHR as_props;
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR as_feats;
     vk::PhysicalDeviceMultiviewProperties mv_props;
+    vk::PhysicalDeviceConservativeRasterizationPropertiesEXT cr_props;
     uint32_t graphics_family_index = 0;
     uint32_t compute_family_index = 0;
     uint32_t present_family_index = 0;

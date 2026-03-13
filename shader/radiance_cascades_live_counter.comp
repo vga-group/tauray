@@ -78,8 +78,8 @@ void main()
 
     float dist = get_distance(pc.cascade, probe_index);
     bool surface_in_probe_range = dist < pc.interval_end;
-    bool probe_in_surface_range = dist < max(pc.xyz_step.x, max(pc.xyz_step.y, pc.xyz_step.z));
-    live = live && surface_in_probe_range && probe_in_surface_range;
+    bool probe_in_surface_range = dist == 0;
+    live = live && probe_in_surface_range;
 
     live_count[gl_LocalInvocationIndex] = subgroupInclusiveAdd(live ? 1 : 0);
 

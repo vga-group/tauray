@@ -140,6 +140,8 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     ));
     this->opt.rc_options.distance_field = &distance_field.value();
 
+    voxelizer.emplace(dev, *scene_update, voxelizer_stage::options{int(resolution.x), this->opt.rc_options.volume});
+
     current_gbuffer.reset(dev, ctx.get_size(), 1);
     current_gbuffer.add(gs, vk::ImageLayout::eGeneral);
 
@@ -153,6 +155,7 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
 
     rc_visualizer_stage::options rcv_opt;
     rcv_opt.distance_field = &distance_field.value();
+    rcv_opt.occupancy_map = &voxelizer->get_map();
     gbuffer_target cur = current_gbuffer.get_layer_target(dev.id, 0);
 
     if(opt.enable_visualizer)
@@ -330,6 +333,7 @@ void rc_renderer::render()
     {
         deps = sms->run(deps);
     }
+    deps = voxelizer->run(deps);
     deps = rc->run(deps);
 
     pt->force_command_buffer_refresh();

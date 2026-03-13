@@ -12,6 +12,7 @@ public:
     struct options
     {
         texture* distance_field;
+        texture* occupancy_map;
     };
 
     rc_visualizer_stage(

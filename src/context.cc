@@ -375,7 +375,8 @@ void context::init_devices()
         VK_KHR_MAINTENANCE1_EXTENSION_NAME,
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
-        VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
+        VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
+        VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME
     };
 
     if(opt.enable_vulkan_validation)
@@ -571,7 +572,8 @@ void context::init_devices()
                 vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
                 vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
                 vk::PhysicalDeviceExternalMemoryHostPropertiesEXT,
-                vk::PhysicalDeviceMultiviewProperties
+                vk::PhysicalDeviceMultiviewProperties,
+                vk::PhysicalDeviceConservativeRasterizationPropertiesEXT
             >();
 
             dev_data.id = devices.size();
@@ -609,6 +611,7 @@ void context::init_devices()
             dev_data.as_props = props2.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
             dev_data.as_feats = as_feats;
             dev_data.mv_props = props2.get<vk::PhysicalDeviceMultiviewProperties>();
+            dev_data.cr_props = props2.get<vk::PhysicalDeviceConservativeRasterizationPropertiesEXT>();
             // Potential Nvidia driver bug as of 510.47.03: multiview rendering
             // starts having problems after 20 or so viewports, despite reporting
             // support for 32. So limit it to 16.
