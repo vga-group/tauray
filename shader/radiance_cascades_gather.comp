@@ -101,7 +101,7 @@ void main()
 
     if (history_frames <= 1)
     {
-        // No history
+        // No history, add epsilon value to support whole integration domain
         prev_col = 0.01f;
         prev_vis = 0.0f;
     }
@@ -113,8 +113,11 @@ void main()
         float src_contrib = (r0+r1+r2+r3) * 0.25f * (1.0f - dst_vis);
         dst_col += src_contrib;
 
-        if (history_frames <= 1)
-            prev_col += src_contrib;
+        // Replace epsilon value with upper cascade data if it's non-zero
+        // because that is more likely to be correct than the epsilon but
+        // provides the same guarantee for unbiasedness.
+        if (history_frames <= 1 && src_contrib > 0)
+            prev_col = src_contrib;
     }
 
     // This is used to bias result towards the larger value, which reduces
