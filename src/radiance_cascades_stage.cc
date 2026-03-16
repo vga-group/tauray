@@ -607,6 +607,11 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         gather_desc.set_image(dev->id, "prev_lower_target", {{{}, prev_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather_desc.set_image(dev->id, "prev_lower_target_visibility", {{{}, prev_target_visibility.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather_desc.set_buffer(dev->id, "dispatch_info", {{*dispatch_info_buffer, 0, VK_WHOLE_SIZE}});
+        gather_desc.set_image(dev->id, "occupancy_history", {{
+            {},
+            opt.occupancy_history->get_mip_image_view(dev->id, cur_cascade),
+            vk::ImageLayout::eGeneral
+        }});
         gather.push_descriptors(cb, gather_desc, 0);
 
         size_t cascade_size = 1<<(opt.log2_resolution-cur_cascade);
@@ -615,7 +620,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         pc.cascade = cur_cascade;
         pc.cascade_count = get_cascade_count();
         pc.c0_angular_resolution = opt.c0_probe_resolution;
-        pc.blend_ratio = history_frames == 0 ? 1.0f : max(1.0f/history_frames, opt.temporal_ratio);
+        pc.blend_ratio = opt.temporal_ratio;
         pc.cascade_size = cascade_size;
         pc.carry_from_previous = i != 0 ? 1 : 0;
         gather.push_constants(cb, pc);

@@ -108,8 +108,15 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
         this->opt.rc_options.volume.max.z
     );
 
-    voxelizer.emplace(dev, *scene_update, voxelizer_stage::options{int(1 << this->opt.rc_options.log2_resolution), this->opt.rc_options.volume});
+    voxelizer_stage::options vx_opts{
+        int(1 << this->opt.rc_options.log2_resolution),
+        this->opt.rc_options.volume,
+        true, false
+    };
+
+    voxelizer.emplace(dev, *scene_update, vx_opts);
     this->opt.rc_options.occupancy = &voxelizer->get_map();
+    this->opt.rc_options.occupancy_history = &voxelizer->get_history_map();
 
     current_gbuffer.reset(dev, ctx.get_size(), 1);
     current_gbuffer.add(gs, vk::ImageLayout::eGeneral);
