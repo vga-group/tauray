@@ -23,6 +23,7 @@ layout(binding = 5, scalar) buffer dispatch_info_buffer
     uint cascade_end_offset[16];
     ivec3 probe_indices[];
 } dispatch_info;
+layout(binding = 6, r32ui) uniform readonly uimage3D occupancy_history;
 
 #include "radiance_cascades.glsl"
 
@@ -94,29 +95,40 @@ void main()
     float dst_vis = imageLoad(lower_target_visibility, p).r;
     float prev_col = imageLoad(prev_lower_target, p).r;
     float prev_vis = imageLoad(prev_lower_target_visibility, p).r;
+    uint history_frames = imageLoad(occupancy_history, lower_probe_index).r;
+
+    float blend_ratio = max(1.0f / max(history_frames+1u, 1u), pc.blend_ratio);
+
+    if (history_frames <= 1)
+    {
+        // No history
+        prev_col = 0.01f;
+        prev_vis = 0.0f;
+    }
+
+    dst_vis = mix(prev_vis, dst_vis, blend_ratio);
 
     if(pc.carry_from_previous != 0)
     {
-        float src_avg = (r0+r1+r2+r3) * 0.25f;
-        dst_col = dst_col + src_avg * (1.0f - dst_vis);
+        float src_contrib = (r0+r1+r2+r3) * 0.25f * (1.0f - dst_vis);
+        dst_col += src_contrib;
+
+        if (history_frames <= 1)
+            prev_col += src_contrib;
     }
 
-    if(pc.blend_ratio < 1.0f)
-    {
-        // This is used to bias result towards the larger value, which reduces
-        // underestimation and thus fireflies. Big exponents increase overall
-        // noise level, though.
+    // This is used to bias result towards the larger value, which reduces
+    // underestimation and thus fireflies. Big exponents increase overall
+    // noise level, though.
 #ifdef BIAS_EXPONENT
-        const float biasexponent = BIAS_EXPONENT;
-        dst_col = pow(mix(pow(prev_col, biasexponent), pow(dst_col, biasexponent), pc.blend_ratio), 1.0/biasexponent);
+    const float biasexponent = BIAS_EXPONENT;
+    dst_col = pow(mix(pow(prev_col, biasexponent), pow(dst_col, biasexponent), blend_ratio), 1.0/biasexponent);
 #else
-        // TODO: to try: compute both max and avg, then in sampling, use
-        // 2*max-max*max/avg. That can also be precomputed into yet another
-        // texture if necessary.
-        dst_col = max(prev_col, dst_col);
+    // TODO: to try: compute both max and avg, then in sampling, use
+    // 2*max-max*max/avg. That can also be precomputed into yet another
+    // texture if necessary.
+    dst_col = max(prev_col, dst_col);
 #endif
-        dst_vis = mix(prev_vis, dst_vis, pc.blend_ratio);
-    }
 
     imageStore(lower_target, p, vec4(dst_col));
     imageStore(lower_target_visibility, p, vec4(dst_vis));

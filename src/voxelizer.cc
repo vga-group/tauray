@@ -5,11 +5,6 @@ namespace
 {
 using namespace tr;
 
-struct clear_push_constant_buffer
-{
-    int clear_mips;
-};
-
 struct raster_push_constant_buffer
 {
     pvec4 offset;
@@ -21,6 +16,7 @@ struct gather_push_constant_buffer
 {
     pivec4 mip_size;
     int mip_index;
+    int clear;
 };
 
 }
@@ -56,6 +52,16 @@ voxelizer_stage::voxelizer_stage(
     stage_timer(dev, "voxelization"),
     history_counter(0)
 {
+    if (opt.track_history)
+    {
+        mipped_history.emplace(
+            dev,
+            ivec3(opt.map_resolution),
+            vk::Format::eR16Uint,
+            0, nullptr,
+            vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eStorage, vk::ImageLayout::eGeneral, true);
+    }
+
     {
         raster_pipeline::pipeline_state ps;
 
@@ -83,7 +89,11 @@ voxelizer_stage::voxelizer_stage(
     }
 
     {
-        shader_source src("shader/voxelizer_gather.comp");
+        std::map<std::string, std::string> defines = {};
+        if (opt.track_history) defines["TRACK_HISTORY"];
+        if (opt.reset_history_on_empty) defines["RESET_HISTORY_ON_EMPTY"];
+
+        shader_source src("shader/voxelizer_gather.comp", defines);
         gather_desc.add(src);
         gather.init(src, {&gather_desc});
     }
@@ -92,6 +102,11 @@ voxelizer_stage::voxelizer_stage(
 texture& voxelizer_stage::get_map()
 {
     return mipped;
+}
+
+texture& voxelizer_stage::get_history_map()
+{
+    return mipped_history.value();
 }
 
 void voxelizer_stage::reset()
@@ -111,13 +126,7 @@ void voxelizer_stage::update(uint32_t frame_index)
         clear.bind(cb);
 
         clear_desc.set_image(dev->id, "occupancy", {{{}, occupancy.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
-        clear_desc.set_image(dev->id, "mip0", {{{}, mipped.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         clear.push_descriptors(cb, clear_desc, 0);
-
-        clear_push_constant_buffer pc;
-        // Clear mips only on first frame
-        pc.clear_mips = history_counter == 0 ? 1 : 0;
-        clear.push_constants(cb, pc);
 
         uvec3 wg = uvec3(opt.map_resolution+3)/4u;
         cb.dispatch(wg.x, wg.y, wg.z);
@@ -166,11 +175,15 @@ void voxelizer_stage::update(uint32_t frame_index)
         gather_desc.set_image(dev->id, "src_occupancy", {{{}, occupancy.get_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather_desc.set_image(dev->id, "prev_mip", {{{}, mipped.get_mip_image_view(dev->id, max(i-1, 0)), vk::ImageLayout::eGeneral}});
         gather_desc.set_image(dev->id, "cur_mip", {{{}, mipped.get_mip_image_view(dev->id, i), vk::ImageLayout::eGeneral}});
+        if (opt.track_history)
+            gather_desc.set_image(dev->id, "cur_history_counter", {{{}, mipped_history->get_mip_image_view(dev->id, i), vk::ImageLayout::eGeneral}});
         gather.push_descriptors(cb, gather_desc, 0);
 
         gather_push_constant_buffer pc;
         pc.mip_size = ivec4(res, 0);
         pc.mip_index = i;
+        // Clear mips only on first frame
+        pc.clear = history_counter == 0 ? 1 : 0;
         gather.push_constants(cb, pc);
 
         uvec3 wg = uvec3(res+3)/4u;

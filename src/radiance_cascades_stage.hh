@@ -26,6 +26,9 @@ public:
         // Used for culling dead probes
         texture* occupancy = nullptr;
 
+        // Used to detect if probe has valid history or not.
+        texture* occupancy_history = nullptr;
+
         // +1 => 8x computation needed, general resolution doubled, less fudge
         // in smallest cascade.
         uint32_t log2_resolution = 8;
