@@ -347,4 +347,26 @@ vec3 r3_noise(vec3 x)
     return fract(x * vec3(0.819172513f, 0.671043606f, 0.549700478f));
 }
 
+unsigned ilog2(unsigned n)
+{
+    return findMSB(n);
+}
+
+unsigned ipow(unsigned base, unsigned exp)
+{
+    unsigned result = 1;
+    while(exp != 0)
+    {
+        if(exp&1) result *= base;
+        exp >>= 1;
+        base *= base;
+    }
+    return result;
+}
+
+float luminance(vec3 col)
+{
+    return dot(col, vec3(0.2126f, 0.7152f, 0.0722f));
+}
+
 }

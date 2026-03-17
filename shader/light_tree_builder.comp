@@ -1,0 +1,99 @@
+#version 460
+#extension GL_EXT_control_flow_attributes : enable
+
+#include "math.glsl"
+#include "light_tree_data.glsl"
+
+layout(binding = 0, set = 0) buffer sorted_light_tree_leaf_buffer
+{
+    light_tree_node array[];
+} sorted_leaf_data;
+
+layout(binding = 1, set = 0) buffer type_weights_buffer
+{
+    float tree;
+    float envmap;
+    float directional;
+} type_weights;
+
+layout(local_size_x = 256) in;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    uint tree_width;
+    uint parent_offset;
+    uint child_offset;
+    uint parent_count;
+    uint padded_child_count;
+    uint child_count;
+    uint type_weight_flags;
+} pc;
+
+void main()
+{
+    uint entry_index = gl_GlobalInvocationID.x;
+    uint first_child = entry_index * pc.tree_width;
+
+    if(entry_index >= pc.parent_count)
+        return;
+
+    vec3 aabb_min = vec3(1e38);
+    vec3 aabb_max = vec3(-1e38);
+    float brightness = 0;
+
+    for(uint i = 0; i < pc.tree_width; ++i)
+    {
+        uint child_index = first_child + i;
+        light_tree_node child_node;
+        if(child_index < pc.child_count)
+            child_node = sorted_leaf_data.array[pc.child_offset + child_index];
+        else
+        {
+            child_node.radius_brightness = vec4(0);
+            child_node.center_radius = vec4(0);
+            if(child_index < pc.padded_child_count)
+                sorted_leaf_data.array[pc.child_offset + child_index] = child_node;
+        }
+
+        if(child_node.radius_brightness.w != 0)
+        {
+            vec3 local_aabb_min = child_node.center_radius.xyz - child_node.radius_brightness.xyz;
+            vec3 local_aabb_max = child_node.center_radius.xyz + child_node.radius_brightness.xyz;
+
+            aabb_min = min(local_aabb_min, aabb_min);
+            aabb_max = max(local_aabb_max, aabb_max);
+        }
+        brightness += child_node.radius_brightness.w;
+    }
+
+    light_tree_node node;
+    node.radius_brightness = vec4(
+        abs(aabb_max - aabb_min) * 0.5f,
+        brightness
+    );
+    node.center_radius = vec4(
+        (aabb_max + aabb_min) * 0.5f,
+        length(node.radius_brightness.xyz)
+    );
+
+    if(pc.type_weight_flags != 0)
+    {
+        float tree_weight = node.radius_brightness.w / (max(node.center_radius.w, 1.0f) * 4.0f * M_PI);
+        float envmap_weight = type_weights.envmap;
+        float directional_weight = type_weights.directional;
+        float sum = tree_weight + envmap_weight + directional_weight;
+
+        // The 1e-5f is not to avoid division by zero, but to make the sum of
+        // the weights slightly above one. This is to combat floating point
+        // inaccuracies in the random selection.
+        float inv_sum = 1.0f/sum + 1e-5f;
+        if(sum == 0) inv_sum = 0;
+        type_weights.tree = tree_weight * inv_sum;
+        type_weights.envmap = envmap_weight * inv_sum;
+        type_weights.directional = directional_weight * inv_sum;
+    }
+    else
+    {
+        sorted_leaf_data.array[pc.parent_offset + entry_index] = node;
+    }
+}

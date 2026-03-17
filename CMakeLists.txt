@@ -7,19 +7,19 @@ option(VULKAN_VALIDATION "Load Vulkan validation layers by default when present"
 
 find_package(Threads)
 
-find_package(Git QUIET)
-if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
-    option(GIT_SUBMODULE "Check submodules during build" ON)
-    if(GIT_SUBMODULE)
-        message(STATUS "Submodule update")
-        execute_process(COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
-                        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                        RESULT_VARIABLE GIT_SUBMOD_RESULT)
-        if(NOT GIT_SUBMOD_RESULT EQUAL "0")
-            message(FATAL_ERROR "git submodule update --init --recursive failed with ${GIT_SUBMOD_RESULT}, please checkout submodules")
-        endif()
-    endif()
-endif()
+#find_package(Git QUIET)
+#if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
+#    option(GIT_SUBMODULE "Check submodules during build" ON)
+#    if(GIT_SUBMODULE)
+#        message(STATUS "Submodule update")
+#        execute_process(COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
+#                        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+#                        RESULT_VARIABLE GIT_SUBMOD_RESULT)
+#        if(NOT GIT_SUBMOD_RESULT EQUAL "0")
+#            message(FATAL_ERROR "git submodule update --init --recursive failed with ${GIT_SUBMOD_RESULT}, please checkout submodules")
+#        endif()
+#    endif()
+#endif()
 
 function(add_glslang)
     # This just gives us a scope so that we don't overwrite CMAKE_BUILD_TYPE.
@@ -62,7 +62,7 @@ find_package(SDL2 REQUIRED)
 find_package(glm REQUIRED)
 find_package(czmq QUIET)
 find_package(nng QUIET)
-find_package(libcbor QUIET)
+find_package(libcbor REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(assimp REQUIRED)
 
@@ -102,6 +102,7 @@ add_library(tauray-core STATIC
   src/gpu_buffer.cc
   src/headless.cc
   src/light.cc
+  src/light_tree_stage.cc
   src/load_balancer.cc
   src/log.cc
   src/looking_glass.cc
