@@ -29,10 +29,13 @@
 //
 // If you want to bump this version, not only make sure that the program builds,
 // but also check that SSE works as expected.
+/*
 #if GLM_VERSION != 998
 #pragma warning "This program was written to use GLM 0.9.9.8. " \
     GLM_VERSION_MESSAGE
 #endif
+*/
+
 
 #ifndef M_PI
 #define M_PI 3.141592653589793238462643383279502884
@@ -163,6 +166,10 @@ size_t hash_combine(size_t a, size_t b);
 float r1_noise(float x);
 vec2 r2_noise(vec2 x);
 vec3 r3_noise(vec3 x);
+
+unsigned ilog2(unsigned n);
+unsigned ipow(unsigned base, unsigned exp);
+float luminance(vec3 col);
 
 }
 

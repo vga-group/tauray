@@ -489,6 +489,21 @@ atlas* scene_stage::get_shadow_map_atlas() const
     return shadow_atlas.get();
 }
 
+gpu_buffer& scene_stage::get_point_lights_buffer()
+{
+    return point_light_data;
+}
+
+uint32_t scene_stage::get_point_light_count() const
+{
+    return point_light_count;
+}
+
+uint32_t scene_stage::get_tri_light_count() const
+{
+    return tri_light_count;
+}
+
 bool scene_stage::update_shadow_map_params()
 {
     std::vector<uvec2> shadow_map_sizes;
@@ -1049,7 +1064,7 @@ void scene_stage::update(uint32_t frame_index)
             mod.update_joints(frame_index);
     });
 
-    size_t tri_light_count = 0;
+    tri_light_count = 0;
     size_t vertex_count = 0;
 
     if(geometry_outdated)
@@ -1271,7 +1286,7 @@ void scene_stage::update(uint32_t frame_index)
     prev_point_light_count = backward_point_light_ids.size();
     backward_point_light_ids.clear();
 
-    size_t point_light_count = cur_scene->count<point_light>() + cur_scene->count<spotlight>();
+    point_light_count = cur_scene->count<point_light>() + cur_scene->count<spotlight>();
     lights_outdated |= point_light_data.resize(sizeof(point_light_entry) * point_light_count);
     lights_outdated |= prev_point_light_data.resize(sizeof(point_light_entry) * prev_point_light_count);
 

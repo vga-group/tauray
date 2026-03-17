@@ -25,6 +25,11 @@ vec3 environment_map::get_factor() const
     return factor;
 }
 
+double environment_map::get_average_luminance() const
+{
+    return average_luminance;
+}
+
 environment_map::projection environment_map::get_projection() const
 {
     return proj;

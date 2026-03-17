@@ -2,7 +2,6 @@
 #include "misc.hh"
 #include "log.hh"
 #include "camera.hh"
-#include <iostream>
 #include <nng/nng.h>
 #include <nng/protocol/reqrep0/req.h>
 #include <cbor.h>

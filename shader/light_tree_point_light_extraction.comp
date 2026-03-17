@@ -1,0 +1,71 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_debug_printf : enable
+
+#include "light.glsl"
+#include "light_tree_data.glsl"
+
+layout(binding = 0, set = 0) writeonly buffer light_link_buffer
+{
+    light_link array[];
+} light_links;
+
+layout(binding = 1, set = 0) writeonly buffer light_tree_leaf_buffer
+{
+    light_tree_node array[];
+} leaf_data;
+
+layout(binding = 2, set = 0) writeonly buffer sort_order_buffer
+{
+    uvec2 pairs[];
+} sort_order;
+
+layout(binding = 3, set = 0) readonly buffer point_light_buffer
+{
+    point_light array[];
+} point_lights;
+
+layout(local_size_x = 256) in;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    vec4 bounds_min;
+    vec4 bounds_inv_step;
+    uint output_offset;
+    uint key_shift;
+    uint point_light_count;
+} pc;
+
+void main()
+{
+    uint light_index = gl_GlobalInvocationID.x;
+
+    if(light_index < pc.point_light_count)
+    {
+        point_light pl = point_lights.array[light_index];
+        float radius = unpackHalf2x16(pl.radius_and_cutoff_radius).x;
+        light_link ll;
+        ll.instance_id = POINT_LIGHT_INSTANCE_ID;
+        ll.primitive_id = light_index;
+
+        vec3 pos = vec3(pl.pos_x, pl.pos_y, pl.pos_z);
+
+        light_tree_node leaf;
+        leaf.center_radius = vec4(pos, radius);
+        leaf.radius_brightness = vec4(vec3(radius), luminance(rgbe_to_rgb(pl.color)) * 4.0f);
+
+        light_links.array[pc.output_offset + light_index] = ll;
+        leaf_data.array[pc.output_offset + light_index] = leaf;
+
+        ivec3 coord = clamp(
+            ivec3((pos - pc.bounds_min.xyz) * pc.bounds_inv_step.xyz),
+            ivec3(0), ivec3(1<<10)-1
+        );
+        uint order = hilbert_encode_3d(coord);
+        //uint order = morton_encode_3d(coord);
+
+        sort_order.pairs[pc.output_offset + light_index] = uvec2(
+            pc.output_offset + light_index, order << pc.key_shift
+        );
+    }
+}
