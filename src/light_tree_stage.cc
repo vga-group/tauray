@@ -187,12 +187,12 @@ light_tree_stage::~light_tree_stage()
 {
 }
 
-const descriptor_set& light_tree_stage::get_descriptor_set() const
+descriptor_set& light_tree_stage::get_descriptors()
 {
     return tree_set;
 }
 
-void light_tree_stage::get_defines(std::map<std::string, std::string>& info)
+void light_tree_stage::add_defines(std::map<std::string, std::string>& info)
 {
     info["LIGHT_TREE_WIDTH"] = std::to_string(opt.tree_width);
 }

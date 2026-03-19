@@ -45,7 +45,7 @@ void main()
         point_light pl = point_lights.array[light_index];
         float radius = pl.radius;
         light_link ll;
-        ll.instance_id = POINT_LIGHT_INSTANCE_ID;
+        ll.kind = POINT_LIGHT_KIND;
         ll.primitive_id = light_index;
 
         vec3 pos = pl.pos;

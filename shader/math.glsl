@@ -137,6 +137,11 @@ uint lcg(inout uint seed)
     return seed;
 }
 
+float generate_uniform_random_lq(inout uint seed)
+{
+    return lcg(seed) * 2.3283064365386963e-10f;
+}
+
 #include "sobol_lookup_table.glsl"
 
 // Returns in groups of 4 dimensions. 'bounce' defines the bounce.

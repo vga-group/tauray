@@ -282,6 +282,8 @@ void rt_renderer<Pipeline>::init_resources()
         if (opt.light_tree.has_value())
         {
             r.light_tree.reset(new light_tree_stage(d, *scene_update, *opt.light_tree));
+            if constexpr (std::is_same_v<Pipeline, path_tracer_stage>)
+                rt_opt.light_tree_source = r.light_tree.get();
         }
 
         r.ray_tracer.reset(new Pipeline(d, *scene_update, transfer_target, rt_opt));
