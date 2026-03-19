@@ -1,5 +1,6 @@
 #version 460
 #extension GL_EXT_control_flow_attributes : enable
+#extension GL_GOOGLE_include_directive : enable
 
 #include "math.glsl"
 #include "light_tree_data.glsl"

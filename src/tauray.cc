@@ -447,7 +447,15 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     sampling_weights.envmap = get_environment_map(s) ? opt.sample_envmap : 0.0f;
     sampling_weights.emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
 
-    radiance_cascades_stage::options raca_opt;
+    light_tree_stage::options lt_options;
+    lt_options.directional_light_weight = sampling_weights.directional_lights;
+    lt_options.envmap_weight = sampling_weights.envmap;
+    lt_options.light_aabb = scene_aabb;
+    lt_options.tree_width = opt.light_tree_width;
+    lt_options.exclude_explicit_lights = 
+        sampling_weights.point_lights == 0 &&
+        sampling_weights.envmap == 0 &&
+        sampling_weights.directional_lights == 0;
 
     sh_renderer::options sh;
     (rt_stage::options&)sh = rc_opt;
@@ -561,6 +569,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
             {
                 path_tracer_renderer::options rt_opt;
                 (path_tracer_stage::options&)rt_opt = pt_opt;
+                if (opt.enable_light_tree)
+                    rt_opt.light_tree = lt_options;
                 rt_opt.post_process.tonemap = tonemap;
                 if(opt.temporal_reprojection > 0.0f)
                     rt_opt.post_process.temporal_reprojection =
@@ -587,6 +597,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 direct_renderer::options rt_opt;
                 (rt_camera_stage::options&)rt_opt = rc_opt;
                 rt_opt.film = opt.film;
+                if (opt.enable_light_tree)
+                    rt_opt.light_tree = lt_options;
                 rt_opt.film_radius = opt.film_radius;
                 rt_opt.sampling_weights = sampling_weights;
                 rt_opt.bounce_mode = opt.bounce_mode;

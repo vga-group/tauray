@@ -270,7 +270,7 @@ void light_tree_stage::update(uint32_t frame_index)
         pc.key_shift = 32 - 3 * MORTON_BITS_PER_AXIS;
         pc.point_light_count = point_light_count;
 
-        point_light_link_extraction.push_constants(cmd, &pc);
+        point_light_link_extraction.push_constants(cmd, pc);
         cmd.dispatch((point_light_count+255u)/256u, 1, 1);
 
         extraction_offset += point_light_count;
@@ -301,7 +301,7 @@ void light_tree_stage::update(uint32_t frame_index)
             tri_pc.triangle_count = tri_count;
             tri_pc.instance_id = i;
 
-            tri_light_link_extraction.push_constants(cmd, &tri_pc);
+            tri_light_link_extraction.push_constants(cmd, tri_pc);
             cmd.dispatch((tri_count+255u)/256u, 1, 1);
 
             extraction_offset += tri_count;
@@ -339,47 +339,38 @@ void light_tree_stage::update(uint32_t frame_index)
         reorder_pc.branch_bits = light_tree_branch_bits(opt.tree_width);
 
         sort_reorder.bind(cmd);
-        sort_reorder.push_constants(cmd, &reorder_pc);
+        sort_reorder.push_constants(cmd, reorder_pc);
         sort_reorder.push_descriptors(cmd, reorder_set, 0);
         cmd.dispatch((total_entries+255u)/256u, 1, 1);
 
-        VkBufferMemoryBarrier2KHR buffer_barriers[2] = {
-            {
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR,
-                nullptr,
-                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        vk::BufferMemoryBarrier buffer_barriers[2] = {
+            vk::BufferMemoryBarrier{
+                vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite,
+                vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite,
                 VK_QUEUE_FAMILY_IGNORED,
                 VK_QUEUE_FAMILY_IGNORED,
                 *tree_buffer,
                 0,
                 VK_WHOLE_SIZE
             },
-            {
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR,
-                nullptr,
-                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+            vk::BufferMemoryBarrier{
+                vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite,
+                vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite,
                 VK_QUEUE_FAMILY_IGNORED,
                 VK_QUEUE_FAMILY_IGNORED,
                 *sorted_link_buffer,
                 0,
                 VK_WHOLE_SIZE
-            },
+            }
         };
-        VkDependencyInfoKHR dependency_info = {
-            VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR,
-            nullptr,
-            0,
-            0, nullptr,
-            2, buffer_barriers,
-            0, nullptr
-        };
-        vkCmdPipelineBarrier2KHR(cmd, &dependency_info);
+        cmd.pipelineBarrier(
+            vk::PipelineStageFlagBits::eComputeShader,
+            vk::PipelineStageFlagBits::eComputeShader,
+            {},
+            {},
+            buffer_barriers,
+            {}
+        );
     }
 
     //==========================================================================
@@ -406,7 +397,7 @@ void light_tree_stage::update(uint32_t frame_index)
         pc.child_count = layer == 1 ? total_entries : pc.padded_child_count;
         pc.type_weight_flags = 0;
 
-        tree_builder.push_constants(cmd, &pc);
+        tree_builder.push_constants(cmd, pc);
         cmd.dispatch((layer_size+255u)/256u, 1, 1);
 
         prev_layer_offset = layer_offset;
@@ -450,12 +441,12 @@ void light_tree_stage::update(uint32_t frame_index)
         pc.child_count = pc.padded_child_count;
         pc.type_weight_flags = 1;
 
-        tree_builder.push_constants(cmd, &pc);
+        tree_builder.push_constants(cmd, pc);
         cmd.dispatch(1,1,1);
     }
 
     stage_timer.end(cmd, dev->id, frame_index);
-    end_graphics(cmd, frame_index);
+    end_compute(cmd, frame_index);
 }
 
 void light_tree_stage::reserve_buffers(uint32_t capacity)

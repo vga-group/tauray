@@ -579,7 +579,12 @@
             {"brdf", radiance_cascades_stage::BRDF}, \
             {"hybrid", radiance_cascades_stage::HYBRID} \
         ) \
-    )
+    ) \
+    TR_BOOL_OPT(enable_light_tree, \
+        "Use light tree for sampling lights.", \
+        false \
+    ) \
+    TR_INT_OPT(light_tree_width, "Branching factor of the light tree", 3, 2, 1024)
 //==============================================================================
 // END OF OPTIONS
 //==============================================================================
