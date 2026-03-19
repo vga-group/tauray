@@ -104,6 +104,9 @@ void rt_renderer<Pipeline>::render()
         if(gbuffer_rasterizer && raster_before_rt)
             device_deps = gbuffer_rasterizer->run(device_deps);
 
+        if(per_device[i].light_tree)
+            device_deps = per_device[i].light_tree->run(device_deps);
+
         device_deps = per_device[i].ray_tracer->run(device_deps);
         last_frame_deps.concat(device_deps);
 
@@ -275,6 +278,11 @@ void rt_renderer<Pipeline>::init_resources()
         transfer_target.set_layout(is_display_device ?
             vk::ImageLayout::eGeneral : vk::ImageLayout::eTransferSrcOptimal
         );
+
+        if (opt.light_tree.has_value())
+        {
+            r.light_tree.reset(new light_tree_stage(d, *scene_update, *opt.light_tree));
+        }
 
         r.ray_tracer.reset(new Pipeline(d, *scene_update, transfer_target, rt_opt));
 

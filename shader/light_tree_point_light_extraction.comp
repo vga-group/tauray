@@ -43,16 +43,16 @@ void main()
     if(light_index < pc.point_light_count)
     {
         point_light pl = point_lights.array[light_index];
-        float radius = unpackHalf2x16(pl.radius_and_cutoff_radius).x;
+        float radius = pl.radius;
         light_link ll;
         ll.instance_id = POINT_LIGHT_INSTANCE_ID;
         ll.primitive_id = light_index;
 
-        vec3 pos = vec3(pl.pos_x, pl.pos_y, pl.pos_z);
+        vec3 pos = pl.pos;
 
         light_tree_node leaf;
         leaf.center_radius = vec4(pos, radius);
-        leaf.radius_brightness = vec4(vec3(radius), luminance(rgbe_to_rgb(pl.color)) * 4.0f);
+        leaf.radius_brightness = vec4(vec3(radius), rgb_to_luminance(pl.color) * 4.0f);
 
         light_links.array[pc.output_offset + light_index] = ll;
         leaf_data.array[pc.output_offset + light_index] = leaf;

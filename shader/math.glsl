@@ -697,4 +697,51 @@ bvec2 and(bvec2 a, bvec2 b) { return mix(b, a, b); }
 bvec3 and(bvec3 a, bvec3 b) { return mix(b, a, b); }
 bvec4 and(bvec4 a, bvec4 b) { return mix(b, a, b); }
 
+uint ipow(uint base, uint e)
+{
+    uint result = 1;
+    while(e != 0)
+    {
+        if((e&1) != 0) result *= base;
+        e >>= 1;
+        base *= base;
+    }
+    return result;
+}
+
+uint morton_encode_3d(uvec3 x)
+{
+    x &= 0x000003ffu;
+    x = (x ^ (x << 16u)) & 0xff0000ffu;
+    x = (x ^ (x << 8u)) & 0x0300f00fu;
+    x = (x ^ (x << 4u)) & 0x030c30c3u;
+    x = (x ^ (x << 2u)) & 0x09249249u;
+    return x.x + 2u * x.y + 4u * x.z;
+}
+
+uint morton_to_hilbert_3d(uint morton, uint bits)
+{
+    uint shift = 0u;
+    uint signs = 0u;
+    uint block = bits * 3u - 3u;
+    for(uint i = 0u; i < bits; ++i, block -= 3u)
+    {
+        uint mcode = (morton >> block) & 7u;
+        uint hcode = ((mcode | (mcode << 3u)) >> shift) & 7u ^ signs;
+        morton ^= (mcode ^ hcode) << block;
+        hcode <<= 2u;
+        uint tmp = (0x20212021u >> hcode) & 3u;
+        signs = (((signs | (signs << 3u)) >> tmp) ^ (0x53560300u >> hcode)) & 7u;
+        shift = (0x48u >> (7u - shift - tmp)) & 3u;
+    }
+    morton ^= (morton >> 1u) & 0x92492492u;
+    morton ^= (morton >> 1u) & 0x49249249u;
+    return morton;
+}
+
+uint hilbert_encode_3d(uvec3 x)
+{
+    return morton_to_hilbert_3d(morton_encode_3d(x), 10);
+}
+
 #endif
