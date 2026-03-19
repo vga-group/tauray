@@ -1,4 +1,5 @@
 #include "path_tracer_stage.hh"
+#include "light_tree_stage.hh"
 #include "radiance_cascades_stage.hh"
 #include "scene_stage.hh"
 #include "misc.hh"
@@ -66,8 +67,12 @@ path_tracer_stage::path_tracer_stage(
     if(opt.depth_of_field)
         defines["USE_DEPTH_OF_FIELD"];
 
+    int set_index = 2;
+
     if(opt.rc_source)
-        defines["RADIANCE_CASCADES_SET"] = "2";
+        defines["RADIANCE_CASCADES_SET"] = std::to_string(set_index++);
+    if(opt.light_tree_source)
+        defines["LIGHT_TREE_SET"] = std::to_string(set_index++);
 
 #define TR_GBUFFER_ENTRY(name, ...)\
     if(output_target.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
@@ -79,8 +84,12 @@ path_tracer_stage::path_tracer_stage(
     add_defines(opt.mis_mode, defines);
     add_defines(opt.bounce_mode, defines);
     add_defines(opt.tri_light_mode, defines);
+
     if(opt.rc_source)
         opt.rc_source->add_defines(defines);
+
+    if(opt.light_tree_source)
+        opt.light_tree_source->add_defines(defines);
 
     get_common_defines(defines);
 
@@ -89,6 +98,8 @@ path_tracer_stage::path_tracer_stage(
     std::vector<tr::descriptor_set_layout*> layout = {&desc, &ss.get_descriptors()};
     if(opt.rc_source)
         layout.push_back(&opt.rc_source->get_descriptors());
+    if(opt.light_tree_source)
+        layout.push_back(&opt.light_tree_source->get_descriptors());
     pt_pipeline.init(src, layout);
 }
 
@@ -105,8 +116,11 @@ void path_tracer_stage::record_command_buffer_pass(
         get_descriptors(desc);
         pt_pipeline.push_descriptors(cb, desc, 0);
         pt_pipeline.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+        int set_index = 2;
         if(opt.rc_source)
-            pt_pipeline.set_descriptors(cb, opt.rc_source->get_descriptors(), 0, 2);
+            pt_pipeline.set_descriptors(cb, opt.rc_source->get_descriptors(), 0, set_index++);
+        if(opt.light_tree_source)
+            pt_pipeline.set_descriptors(cb, opt.light_tree_source->get_descriptors(), 0, set_index++);
     }
 
     push_constant_buffer control;

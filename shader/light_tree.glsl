@@ -123,14 +123,13 @@ void light_tree_sample_light(
 float light_tree_light_pmf(vec3 pos, vec3 normal, float transmission, light_link ll)
 {
     uint light_index = 0;
-    if(ll.instance_id == POINT_LIGHT_INSTANCE_ID)
+    if(ll.kind == POINT_LIGHT_KIND)
     {
         light_index = ll.primitive_id;
     }
     else
     { // Tri light
-        instance i = instances.array[ll.instance_id];
-        light_index = scene_params.point_light_count + i.light_base_index + ll.primitive_id;
+        light_index = scene_metadata.point_light_count + ll.primitive_id;
     }
     uint trail = light_tree_trail.array[light_index];
 
@@ -180,6 +179,35 @@ struct light_sample
 #endif
 };
 
+vec3 sample_triangle_light(
+    tri_light tl,
+    vec2 u,
+    vec3 pos,
+    out vec3 dir,
+    out float dist,
+    out vec3 color,
+    out float pdf
+){
+    vec3 A = tl.pos[0]-pos;
+    vec3 B = tl.pos[1]-pos;
+    vec3 C = tl.pos[2]-pos;
+    dir = sample_triangle_light(u, A, B, C, pdf);
+    dist = ray_plane_intersection_dist(dir, A, B, C);
+
+    vec3 bary = get_barycentric_coords(dir * dist, A, B, C);
+    color = r9g9b9e5_to_rgb(tl.emission_factor);
+
+    if(tl.emission_tex_id >= 0)
+    {
+        vec2 uv =
+            bary.x * unpackHalf2x16(tl.uv[0]) +
+            bary.y * unpackHalf2x16(tl.uv[1]) +
+            bary.z * unpackHalf2x16(tl.uv[2]);
+        color *= textureLod(textures[nonuniformEXT(tl.emission_tex_id)], uv, 0.0f).rgb;
+    }
+    return bary;
+}
+
 // Warning: does NOT update the seed! You need to do that yourself.
 light_sample sample_light(
     uvec4 rand32,
@@ -213,34 +241,33 @@ light_sample sample_light(
         ls.link = link;
 #endif
 
-        if(link.instance_id == POINT_LIGHT_INSTANCE_ID)
+        if(link.kind == POINT_LIGHT_KIND)
         { // Point light
-            point_light pl = point_lights.array[link.primitive_id];
+            point_light pl = point_lights.lights[link.primitive_id];
             sample_point_light(pl, u.zw, pos, ls.dir, ls.dist, ls.color, local_pdf);
 
 #ifdef LIGHT_SAMPLE_HIT_INFO
             vec3 p = pos + ls.dir * ls.dist;
             ls.normal = normalize(p - vec3(pl.pos_x, pl.pos_y, pl.pos_z));
             ls.hit_info = octahedral_encode(ls.normal) * 0.5f + 0.5f;
-            if(local_pdf == 0.0f) ls.normal = vec3(0);
+            if(local_pdf < 0.0f) ls.normal = vec3(0);
 #else
             // If there's no hit info, the caller cannot apply inverse-square
             // law, so it must be done here.
-            if(local_pdf == 0.0f) ls.color /= ls.dist * ls.dist;
+            //if(local_pdf < 0.0f) ls.color /= ls.dist * ls.dist;
 #endif
         }
         else
         { // Tri light
-            tri_light tl = read_tri_light(link.instance_id, link.primitive_id);
-            vec2 hit_info = sample_tri_light(tl, u.zw, pos, ls.dir, ls.dist, ls.color, local_pdf).yz;
+            tri_light tl = tri_lights.lights[link.primitive_id];
+            vec2 hit_info = sample_triangle_light(tl, u.zw, pos, ls.dir, ls.dist, ls.color, local_pdf).yz;
             ls.dist -= min_dist;
 
 #ifdef LIGHT_SAMPLE_HIT_INFO
             ls.normal = normalize(cross(
-                tl.corners[0] - tl.corners[1],
-                tl.corners[0] - tl.corners[2]
+                tl.pos[0] - tl.pos[1],
+                tl.pos[0] - tl.pos[2]
             ));
-            ls.hit_info = hit_info;
 #endif
 
             // TODO: Check this condition if ReSTIR is doing NaNs with triangle
@@ -251,11 +278,11 @@ light_sample sample_light(
                 ls.dist < min_dist // || abs(dot(ls.dir, d.flat_normal)) < 1e-4f
             ){
 #ifdef LIGHT_SAMPLE_HIT_INFO
-                ls.link.instance_id = NULL_INSTANCE_ID;
+                ls.link.kind = NULL_LIGHT_KIND;
 #else
                 ls.color = vec3(0);
                 ls.dist = 0;
-                local_pdf = 0;
+                local_pdf = 1.0f;
                 ls.dir = normal;
 #endif
             }
@@ -264,28 +291,28 @@ light_sample sample_light(
     else if((u.x -= prob.y) < 0)
     { // Directional light
         int selected_index = clamp(
-            int(u.y * scene_params.directional_light_count),
-            0, int(scene_params.directional_light_count)-1
+            int(u.y * scene_metadata.directional_light_count),
+            0, int(scene_metadata.directional_light_count)-1
         );
-        directional_light dl = directional_lights.array[selected_index];
+        directional_light dl = directional_lights.lights[selected_index];
 
         sample_directional_light(dl, u.zw, ls.dir, ls.color, local_pdf);
 #ifdef LIGHT_SAMPLE_HIT_INFO
-        ls.link.instance_id = DIRECTIONAL_LIGHT_INSTANCE_ID;
+        ls.link.kind = DIRECTIONAL_LIGHT_KIND;
         ls.link.primitive_id = selected_index;
         ls.hit_info = octahedral_encode(ls.dir) * 0.5f + 0.5f;
 #endif
 
-        ls.pdf = prob.y / scene_params.directional_light_count;
+        ls.pdf = prob.y / scene_metadata.directional_light_count;
     }
     else if((u.x -= prob.z) < 0)
     { // Envmap
         rand32 += uvec4(12); // Make 'values' not correlate with future RNG samples
         pcg4d(rand32);
-        ls.color = sample_environment_map(rand32, ls.dir, local_pdf);
+        ls.color = sample_environment_map(rand32.xyz, ls.dir, ls.dist, local_pdf);
 
 #ifdef LIGHT_SAMPLE_HIT_INFO
-        ls.link.instance_id = ENVMAP_INSTANCE_ID;
+        ls.link.kind = ENVMAP_KIND;
         ls.link.primitive_id = 0;
         ls.hit_info = octahedral_encode(ls.dir) * 0.5f + 0.5f;
 #endif
@@ -293,8 +320,8 @@ light_sample sample_light(
         ls.pdf = prob.z;
     }
 
-    ls.infinitesimal = local_pdf == 0;
-    if(!ls.infinitesimal) ls.pdf *= local_pdf;
+    ls.infinitesimal = local_pdf < 0;
+    ls.pdf *= local_pdf;
 
     return ls;
 }
@@ -310,12 +337,12 @@ float calculate_light_pdf(
     vec3 prob = light_type_weights();
 
     if(
-        link.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID ||
-        link.instance_id == ENVMAP_INSTANCE_ID
+        link.kind == DIRECTIONAL_LIGHT_KIND ||
+        link.kind == ENVMAP_KIND
     ){
-        return local_pdf * prob.y / max(scene_params.directional_light_count, 1u) + envmap_pdf * prob.z;
+        return local_pdf * prob.y / max(scene_metadata.directional_light_count, 1u) + envmap_pdf * prob.z;
     }
-    else if(link.instance_id == NULL_INSTANCE_ID || local_pdf == 0)
+    else if(link.kind == NULL_LIGHT_KIND || local_pdf == 0)
         return 0;
     else
     {

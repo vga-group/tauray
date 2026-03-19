@@ -20,6 +20,9 @@
 #include "rt_common.glsl"
 #include "sampling.glsl"
 #include "radiance_cascades.glsl"
+#ifdef LIGHT_TREE_SET
+#include "light_tree.glsl"
+#endif
 
 struct pt_vertex_data
 {

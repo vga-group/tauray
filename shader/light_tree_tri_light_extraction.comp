@@ -73,8 +73,8 @@ void main()
         }
 
         light_link ll;
-        ll.instance_id = pc.instance_id;
-        ll.primitive_id = primitive;
+        ll.kind = TRI_LIGHT_KIND;
+        ll.primitive_id = i.light_base_id + primitive;
         light_links.array[pc.output_offset + primitive] = ll;
 
         vec3 min_pos = min(pos0, min(pos1, pos2));

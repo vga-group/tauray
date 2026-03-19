@@ -45,9 +45,9 @@ public:
     light_tree_stage(light_tree_stage&&) = delete;
     ~light_tree_stage();
 
-    const descriptor_set& get_descriptor_set() const;
+    descriptor_set& get_descriptors();
 
-    void get_defines(std::map<std::string, std::string>& info);
+    void add_defines(std::map<std::string, std::string>& info);
 
     bool excludes_explicit_lights() const;
 
