@@ -6,6 +6,7 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_debug_printf : enable
+#extension GL_EXT_ray_flags_primitive_culling : enable
 
 //layout(local_size_x = 8, local_size_y = 8) in;
 #if RC_C0_ANGULAR_RESOLUTION == 2
@@ -34,6 +35,10 @@ layout(binding = 2, scalar) buffer dispatch_info_buffer
 #include "rt_common.glsl"
 #include "scene_raster.glsl"
 
+#ifdef LIGHT_TREE_SET
+#include "light_tree.glsl"
+#endif
+
 layout(push_constant) uniform push_constant_buffer
 {
     vec4 base_offset;
@@ -47,7 +52,7 @@ layout(push_constant) uniform push_constant_buffer
     int c0_angular_resolution;
     int cascade_size;
     shadow_mapping_parameters sm_params;
-    int has_history;
+    int frame_counter;
 } pc;
 
 #define SHADOW_MAPPING_PARAMS pc.sm_params
@@ -81,6 +86,23 @@ bool get_probe_coordinate(out ivec2 texel_coordinate, out ivec3 probe_coordinate
     return true;
 }
 
+float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
+{
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq,
+        tlas,
+        gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT|gl_RayFlagsTerminateOnFirstHitEXT,
+        //0x02^0xFF, // Exclude lights from shadow rays
+        0xFF,
+        pos,
+        min_dist,
+        dir,
+        max_dist
+    );
+
+    return trace_ray_query_visibility(rq);
+}
+
 hit_info trace_primary_ray(
     vec3 origin,
     vec3 dir,
@@ -89,12 +111,12 @@ hit_info trace_primary_ray(
     rayQueryEXT rq;
     rayQueryInitializeEXT(rq,
         tlas,
-//        gl_RayFlagsCullBackFacingTrianglesEXT,
-#ifdef USE_BACKFACE_CULLING
-        gl_RayFlagsCullNoOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
-#else
-        gl_RayFlagsCullNoOpaqueEXT,
-#endif
+        gl_RayFlagsCullBackFacingTrianglesEXT,
+//#ifdef USE_BACKFACE_CULLING
+//        gl_RayFlagsCullNoOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
+//#else
+//        gl_RayFlagsCullNoOpaqueEXT,
+//#endif
         0xFF,
         origin,
         0,
@@ -183,10 +205,30 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
 
             emission += color * shadow * light_color * max(dot(normal, light_dir), 0) / M_PI;
         POINT_LIGHT_FOR_END
+#elif defined(RT_DI_SAMPLES) && defined(LIGHT_TREE_SET)
+        uvec4 rand_uint = uvec4(pc.frame_counter, gl_GlobalInvocationID.xyz);
+        pcg4d(rand_uint);
+        for(uint i = 0; i < RT_DI_SAMPLES; ++i)
+        {
+            pcg4d(rand_uint);
+            light_sample s = sample_light(
+                rand_uint,
+                pos,
+                normal,
+                1.0f,
+                1e-4f,
+                1e9f
+            );
+
+            vec3 contrib = s.color / abs(s.pdf);
+
+            contrib *= shadow_ray(pos, 1e-4f, s.dir, s.dist);
+            emission += color * contrib * max(dot(normal, s.dir), 0) * (1.0/(M_PI * RT_DI_SAMPLES));
+        }
 #endif
 
 #ifdef RECURSIVE_LIGHTING
-        if(pc.has_history != 0)
+        if(pc.frame_counter != 0)
         {
             emission += color * eval_radiance_cascades(
                 pos,
@@ -201,7 +243,7 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
     }
     else if(info.primitive_id >= 0)
     { // Point light
-#ifdef USE_RASTER_DI
+#if defined(USE_RASTER_DI) || (defined(RT_DI_SAMPLES) && defined(LIGHT_TREE_SET))
         return vec4(vec3(0), 1.0f);
 #else
         point_light pl = point_lights.lights[info.primitive_id];
@@ -224,7 +266,7 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
         }
         vec3 emission = color.rgb;
 
-#ifndef USE_RASTER_DI
+#if !defined(USE_RASTER_DI) && !(defined(RT_DI_SAMPLES) && defined(LIGHT_TREE_SET))
         for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
         {
             directional_light dl = directional_lights.lights[i];

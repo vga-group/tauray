@@ -579,6 +579,7 @@
             {"brdf", radiance_cascades_stage::BRDF}, \
             {"hybrid", radiance_cascades_stage::HYBRID} \
         ) \
+        TR_STRUCT_OPT_INT(di_samples, 0, 1, 512) \
     ) \
     TR_BOOL_OPT(enable_light_tree, \
         "Use light tree for sampling lights.", \

@@ -1,4 +1,5 @@
 #include "radiance_cascades_stage.hh"
+#include "light_tree_stage.hh"
 #include "shadow_map.hh"
 #include "misc.hh"
 
@@ -19,7 +20,7 @@ struct trace_push_constant_buffer
     int c0_angular_resolution;
     int cascade_size;
     gpu_shadow_mapping_parameters sm_params;
-    int has_history;
+    int frame_counter;
 };
 
 struct gather_push_constant_buffer
@@ -194,22 +195,36 @@ radiance_cascades_stage::radiance_cascades_stage(
     if(opt.use_raster_di)
         defines["USE_RASTER_DI"];
 
+    if(opt.rt_di_samples > 0)
+        defines["RT_DI_SAMPLES"] = std::to_string(opt.rt_di_samples);
+
     if(opt.recursive)
         defines["RECURSIVE_LIGHTING"];
 
     if(opt.avg_bias < 1.0)
         defines["BIAS_EXPONENT"] = std::to_string(1.0/(1.0-opt.avg_bias));
 
+    std::vector<tr::descriptor_set_layout*> trace_layout = {
+        &trace_desc, &scene_ds, &raster_scene_ds, &cascade_descriptors
+    };
+
+    if(opt.light_tree_source)
+    {
+        defines["LIGHT_TREE_SET"] = "4";
+        opt.light_tree_source->add_defines(defines);
+        trace_layout.push_back(&opt.light_tree_source->get_descriptors());
+    }
+
     {
         shader_source src("shader/radiance_cascades_trace.comp", defines);
         trace_desc.add(src);
-        trace.init(src, {&trace_desc, &scene_ds, &raster_scene_ds, &cascade_descriptors});
+        trace.init(src, trace_layout);
     }
 
     {
         defines["USE_BACKFACE_CULLING"];
         shader_source src("shader/radiance_cascades_trace.comp", defines);
-        trace_c0.init(src, {&trace_desc, &scene_ds, &raster_scene_ds, &cascade_descriptors});
+        trace_c0.init(src, trace_layout);
     }
 
     {
@@ -523,7 +538,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     pc.interval_start = 0;
     pc.interval_end = 0;
     pc.c0_angular_resolution = opt.c0_probe_resolution;
-    pc.has_history = history_frames != 0;
+    pc.frame_counter = history_frames;
 
     for(uint32_t cascade = 0; cascade < get_cascade_count(); ++cascade)
     {
@@ -533,6 +548,8 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         trace.set_descriptors(cb, ss->get_descriptors(), 0, 1);
         trace.set_descriptors(cb, ss->get_raster_descriptors(), 0, 2);
         trace.set_descriptors(cb, cascade_descriptors, 0, 3);
+        if (opt.light_tree_source)
+            trace.set_descriptors(cb, opt.light_tree_source->get_descriptors(), 0, 4);
 
         texture& target = (*next_cascades)[cascade];
         texture& target_visibility = (*next_cascades_visibility)[cascade];

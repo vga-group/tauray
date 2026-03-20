@@ -542,6 +542,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
     radiance_cascades_stage::options rc_options{};
     rc_options.use_raster_di = opt.radiance_cascades.shadow_mapped;
+    rc_options.rt_di_samples = opt.radiance_cascades.di_samples;
     rc_options.jitter = opt.radiance_cascades.jitter;
     rc_options.c0_probe_resolution = opt.radiance_cascades.c0;
     rc_options.log2_resolution = opt.radiance_cascades.gridsize;
