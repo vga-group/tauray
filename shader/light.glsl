@@ -4,6 +4,14 @@
 #include "color.glsl"
 #include "camera.glsl"
 
+const uint NULL_INSTANCE_ID = 0xFFFFFFFF;
+const uint POINT_LIGHT_INSTANCE_ID = 0xFFFFFFFF-1;
+const uint DIRECTIONAL_LIGHT_INSTANCE_ID = 0xFFFFFFFF-2;
+const uint ENVMAP_INSTANCE_ID = 0xFFFFFFFF-3;
+// Both directional + envmap.
+const uint MISS_INSTANCE_ID = 0xFFFFFFFF-4;
+const uint UNCONNECTED_PATH_ID = MISS_INSTANCE_ID-1;
+
 struct directional_light
 {
     vec3 color;
