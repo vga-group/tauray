@@ -164,6 +164,8 @@ float light_tree_light_pmf(vec3 pos, vec3 normal, float transmission, light_link
     return pmf;
 }
 
+#define LIGHT_SAMPLE_HIT_INFO
+
 struct light_sample
 {
     bool infinitesimal;
@@ -250,7 +252,7 @@ light_sample sample_light(
 #ifdef LIGHT_SAMPLE_HIT_INFO
             ls.instance_id = POINT_LIGHT_INSTANCE_ID;
             vec3 p = pos + ls.dir * ls.dist;
-            ls.normal = normalize(p - vec3(pl.pos_x, pl.pos_y, pl.pos_z));
+            ls.normal = normalize(p - pl.pos);
             ls.hit_info = octahedral_pack(ls.normal) * 0.5f + 0.5f;
             if(local_pdf <= 0.0f) ls.normal = vec3(0);
 #else
@@ -304,7 +306,7 @@ light_sample sample_light(
 #ifdef LIGHT_SAMPLE_HIT_INFO
         ls.instance_id = DIRECTIONAL_LIGHT_INSTANCE_ID;
         ls.primitive_id = floatBitsToUint(local_pdf * prob.y);
-        ls.hit_info = octahedral_encode(ls.dir) * 0.5f + 0.5f;
+        ls.hit_info = octahedral_pack(ls.dir) * 0.5f + 0.5f;
 #endif
 
         ls.pdf = prob.y / scene_metadata.directional_light_count;
@@ -317,7 +319,7 @@ light_sample sample_light(
 
 #ifdef LIGHT_SAMPLE_HIT_INFO
         ls.instance_id = ENVMAP_INSTANCE_ID;
-        ls.primitive_id = floatBitsToUint(local_pdf * envmap_prob);
+        ls.primitive_id = floatBitsToUint(local_pdf * prob.z);
         ls.hit_info = octahedral_pack(ls.dir) * 0.5f + 0.5f;
 #endif
 
@@ -325,11 +327,10 @@ light_sample sample_light(
     }
 
     ls.infinitesimal = local_pdf <= 0;
-#ifdef LIGHT_SAMPLE_HIT_INFO
-    if(!ls.infinitesimal) ls.pdf *= local_pdf;
-#else
-    ls.pdf *= local_pdf;
+#ifdef RESTIR_GLSL
+    if(!ls.infinitesimal)
 #endif
+        ls.pdf *= local_pdf;
 
     return ls;
 }
@@ -352,7 +353,7 @@ float calculate_light_pdf(
     ){
         return local_pdf * prob.y / max(scene_metadata.directional_light_count, 1u) + envmap_pdf * prob.z;
     }
-    else if(instance_id == NULL_INSTANCE_ID || local_pdf == 0)
+    else if(instance_id == NULL_INSTANCE_ID || local_pdf <= 0)
         return 0;
     else
     {

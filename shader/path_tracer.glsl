@@ -42,6 +42,10 @@ struct intersection_pdf
     float directional_light_pdf;
     float tri_light_pdf;
     float envmap_pdf;
+#ifdef LIGHT_TREE_SET
+    uint instance_id;
+    uint primitive_id;
+#endif
 };
 
 #include "ggx.glsl"
@@ -65,10 +69,24 @@ float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
 
 float bsdf_mis_pdf(
     intersection_pdf nee_pdf,
-    float bsdf_pdf
+    float bsdf_pdf,
+    vec3 pos,
+    vec3 normal
 ){
     if(bsdf_pdf == 0.0f) return 1.0f;
 
+#ifdef LIGHT_TREE_SET
+    float avg_nee_pdf =
+        calculate_light_pdf(
+            nee_pdf.instance_id,
+            nee_pdf.primitive_id,
+            nee_pdf.directional_light_pdf + nee_pdf.point_light_pdf + nee_pdf.tri_light_pdf,
+            nee_pdf.envmap_pdf,
+            pos,
+            normal,
+            1.0f
+        );
+#else
     float point_prob, triangle_prob, dir_prob, envmap_prob;
     get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
 
@@ -77,6 +95,7 @@ float bsdf_mis_pdf(
         nee_pdf.tri_light_pdf * triangle_prob / max(scene_metadata.tri_light_count, 1) +
         nee_pdf.envmap_pdf * envmap_prob +
         nee_pdf.point_light_pdf * point_prob / max(scene_metadata.point_light_count, 1);
+#endif
 
 #ifdef MIS_POWER_HEURISTIC
     return (avg_nee_pdf * avg_nee_pdf + bsdf_pdf * bsdf_pdf) / bsdf_pdf;
@@ -114,6 +133,10 @@ bool get_intersection_info(
     nee_pdf.directional_light_pdf = 0;
     nee_pdf.tri_light_pdf = 0;
     nee_pdf.envmap_pdf = 0;
+#ifdef LIGHT_TREE_SET
+    nee_pdf.instance_id = NULL_INSTANCE_ID;
+    nee_pdf.primitive_id = 0;
+#endif
     mat.metallic = 1;
     mat.albedo = vec4(0);
 
@@ -137,6 +160,16 @@ bool get_intersection_info(
 #else
         light = vec3(0);
 #endif
+
+#ifdef LIGHT_TREE_SET
+        int light_base_id = instances.o[payload.instance_id].light_base_id;
+        if (light_base_id >= 0)
+        {
+            nee_pdf.instance_id = payload.instance_id;
+            nee_pdf.primitive_id = payload.primitive_id;
+        }
+#endif
+
         v.pos = vd.pos;
 #ifdef CALC_PREV_VERTEX_POS
         v.prev_pos = vd.prev_pos;
@@ -160,6 +193,11 @@ bool get_intersection_info(
         mat.emission = color;
 #endif
 
+#ifdef LIGHT_TREE_SET
+        nee_pdf.instance_id = POINT_LIGHT_INSTANCE_ID;
+        nee_pdf.primitive_id = payload.primitive_id;
+#endif
+
         v.pos = origin + payload.barycentrics.x * view;
         #ifdef CALC_PREV_VERTEX_POS
         v.prev_pos = v.pos; // TODO?
@@ -179,6 +217,11 @@ bool get_intersection_info(
             uv.x = atan(view.z, view.x)/(2*M_PI)+0.5f;
             color.rgb *= texture(environment_map_tex, uv).rgb;
         }
+
+#ifdef LIGHT_TREE_SET
+        nee_pdf.instance_id = ENVMAP_INSTANCE_ID;
+        nee_pdf.primitive_id = packSnorm2x16(octahedral_pack(view));
+#endif
 
         mat.emission = vec3(0);
         light = vec3(0);
@@ -344,7 +387,23 @@ vec3 next_event_estimation(
         float light_pdf;
         // Sample lights
         int hit_type = -1;
+#ifdef LIGHT_TREE_SET
+        light_sample s = sample_light(
+            rand_uint,
+            v.pos,
+            v.mapped_normal,
+            1.0f,
+            control.min_ray_dist,
+            RAY_MAX_DIST
+        );
+        vec3 contrib = s.color;
+        light_pdf = s.pdf;
+        out_dir = s.dir;
+        out_length = s.dist;
+        hit_type = (s.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID || s.instance_id == POINT_LIGHT_INSTANCE_ID) ? 0 : 2;
+#else
         vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf, hit_type);
+#endif
         bool opaque = mat.transmittance < 0.0001f;
         if(dot(v.hard_normal, out_dir) < 0 && opaque) contrib = vec3(0);
 
@@ -471,6 +530,7 @@ void evaluate_ray(
     bsdf_lobes primary_lobes = bsdf_lobes(0,0,0,1);
 #endif
     pcg4d(lsampler.rs.seed);
+    vec3 prev_normal = vec3(0);
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
         rayQueryEXT rq;
@@ -505,7 +565,7 @@ void evaluate_ray(
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
-        float mis_pdf = bsdf_mis_pdf(nee_pdf, bsdf_pdf);
+        float mis_pdf = bsdf_mis_pdf(nee_pdf, bsdf_pdf, pos, prev_normal);
         if(bsdf_pdf != 0)
         {
             attenuation /= bsdf_pdf;
@@ -606,6 +666,8 @@ void evaluate_ray(
 
         float visibility = ray_visibility(view, v);
         pos = v.pos;
+        prev_normal = v.mapped_normal;
+
 #ifdef USE_RUSSIAN_ROULETTE
         // This condition is fairly arbitrary again.
         float qi = min(1.0f, 1.0f / control.russian_roulette_delta);

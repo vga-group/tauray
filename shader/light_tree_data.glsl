@@ -3,11 +3,11 @@
 
 #include "math.glsl"
 
-const uint NULL_LIGHT_KIND = 0;
-const uint TRI_LIGHT_KIND = 1;
-const uint POINT_LIGHT_KIND = 2;
-const uint DIRECTIONAL_LIGHT_KIND = 3;
-const uint ENVMAP_KIND = 4;
+const uint POINT_LIGHT_KIND = 0;
+const uint DIRECTIONAL_LIGHT_KIND = 1;
+const uint ENVMAP_KIND = 2;
+const uint TRI_LIGHT_KIND = 3;
+const uint NULL_LIGHT_KIND = 4;
 
 struct light_link
 {
