@@ -11,6 +11,7 @@
 #include "raster_stage.hh"
 #include "restir_stage.hh"
 #include "tonemap_stage.hh"
+#include "light_tree_stage.hh"
 #include "rc_visualizer.hh"
 #include "radiance_cascades_stage.hh"
 #include "shadow_map_stage.hh"
@@ -26,6 +27,7 @@ public:
     {
         scene_stage::options scene_options;
         radiance_cascades_stage::options rc_options;
+        std::optional<light_tree_stage::options> light_tree = {};
         std::optional<path_tracer_stage::options> pt_options;
         std::optional<restir_stage::options> restir_options;
         std::optional<svgf_stage::options> svgf_options;
@@ -54,6 +56,7 @@ private:
     std::optional<texture> taa_input_target;
 
     std::optional<scene_stage> scene_update;
+    std::optional<light_tree_stage> light_tree;
     std::optional<voxelizer_stage> voxelizer;
     std::optional<shadow_map_stage> sms;
     std::optional<radiance_cascades_stage> rc;

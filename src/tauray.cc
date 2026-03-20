@@ -716,6 +716,10 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     ropt.restir_options = restir_opt;
                 else
                     ropt.pt_options = pt_opt;
+
+                if (opt.enable_light_tree)
+                    ropt.light_tree = lt_options;
+
                 ropt.tonemap_options = tonemap;
                 ropt.rc_options = rc_options;
                 ropt.enable_visualizer = opt.radiance_cascades.visualizer;
