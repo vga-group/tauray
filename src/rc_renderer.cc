@@ -13,7 +13,7 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
 
     this->opt.scene_options.alloc_sh_grids = false;
     this->opt.scene_options.track_prev_tlas = false;
-    this->opt.scene_options.shadow_mapping = true;
+    this->opt.scene_options.shadow_mapping = opt.rc_options.use_raster_di;
 
     if(opt.restir_options && !opt.restir_options->assume_unchanged_acceleration_structures)
         this->opt.scene_options.track_prev_tlas = true;
@@ -121,6 +121,8 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
 
     this->opt.rc_options.occupancy = &voxelizer->get_map();
     this->opt.rc_options.occupancy_history = &voxelizer->get_history_map();
+    if (opt.light_tree)
+        this->opt.rc_options.light_tree_source = &*light_tree;
 
     current_gbuffer.reset(dev, ctx.get_size(), 1);
     current_gbuffer.add(gs, vk::ImageLayout::eGeneral);

@@ -404,6 +404,7 @@ vec3 next_event_estimation(
 #else
         vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf, hit_type);
 #endif
+
         bool opaque = mat.transmittance < 0.0001f;
         if(dot(v.hard_normal, out_dir) < 0 && opaque) contrib = vec3(0);
 

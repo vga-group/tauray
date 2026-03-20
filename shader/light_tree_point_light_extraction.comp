@@ -1,6 +1,7 @@
 #version 460
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_debug_printf : enable
+#extension GL_EXT_scalar_block_layout : enable
 
 #include "light.glsl"
 #include "light_tree_data.glsl"
@@ -20,7 +21,7 @@ layout(binding = 2, set = 0) writeonly buffer sort_order_buffer
     uvec2 pairs[];
 } sort_order;
 
-layout(binding = 3, set = 0) readonly buffer point_light_buffer
+layout(binding = 3, set = 0, scalar) readonly buffer point_light_buffer
 {
     point_light array[];
 } point_lights;
