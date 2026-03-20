@@ -1,0 +1,68 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    ivec4 mip_size;
+    int mip_index;
+    int clear;
+} pc;
+
+layout(binding = 0, r32ui) uniform readonly uimage3D src_occupancy;
+layout(binding = 1, r32f) uniform readonly image3D prev_mip;
+layout(binding = 2, r32f) uniform writeonly image3D cur_mip;
+#ifdef TRACK_HISTORY
+layout(binding = 3, r32ui) uniform uimage3D cur_history_counter;
+#endif
+
+void main()
+{
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+
+    if (all(lessThan(p, pc.mip_size.xyz)))
+    {
+        float val = 0;
+        if (pc.mip_index == 0)
+        {
+            uint occ = imageLoad(src_occupancy, p).x;
+            if (occ != 0)
+                val = 1.0;
+        }
+        else
+        {
+            ivec3 q = p * 2;
+
+            val = max(imageLoad(prev_mip, q+ivec3(0,0,0)).x, val);
+            val = max(imageLoad(prev_mip, q+ivec3(0,0,1)).x, val);
+            val = max(imageLoad(prev_mip, q+ivec3(0,1,0)).x, val);
+            val = max(imageLoad(prev_mip, q+ivec3(0,1,1)).x, val);
+            val = max(imageLoad(prev_mip, q+ivec3(1,0,0)).x, val);
+            val = max(imageLoad(prev_mip, q+ivec3(1,0,1)).x, val);
+            val = max(imageLoad(prev_mip, q+ivec3(1,1,0)).x, val);
+            val = max(imageLoad(prev_mip, q+ivec3(1,1,1)).x, val);
+        }
+        imageStore(cur_mip, p, vec4(val));
+
+        #ifdef TRACK_HISTORY
+        uint history = 0;
+        if (pc.clear == 0)
+        {
+        #ifdef RESET_HISTORY_ON_EMPTY
+            if (val != 0.0)
+        #endif
+            history = imageLoad(cur_history_counter, p).x;
+        }
+
+        if (val != 0.0 && history < 65536)
+            history += 1;
+
+        imageStore(cur_history_counter, p, uvec4(history));
+        #endif
+    }
+}
