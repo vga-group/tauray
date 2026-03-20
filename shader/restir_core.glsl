@@ -1086,6 +1086,10 @@ hit_info trace_prev_ray(
 }
 #endif
 
+#ifdef LIGHT_TREE_SET
+#define LIGHT_SAMPLE_HIT_INFO
+#include "light_tree.glsl"
+#else
 struct light_sample
 {
     bool infinitesimal;
@@ -1106,6 +1110,8 @@ light_sample sample_light(
     ray_cone rc,
 #endif
     vec3 pos,
+    vec3 normal,
+    float transmission,
     float min_dist,
     float max_dist
 ){
@@ -1244,7 +1250,10 @@ float calculate_light_pdf(
     uint instance_id,
     uint primitive_id,
     float local_pdf,
-    float envmap_pdf
+    float envmap_pdf,
+    vec3 pos,
+    vec3 normal,
+    float transmission
 ){
     float point_prob, triangle_prob, dir_prob, envmap_prob;
     get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
@@ -1265,6 +1274,7 @@ float calculate_light_pdf(
     }
     return 0;
 }
+#endif
 
 bool generate_nee_vertex(
     uvec4 rand32,
@@ -1281,6 +1291,8 @@ bool generate_nee_vertex(
         d.rc,
 #endif
         d.pos,
+        d.tbn[2],
+        1.0f,
         TR_RESTIR.min_ray_dist,
         TR_RESTIR.max_ray_dist
     );
@@ -1335,7 +1347,8 @@ bool generate_bsdf_vertex(
 
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_ENVMAP)
     nee_pdf = calculate_light_pdf(
-        vertex.instance_id, vertex.primitive_id, info.local_pdf, info.envmap_pdf
+        vertex.instance_id, vertex.primitive_id, info.local_pdf, info.envmap_pdf,
+        cur_domain.pos, cur_domain.tbn[2], 1.0f
     );
 #else
     nee_pdf = 0;
