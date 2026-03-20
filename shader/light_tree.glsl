@@ -173,7 +173,8 @@ struct light_sample
     float pdf;
 
 #ifdef LIGHT_SAMPLE_HIT_INFO
-    light_link link;
+    uint instance_id;
+    uint primitive_id;
     vec2 hit_info;
     vec3 normal;
 #endif
@@ -224,7 +225,7 @@ light_sample sample_light(
     vec4 u = ldexp(vec4(rand32), ivec4(-32));
 
 #ifdef LIGHT_SAMPLE_HIT_INFO
-    ls.link.instance_id = NULL_INSTANCE_ID;
+    ls.instance_id = NULL_INSTANCE_ID;
     ls.normal = vec3(0);
 #endif
 
@@ -238,7 +239,7 @@ light_sample sample_light(
 
         ls.pdf *= prob.x;
 #ifdef LIGHT_SAMPLE_HIT_INFO
-        ls.link = link;
+        ls.primitive_id = link.primitive_id;
 #endif
 
         if(link.kind == POINT_LIGHT_KIND)
@@ -247,10 +248,11 @@ light_sample sample_light(
             sample_point_light(pl, u.zw, pos, ls.dir, ls.dist, ls.color, local_pdf);
 
 #ifdef LIGHT_SAMPLE_HIT_INFO
+            ls.instance_id = POINT_LIGHT_INSTANCE_ID;
             vec3 p = pos + ls.dir * ls.dist;
             ls.normal = normalize(p - vec3(pl.pos_x, pl.pos_y, pl.pos_z));
-            ls.hit_info = octahedral_encode(ls.normal) * 0.5f + 0.5f;
-            if(local_pdf < 0.0f) ls.normal = vec3(0);
+            ls.hit_info = octahedral_pack(ls.normal) * 0.5f + 0.5f;
+            if(local_pdf <= 0.0f) ls.normal = vec3(0);
 #else
             // If there's no hit info, the caller cannot apply inverse-square
             // law, so it must be done here.
@@ -264,6 +266,8 @@ light_sample sample_light(
             ls.dist -= min_dist;
 
 #ifdef LIGHT_SAMPLE_HIT_INFO
+            ls.instance_id = tl.instance_id;
+            ls.primitive_id = tl.primitive_id;
             ls.normal = normalize(cross(
                 tl.pos[0] - tl.pos[1],
                 tl.pos[0] - tl.pos[2]
@@ -278,7 +282,7 @@ light_sample sample_light(
                 ls.dist < min_dist // || abs(dot(ls.dir, d.flat_normal)) < 1e-4f
             ){
 #ifdef LIGHT_SAMPLE_HIT_INFO
-                ls.link.kind = NULL_LIGHT_KIND;
+                ls.instance_id = NULL_INSTANCE_ID;
 #else
                 ls.color = vec3(0);
                 ls.dist = 0;
@@ -298,8 +302,8 @@ light_sample sample_light(
 
         sample_directional_light(dl, u.zw, ls.dir, ls.color, local_pdf);
 #ifdef LIGHT_SAMPLE_HIT_INFO
-        ls.link.kind = DIRECTIONAL_LIGHT_KIND;
-        ls.link.primitive_id = selected_index;
+        ls.instance_id = DIRECTIONAL_LIGHT_INSTANCE_ID;
+        ls.primitive_id = floatBitsToUint(local_pdf * prob.y);
         ls.hit_info = octahedral_encode(ls.dir) * 0.5f + 0.5f;
 #endif
 
@@ -312,22 +316,27 @@ light_sample sample_light(
         ls.color = sample_environment_map(rand32.xyz, ls.dir, ls.dist, local_pdf);
 
 #ifdef LIGHT_SAMPLE_HIT_INFO
-        ls.link.kind = ENVMAP_KIND;
-        ls.link.primitive_id = 0;
-        ls.hit_info = octahedral_encode(ls.dir) * 0.5f + 0.5f;
+        ls.instance_id = ENVMAP_INSTANCE_ID;
+        ls.primitive_id = floatBitsToUint(local_pdf * envmap_prob);
+        ls.hit_info = octahedral_pack(ls.dir) * 0.5f + 0.5f;
 #endif
 
         ls.pdf = prob.z;
     }
 
-    ls.infinitesimal = local_pdf < 0;
+    ls.infinitesimal = local_pdf <= 0;
+#ifdef LIGHT_SAMPLE_HIT_INFO
+    if(!ls.infinitesimal) ls.pdf *= local_pdf;
+#else
     ls.pdf *= local_pdf;
+#endif
 
     return ls;
 }
 
 float calculate_light_pdf(
-    light_link link,
+    uint instance_id,
+    uint primitive_id,
     float local_pdf,
     float envmap_pdf,
     vec3 pos,
@@ -337,15 +346,27 @@ float calculate_light_pdf(
     vec3 prob = light_type_weights();
 
     if(
-        link.kind == DIRECTIONAL_LIGHT_KIND ||
-        link.kind == ENVMAP_KIND
+        instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID ||
+        instance_id == ENVMAP_INSTANCE_ID ||
+        instance_id == MISS_INSTANCE_ID
     ){
         return local_pdf * prob.y / max(scene_metadata.directional_light_count, 1u) + envmap_pdf * prob.z;
     }
-    else if(link.kind == NULL_LIGHT_KIND || local_pdf == 0)
+    else if(instance_id == NULL_INSTANCE_ID || local_pdf == 0)
         return 0;
     else
     {
+        light_link link;
+        if (instance_id == POINT_LIGHT_INSTANCE_ID)
+        {
+            link.kind = POINT_LIGHT_KIND;
+            link.primitive_id = primitive_id;
+        }
+        else
+        {
+            link.kind = TRI_LIGHT_KIND;
+            link.primitive_id = instances.o[instance_id].light_base_id + primitive_id;
+        }
         return local_pdf * prob.x * light_tree_light_pmf(pos, normal, transmission, link);
     }
 }
