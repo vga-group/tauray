@@ -25,10 +25,6 @@
 #endif
 #include "scene_raster.glsl"
 
-#ifdef LIGHT_TREE_SET
-#include "light_tree.glsl"
-#endif
-
 #if !defined(USE_RECONNECTION_SHIFT)
 #define USE_PRIMARY_SAMPLE_SPACE
 #endif

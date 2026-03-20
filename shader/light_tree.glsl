@@ -184,10 +184,15 @@ struct light_sample
 
 vec3 sample_triangle_light(
     tri_light tl,
+#ifdef USE_RAY_CONES
+    ray_cone rc,
+#endif
     vec2 u,
     vec3 pos,
+    float min_dist,
     out vec3 dir,
     out float dist,
+    out vec3 normal,
     out vec3 color,
     out float pdf
 ){
@@ -200,13 +205,39 @@ vec3 sample_triangle_light(
     vec3 bary = get_barycentric_coords(dir * dist, A, B, C);
     color = r9g9b9e5_to_rgb(tl.emission_factor);
 
+    normal = normalize(cross(
+        tl.pos[0] - tl.pos[1],
+        tl.pos[0] - tl.pos[2]
+    ));
+
     if(tl.emission_tex_id >= 0)
     {
-        vec2 uv =
-            bary.x * unpackHalf2x16(tl.uv[0]) +
-            bary.y * unpackHalf2x16(tl.uv[1]) +
-            bary.z * unpackHalf2x16(tl.uv[2]);
-        color *= textureLod(textures[nonuniformEXT(tl.emission_tex_id)], uv, 0.0f).rgb;
+        vec2 uvs[3] = {
+            unpackHalf2x16(tl.uv[0]),
+            unpackHalf2x16(tl.uv[1]),
+            unpackHalf2x16(tl.uv[2])
+        };
+        vec2 uv = bary.x * uvs[0] + bary.y * uvs[1] + bary.z * uvs[2];
+#ifdef USE_RAY_CONES
+        ray_cone_apply_dist(dist+min_dist, rc);
+        vec2 puvdx;
+        vec2 puvdy;
+        ray_cone_gradients(
+            rc,
+            dir,
+            normal,
+            pos + dir * (dist + min_dist),
+            uv,
+            tl.pos,
+            uvs,
+            puvdx,
+            puvdy
+        );
+#else
+        vec2 puvdx = vec2(0);
+        vec2 puvdy = vec2(0);
+#endif
+        color *= textureGrad(textures[nonuniformEXT(tl.emission_tex_id)], uv, puvdx, puvdy).rgb;
     }
     return bary;
 }
@@ -214,6 +245,9 @@ vec3 sample_triangle_light(
 // Warning: does NOT update the seed! You need to do that yourself.
 light_sample sample_light(
     uvec4 rand32,
+#ifdef USE_RAY_CONES
+    ray_cone rc,
+#endif
     vec3 pos,
     vec3 normal,
     float transmission,
@@ -264,16 +298,18 @@ light_sample sample_light(
         else
         { // Tri light
             tri_light tl = tri_lights.lights[link.primitive_id];
-            vec2 hit_info = sample_triangle_light(tl, u.zw, pos, ls.dir, ls.dist, ls.color, local_pdf).yz;
+            vec3 tri_normal;
+            vec2 hit_info = sample_triangle_light(tl,
+#ifdef USE_RAY_CONES
+                rc,
+#endif
+                u.zw, pos, min_dist, ls.dir, ls.dist, tri_normal, ls.color, local_pdf).yz;
             ls.dist -= min_dist;
 
 #ifdef LIGHT_SAMPLE_HIT_INFO
             ls.instance_id = tl.instance_id;
             ls.primitive_id = tl.primitive_id;
-            ls.normal = normalize(cross(
-                tl.pos[0] - tl.pos[1],
-                tl.pos[0] - tl.pos[2]
-            ));
+            ls.normal = tri_normal;
 #endif
 
             // TODO: Check this condition if ReSTIR is doing NaNs with triangle
@@ -285,12 +321,11 @@ light_sample sample_light(
             ){
 #ifdef LIGHT_SAMPLE_HIT_INFO
                 ls.instance_id = NULL_INSTANCE_ID;
-#else
+#endif
                 ls.color = vec3(0);
                 ls.dist = 0;
                 local_pdf = 1.0f;
                 ls.dir = normal;
-#endif
             }
         }
     }
