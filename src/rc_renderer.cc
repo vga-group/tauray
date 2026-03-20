@@ -115,6 +115,10 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     };
 
     voxelizer.emplace(dev, *scene_update, vx_opts);
+
+    if (opt.light_tree)
+        light_tree.emplace(dev, *scene_update, *opt.light_tree);
+
     this->opt.rc_options.occupancy = &voxelizer->get_map();
     this->opt.rc_options.occupancy_history = &voxelizer->get_history_map();
 
@@ -198,6 +202,8 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
             if(opt.svgf_options)
                 cur.color = render_target();
             this->opt.pt_options->rc_source = &*rc;
+            if (opt.light_tree)
+                this->opt.pt_options->light_tree_source = &*light_tree;
             pt.emplace(dev, *scene_update, cur, *this->opt.pt_options);
             cur = old;
         }
@@ -308,6 +314,8 @@ void rc_renderer::render()
     {
         deps = sms->run(deps);
     }
+    if (light_tree)
+        deps = light_tree->run(deps);
     deps = voxelizer->run(deps);
     deps = rc->run(deps);
 

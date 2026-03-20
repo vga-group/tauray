@@ -62,7 +62,7 @@ find_package(SDL2 REQUIRED)
 find_package(glm REQUIRED)
 find_package(czmq QUIET)
 find_package(nng QUIET)
-find_package(libcbor REQUIRED)
+find_package(libcbor QUIET)
 find_package(Vulkan REQUIRED)
 find_package(assimp REQUIRED)
 
