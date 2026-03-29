@@ -565,8 +565,9 @@
     ) \
     TR_STRUCT_OPT(radiance_cascades, \
         "Parameters for radiance cascades", \
-        TR_STRUCT_OPT_BOOL(shadow_mapped, true) \
+        TR_STRUCT_OPT_BOOL(shadow_mapped, false) \
         TR_STRUCT_OPT_BOOL(visualizer, false) \
+        TR_STRUCT_OPT_BOOL(defensive, false) \
         TR_STRUCT_OPT_BOOL(jitter, true) \
         TR_STRUCT_OPT_BOOL(recursive, true) \
         TR_STRUCT_OPT_INT(c0, 4, 4, 16) \
@@ -579,11 +580,12 @@
             {"brdf", radiance_cascades_stage::BRDF}, \
             {"hybrid", radiance_cascades_stage::HYBRID} \
         ) \
-        TR_STRUCT_OPT_INT(di_samples, 0, 1, 512) \
+        TR_STRUCT_OPT_INT(di_samples, 1, 1, 512) \
+        TR_STRUCT_OPT_FLOAT(temporal_ratio, 0.005f, 0.0f, 1.0f) \
     ) \
     TR_BOOL_OPT(enable_light_tree, \
         "Use light tree for sampling lights.", \
-        false \
+        true \
     ) \
     TR_INT_OPT(light_tree_width, "Branching factor of the light tree", 3, 2, 1024)
 //==============================================================================

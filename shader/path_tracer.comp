@@ -110,7 +110,8 @@ void main()
         vec3 dir;
         get_world_camera_ray(lsampler, origin, dir);
 
-        evaluate_ray(
+        //evaluate_ray(
+        evaluate_ray_matched(
             lsampler, origin, dir,
 #ifdef DEMODULATED_OUTPUT
             sum_diffuse,

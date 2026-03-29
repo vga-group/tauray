@@ -211,7 +211,7 @@ void main()
 
         imageStore(target, p, vec4(pdf,pdf,pdf, 1.0f));
         //imageStore(target, p, vec4(eval_dir(origin, dir, view, tbn, roughness), 1.0f));
-#elif 1
+#elif 0
         // RT, surfaces lit by RCs
         const camera_data cam = camera.pairs[gl_GlobalInvocationID.z].current;
         vec3 origin;
@@ -278,7 +278,7 @@ void main()
         }
 
         imageStore(target, p, vec4(out_color, 1.0f));
-#elif 0
+#elif 1
         // Direct RC data visualizer
         const camera_data cam = camera.pairs[gl_GlobalInvocationID.z].current;
         vec3 origin;
@@ -286,9 +286,10 @@ void main()
         get_camera_ray(cam, ivec2(p.x, pc.display_h-p.y), vec2(pc.display_w, pc.display_h), vec2(0.5), origin, dir);
 
         uvec4 seed = uvec4(p.x, p.y, 1025, 12);
-        vec3 col = query_radiance_cascades(origin, dir, seed);
+        //vec3 col = query_radiance_cascades(origin, dir, seed);
+        float pdf = radiance_cascades_pdf(origin, dir, dir, false, 1.0f, 0.04, 1.0f, dir);
 
-        imageStore(target, p, vec4(col, 1.0f));
+        imageStore(target, p, vec4(pdf, pdf, pdf, 1.0f));
 #else
         vec2 uv = vec2(vec2(p) + 0.5f) / vec2(pc.display_w, pc.display_h);
         uv.y = 1.0 - uv.y;

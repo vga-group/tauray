@@ -908,6 +908,16 @@ void rc_wrs_pdf(
     }
 }
 
+f16vec4 sort_f16vec4(f16vec4 v)
+{
+    if (v.x > v.z) v.xz = v.zx;
+    if (v.y > v.w) v.yw = v.wy;
+    if (v.x > v.y) v.xy = v.yx;
+    if (v.z > v.w) v.zw = v.wz;
+    if (v.y > v.z) v.yz = v.zy;
+    return v;
+}
+
 vec3 sample_radiance_cascades(
     uint seed,
     vec3 origin,
@@ -955,6 +965,9 @@ vec3 sample_radiance_cascades(
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
 
         f16vec4 values = f16vec4(textureGather(radiance_cascades[0], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
+        //float16_t fudge = dot(values, f16vec4(0.1));
+        //if (fudge < float16_t(0.0001)) fudge = float16_t(1.0);
+        //values += fudge;
         f16vec4 diffuse;
         f16vec4 specular;
         integrate_quad_half_precision(
@@ -973,7 +986,8 @@ vec3 sample_radiance_cascades(
     }
 
     ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), selected_cell);
-    float16_t total_visibility = float16_t(1.0 - texelFetch(radiance_cascades_visibility[0], sel_coord, 0).r);
+    float16_t visibility = float16_t(1.0 - texelFetch(radiance_cascades_visibility[0], sel_coord, 0).r);
+    float16_t total_visibility = visibility;
 
     pdf = sum_weight == float16_t(0) ? 1.0 : float(selected_weight) / float(sum_weight);
 
@@ -990,7 +1004,13 @@ vec3 sample_radiance_cascades(
 
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), base_cell);
         f16vec4 values = f16vec4(textureGather(radiance_cascades[cascade], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
+#ifdef RC_DEFENSIVE
+        f16vec4 r = sort_f16vec4(values);
+        float16_t base = dot(r, clamp(visibility-f16vec4(0.75,0.50,0.25,0.00), f16vec4(0.0), f16vec4(0.25)));
+        values = max(selected_value - base * total_visibility, float16_t(0)) + values * total_visibility;
+#else
         values = max(selected_value - dot(values, f16vec4(0.25)) * total_visibility, float16_t(0)) + values * total_visibility;
+#endif
 
         f16vec4 diffuse;
         f16vec4 specular;
@@ -1008,7 +1028,8 @@ vec3 sample_radiance_cascades(
         rc_wrs_update(seed, base_cell, contrib, sum_weight, selected_weight, selected_cell, values, selected_value, diffuse, specular, selected_brdf);
 
         ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), selected_cell);
-        total_visibility *= float16_t(1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r);
+        visibility = float16_t(1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r);
+        total_visibility *= visibility;
         if (sum_weight != float16_t(0))
             pdf *= float(selected_weight) / float(sum_weight);
     }
@@ -1093,7 +1114,8 @@ float radiance_cascades_pdf(
     ivec2 itex_coord = ivec2(tex_coord * probe_resolution);
 
     ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), itex_coord);
-    float16_t total_visibility = float16_t(1.0 - texelFetch(radiance_cascades_visibility[0], sel_coord, 0).r);
+    float16_t visibility = float16_t(1.0 - texelFetch(radiance_cascades_visibility[0], sel_coord, 0).r);
+    float16_t total_visibility = visibility;
 
     for(int x = 0; x < RC_C0_ANGULAR_RESOLUTION; x+=2)
     for(int y = 0; y < RC_C0_ANGULAR_RESOLUTION; y+=2)
@@ -1136,10 +1158,17 @@ float radiance_cascades_pdf(
 
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), base_cell);
         f16vec4 values = f16vec4(textureGather(radiance_cascades[cascade], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
+#ifdef RC_DEFENSIVE
+        f16vec4 r = sort_f16vec4(values);
+        float16_t base = dot(r, clamp(visibility-f16vec4(0.75,0.50,0.25,0.00), f16vec4(0.0), f16vec4(0.25)));
+        values = max(selected_value - base * total_visibility, float16_t(0)) + values * total_visibility;
+#else
         values = max(selected_value - dot(values, f16vec4(0.25)) * total_visibility, float16_t(0)) + values * total_visibility;
+#endif
 
         ivec3 sel_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), itex_coord);
-        total_visibility *= float16_t(1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r);
+        visibility = float16_t(1.0 - texelFetch(radiance_cascades_visibility[cascade], sel_coord, 0).r);
+        total_visibility *= visibility;
 
         f16vec4 diffuse;
         f16vec4 specular;

@@ -331,6 +331,8 @@ void radiance_cascades_stage::add_defines(std::map<std::string, std::string>& de
         defines["RC_SAMPLE_TEXEL_HYBRID"];
     if (opt.use_raster_di)
         defines["RC_USE_RASTER_DI"];
+    if(opt.defensive_mode)
+        defines["RC_DEFENSIVE"];
 }
 
 void radiance_cascades_stage::update(uint32_t frame_index)

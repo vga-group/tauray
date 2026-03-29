@@ -634,7 +634,6 @@ void evaluate_ray(
             if(bounce == 1)
                 diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
 #else
-            //if(bounce != 0)
             color.rgb += radiance;
 #endif
         }
@@ -788,23 +787,75 @@ void evaluate_ray_matched(
         if(bounce+1 < MAX_BOUNCES-1)
         {
             // Lastly, figure out the next ray and assign proper attenuation for it.
-            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-            float bsdf_pdf = 0.0f;
 #ifdef RADIANCE_CASCADES_SET
+    #if 1
+            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+            float pdf = 0.0f;
             uvec4 ray_sample = generate_ray_sample_uint(lsampler, bounce*2+1);
             view = sample_radiance_cascades(ray_sample.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic),
-                rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic), bsdf_pdf);
+                rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic), pdf);
             ggx_bsdf(view * tbn, shading_view, mat, lobes);
+    #else // Single-sample MIS. Really slow and more noisy but with less fireflies.
+            uvec4 ray_sample_u = generate_ray_sample_uint(lsampler, bounce*2+1);
+            float rc_pdf, rc_bsdf_pdf;
+
+            vec3 rc_view = sample_radiance_cascades(ray_sample_u.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic),
+                rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic), rc_pdf);
+
+            float bsdf_pdf, bsdf_rc_pdf;
+            bsdf_lobes bsdfl = bsdf_lobes(0,0,0,0);
+            vec3 bsdf_view;
+            vec4 ray_sample = vec4(ray_sample_u) * INV_UINT32_MAX;
+            material_bsdf_sample(ray_sample, shading_view, mat, bsdf_view, bsdfl, bsdf_pdf);
+            bsdf_view = tbn * bsdf_view;
+
+            bsdf_rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -view,
+                true,
+                mat.roughness,
+                mix(0.04, 1.0, mat.metallic),
+                rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
+                bsdf_view
+            );
+
+            bsdf_lobes rcl = bsdf_lobes(0,0,0,0);
+            rc_bsdf_pdf = material_bsdf_pdf(rc_view * tbn, shading_view, mat, rcl);
+
+            float rcw = rc_pdf / (rc_pdf + rc_bsdf_pdf);
+            float bsdfw = bsdf_pdf / (bsdf_pdf + bsdf_rc_pdf);
+
+            float sumw = rcw + bsdfw;
+            uint rnd = ray_sample_u.z;
+            lcg(rnd);
+
+            bsdf_lobes lobes;
+            float pdf;
+            if (rnd * INV_UINT32_MAX * sumw < rcw)
+            {
+                lobes = rcl;
+                view = rc_view;
+                pdf = rc_pdf;
+            }
+            else
+            {
+                lobes = bsdfl;
+                view = bsdf_view;
+                pdf = bsdf_pdf;
+            }
+            attenuation *= sumw;
+    #endif
 #else
+            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+            float pdf = 0.0f;
+
             vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
-            material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
+            material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, pdf);
             view = tbn * view;
 #endif
 
-            if(bsdf_pdf <= 0)
+            if(pdf <= 0)
                 break;
 
-            attenuation /= bsdf_pdf;
+            attenuation /= pdf;
 
 #ifdef DEMODULATED_OUTPUT
             if(bounce == 0) primary_lobes = lobes;
