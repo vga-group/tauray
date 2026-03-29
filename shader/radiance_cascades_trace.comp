@@ -34,6 +34,7 @@ layout(binding = 2, scalar) buffer dispatch_info_buffer
 #include "scene.glsl"
 #include "rt_common.glsl"
 #include "scene_raster.glsl"
+#include "ggx.glsl"
 
 #ifdef LIGHT_TREE_SET
 #include "light_tree.glsl"
@@ -132,29 +133,33 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
 {
     if(info.instance_id >= 0)
     { // Hit an emissive surface.
-        vec3 normal = normalize(cross(
+        // Only fetch material info for textured surfaces.
+        ivec3 i = ivec3(
+            indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+0],
+            indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+1],
+            indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+2]
+        );
+        vertex v0 = vertices[nonuniformEXT(info.instance_id)].v[i.x];
+        vertex v1 = vertices[nonuniformEXT(info.instance_id)].v[i.y];
+        vertex v2 = vertices[nonuniformEXT(info.instance_id)].v[i.z];
+        vec3 b = vec3(1.0f - info.barycentrics.x - info.barycentrics.y, info.barycentrics);
+        instance o = instances.o[info.instance_id];
+        vec3 normal = normalize(TRANSFORM_MAT(
+            mat3(o.model_normal),
+            (v0.normal * b.x + v1.normal * b.y + v2.normal * b.z)
+        ));
+        vec3 hard_normal = normalize(cross(
             info.positions[1] - info.positions[0],
             info.positions[2] - info.positions[0]
         ));
-        if(dot(normal, ray_direction) > 0)
+        if(dot(hard_normal, ray_direction) > 0)
             //normal = -normal;
             return vec4(0,0,0, 1.0f);
         vec3 pos = ray_origin + info.hit_t * ray_direction;
-        instance o = instances.o[info.instance_id];
         vec3 color = o.mat.albedo_factor.rgb;
         vec2 mr = o.mat.metallic_roughness_factor.xy;
         if(o.mat.albedo_tex_id >= 0 || o.mat.metallic_roughness_tex_id >= 0)
         {
-            // Only fetch material info for textured surfaces.
-            ivec3 i = ivec3(
-                indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+0],
-                indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+1],
-                indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+2]
-            );
-            vertex v0 = vertices[nonuniformEXT(info.instance_id)].v[i.x];
-            vertex v1 = vertices[nonuniformEXT(info.instance_id)].v[i.y];
-            vertex v2 = vertices[nonuniformEXT(info.instance_id)].v[i.z];
-            vec3 b = vec3(1.0f - info.barycentrics.x - info.barycentrics.y, info.barycentrics);
             vec2 uv = v0.uv * b.x + v1.uv * b.y + v2.uv * b.z;
             if(o.mat.albedo_tex_id >= 0)
             {
@@ -169,7 +174,6 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
         float roughness = mr[1] * mr[1];
 
         vec3 emission = o.mat.emission_factor.rgb;
-
 
 #ifdef USE_RASTER_DI
         // Shade as if it was a diffuse surface.
@@ -223,7 +227,9 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
             vec3 contrib = s.color / abs(s.pdf);
 
             contrib *= shadow_ray(pos, 1e-4f, s.dir, s.dist);
-            emission += color * contrib * max(dot(normal, s.dir), 0) * (1.0/(M_PI * RT_DI_SAMPLES));
+
+            emission += ggx_brdf_fast(s.dir, -ray_direction, normal, color, roughness, metallic) * contrib * (1.0/RT_DI_SAMPLES);
+            //emission += color * contrib * max(dot(normal, s.dir), 0) * (1.0/(M_PI * RT_DI_SAMPLES));
         }
 #endif
 
@@ -256,6 +262,7 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
     }
     else if(pc.cascade+1 == pc.cascade_count)
     { // Only last cascade gets the environment lighting.
+#if !defined(USE_RASTER_DI) && !(defined(RT_DI_SAMPLES) && defined(LIGHT_TREE_SET))
         vec4 color = scene_metadata.environment_factor;
         if(scene_metadata.environment_proj >= 0)
         {
@@ -266,7 +273,6 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
         }
         vec3 emission = color.rgb;
 
-#if !defined(USE_RASTER_DI) && !(defined(RT_DI_SAMPLES) && defined(LIGHT_TREE_SET))
         for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
         {
             directional_light dl = directional_lights.lights[i];
@@ -276,8 +282,10 @@ vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
             vec3 color = visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
             emission += color;
         }
-#endif
         return vec4(emission, 1.0f);
+#else
+        return vec4(0);
+#endif
     }
     return vec4(0);
 }

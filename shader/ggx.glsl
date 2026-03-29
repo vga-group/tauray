@@ -144,6 +144,43 @@ float ggx_distribution(float h_dot_n, float a)
     return a2 / (M_PI * denom * denom);
 }
 
+vec3 ggx_brdf_fast(
+    vec3 out_dir,
+    vec3 view_dir,
+    vec3 normal,
+    vec3 albedo,
+    float roughness,
+    float metallic
+){
+    float f0 = mix(0.04, 1.0, metallic);
+
+    vec3 h = normalize(view_dir + out_dir);
+    float cos_h = dot(normal, h);
+    float cos_d = dot(view_dir, h);
+
+    float fresnel = ggx_fresnel_schlick(cos_d, f0);
+    float distribution = ggx_distribution(cos_h, roughness);
+
+    float cos_l = dot(normal, out_dir);
+    float cos_v = dot(normal, view_dir);
+
+    float geometry = ggx_masking_shadowing_predivided(
+        cos_v, cos_d, cos_l, cos_d, roughness);
+
+    // This is not strictly part of the GGX brdf. It's an addition to use the
+    // non-transmissive part that isn't reflected for diffuse lighting.
+    float kd = (1.0f - fresnel) * (1.0f - metallic);
+
+    cos_l = max(cos_l, 0.0f);
+
+    float ref = geometry * distribution * cos_l;
+    float diffuse = kd * cos_l * (1.0 / M_PI);
+    float dielectric_reflection = fresnel * ref * (1.0f - metallic);
+    float metallic_reflection = ref * metallic;
+
+    return albedo * (metallic_reflection + diffuse) + dielectric_reflection;
+}
+
 // This separation to the inner and outer parts only exists for reuse in path
 // tracing code.
 void ggx_brdf_inner(

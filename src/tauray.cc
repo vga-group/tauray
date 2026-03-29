@@ -139,8 +139,11 @@ aabb compute_aabb(scene& s)
     });
 
     vec3 radius = volume.max - volume.min;
-    volume.min -= radius * 0.01f;
-    volume.max += radius * 0.01f;
+    float max_radius = max(radius.x, max(radius.y, radius.z)) * 1.01f;
+    vec3 center = (volume.max + volume.min) * 0.5f;
+
+    volume.min = center - max_radius * 0.5f;
+    volume.max = center + max_radius * 0.5f;
     return volume;
 }
 
@@ -551,6 +554,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_options.texel_sampling = opt.radiance_cascades.texel;
     rc_options.avg_bias = opt.radiance_cascades.avg_bias;
     rc_options.volume = scene_aabb;
+    rc_options.temporal_ratio = opt.radiance_cascades.temporal_ratio;
+    rc_options.defensive_mode = opt.radiance_cascades.defensive;
 
     if(auto rtype = std::get_if<feature_stage::feature>(&opt.renderer))
     {
@@ -581,7 +586,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                         spatial_reprojection_stage::options{};
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
-                rt_opt.accumulate = opt.accumulation;
+                //rt_opt.accumulate = opt.accumulation;
                 rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
                     opt.spatial_reprojection,
                     ctx.get_display_count()
@@ -613,7 +618,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                         spatial_reprojection_stage::options{};
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
-                rt_opt.accumulate = opt.accumulation;
+                //rt_opt.accumulate = opt.accumulation;
                 rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
                     opt.spatial_reprojection,
                     ctx.get_display_count()
@@ -716,7 +721,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if(*rtype == options::RC_RESTIR)
                     ropt.restir_options = restir_opt;
                 else
+                {
                     ropt.pt_options = pt_opt;
+                }
 
                 if (opt.enable_light_tree)
                     ropt.light_tree = lt_options;
@@ -1152,7 +1159,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
         if(!opt.frames && is_animated && !is_playing(s))
             break;
 
-        if(!rr)
+        if(!rr && (int)i >= opt.skip_frames)
         {
             rr.reset(create_renderer(ctx, opt, s));
             rr->set_scene(&s);
@@ -1167,6 +1174,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
                     lb.update(*rr);
                 }
             }
+            rr->reset_accumulation();
             ctx.set_displaying(true);
         }
 
@@ -1183,7 +1191,8 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
         {
             if(!opt.skip_render && (int)i >= opt.skip_frames)
             {
-                rr->reset_accumulation();
+                if (!opt.accumulation)
+                    rr->reset_accumulation();
                 rr->render();
                 if(opt.timing) ctx.get_timing().print_last_trace(opt.trace);
             }
@@ -1198,7 +1207,8 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
             else break;
         }
 
-        lb.update(*rr);
+        if (rr)
+            lb.update(*rr);
     }
 
     if(opt.camera_log != "")

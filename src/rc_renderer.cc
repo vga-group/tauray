@@ -214,8 +214,9 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
             cur = current_gbuffer.get_layer_target(dev.id, 0);
             gbuffer_target prev = prev_gbuffer.get_layer_target(dev.id, 0);
             this->opt.restir_options->rc_source = &*rc;
-            if (opt.light_tree)
-                this->opt.restir_options->light_tree_source = &*light_tree;
+            this->opt.restir_options->use_ray_cones = false;
+            //if (opt.light_tree)
+            //    this->opt.restir_options->light_tree_source = &*light_tree;
             restir.emplace(dev, *scene_update, cur, prev, *this->opt.restir_options);
 
             cur = current_gbuffer.get_array_target(dev.id);

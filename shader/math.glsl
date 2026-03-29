@@ -749,4 +749,14 @@ uint hilbert_encode_3d(uvec3 x)
     return morton_to_hilbert_3d(morton_encode_3d(x), 10);
 }
 
+vec4 sort_vec4(vec4 v)
+{
+    if (v.x > v.z) v.xz = v.zx;
+    if (v.y > v.w) v.yw = v.wy;
+    if (v.x > v.y) v.xy = v.yx;
+    if (v.z > v.w) v.zw = v.wz;
+    if (v.y > v.z) v.yz = v.zy;
+    return v;
+}
+
 #endif

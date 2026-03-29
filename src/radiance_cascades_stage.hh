@@ -62,6 +62,14 @@ public:
         // 1.0f = texel tracks maximum
         float avg_bias = 0.0f;
 
+        // When gathering a texel:
+        // false uses average
+        // true uses maximum
+        //
+        // Defensive mode is much better in terms of fireflies, but is otherwise
+        // somewhat worse quality.
+        bool defensive_mode = false;
+
         light_tree_stage* light_tree_source = nullptr;
     };
 
