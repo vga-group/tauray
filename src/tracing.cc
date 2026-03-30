@@ -199,6 +199,15 @@ float tracing_record::get_duration(size_t device_index, const std::string& name)
     return total_time;
 }
 
+double tracing_record::get_total_duration(size_t device_index) const
+{
+    const timing_result* res = find_latest_finished_frame();
+    if(!res) return 0.0f;
+
+    const std::vector<trace_event>& times = res->device_traces[device_index];
+    return times.back().start_ns + times.back().duration_ns - times.front().start_ns;
+}
+
 void tracing_record::print_last_trace(trace_format format)
 {
     const timing_result* res = find_latest_finished_frame();

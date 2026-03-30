@@ -25,13 +25,21 @@ int main(int, char** argv) try
         tr::log_output_streams[(uint32_t)tr::log_type::TIMING] = &timing_output_file.value();
     }
 
+    if (opt.auto_spp > 0.0f)
+    {
+        std::unique_ptr<tr::context> ctx(tr::create_context(opt));
+
+        tr::scene_data sd = tr::load_scenes(*ctx, opt);
+        tr::search_matching_spp(*ctx, sd, opt, opt.auto_spp);
+        std::this_thread::sleep_for(std::chrono::seconds(30));
+    }
+
     std::unique_ptr<tr::context> ctx(tr::create_context(opt));
 
     tr::scene_data sd = tr::load_scenes(*ctx, opt);
 
     tr::run(*ctx, sd, opt);
-
-    return 0;
+    return opt.samples_per_pixel;
 }
 catch (std::runtime_error& e)
 {
