@@ -744,6 +744,8 @@ void evaluate_ray_matched(
         }
         */
 
+        light *= attenuation;
+
 #ifdef DEMODULATED_OUTPUT
         add_demodulated_color(primary_lobes, light, diffuse.rgb, reflection.rgb);
 #else
@@ -767,7 +769,7 @@ void evaluate_ray_matched(
 
             correct_lobes_for_normal_map(-dl.dir, v.hard_normal, lobes);
 
-            if(any(greaterThan(radiance, vec3(0.0001f))))
+            if(any(greaterThan(radiance, vec3(0.000f))))
                 radiance *= shadow_ray(v.pos, control.min_ray_dist, -dl.dir, RAY_MAX_DIST);
 
 #ifdef DEMODULATED_OUTPUT
@@ -775,6 +777,7 @@ void evaluate_ray_matched(
             else
 #endif
                 radiance *= modulate_bsdf(mat, lobes);
+
 #ifdef DEMODULATED_OUTPUT
             add_demodulated_color(primary_lobes, radiance, diffuse.rgb, reflection.rgb);
             if(bounce == 1)
@@ -798,51 +801,35 @@ void evaluate_ray_matched(
             ggx_bsdf(view * tbn, shading_view, mat, lobes);
     #else // Single-sample MIS. Really slow and more noisy but with less fireflies.
             uvec4 ray_sample_u = generate_ray_sample_uint(lsampler, bounce*2+1);
-            float rc_pdf, rc_bsdf_pdf;
-
-            vec3 rc_view = sample_radiance_cascades(ray_sample_u.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic),
-                rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic), rc_pdf);
-
-            float bsdf_pdf, bsdf_rc_pdf;
-            bsdf_lobes bsdfl = bsdf_lobes(0,0,0,0);
-            vec3 bsdf_view;
-            vec4 ray_sample = vec4(ray_sample_u) * INV_UINT32_MAX;
-            material_bsdf_sample(ray_sample, shading_view, mat, bsdf_view, bsdfl, bsdf_pdf);
-            bsdf_view = tbn * bsdf_view;
-
-            bsdf_rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -view,
-                true,
-                mat.roughness,
-                mix(0.04, 1.0, mat.metallic),
-                rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
-                bsdf_view
-            );
-
-            bsdf_lobes rcl = bsdf_lobes(0,0,0,0);
-            rc_bsdf_pdf = material_bsdf_pdf(rc_view * tbn, shading_view, mat, rcl);
-
-            float rcw = rc_pdf / (rc_pdf + rc_bsdf_pdf);
-            float bsdfw = bsdf_pdf / (bsdf_pdf + bsdf_rc_pdf);
-
-            float sumw = rcw + bsdfw;
             uint rnd = ray_sample_u.z;
             lcg(rnd);
-
-            bsdf_lobes lobes;
+            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
             float pdf;
-            if (rnd * INV_UINT32_MAX * sumw < rcw)
+            if (rnd * INV_UINT32_MAX < 0.5)
             {
-                lobes = rcl;
-                view = rc_view;
-                pdf = rc_pdf;
+                float rc_pdf;
+                view = sample_radiance_cascades(ray_sample_u.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic),
+                    rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic), rc_pdf);
+                float bsdf_pdf = material_bsdf_pdf(view * tbn, shading_view, mat, lobes);
+                pdf = 0.5 * (rc_pdf + bsdf_pdf);
             }
             else
             {
-                lobes = bsdfl;
-                view = bsdf_view;
-                pdf = bsdf_pdf;
+                vec3 prev_view = view;
+                vec4 ray_sample = vec4(ray_sample_u) * INV_UINT32_MAX;
+                float bsdf_pdf;
+                material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
+                view = tbn * view;
+
+                float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -prev_view,
+                    true,
+                    mat.roughness,
+                    mix(0.04, 1.0, mat.metallic),
+                    rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
+                    view
+                );
+                pdf = 0.5 * (rc_pdf + bsdf_pdf);
             }
-            attenuation *= sumw;
     #endif
 #else
             bsdf_lobes lobes = bsdf_lobes(0,0,0,0);

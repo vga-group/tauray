@@ -18,6 +18,7 @@ namespace tr
 
     scene_data load_scenes(context& ctx, const options& opt);
     context* create_context(const options& opt);
+    void search_matching_spp(context& ctx, scene_data& sd, options& opt, float target_milliseconds);
     void run(context& ctx, scene_data& s, options& opt);
 }
 

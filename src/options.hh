@@ -587,7 +587,10 @@
         "Use light tree for sampling lights.", \
         true \
     ) \
-    TR_INT_OPT(light_tree_width, "Branching factor of the light tree", 3, 2, 1024)
+    TR_INT_OPT(light_tree_width, "Branching factor of the light tree", 3, 2, 1024) \
+    TR_FLOAT_OPT(auto_spp, \
+        "Automatically adjusts SPP such that the overall rendering time is as close as possible to the given number of milliseconds.", \
+        0.0f, 0.0f, 1000.0f)
 //==============================================================================
 // END OF OPTIONS
 //==============================================================================

@@ -35,7 +35,7 @@ path_tracer_stage::path_tracer_stage(
     const gbuffer_target& output_target,
     const options& opt
 ):  rt_camera_stage(
-        dev, ss, output_target, opt, "path tracing",
+        dev, ss, output_target, opt, "path tracing " + std::to_string(opt.samples_per_pixel) + " spp",
         opt.samples_per_pixel / opt.samples_per_pass
     ),
     desc(dev),

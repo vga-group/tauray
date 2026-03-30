@@ -1261,6 +1261,86 @@ void headless_server(context& ctx, scene_data& sd, options& opt)
     TR_LOG("Server shutting down.");
 }
 
+void search_matching_spp(context& ctx, scene_data& sd, options& opt, float target_milliseconds)
+{
+    scene& s = *sd.s;
+    load_balancer lb(ctx, opt.workload);
+
+    entity cam_id = INVALID_ENTITY;
+    s.foreach([&](entity id, camera_metadata& md){
+        if(md.enabled) cam_id = id;
+    });
+
+    std::vector<camera_log> camera_logs;
+    std::vector<entity> cameras = generate_cameras(cam_id, s, opt, true);
+
+    s.foreach([&](transformable& t, camera& cam, camera_metadata& md){
+        if(md.enabled)
+            camera_logs.emplace_back(&t, &cam);
+    });
+
+    s.foreach([&](camera_metadata& md){
+        md.actively_rendered = opt.spatial_reprojection.count(md.index);
+    });
+    set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
+
+    std::unique_ptr<renderer> rr;
+
+    double closest_delta = target_milliseconds;
+    int best_spp = 0;
+
+    ctx.set_displaying(false);
+    for(;;)
+    {
+        TR_LOG("Attempting SPP ", opt.samples_per_pixel);
+        rr.reset(create_renderer(ctx, opt, s));
+        rr->set_scene(&s);
+        lb.update(*rr);
+        double duration_sum = 0;
+        for(int i = 0; i < 1024+256; ++i)
+        {
+            update(s, 0, true);
+            rr->render();
+            lb.update(*rr);
+            if (i >= 1024)
+                duration_sum += ctx.get_timing().get_total_duration(0) * 1e-6f;
+            if (rr)
+                lb.update(*rr);
+        }
+
+        double duration = duration_sum / 256;
+        TR_LOG("Duration was ", duration);
+        double delta = fabs(duration - target_milliseconds);
+
+        if (delta < closest_delta)
+        {
+            closest_delta = delta;
+            if (opt.samples_per_pixel == best_spp)
+                break;
+            best_spp = opt.samples_per_pixel;
+        }
+
+        if (2*duration < target_milliseconds)
+            opt.samples_per_pixel *= 2;
+        else if (duration < target_milliseconds)
+            opt.samples_per_pixel++;
+        else
+        {
+            if(opt.samples_per_pixel == 1)
+                break;
+            opt.samples_per_pixel--;
+        }
+
+        if (opt.samples_per_pixel == best_spp)
+            break;
+    }
+    ctx.set_displaying(true);
+
+    TR_LOG("Found best SPP: ", opt.samples_per_pixel, " (", closest_delta, ")");
+
+    ctx.get_timing().wait_all_frames(opt.timing, opt.trace);
+}
+
 void run(context& ctx, scene_data& sd, options& opt)
 {
     if(opt.display == options::display_type::FRAME_CLIENT)
