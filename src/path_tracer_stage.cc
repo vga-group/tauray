@@ -74,6 +74,9 @@ path_tracer_stage::path_tracer_stage(
     if(opt.light_tree_source)
         defines["LIGHT_TREE_SET"] = std::to_string(set_index++);
 
+    if(opt.sampling_weights.emissive_triangles > 0 || opt.sampling_weights.envmap > 0)
+        defines["HAS_AREA_LIGHTS"];
+
 #define TR_GBUFFER_ENTRY(name, ...)\
     if(output_target.name) defines["USE_"+to_uppercase(#name)+"_TARGET"];
     TR_GBUFFER_ENTRIES

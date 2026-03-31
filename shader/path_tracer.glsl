@@ -368,73 +368,66 @@ vec3 next_event_estimation(
     inout bsdf_lobes lobes
 ){
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_ENVMAP)
-    if(false
-#ifdef NEE_SAMPLE_POINT_LIGHTS
-        || scene_metadata.point_light_count > 0
-#endif
-#ifdef NEE_SAMPLE_DIRECTIONAL_LIGHTS
-        || scene_metadata.directional_light_count > 0
-#endif
-#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-        || scene_metadata.tri_light_count > 0
-#endif
-#ifdef NEE_SAMPLE_ENVMAP
-        || scene_metadata.environment_proj >= 0
-#endif
-    ){
-        vec3 out_dir;
-        float out_length = 0.0f;
-        float light_pdf;
-        // Sample lights
-        int hit_type = -1;
+    vec3 out_dir;
+    float out_length = 0.0f;
+    float light_pdf;
+    // Sample lights
+    int hit_type = -1;
 #ifdef LIGHT_TREE_SET
-        light_sample s = sample_light(
-            rand_uint,
-            v.pos,
-            v.mapped_normal,
-            1.0f,
-            control.min_ray_dist,
-            RAY_MAX_DIST
-        );
-        vec3 contrib = s.color;
-        light_pdf = s.pdf;
-        out_dir = s.dir;
-        out_length = s.dist;
-        hit_type = (s.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID || s.instance_id == POINT_LIGHT_INSTANCE_ID) ? 0 : 2;
+    light_sample s = sample_light(
+        rand_uint,
+        v.pos,
+        v.mapped_normal,
+        1.0f,
+        control.min_ray_dist,
+        RAY_MAX_DIST
+    );
+    vec3 contrib = s.color;
+    light_pdf = s.pdf;
+    out_dir = s.dir;
+    out_length = s.dist;
+    hit_type = (s.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID || s.instance_id == POINT_LIGHT_INSTANCE_ID) ? 0 : 2;
 #else
-        vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf, hit_type);
+    vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf, hit_type);
 #endif
 
-        bool opaque = mat.transmittance < 0.0001f;
-        if(dot(v.hard_normal, out_dir) < 0 && opaque) contrib = vec3(0);
+    bool opaque = mat.transmittance < 0.0001f;
+    if(dot(v.hard_normal, out_dir) < 0 && opaque) contrib = vec3(0);
 
-        vec3 shading_light = out_dir * tbn;
-        lobes = bsdf_lobes(0,0,0,0);
-        float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
+    vec3 shading_light = out_dir * tbn;
+    lobes = bsdf_lobes(0,0,0,0);
+#ifdef RADIANCE_CASCADES_SET
+    ggx_brdf(shading_light, shading_view, mat, lobes);
+#else
+    float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
+#endif
 
-        correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
+    correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
 
-        // TODO: Check if this conditional just hurts performance
-        //if(any(greaterThan(contrib, vec3(0.0001f))))
-            contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
+    if(any(greaterThan(contrib, vec3(0.0f))))
+        contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
 
 #ifdef RADIANCE_CASCADES_SET
-        float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -view, 
-            hit_type < 2,
-            mat.roughness,
-            mix(0.04, 1.0, mat.metallic),
-            rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
-            out_dir
-        );
-        contrib /= nee_mis_pdf(light_pdf, rc_pdf);
+#ifdef HAS_AREA_LIGHTS
+    float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -view, 
+        hit_type < 2,
+        mat.roughness,
+        mix(0.04, 1.0, mat.metallic),
+        rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
+        out_dir
+    );
+    contrib /= nee_mis_pdf(light_pdf, rc_pdf);
 #else
-        contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
+    contrib /= abs(light_pdf);
+#endif
+#else
+    contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
 #endif
 
-        return contrib;
-    }
-#endif
+    return contrib;
+#else
     return vec3(0);
+#endif
 }
 
 // This is used to remove invalid ray directions, which are caused by normal
@@ -537,9 +530,9 @@ void evaluate_ray(
         rayQueryEXT rq;
         rayQueryInitializeEXT(rq,
             tlas,
-            gl_RayFlagsNoneEXT,
+            //gl_RayFlagsNoneEXT,
             //gl_RayFlagsCullNoOpaqueEXT,
-            //gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT,
+            gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT,
             //gl_RayFlagsCullBackFacingTrianglesEXT,
 #ifdef HIDE_LIGHTS
             bounce == 0 ? 0xFF^0x02 : 0xFF,
@@ -758,18 +751,10 @@ void evaluate_ray_matched(
             // Do NEE ray
             bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
 
-            directional_light dl = directional_lights.lights[0];
-            vec3 radiance = attenuation * dl.color;
-            if(dot(v.hard_normal, -dl.dir) < 0) radiance = vec3(0);
-
-            vec3 shading_light = -dl.dir * tbn;
-            lobes = bsdf_lobes(0,0,0,0);
-            ggx_brdf(shading_light, shading_view, mat, lobes);
-
-            correct_lobes_for_normal_map(-dl.dir, v.hard_normal, lobes);
-
-            if(any(greaterThan(radiance, vec3(0.000f))))
-                radiance *= shadow_ray(v.pos, control.min_ray_dist, -dl.dir, RAY_MAX_DIST);
+            vec3 radiance = attenuation * next_event_estimation(
+                generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view, view,
+                mat, v, lobes
+            );
 
 #ifdef DEMODULATED_OUTPUT
             if(bounce == 0) primary_lobes = lobes;
@@ -786,7 +771,7 @@ void evaluate_ray_matched(
 #endif
         }
 
-        // Only NEE for last bounce, to match SIByl for measurements.
+        // Only NEE contribution for last bounce, to match SIByl for measurements.
         if(bounce+1 < MAX_BOUNCES-1)
         {
             // Lastly, figure out the next ray and assign proper attenuation for it.
