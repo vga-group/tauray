@@ -204,8 +204,8 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
             if(opt.svgf_options)
                 cur.color = render_target();
             this->opt.pt_options->rc_source = &*rc;
-            if (opt.light_tree)
-                this->opt.pt_options->light_tree_source = &*light_tree;
+            //if (opt.light_tree)
+            //    this->opt.pt_options->light_tree_source = &*light_tree;
             pt.emplace(dev, *scene_update, cur, *this->opt.pt_options);
             cur = old;
         }
