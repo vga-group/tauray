@@ -27,11 +27,11 @@ int main(int, char** argv) try
 
     if (opt.auto_spp > 0.0f)
     {
-        std::unique_ptr<tr::context> ctx(tr::create_context(opt));
-
-        tr::scene_data sd = tr::load_scenes(*ctx, opt);
-        tr::search_matching_spp(*ctx, sd, opt, opt.auto_spp);
-        std::this_thread::sleep_for(std::chrono::seconds(30));
+        tr::options tmp_opt = opt;
+        std::unique_ptr<tr::context> ctx(tr::create_context(tmp_opt));
+        tr::scene_data sd = tr::load_scenes(*ctx, tmp_opt);
+        tr::search_matching_spp(*ctx, sd, tmp_opt, tmp_opt.auto_spp);
+        opt.samples_per_pixel = tmp_opt.samples_per_pixel;
     }
 
     std::unique_ptr<tr::context> ctx(tr::create_context(opt));
