@@ -1310,6 +1310,7 @@ void search_matching_spp(context& ctx, scene_data& sd, options& opt, float targe
 
         double duration = duration_sum / 256;
         TR_LOG("Duration was ", duration);
+        std::this_thread::sleep_for(std::chrono::seconds(10));
         double delta = fabs(duration - target_milliseconds);
 
         if (delta < closest_delta)
@@ -1335,6 +1336,8 @@ void search_matching_spp(context& ctx, scene_data& sd, options& opt, float targe
             break;
     }
     ctx.set_displaying(true);
+
+    opt.samples_per_pixel = best_spp;
 
     TR_LOG("Found best SPP: ", opt.samples_per_pixel, " (", closest_delta, ")");
 

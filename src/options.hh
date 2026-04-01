@@ -581,7 +581,7 @@
             {"hybrid", radiance_cascades_stage::HYBRID} \
         ) \
         TR_STRUCT_OPT_INT(di_samples, 1, 1, 512) \
-        TR_STRUCT_OPT_FLOAT(temporal_ratio, 0.005f, 0.0f, 1.0f) \
+        TR_STRUCT_OPT_FLOAT(temporal_ratio, 0.033f, 0.0f, 1.0f) \
     ) \
     TR_BOOL_OPT(enable_light_tree, \
         "Use light tree for sampling lights.", \
