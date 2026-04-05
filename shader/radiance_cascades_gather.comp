@@ -11,7 +11,9 @@
 layout(local_size_x = 16, local_size_y = 2, local_size_z = 2) in;
 #else
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+shared float local_values[4][4][4];
 #endif
+
 
 layout(binding = 0, r32f) uniform readonly image2DArray upper_target;
 layout(binding = 1, r32f) uniform image2DArray lower_target;
@@ -24,6 +26,7 @@ layout(binding = 5, scalar) buffer dispatch_info_buffer
     ivec3 probe_indices[];
 } dispatch_info;
 layout(binding = 6, r32ui) uniform readonly uimage3D occupancy_history;
+layout(binding = 7, r32f) uniform writeonly image2DArray final_target;
 
 #include "radiance_cascades.glsl"
 
@@ -113,6 +116,11 @@ void main()
         float rmax = max(r0, max(r1, max(r2,r3)));
         vec4 r = sort_vec4(vec4(r0,r1,r2,r3));
         float o = 1.0f - dst_vis;
+        //float src_contrib = 
+        //    (o > 0.75 ? r.x * 0.25 : 0) +
+        //    (o > 0.50 ? r.y * 0.25 : 0) +
+        //    (o > 0.25 ? r.z * 0.25 : 0) +
+        //    (o > 0.00 ? r.w * 0.25 : 0);
         float src_contrib = dot(r, clamp(o-vec4(0.75,0.50,0.25,0.00), vec4(0), vec4(0.25)));
 #else
         float src_contrib = (r0+r1+r2+r3) * 0.25f * (1.0f - dst_vis);
@@ -139,6 +147,34 @@ void main()
     dst_col = max(prev_col, dst_col);
 #endif
 
+    local_values[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z] = dst_col;
+
+    barrier();
+
+    float nonzero_col = dst_col;
+
+    float sum = 0.0f;
+    if (pc.cascade == 0)
+    {
+        for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            sum += local_values[gl_LocalInvocationID.x][i][j];
+        sum /= 4*4;
+    }
+    else
+    {
+        ivec2 base = ivec2(gl_LocalInvocationID.yz)/2*2;
+        for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            sum += local_values[gl_LocalInvocationID.x][base.x+i][base.y+j];
+        sum /= 2*2;
+    }
+
+    nonzero_col += sum * 0.05;
+    if (nonzero_col <= 0.0f)
+        nonzero_col = 0.01f;
+
     imageStore(lower_target, p, vec4(dst_col));
     imageStore(lower_target_visibility, p, vec4(dst_vis));
+    imageStore(final_target, p, vec4(nonzero_col));
 }

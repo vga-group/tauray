@@ -1288,6 +1288,8 @@ void search_matching_spp(context& ctx, scene_data& sd, options& opt, float targe
 
     double closest_delta = target_milliseconds;
     int best_spp = 0;
+    int step_size = 1;
+    bool initial = true;
 
     ctx.set_displaying(false);
     for(;;)
@@ -1321,18 +1323,35 @@ void search_matching_spp(context& ctx, scene_data& sd, options& opt, float targe
             best_spp = opt.samples_per_pixel;
         }
 
-        if (2*duration < target_milliseconds)
-            opt.samples_per_pixel *= 2;
-        else if (duration < target_milliseconds)
-            opt.samples_per_pixel++;
-        else
+        if (initial)
         {
-            if(opt.samples_per_pixel == 1)
-                break;
-            opt.samples_per_pixel--;
+            if (duration < target_milliseconds)
+                step_size *= 2;
+            if (2*duration < target_milliseconds)
+                opt.samples_per_pixel += step_size;
+            else
+                initial = false;
         }
 
-        if (opt.samples_per_pixel == best_spp)
+        if (!initial)
+        {
+            step_size = step_size / 2;
+            if (step_size == 0)
+                step_size = 1;
+
+            if (duration < target_milliseconds)
+                opt.samples_per_pixel += step_size;
+            else
+            {
+                if(opt.samples_per_pixel <= step_size)
+                    opt.samples_per_pixel = 1;
+                else
+                    opt.samples_per_pixel -= step_size;
+            }
+
+        }
+
+        if (step_size == 1 && opt.samples_per_pixel == best_spp)
             break;
     }
     ctx.set_displaying(true);

@@ -31,7 +31,8 @@ void get_cascade_layout_inverse(ivec3 p, ivec3 cascade_size, int probe_resolutio
 #ifdef RADIANCE_CASCADES_SET
 layout(set=RADIANCE_CASCADES_SET, binding = 0) uniform sampler2DArray radiance_cascades[];
 layout(set=RADIANCE_CASCADES_SET, binding = 1) uniform sampler2DArray radiance_cascades_visibility[];
-layout(set=RADIANCE_CASCADES_SET, binding = 2) uniform radiance_cascade_metadata_buffer
+layout(set=RADIANCE_CASCADES_SET, binding = 2) uniform sampler2DArray radiance_cascades_read[];
+layout(set=RADIANCE_CASCADES_SET, binding = 3) uniform radiance_cascade_metadata_buffer
 {
     vec4 aabb_min;
     vec4 aabb_max;
@@ -963,9 +964,7 @@ vec3 sample_radiance_cascades(
     {
         ivec2 p = ivec2(x, y);
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
-
-        f16vec4 values = f16vec4(textureGather(radiance_cascades[0], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
-        values += dot(values, f16vec4(0.01));
+        f16vec4 values = f16vec4(textureGather(radiance_cascades_read[0], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
 
         f16vec4 diffuse;
         f16vec4 specular;
@@ -1002,8 +1001,7 @@ vec3 sample_radiance_cascades(
         sum_weight = float16_t(0.0f);
 
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), base_cell);
-        f16vec4 values = f16vec4(textureGather(radiance_cascades[cascade], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
-        values += dot(values, f16vec4(0.01));
+        f16vec4 values = f16vec4(textureGather(radiance_cascades_read[cascade], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
 #ifdef RC_DEFENSIVE
         f16vec4 r = sort_f16vec4(values);
         float16_t base = dot(r, clamp(visibility-f16vec4(0.75,0.50,0.25,0.00), f16vec4(0.0), f16vec4(0.25)));
@@ -1128,7 +1126,7 @@ float radiance_cascades_pdf(
     {
         ivec2 p = ivec2(x, y);
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION, ivec3(cascade_coord), p);
-        f16vec4 values = f16vec4(textureGather(radiance_cascades[0], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
+        f16vec4 values = f16vec4(textureGather(radiance_cascades_read[0], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
 
         f16vec4 diffuse;
         f16vec4 specular;
@@ -1163,7 +1161,7 @@ float radiance_cascades_pdf(
         sum_weight = float16_t(0);
 
         ivec3 tex_coord = get_cascade_layout(ivec3(cascade_size), RC_C0_ANGULAR_RESOLUTION<<cascade, ivec3(cascade_coord), base_cell);
-        f16vec4 values = f16vec4(textureGather(radiance_cascades[cascade], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
+        f16vec4 values = f16vec4(textureGather(radiance_cascades_read[cascade], vec3(tex_coord.xy + 1.0, tex_coord.z)).zxwy);
 #ifdef RC_DEFENSIVE
         f16vec4 r = sort_f16vec4(values);
         float16_t base = dot(r, clamp(visibility-f16vec4(0.75,0.50,0.25,0.00), f16vec4(0.0), f16vec4(0.25)));
