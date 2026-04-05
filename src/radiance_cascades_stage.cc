@@ -102,7 +102,8 @@ radiance_cascades_stage::radiance_cascades_stage(
 
     cascade_descriptors.add("radiance_cascades", {0, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
     cascade_descriptors.add("radiance_cascades_visibility", {1, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
-    cascade_descriptors.add("radiance_cascade_metadata", {2, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+    cascade_descriptors.add("radiance_cascades_read", {2, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    cascade_descriptors.add("radiance_cascade_metadata", {3, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
 
     vec3 extent = opt.volume.max - opt.volume.min;
     float diagonal_range = length(extent);
@@ -140,6 +141,18 @@ radiance_cascades_stage::radiance_cascades_stage(
             uvec2(cascade_size*resolution),
             cascade_size,
             vk::Format::eR8Unorm,
+            0,
+            nullptr,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
+            vk::ImageLayout::eGeneral
+        );
+        read_cascades.emplace_back(
+            device_mask(dev),
+            //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+            uvec2(cascade_size*resolution),
+            cascade_size,
+            vk::Format::eR32Sfloat,
             0,
             nullptr,
             vk::ImageTiling::eOptimal,
@@ -378,6 +391,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
     std::vector<vk::BufferMemoryBarrier> buffer_barriers;
     std::vector<vk::DescriptorImageInfo> dii;
     std::vector<vk::DescriptorImageInfo> dii_visibility;
+    std::vector<vk::DescriptorImageInfo> dii_read;
     for(size_t i = 0; i < next_cascades->size(); ++i)
     {
         image_barriers.push_back(vk::ImageMemoryBarrier(
@@ -392,6 +406,13 @@ void radiance_cascades_stage::update(uint32_t frame_index)
             vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
             VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
             (*next_cascades_visibility)[i].get_image(dev->id),
+            {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+        ));
+        image_barriers.push_back(vk::ImageMemoryBarrier(
+            {}, vk::AccessFlagBits::eShaderWrite|vk::AccessFlagBits::eShaderRead,
+            vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            read_cascades[i].get_image(dev->id),
             {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
         ));
 
@@ -420,6 +441,11 @@ void radiance_cascades_stage::update(uint32_t frame_index)
             (*next_cascades_visibility)[i].get_array_image_view(dev->id),
             vk::ImageLayout::eGeneral
         });
+        dii_read.push_back(vk::DescriptorImageInfo{
+            cascade_sampler.get_sampler(dev->id),
+            read_cascades[i].get_array_image_view(dev->id),
+            vk::ImageLayout::eGeneral
+        });
     }
 
     cb.pipelineBarrier(
@@ -432,6 +458,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         cascade_descriptors.reset(cascade_descriptors.get_mask(), 1);
         cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
         cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_visibility", std::move(dii_visibility));
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_read", std::move(dii_read));
         cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
     }
 
@@ -585,6 +612,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         cascade_descriptors.reset(cascade_descriptors.get_mask(), 1);
         cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
         cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_visibility", std::move(dii_visibility));
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_read", std::move(dii_read));
         cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
     }
     trace_timer.end(cb, dev->id, frame_index);
@@ -615,6 +643,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
         uint32_t upper_cascade = cur_cascade+1;
         texture& cur_target = (*next_cascades)[cur_cascade];
         texture& cur_target_visibility = (*next_cascades_visibility)[cur_cascade];
+        texture& final_target = read_cascades[cur_cascade];
         texture& upper_target = i == 0 ? cur_target : (*next_cascades)[upper_cascade];
         texture& prev_target = prev_cascades ?
             (*prev_cascades)[cur_cascade] : cur_target;
@@ -622,6 +651,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
             (*prev_cascades_visibility)[cur_cascade] : cur_target_visibility;
         gather_desc.set_image(dev->id, "upper_target", {{{}, upper_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather_desc.set_image(dev->id, "lower_target", {{{}, cur_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "final_target", {{{}, final_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather_desc.set_image(dev->id, "lower_target_visibility", {{{}, cur_target_visibility.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather_desc.set_image(dev->id, "prev_lower_target", {{{}, prev_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
         gather_desc.set_image(dev->id, "prev_lower_target_visibility", {{{}, prev_target_visibility.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});

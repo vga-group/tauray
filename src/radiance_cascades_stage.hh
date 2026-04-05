@@ -116,6 +116,7 @@ private:
     vkm<vk::Buffer> dispatch_size_buffer;
     std::vector<texture> cascades;
     std::vector<texture> alt_cascades;
+    std::vector<texture> read_cascades;
     std::vector<texture> cascades_visibility;
     std::vector<texture> alt_cascades_visibility;
 };
