@@ -1,6 +1,16 @@
 #ifndef MATH_GLSL
 #define MATH_GLSL
 
+/*
+#define FORCE_FULL_PRECISION
+#ifdef FORCE_FULL_PRECISION
+#define float16_t float
+#define f16vec2 vec2
+#define f16vec3 vec3
+#define f16vec4 vec4
+#endif
+*/
+
 #define M_PI 3.14159265359
 #define M_1_SQRT3 0.57735026918962576451
 #define SQRT2 1.41421356237

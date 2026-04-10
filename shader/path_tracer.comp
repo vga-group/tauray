@@ -110,6 +110,9 @@ void main()
         vec3 dir;
         get_world_camera_ray(lsampler, origin, dir);
 
+        //vec4 cliprule = vec4(origin, 1.2f);
+        //origin += (generate_spatial_sample(lsampler)-0.5)*0.3;
+
         //evaluate_ray(
         evaluate_ray_matched(
             lsampler, origin, dir,
@@ -119,6 +122,7 @@ void main()
 #else
             sum_color,
 #endif
+        //    cliprule,
             i == 0
         );
     }
