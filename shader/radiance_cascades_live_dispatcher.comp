@@ -24,6 +24,7 @@ layout(push_constant) uniform push_constant_buffer
     int cascade;
     int cascade_count;
     int c0_angular_resolution;
+    int print_info;
 } pc;
 
 void main()
@@ -46,6 +47,12 @@ void main()
         (total_pixels + workgroup_pixel_count-1) / workgroup_pixel_count,1,1,0
     );
 
-    uvec4 dsSize = dispatch_size.trace_gather[pc.cascade];
-    //debugPrintfEXT("Cascade %d: Live: %u (%u, %u, %u)", pc.cascade, live_count, dsSize.x, dsSize.y, dsSize.z);
+    //uvec4 dsSize = dispatch_size.trace_gather[pc.cascade];
+    /*
+    if (pc.print_info != 0)
+    {
+        uint mem = total_pixels;
+        debugPrintfEXT("Cascade %d live probes: %u (mem: %u)", pc.cascade, live_count, mem);
+    }
+    */
 }

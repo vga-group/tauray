@@ -99,15 +99,6 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
         sms.emplace(dev, *scene_update, shadow_map_stage::options{});
     }
 
-    printf("Scene AABB: [%f, %f, %f] - [%f, %f, %f]\n",
-        this->opt.rc_options.volume.min.x,
-        this->opt.rc_options.volume.min.y,
-        this->opt.rc_options.volume.min.z,
-        this->opt.rc_options.volume.max.x,
-        this->opt.rc_options.volume.max.y,
-        this->opt.rc_options.volume.max.z
-    );
-
     voxelizer_stage::options vx_opts{
         int(1 << this->opt.rc_options.log2_resolution),
         this->opt.rc_options.volume,

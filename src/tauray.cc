@@ -138,7 +138,10 @@ aabb compute_aabb(scene& s)
         }
     });
 
+
     vec3 radius = volume.max - volume.min;
+
+    printf("Scene size: [%f, %f, %f]\n", radius.x, radius.y, radius.z);
     float max_radius = max(radius.x, max(radius.y, radius.z)) * 1.01f;
     vec3 center = (volume.max + volume.min) * 0.5f;
 

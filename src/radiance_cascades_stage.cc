@@ -49,6 +49,7 @@ struct live_dispatcher_push_constant_buffer
     int cascade;
     int cascade_count;
     int c0_angular_resolution;
+    int print_info;
 };
 
 struct cascade_metadata_buffer
@@ -109,6 +110,7 @@ radiance_cascades_stage::radiance_cascades_stage(
     float diagonal_range = length(extent);
 
     size_t total_probes = 0;
+    size_t total_memory = 0;
     for(uint32_t cascade = 0; cascade <= opt.log2_resolution; ++cascade)
     {
         size_t cascade_size = 1<<(opt.log2_resolution-cascade);
@@ -120,7 +122,10 @@ radiance_cascades_stage::radiance_cascades_stage(
         if(interval[0] > diagonal_range)
             break;
 
+        printf("Cascade %d: [%f, %f]\n", cascade, interval.x, interval.y);
+
         total_probes += cascade_size * cascade_size * cascade_size;
+        total_memory += (sizeof(float)+sizeof(uint8_t)) * cascade_size * cascade_size * cascade_size * resolution * resolution;
 
         cascades.emplace_back(
             device_mask(dev),
@@ -188,6 +193,8 @@ radiance_cascades_stage::radiance_cascades_stage(
             );
         }
     }
+    printf("Total probes %lu\n", total_probes);
+    printf("Total memory %lu\n", total_memory);
 
     vk::BufferCreateInfo bufferInfo;
     bufferInfo.size = 16 * sizeof(uint) + total_probes * sizeof(puvec3);
@@ -288,6 +295,7 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
     if(cascade == 0) return 0.0f;
 
     vec3 extent = opt.volume.max - opt.volume.min;
+    float max_extent = max(extent.x, max(extent.y, extent.z));
 
     const vec2 octahedral_theta_table[] = {
         vec2(1.570796e+00, 3.141593e+00), // 2
@@ -309,14 +317,31 @@ float radiance_cascades_stage::get_cascade_t0(int cascade) const
 
     int i = cascade;
 
-    i += findMSB(opt.c0_probe_resolution)-1;
+    i += findMSB(opt.c0_probe_resolution)-2;
 
     /*
     float h0 = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
     return (1<<cascade) * h0 / tan(octahedral_theta_table[cascade].x);
     */
-    float h = (1<<(cascade-1)) * length(extent) / float(1<<opt.log2_resolution);
-    return h / (tan(2.0f * octahedral_theta_table[i].x));
+    //float h = (1<<(cascade-1)) * length(extent) / float(1<<opt.log2_resolution);
+    float l = (1<<(cascade-1)) * max_extent / float(1<<opt.log2_resolution);
+
+    // If 't_max' is too long, limiting factor is probe resolution -> available detail is lost
+    // If 't_max' is too short, limiting factor is parallax -> excess resolution in probe.
+    //
+    // With the below setup, 't_max' is always underestimated, meaning that
+    // the entire radiance range has excess probe resolution for any visible 
+    // point.
+    float t_max = l / (2.0 * sin(octahedral_theta_table[i].x));
+
+    // Instead of doing that, we intentionally overestimate t_max by 
+    // a factor of 2 to move the "switchover" point from excess resolution to
+    // not enough resolution to be in the halfway point of the radiance
+    // interval. Empirically, this results in slightly higher performance and
+    // better image quality.
+    t_max *= 2.0;
+
+    return t_max;
 }
 
 vec2 radiance_cascades_stage::get_cascade_interval(int cascade) const
@@ -541,6 +566,7 @@ void radiance_cascades_stage::update(uint32_t frame_index)
             live_dispatcher_push_constant_buffer pc;
             pc.cascade = cascade;
             pc.cascade_count = get_cascade_count();
+            pc.print_info = history_frames == 0 ? 1 : 0;
             pc.c0_angular_resolution = opt.c0_probe_resolution;
             live_dispatcher.push_constants(cb, pc);
             cb.dispatch(1,1,1);

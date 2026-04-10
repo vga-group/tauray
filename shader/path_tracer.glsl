@@ -514,6 +514,7 @@ void evaluate_ray(
 #else
     inout vec3 color,
 #endif
+    //vec4 cliprule,
     bool write_first_hit_info
 ){
     vec3 attenuation = vec3(1);
@@ -556,6 +557,9 @@ void evaluate_ray(
         if (bounce == 0) include_directional_lights = false;
 #endif
         bool terminal = !get_intersection_info(payload, pos, view, include_directional_lights, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
+
+        //if (bounce == 0 && distance(cliprule.xyz, v.pos) > cliprule.w)
+        //    break;
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
@@ -718,8 +722,6 @@ void evaluate_ray_matched(
         vec3 light;
         bool terminal = !get_intersection_info(payload, pos, view, true, v, nee_pdf, mat, light);
 
-        if(terminal) break;
-
         /*
         if(bounce == 0)
         {
@@ -744,6 +746,8 @@ void evaluate_ray_matched(
         color.rgb += light;
 #endif
 
+        if(terminal) break;
+
         mat3 tbn = create_tangent_space(v.mapped_normal);
         vec3 shading_view = view_to_tangent_space(view, tbn);
 
@@ -767,7 +771,8 @@ void evaluate_ray_matched(
             if(bounce == 1)
                 diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
 #else
-            color.rgb += radiance;
+            if (!any(isnan(radiance)))
+                color.rgb += radiance;
 #endif
         }
 
