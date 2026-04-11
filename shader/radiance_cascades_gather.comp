@@ -106,6 +106,39 @@ void main()
     {
         prev_col = 0.0f;
         prev_vis = 0.0f;
+
+        float sum_weight = 0;
+
+        const ivec3[6] neighbor_probes = ivec3[6](
+            ivec3(-1,0,0),
+            ivec3(1,0,0),
+            ivec3(0,-1,0),
+            ivec3(0,1,0),
+            ivec3(0,0,-1),
+            ivec3(0,0,1)
+        );
+
+        [[unroll]] for(int i = 0; i < 6; ++i)
+        {
+            ivec3 neighbor_index = neighbor_probes[i] + lower_probe_index;
+            float neighbor_weight = float(imageLoad(occupancy_history, neighbor_index).r)-1;
+            ivec3 q = get_cascade_layout(ivec3(pc.cascade_size), lower_angular_resolution, neighbor_index, lower_map_texel);
+            float neighbor_col = imageLoad(prev_lower_target, q).r;
+            float neighbor_vis = imageLoad(prev_lower_target_visibility, q).r;
+            if (neighbor_weight > 0)
+            {
+                sum_weight += neighbor_weight;
+                prev_col += neighbor_col * neighbor_weight;
+                prev_vis += neighbor_vis * neighbor_weight;
+            }
+        }
+
+        if (sum_weight > 0)
+        {
+            float denom = 1.0f / sum_weight;
+            prev_col *= denom;
+            prev_vis *= denom;
+        }
     }
 
     dst_vis = mix(prev_vis, dst_vis, blend_ratio);
@@ -126,12 +159,6 @@ void main()
         float src_contrib = (r0+r1+r2+r3) * 0.25f * (1.0f - dst_vis);
 #endif
         dst_col += src_contrib;
-
-        // Replace epsilon value with upper cascade data if it's non-zero
-        // because that is more likely to be correct than the epsilon but
-        // provides the same guarantee for unbiasedness.
-        if (history_frames <= 1 && src_contrib > 0)
-            prev_col = src_contrib;
     }
 
     // This is used to bias result towards the larger value, which reduces
