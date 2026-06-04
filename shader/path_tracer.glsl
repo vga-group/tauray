@@ -531,9 +531,9 @@ void evaluate_ray(
         rayQueryEXT rq;
         rayQueryInitializeEXT(rq,
             tlas,
-            //gl_RayFlagsNoneEXT,
+            gl_RayFlagsNoneEXT,
             //gl_RayFlagsCullNoOpaqueEXT,
-            gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT,
+            //gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT,
             //gl_RayFlagsCullBackFacingTrianglesEXT,
 #ifdef HIDE_LIGHTS
             bounce == 0 ? 0xFF^0x02 : 0xFF,
@@ -738,6 +738,7 @@ void evaluate_ray_matched(
         }
         */
 
+        /*
         light *= attenuation;
 
 #ifdef DEMODULATED_OUTPUT
@@ -745,6 +746,7 @@ void evaluate_ray_matched(
 #else
         color.rgb += light;
 #endif
+        */
 
         if(terminal) break;
 
