@@ -693,7 +693,6 @@ void integrate_quad_half_precision(
     f16vec2 r = edge_integral(h10_h12_x, h10_h12_y, h10_h12_z, h00_h22_x, h00_h22_y, h00_h22_z);
     diff_z.zw += r.xy;
 
-
     r = edge_integral(h20_h02_x, h20_h02_y, h20_h02_z, h10_h12_x, h10_h12_y, h10_h12_z);
     diff_z.xy += r.xy;
 
@@ -756,6 +755,9 @@ void integrate_quad_half_precision(
 
     diffuse = max(diff_z * mask, f16vec4(0.0));
     specular = max(spec_z * mask, f16vec4(0.0));
+    //specular = max(spec_z, f16vec4(0.0));
+    //specular += dot(specular, f16vec4(0.01));
+    //specular = specular * mask;
 }
 
 float eval_radiance_cascades(vec3 origin, vec3 normal, vec3 view, float roughness, float f0)

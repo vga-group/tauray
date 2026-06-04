@@ -359,6 +359,9 @@ void main()
     float start_t = max(sphere_outer_intersection(cell_origin, pc.interval_start, probe_origin, probe_dir), 0);
     float end_t = max(sphere_outer_intersection(next_origin, pc.interval_end, probe_origin, probe_dir), 0);
 
+    if (start_t < 0) start_t = pc.interval_start;
+    if (end_t < 0) end_t = pc.interval_end;
+
     vec3 ray_origin = probe_origin + probe_dir * start_t;
     vec3 ray_end = probe_origin + probe_dir * end_t;
 #endif
