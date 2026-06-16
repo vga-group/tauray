@@ -1,5 +1,6 @@
 #include "window.hh"
 #include "log.hh"
+#include "misc.hh"
 #include <iostream>
 
 namespace tr
@@ -31,6 +32,29 @@ window::~window()
     deinit_sdl();
 }
 
+size_t window::get_swapchain_image_count() const
+{
+    return window_images.size();
+}
+
+std::vector<render_target> window::get_array_render_target()
+{
+    std::vector<render_target> frames;
+    for(size_t i = 0; i < window_images.size(); ++i)
+    {
+        frames.emplace_back(
+            image_size,
+            0, image_array_layers,
+            images[0],
+            array_image_views[0],
+            vk::ImageLayout::eUndefined,
+            image_format,
+            vk::SampleCountFlagBits::e1
+        );
+    }
+    return frames;
+}
+
 void window::recreate_swapchains()
 {
     device& dev_data = get_display_device();
@@ -47,6 +71,18 @@ uint32_t window::prepare_next_image(uint32_t frame_index)
         swapchain, UINT64_MAX, frame_available[frame_index], {}
     ).value;
     return swapchain_index;
+}
+
+dependencies window::fill_end_frame_dependencies(const dependencies& deps)
+{
+    if (opt.views.x == 1 && opt.views.y == 1)
+        return deps;
+    else
+    {
+        // Multi-view. We have to copy all of the views to the actual swapchain
+        // image.
+        return composition->run(deps);
+    }
 }
 
 void window::finish_image(
@@ -81,19 +117,22 @@ void window::init_sdl()
     if(!SDL_Init(subsystems))
         throw std::runtime_error(SDL_GetError());
 
+    uvec2 window_size = opt.size * opt.views;
+
     win = SDL_CreateWindow(
         "Tauray",
-        opt.size.x,
-        opt.size.y,
+        window_size.x,
+        window_size.y,
         SDL_WINDOW_VULKAN | (opt.fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_ALWAYS_ON_TOP)
     );
     if(!win) throw std::runtime_error(SDL_GetError());
-    SDL_GetWindowSize(win, (int*)&opt.size.x, (int*)&opt.size.y);
+    SDL_GetWindowSize(win, (int*)&window_size.x, (int*)&window_size.y);
+    opt.size = window_size / opt.views;
     //SDL_SetWindowKeyboardGrab(win, true);
     SDL_SetWindowMouseGrab(win, true);
     SDL_SetWindowRelativeMouseMode(win, true);
     image_size = opt.size;
-    image_array_layers = 1;
+    image_array_layers = opt.views.x * opt.views.y;
 
     unsigned count = 0;
     const char* const* exts = SDL_Vulkan_GetInstanceExtensions(&count);
@@ -114,6 +153,9 @@ void window::init_swapchain()
     device& dev_data = get_display_device();
     std::vector<vk::SurfaceFormatKHR> formats =
         dev_data.physical.getSurfaceFormatsKHR(surface);
+
+    uvec2 window_size = opt.size * opt.views;
+    bool singleview = opt.views.x == 1 && opt.views.y == 1;
 
     // Find the format matching our desired format.
     bool found_format = false;
@@ -137,7 +179,9 @@ void window::init_swapchain()
             "incorrect."
         );
     image_format = swapchain_format.format;
-    expected_image_layout = vk::ImageLayout::ePresentSrcKHR;
+    expected_image_layout = singleview ?
+        vk::ImageLayout::ePresentSrcKHR :
+        vk::ImageLayout::eGeneral;
 
     // Find the present mode matching our vsync setting.
     std::vector<vk::PresentModeKHR> modes =
@@ -191,7 +235,7 @@ void window::init_swapchain()
     if(caps.currentExtent.width == UINT32_MAX)
     {
         uvec2 clamped_size = clamp(
-            opt.size,
+            window_size,
             uvec2(caps.minImageExtent.width, caps.minImageExtent.height),
             uvec2(caps.maxImageExtent.width, caps.maxImageExtent.height)
         );
@@ -199,8 +243,8 @@ void window::init_swapchain()
         selected_extent.height = clamped_size.y;
     }
     if(
-        selected_extent.width != opt.size.x ||
-        selected_extent.height != opt.size.y
+        selected_extent.width != window_size.x ||
+        selected_extent.height != window_size.y
     ) throw std::runtime_error(
         "Could not find swap chain extent matching the window size!"
     );
@@ -245,19 +289,83 @@ void window::init_swapchain()
         true
     });
 
-    // Get swap chain images & create image views
     auto swapchain_images = dev_data.logical.getSwapchainImagesKHR(swapchain);
     images.clear();
-    for(vk::Image img: swapchain_images)
-        images.emplace_back(vkm(dev_data, img));
-    reset_image_views();
+
+    // Get swap chain images & create image views
+    if (opt.views.x == 1 && opt.views.y == 1)
+    { // Single-view setup
+        for(vk::Image img: swapchain_images)
+            images.emplace_back(vkm(dev_data, img));
+        reset_image_views();
+    }
+    else
+    { // Multi-view setup
+        window_images.clear();
+        window_image_views.clear();
+        std::vector<render_target> output_frames;
+        for(vk::Image img: swapchain_images)
+        {
+            window_images.emplace_back(vkm(dev_data, img));
+            window_image_views.emplace_back(dev_data,
+                dev_data.logical.createImageView({
+                    {},
+                    img,
+                    vk::ImageViewType::e2D,
+                    swapchain_format.format,
+                    {},
+                    {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+                })
+            );
+            output_frames.emplace_back(
+                opt.size * opt.views, 0, 1,
+                window_images.back(),
+                window_image_views.back(),
+                vk::ImageLayout::eUndefined,
+                image_format,
+                vk::SampleCountFlagBits::e1
+            );
+        }
+        vk::ImageCreateInfo info{
+            {},
+            vk::ImageType::e2D,
+            swapchain_format.format,
+            {opt.size.x, opt.size.y, 1},
+            1,
+            opt.views.x * opt.views.y,
+            vk::SampleCountFlagBits::e1,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eSampled|
+            vk::ImageUsageFlagBits::eStorage|
+            vk::ImageUsageFlagBits::eTransferDst|
+            vk::ImageUsageFlagBits::eTransferSrc,
+            vk::SharingMode::eExclusive
+        };
+        images.emplace_back(sync_create_gpu_image(
+            dev_data, info, vk::ImageLayout::eGeneral
+        ));
+        reset_image_views();
+
+        render_target input = get_array_render_target()[0];
+        input.layout = expected_image_layout;
+        composition.reset(new multiview_composition_stage(
+            get_display_device(),
+            input,
+            output_frames,
+            { opt.views }
+        ));
+    }
 }
 
 void window::deinit_swapchain()
 {
     vk::Device& dev = get_display_device().logical;
+    sync();
+    composition.reset();
     array_image_views.clear();
     images.clear();
+    window_image_views.clear();
+    window_images.clear();
     sync();
     dev.destroySwapchainKHR(swapchain);
 }

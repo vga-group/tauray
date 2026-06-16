@@ -1,5 +1,6 @@
 #include "stage.hh"
 #include "misc.hh"
+#include "window.hh"
 
 namespace tr
 {

@@ -126,6 +126,7 @@ add_library(tauray-core STATIC
   src/mesh.cc
   src/misc.cc
   src/model.cc
+  src/multiview_composition_stage.cc
   src/assimp.cc
   src/openxr.cc
   src/options.cc

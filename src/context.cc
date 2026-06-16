@@ -23,6 +23,8 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
         return false;
     if(uint32_t(data->messageIdNumber) == 0x211e533bu) // Caused by Monado OpenXR driver
         return false;
+    if(uint32_t(data->messageIdNumber) == 0xa5625282) // Caused by glslc
+        return false;
 
     (void)severity;
     (void)type;

@@ -376,6 +376,7 @@ context* create_context(const options& opt)
         window::options win_opt;
         (context::options&)win_opt = ctx_opt;
         win_opt.size = uvec2(opt.width, opt.height);
+        win_opt.views = uvec2(opt.camera_grid.w, opt.camera_grid.h);
         win_opt.fullscreen = opt.fullscreen;
         win_opt.vsync = opt.vsync;
         win_opt.hdr_display = opt.hdr;
@@ -851,7 +852,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
     transformable* cam = s.get<transformable>(cam_id);
 
-    std::vector<entity> cameras = generate_cameras(cam_id, s, opt, false);
+    std::vector<entity> cameras = generate_cameras(cam_id, s, opt, true);
     if(cameras.size() != 0)
         s.get<camera_metadata>(cameras[0])->enabled = true;
 

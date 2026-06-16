@@ -2,6 +2,7 @@
 #define TAURAY_WINDOW_HH
 
 #include "context.hh"
+#include "multiview_composition_stage.hh"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -16,6 +17,7 @@ public:
     {
         const char* title = "TauRay";
         uvec2 size = uvec2(1280, 720);
+        uvec2 views = uvec2(1, 1);
         bool fullscreen = false;
         bool vsync = false;
         bool hdr_display = false;
@@ -26,6 +28,8 @@ public:
     window(window&& other) = delete;
     ~window();
 
+    size_t get_swapchain_image_count() const override;
+    std::vector<render_target> get_array_render_target() override;
     void recreate_swapchains();
 
 protected:
@@ -40,6 +44,7 @@ protected:
         uint32_t queue_index,
         const vk::QueueFamilyProperties& props
     ) override final;
+    dependencies fill_end_frame_dependencies(const dependencies& deps) override;
 
 private:
     void init_sdl();
@@ -53,6 +58,12 @@ private:
     SDL_Window* win;
     VkSurfaceKHR surface;
     vk::SwapchainKHR swapchain;
+
+    // These are the actual swapchain images in multiview setups. In single-view
+    // setups, context.images contains them.
+    std::unique_ptr<multiview_composition_stage> composition;
+    std::vector<vkm<vk::Image>> window_images;
+    std::vector<vkm<vk::ImageView>> window_image_views;
 };
 
 }
