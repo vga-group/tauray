@@ -19,6 +19,9 @@ window::window(const options& opt)
 
 window::~window()
 {
+    composition.reset();
+    sync();
+
     deinit_resources();
     deinit_swapchain();
     deinit_devices();
