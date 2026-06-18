@@ -22,6 +22,7 @@ window::window(const options& opt)
 
 window::~window()
 {
+    composition.reset();
     sync();
 
     deinit_resources();
@@ -364,8 +365,6 @@ void window::init_swapchain()
 void window::deinit_swapchain()
 {
     vk::Device& dev = get_display_device().logical;
-    sync();
-    composition.reset();
     array_image_views.clear();
     images.clear();
     window_image_views.clear();
