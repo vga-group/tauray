@@ -56,8 +56,7 @@ float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
     rayQueryInitializeEXT(rq,
         tlas,
         gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT|gl_RayFlagsTerminateOnFirstHitEXT,
-        //0x02^0xFF, // Exclude lights from shadow rays
-        0xFF,
+        0x02^0xFF, // Exclude lights from shadow rays
         pos,
         min_dist,
         dir,
@@ -123,7 +122,6 @@ bool get_intersection_info(
     hit_info payload,
     vec3 origin,
     vec3 view,
-    bool include_directional_lights,
     out pt_vertex_data v,
     out intersection_pdf nee_pdf,
     out sampled_material mat,
@@ -225,7 +223,7 @@ bool get_intersection_info(
 
         mat.emission = vec3(0);
         light = vec3(0);
-        for(uint i = 0; include_directional_lights && i < scene_metadata.directional_light_count; ++i)
+        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
         {
             directional_light dl = directional_lights.lights[i];
             if(dl.dir_cutoff >= 1.0f)
@@ -516,6 +514,7 @@ void evaluate_ray(
 #endif
     bool write_first_hit_info
 ){
+    pcg4d(lsampler.rs.seed);
     vec3 attenuation = vec3(1);
 
     float regularization = 1.0f;
@@ -523,14 +522,17 @@ void evaluate_ray(
 #ifdef DEMODULATED_OUTPUT
     bsdf_lobes primary_lobes = bsdf_lobes(0,0,0,1);
 #endif
-    pcg4d(lsampler.rs.seed);
     vec3 prev_normal = vec3(0);
+
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
         rayQueryEXT rq;
         rayQueryInitializeEXT(rq,
             tlas,
             gl_RayFlagsNoneEXT,
+            //gl_RayFlagsCullNoOpaqueEXT,
+            //gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT,
+            //gl_RayFlagsCullBackFacingTrianglesEXT,
 #ifdef HIDE_LIGHTS
             bounce == 0 ? 0xFF^0x02 : 0xFF,
 #else
@@ -548,11 +550,7 @@ void evaluate_ray(
         sampled_material mat;
         intersection_pdf nee_pdf;
         vec3 light;
-        bool include_directional_lights = false;
-#ifdef HIDE_LIGHTS
-        if (bounce == 0) include_directional_lights = false;
-#endif
-        bool terminal = !get_intersection_info(payload, pos, view, include_directional_lights, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
+        bool terminal = !get_intersection_info(payload, pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.

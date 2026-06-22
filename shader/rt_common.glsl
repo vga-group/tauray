@@ -22,6 +22,7 @@ struct hit_info
 
     // Barycentric coordinates to the triangle that was hit.
     vec2 barycentrics;
+
 #ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
     float hit_t;
     vec3 positions[3];
@@ -59,6 +60,8 @@ float get_point_light_hit_t(point_light pl, vec3 origin, vec3 dir)
 }
 
 #ifdef USE_RAY_QUERIES
+
+#extension GL_EXT_ray_query : enable
 
 float trace_ray_query_visibility(rayQueryEXT rq)
 {
