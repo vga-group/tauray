@@ -129,7 +129,7 @@ size_t context::get_swapchain_image_count() const
 std::vector<render_target> context::get_array_render_target()
 {
     std::vector<render_target> frames;
-    for(size_t i = 0; i < get_swapchain_image_count(); ++i)
+    for(size_t i = 0; i < images.size(); ++i)
     {
         frames.emplace_back(
             image_size,

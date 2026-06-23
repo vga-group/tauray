@@ -34,25 +34,29 @@ window::~window()
 
 size_t window::get_swapchain_image_count() const
 {
-    return window_images.size();
+    return window_images.size() == 0 ? images.size() : window_images.size();
 }
 
 std::vector<render_target> window::get_array_render_target()
 {
-    std::vector<render_target> frames;
-    for(size_t i = 0; i < window_images.size(); ++i)
+    if (window_images.size() != 0)
     {
-        frames.emplace_back(
-            image_size,
-            0, image_array_layers,
-            images[0],
-            array_image_views[0],
-            vk::ImageLayout::eUndefined,
-            image_format,
-            vk::SampleCountFlagBits::e1
-        );
+        std::vector<render_target> frames;
+        for(size_t i = 0; i < window_images.size(); ++i)
+        {
+            frames.emplace_back(
+                image_size,
+                0, image_array_layers,
+                images[0],
+                array_image_views[0],
+                vk::ImageLayout::eUndefined,
+                image_format,
+                vk::SampleCountFlagBits::e1
+            );
+        }
+        return frames;
     }
-    return frames;
+    return context::get_array_render_target();
 }
 
 void window::recreate_swapchains()
@@ -293,7 +297,7 @@ void window::init_swapchain()
     images.clear();
 
     // Get swap chain images & create image views
-    if (opt.views.x == 1 && opt.views.y == 1)
+    if (singleview)
     { // Single-view setup
         for(vk::Image img: swapchain_images)
             images.emplace_back(vkm(dev_data, img));
