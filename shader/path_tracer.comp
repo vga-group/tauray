@@ -113,8 +113,8 @@ void main()
         //vec4 cliprule = vec4(origin, 1.2f);
         //origin += (generate_spatial_sample(lsampler)-0.5)*0.3;
 
-        evaluate_ray(
-        //evaluate_ray_matched(
+        //evaluate_ray(
+        evaluate_ray_matched(
             lsampler, origin, dir,
 #ifdef DEMODULATED_OUTPUT
             sum_diffuse,
