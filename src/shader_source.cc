@@ -158,10 +158,10 @@ shader_source::shader_source(
 
         spv::SpvBuildLogger logger;
         glslang::SpvOptions options;
-        options.generateDebugInfo = true;
+        options.generateDebugInfo = false;
         //options.emitNonSemanticShaderDebugInfo = true;
         //options.emitNonSemanticShaderDebugSource = true;
-        options.disableOptimizer = true;
+        options.disableOptimizer = false;
         glslang::GlslangToSpv(
             *program.getIntermediate(type), data, &logger, &options
         );
