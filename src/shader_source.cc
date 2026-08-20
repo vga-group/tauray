@@ -140,7 +140,7 @@ shader_source::shader_source(
 
         // Preprocessing
         DirStackFileIncluder includer;
-        includer.pushExternalLocalDirectory(dir_path);
+        includer.pushExternalDirectory(dir_path);
 
         // Compiling
         if(!shader.parse(&resources, 100, ENoProfile, false, false, messages, includer))

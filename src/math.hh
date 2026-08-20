@@ -23,20 +23,6 @@
 #include <complex>
 #include <vector>
 
-// GLM has a lot of necessary functionality as 'experimental', which means that
-// the API gets deprecated pretty fast. This check makes sure we don't get weird
-// build problems if the version is something different.
-//
-// If you want to bump this version, not only make sure that the program builds,
-// but also check that SSE works as expected.
-/*
-#if GLM_VERSION != 998
-#pragma warning "This program was written to use GLM 0.9.9.8. " \
-    GLM_VERSION_MESSAGE
-#endif
-*/
-
-
 #ifndef M_PI
 #define M_PI 3.141592653589793238462643383279502884
 #endif
