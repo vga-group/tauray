@@ -78,7 +78,7 @@ void window::init_sdl()
 {
     uint32_t subsystems = SDL_INIT_VIDEO|SDL_INIT_JOYSTICK|
         SDL_INIT_GAMEPAD|SDL_INIT_EVENTS;
-    if(SDL_Init(subsystems))
+    if(!SDL_Init(subsystems))
         throw std::runtime_error(SDL_GetError());
 
     win = SDL_CreateWindow(

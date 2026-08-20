@@ -20,7 +20,8 @@ void upload_texture(nng_msg* msg, SDL_Texture* tex, int width, int height)
 
 void frame_client(const options& opt)
 {
-    SDL_Init(SDL_INIT_EVENTS|SDL_INIT_VIDEO);
+    if(!SDL_Init(SDL_INIT_EVENTS|SDL_INIT_VIDEO))
+        throw std::runtime_error(SDL_GetError());
 
     uint32_t width = opt.width;
     uint32_t height = opt.height;
