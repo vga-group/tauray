@@ -30,7 +30,9 @@ looking_glass::looking_glass(const options& opt)
     get_lkg_metadata();
     init_sdl();
     init_vulkan((PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr());
-    if(!SDL_Vulkan_CreateSurface(win, instance, &surface))
+    if(!SDL_Vulkan_CreateSurface(
+        win, instance, (const VkAllocationCallbacks*)nullptr, &surface
+    ))
         throw std::runtime_error(SDL_GetError());
     init_devices();
     init_swapchain();
@@ -40,6 +42,9 @@ looking_glass::looking_glass(const options& opt)
 
 looking_glass::~looking_glass()
 {
+    composition.reset();
+    sync();
+
     deinit_render_target();
     deinit_resources();
     deinit_swapchain();
@@ -140,19 +145,24 @@ void looking_glass::get_lkg_metadata()
         cbor_item_t* cmd = cbor_new_definite_map(2);
         cbor_item_t* init = cbor_new_definite_map(1);
         cbor_item_t* appid = cbor_new_definite_map(1);
-        cbor_map_add(appid, {
+        auto cbor_add = [](cbor_item_t* map, cbor_pair pair)
+        {
+            if(!cbor_map_add(map, pair))
+                throw std::runtime_error("Failed to build CBOR handshake message");
+        };
+        cbor_add(appid, {
             cbor_move(cbor_build_string("appid")),
             cbor_move(cbor_build_string(""))
             });
-        cbor_map_add(init, {
+        cbor_add(init, {
             cbor_move(cbor_build_string("init")),
             cbor_move(appid)
             });
-        cbor_map_add(cmd, {
+        cbor_add(cmd, {
             cbor_move(cbor_build_string("cmd")),
             cbor_move(init)
             });
-        cbor_map_add(cmd, {
+        cbor_add(cmd, {
             cbor_move(cbor_build_string("bin")),
             cbor_move(cbor_build_string(""))
             });
@@ -313,39 +323,49 @@ looking_glass::device_metadata looking_glass::get_lkg_device_metadata(void* lkg_
 void looking_glass::init_sdl()
 {
     uint32_t subsystems = SDL_INIT_VIDEO|SDL_INIT_JOYSTICK|
-        SDL_INIT_GAMECONTROLLER|SDL_INIT_EVENTS;
+        SDL_INIT_GAMEPAD|SDL_INIT_EVENTS;
     if(SDL_Init(subsystems))
         throw std::runtime_error(SDL_GetError());
 
     if(opt.calibration_override)
     {
+        int display_count = 0;
+        SDL_DisplayID* displays =
+            SDL_GetDisplays(&display_count);
+        if(!displays ||
+           opt.calibration_override->display_index >= display_count)
+            throw std::runtime_error(SDL_GetError());
         SDL_Rect display_rect;
-        SDL_GetDisplayBounds(opt.calibration_override->display_index, &display_rect);
+        SDL_GetDisplayBounds(
+            displays[opt.calibration_override->display_index], &display_rect
+        );
+        SDL_free(displays);
         metadata.window_coords.x = display_rect.x;
         metadata.window_coords.y = display_rect.y;
     }
 
     win = SDL_CreateWindow(
         "Tauray",
-        metadata.window_coords.x,
-        metadata.window_coords.y,
         metadata.size.x,
         metadata.size.y,
         SDL_WINDOW_VULKAN | SDL_WINDOW_BORDERLESS
     );
     if(!win) throw std::runtime_error(SDL_GetError());
-    SDL_SetWindowGrab(win, (SDL_bool)true);
-    SDL_SetRelativeMouseMode((SDL_bool)true);
+    SDL_SetWindowPosition(
+        win, metadata.window_coords.x, metadata.window_coords.y
+    );
+    SDL_SetWindowKeyboardGrab(win, true);
+    SDL_SetWindowMouseGrab(win, true);
+    SDL_SetWindowRelativeMouseMode(win, true);
     image_size = opt.viewport_size;
     image_array_layers = opt.viewport_count;
 
     unsigned count = 0;
-    if(!SDL_Vulkan_GetInstanceExtensions(win, &count, nullptr))
+    const char* const* exts = SDL_Vulkan_GetInstanceExtensions(&count);
+    if(!exts)
         throw std::runtime_error(SDL_GetError());
 
-    extensions.resize(count);
-    if(!SDL_Vulkan_GetInstanceExtensions(win, &count, extensions.data()))
-        throw std::runtime_error(SDL_GetError());
+    extensions.assign(exts, exts + count);
 }
 
 void looking_glass::deinit_sdl()

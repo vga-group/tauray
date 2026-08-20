@@ -2,13 +2,8 @@
 #define TAURAY_FRAME_SERVER_HH
 #include "context.hh"
 
-#if _WIN32
-#include <SDL.h>
-#include <SDL_vulkan.h>
-#else
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_vulkan.h>
-#endif
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 #include <thread>
 #include <mutex>

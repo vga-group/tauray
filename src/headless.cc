@@ -55,8 +55,9 @@ void parse_pixel_format(
 
 vk::Format sdl_to_vk_format(SDL_Surface* display_surface)
 {
-    SDL_PixelFormat* format = display_surface->format;
-    if(format->BytesPerPixel != 4)
+    const SDL_PixelFormatDetails* format =
+        SDL_GetPixelFormatDetails(display_surface->format);
+    if(!format || format->bytes_per_pixel != 4)
         throw std::runtime_error(
             "SDL does not have a 4-channel pixel format, direct memcpy does "
             "not suffice!"
@@ -263,22 +264,21 @@ void headless::deinit_images()
 void headless::init_sdl()
 {
     uint32_t subsystems = SDL_INIT_VIDEO|SDL_INIT_JOYSTICK|
-        SDL_INIT_GAMECONTROLLER|SDL_INIT_EVENTS;
+        SDL_INIT_GAMEPAD|SDL_INIT_EVENTS;
     if(SDL_Init(subsystems))
         throw std::runtime_error(SDL_GetError());
 
     win = SDL_CreateWindow(
         "TauRay",
-        SDL_WINDOWPOS_UNDEFINED,
-        SDL_WINDOWPOS_UNDEFINED,
         opt.size.x,
         opt.size.y,
-        (opt.viewer_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0)
+        (opt.viewer_fullscreen ? SDL_WINDOW_FULLSCREEN : 0)
     );
     if(!win) throw std::runtime_error(SDL_GetError());
     SDL_GetWindowSize(win, (int*)&opt.size.x, (int*)&opt.size.y);
-    SDL_SetWindowGrab(win, (SDL_bool)true);
-    SDL_SetRelativeMouseMode((SDL_bool)true);
+    SDL_SetWindowKeyboardGrab(win, true);
+    SDL_SetWindowMouseGrab(win, true);
+    SDL_SetWindowRelativeMouseMode(win, true);
 
     display_surface = SDL_GetWindowSurface(win);
 }

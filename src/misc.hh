@@ -1,12 +1,10 @@
 #ifndef TAURAY_MISC_HH
 #define TAURAY_MISC_HH
-#include "vkm.hh"
+#include "context.hh"
+#include <stdexcept>
 
 namespace tr
 {
-
-struct device;
-class context;
 
 template<typename T, size_t count>
 inline std::string to_string(const vk::ArrayWrapper1D<T, count>& vkstring)
@@ -196,7 +194,8 @@ void set_debug_object_name(const tr::device& device, const T& vulkan_object, con
         info.objectHandle = (uint64_t)static_cast<typename T::CType>(vulkan_object);
         info.objectType = vulkan_object.objectType;
         info.pObjectName = name;
-        device.logical.setDebugUtilsObjectNameEXT(&info);
+        if(device.logical.setDebugUtilsObjectNameEXT(&info) != vk::Result::eSuccess)
+            throw std::runtime_error("Failed to set debug object name");
     }
 }
 

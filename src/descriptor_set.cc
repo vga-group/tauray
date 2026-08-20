@@ -209,7 +209,8 @@ void descriptor_set::reset(device_id id, uint32_t count)
             pool=*sd.pool,
             logical_device=dev.logical
         ](){
-            logical_device.freeDescriptorSets(pool, 1, &descriptor_set);
+            if(logical_device.freeDescriptorSets(pool, 1, &descriptor_set) != vk::Result::eSuccess)
+                throw std::runtime_error("Failed to free descriptor sets");
         });
     }
     sd.alternatives.clear();

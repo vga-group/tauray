@@ -2,7 +2,17 @@
 #define TAURAY_VKM_HH
 
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#endif
 #include "vk_mem_alloc.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 #include <vulkan/vulkan_beta.h>
 #include <vulkan/vulkan.hpp>
 #include <functional>

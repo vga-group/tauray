@@ -10,7 +10,9 @@ window::window(const options& opt)
 {
     init_sdl();
     init_vulkan((PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr());
-    if(!SDL_Vulkan_CreateSurface(win, instance, &surface))
+    if(!SDL_Vulkan_CreateSurface(
+        win, instance, (const VkAllocationCallbacks*)nullptr, &surface
+    ))
         throw std::runtime_error(SDL_GetError());
     init_devices();
     init_swapchain();
@@ -19,7 +21,6 @@ window::window(const options& opt)
 
 window::~window()
 {
-    composition.reset();
     sync();
 
     deinit_resources();
@@ -76,32 +77,30 @@ bool window::queue_can_present(
 void window::init_sdl()
 {
     uint32_t subsystems = SDL_INIT_VIDEO|SDL_INIT_JOYSTICK|
-        SDL_INIT_GAMECONTROLLER|SDL_INIT_EVENTS;
+        SDL_INIT_GAMEPAD|SDL_INIT_EVENTS;
     if(SDL_Init(subsystems))
         throw std::runtime_error(SDL_GetError());
 
     win = SDL_CreateWindow(
         "Tauray",
-        SDL_WINDOWPOS_UNDEFINED,
-        SDL_WINDOWPOS_UNDEFINED,
         opt.size.x,
         opt.size.y,
-        SDL_WINDOW_VULKAN | (opt.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_ALWAYS_ON_TOP)
+        SDL_WINDOW_VULKAN | (opt.fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_ALWAYS_ON_TOP)
     );
     if(!win) throw std::runtime_error(SDL_GetError());
     SDL_GetWindowSize(win, (int*)&opt.size.x, (int*)&opt.size.y);
-    SDL_SetWindowGrab(win, (SDL_bool)true);
-    SDL_SetRelativeMouseMode((SDL_bool)true);
+    SDL_SetWindowKeyboardGrab(win, true);
+    SDL_SetWindowMouseGrab(win, true);
+    SDL_SetWindowRelativeMouseMode(win, true);
     image_size = opt.size;
     image_array_layers = 1;
 
     unsigned count = 0;
-    if(!SDL_Vulkan_GetInstanceExtensions(win, &count, nullptr))
+    const char* const* exts = SDL_Vulkan_GetInstanceExtensions(&count);
+    if(!exts)
         throw std::runtime_error(SDL_GetError());
 
-    extensions.resize(count);
-    if(!SDL_Vulkan_GetInstanceExtensions(win, &count, extensions.data()))
-        throw std::runtime_error(SDL_GetError());
+    extensions.assign(exts, exts + count);
 }
 
 void window::deinit_sdl()

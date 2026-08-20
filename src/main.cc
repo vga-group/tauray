@@ -1,6 +1,7 @@
 #include "tauray.hh"
 #include <iostream>
 #include <fstream>
+#include <cstring>
 
 int main(int, char** argv) try
 {

@@ -2,7 +2,6 @@
   "name": "tauray",
   "version-string": "0.0.0",
   "dependencies": [
-    "sdl2",
     "glm",
     "czmq",
     "nng",
@@ -11,13 +10,13 @@
     "vulkan",
     "openxr-loader",
     {
-      "name": "sdl2",
+      "name": "sdl3",
       "default-features": false,
-      "features": [ "x11", "vulkan" ],
+      "features": [ "x11", "wayland", "vulkan" ],
       "platform": "linux"
     },
     {
-      "name": "sdl2",
+      "name": "sdl3",
       "default-features": false,
       "features": [ "vulkan" ],
       "platform": "windows"

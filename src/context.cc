@@ -11,13 +11,13 @@ namespace
 {
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-    VkDebugUtilsMessageTypeFlagsEXT type,
-    const VkDebugUtilsMessengerCallbackDataEXT* data,
+    vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
+    vk::DebugUtilsMessageTypeFlagsEXT type,
+    const vk::DebugUtilsMessengerCallbackDataEXT* data,
     void* pUserData
 ){
     // These are usually spammy and useless messages.
-    if(type == VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
+    if(type == vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral)
         return false;
     if(uint32_t(data->messageIdNumber) == 0x912ddde2u) // FIXME: Timer ID error on windows
         return false;
@@ -30,7 +30,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     TR_ERR(data->pMessage);
 
     // Handy assert for debugging where validation errors happen
-    //assert(severity != VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
+    assert(severity != vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
     return false;
 }
 
@@ -258,9 +258,10 @@ void context::queue_frame_finish_callback(std::function<void()>&& func)
 
 vk::Instance context::create_instance(
     const vk::InstanceCreateInfo& info,
-    PFN_vkGetInstanceProcAddr
+    PFN_vkGetInstanceProcAddr getInstanceProcAddr
 ){
-    return vk::createInstance({info}, nullptr);
+    vk::detail::defaultDispatchLoaderDynamic.init(getInstanceProcAddr);
+    return vk::createInstance({info}, nullptr, vk::detail::defaultDispatchLoaderDynamic);
 }
 
 vk::Device context::create_device(
@@ -272,15 +273,14 @@ vk::Device context::create_device(
 
 void context::init_vulkan(PFN_vkGetInstanceProcAddr getInstanceProcAddr)
 {
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(getInstanceProcAddr);
-
+    vk::detail::defaultDispatchLoaderDynamic.init(getInstanceProcAddr);
     if(opt.enable_vulkan_validation)
     {
         validation_layers.push_back("VK_LAYER_KHRONOS_validation");
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
         std::vector<vk::LayerProperties> available_layers =
-            vk::enumerateInstanceLayerProperties();
+            vk::enumerateInstanceLayerProperties(vk::detail::defaultDispatchLoaderDynamic);
 
         for(
             auto it = validation_layers.begin();
@@ -333,7 +333,7 @@ void context::init_vulkan(PFN_vkGetInstanceProcAddr getInstanceProcAddr)
 
     instance = create_instance(instance_info, getInstanceProcAddr);
 
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
+    vk::detail::defaultDispatchLoaderDynamic.init(instance, getInstanceProcAddr);
 
     if(opt.enable_vulkan_validation)
     {

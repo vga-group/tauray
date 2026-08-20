@@ -44,7 +44,7 @@ results.
 
 # Installing Tauray
 
-It is recommended that you run Tauray on a PC running Ubuntu 22.04 LTS with one
+It is recommended that you run Tauray on a PC running Ubuntu 26.04 LTS with one
 or more Nvidia RTX GPUs.
 
 ## Building Tauray
@@ -53,7 +53,7 @@ Tauray has some dependencies, so install them first:
 
 ```bash
 sudo apt install libvulkan-dev vulkan-validationlayers vulkan-tools imagemagick libnng-dev \
-    libcbor-dev libczmq-dev libglm-dev libsdl2-dev
+    libcbor-dev libczmq-dev libglm-dev libsdl3-dev
 ```
 
 Then, you can build Tauray.

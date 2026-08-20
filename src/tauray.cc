@@ -938,61 +938,43 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
         while(has_events && SDL_PollEvent(&event)) switch(event.type)
         {
-        case SDL_QUIT:
+        case SDL_EVENT_QUIT:
             opt.running = false;
             break;
-        case SDL_KEYDOWN:
-        case SDL_KEYUP:
-            if(event.type == SDL_KEYDOWN)
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
+            if(event.type == SDL_EVENT_KEY_DOWN)
             {
-                if(event.key.keysym.sym == SDLK_ESCAPE) opt.running = false;
-                if(event.key.keysym.sym == SDLK_RETURN) paused = !paused;
-                if(event.key.keysym.sym == SDLK_PAGEUP)
+                if(event.key.key == SDLK_ESCAPE) opt.running = false;
+                if(event.key.key == SDLK_RETURN) paused = !paused;
+                if(event.key.key == SDLK_PAGEUP)
                 {
                     camera_index++;
                     camera_moved = true;
                 }
-                if(event.key.keysym.sym == SDLK_PAGEDOWN)
+                if(event.key.key == SDLK_PAGEDOWN)
                 {
                     camera_index--;
                     camera_moved = true;
                 }
-                if(event.key.keysym.sym == SDLK_PLUS)
-                {
-                    cascade++;
-                    printf("cascade: %d\n", cascade);
-                }
-                if(event.key.keysym.sym == SDLK_MINUS && cascade > 0)
-                {
-                    cascade--;
-                    printf("cascade: %d\n", cascade);
-                }
-                if(event.key.keysym.sym == SDLK_z)
-                {
-                    layer++;
-                    printf("layer: %d\n", layer);
-                }
-                if(event.key.keysym.sym == SDLK_x && layer > 0)
-                {
-                    layer--;
-                    printf("layer: %d\n", layer);
-                }
-                if(event.key.keysym.sym == SDLK_t && !opt.timing)
+                if(event.key.key == SDLK_T && !opt.timing)
                     ctx.get_timing().print_last_trace(opt.trace);
-                if(event.key.keysym.sym == SDLK_0)
+                if(event.key.key == SDLK_0)
                 {
                     // Full camera reset, for when you get lost ;)
                     cam->set_global_position();
                     cam->set_global_orientation();
                     camera_moved = true;
                 }
-                if(event.key.keysym.sym == SDLK_F1)
+                if(event.key.key == SDLK_F1)
                 {
                     camera_locked = !camera_locked;
-                    SDL_SetWindowGrab(SDL_GetWindowFromID(event.key.windowID), (SDL_bool)!camera_locked);
-                    SDL_SetRelativeMouseMode((SDL_bool)!camera_locked);
+                    SDL_Window* win = SDL_GetWindowFromID(event.key.windowID);
+                    SDL_SetWindowKeyboardGrab(win, !camera_locked);
+                    SDL_SetWindowMouseGrab(win, !camera_locked);
+                    SDL_SetWindowRelativeMouseMode(win, !camera_locked);
                 }
-                if(event.key.keysym.sym == SDLK_F5)
+                if(event.key.key == SDLK_F5)
                 {
                     shader_source::clear_binary_cache();
                     rr.reset();
@@ -1000,28 +982,28 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                     crash_on_exception = false;
                 }
             }
-            if(event.key.repeat == SDL_FALSE)
+            if(!event.key.repeat)
             {
-                int direction = event.type == SDL_KEYDOWN ? 1 : -1;
-                if(event.key.keysym.scancode == SDL_SCANCODE_W)
+                int direction = event.type == SDL_EVENT_KEY_DOWN ? 1 : -1;
+                if(event.key.scancode == SDL_SCANCODE_W)
                     camera_movement.z -= direction;
-                if(event.key.keysym.scancode == SDL_SCANCODE_S)
+                if(event.key.scancode == SDL_SCANCODE_S)
                     camera_movement.z += direction;
-                if(event.key.keysym.scancode == SDL_SCANCODE_A)
+                if(event.key.scancode == SDL_SCANCODE_A)
                     camera_movement.x -= direction;
-                if(event.key.keysym.scancode == SDL_SCANCODE_D)
+                if(event.key.scancode == SDL_SCANCODE_D)
                     camera_movement.x += direction;
-                if(event.key.keysym.scancode == SDL_SCANCODE_LSHIFT)
+                if(event.key.scancode == SDL_SCANCODE_LSHIFT)
                     camera_movement.y -= direction;
-                if(event.key.keysym.scancode == SDL_SCANCODE_SPACE)
+                if(event.key.scancode == SDL_SCANCODE_SPACE)
                     camera_movement.y += direction;
             }
             break;
-        case SDL_MOUSEWHEEL:
+        case SDL_EVENT_MOUSE_WHEEL:
             if(event.wheel.y != 0)
                 speed *= pow(1.1, event.wheel.y);
             break;
-        case SDL_MOUSEMOTION:
+        case SDL_EVENT_MOUSE_MOTION:
             if(focused && !camera_locked)
             {
                 pitch = std::clamp(
@@ -1032,11 +1014,11 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                 camera_moved = true;
             }
             break;
-        case SDL_WINDOWEVENT:
-            if(event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
-                focused = false;
-            if(event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
-                focused = true;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            focused = false;
+            break;
+        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+            focused = true;
             break;
         }
 

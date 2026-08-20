@@ -38,6 +38,12 @@ function(add_glslang)
 endfunction()
 add_glslang()
 
+foreach(glslang_target glslang SPIRV)
+    if(TARGET ${glslang_target})
+        target_compile_options(${glslang_target} PRIVATE -Wno-maybe-uninitialized)
+    endif()
+endforeach()
+
 function(add_openxr)
     # This just gives us a scope so that we don't overwrite CMAKE_BUILD_TYPE.
     set(BUILD_WITH_STD_FILESYSTEM OFF CACHE BOOL "" FORCE)
@@ -52,6 +58,10 @@ function(add_openxr)
 endfunction()
 add_openxr()
 
+if(TARGET openxr_loader)
+    target_compile_options(openxr_loader PRIVATE -Wno-uninitialized)
+endif()
+
 
 set(TAURAY_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 string(LENGTH "${TAURAY_PROJECT_ROOT}/" TAURAY_PROJECT_ROOT_PATH_SIZE)
@@ -59,13 +69,15 @@ add_compile_definitions("TAURAY_PROJECT_ROOT_PATH_SIZE=${TAURAY_PROJECT_ROOT_PAT
 
 add_subdirectory(external/fuchsia_radix_sort)
 
-find_package(SDL2 REQUIRED)
+find_package(SDL3 REQUIRED)
 find_package(glm REQUIRED)
 find_package(czmq QUIET)
 find_package(nng QUIET)
 find_package(libcbor QUIET)
 find_package(Vulkan REQUIRED)
 find_package(assimp REQUIRED)
+
+set_property(SOURCE external/spirv_reflect.c APPEND PROPERTY COMPILE_OPTIONS -Wno-switch)
 
 add_library(tauray-core STATIC
   external/stb_image.c
@@ -175,8 +187,8 @@ target_include_directories(tauray-core PUBLIC SYSTEM
     "external/SPIRV-Headers/include"
     "external/Vulkan-Headers/include"
 )
-target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp)
-target_link_libraries(tauray PUBLIC tauray-core SDL2::SDL2main)
+target_link_libraries(tauray-core PUBLIC SDL3::SDL3 glm::glm glslang glslang-default-resource-limits SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp)
+target_link_libraries(tauray PUBLIC tauray-core)
 
 if(MSVC)
   target_compile_options(tauray-core PRIVATE /W4 /WX- /MP)

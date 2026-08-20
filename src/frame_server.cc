@@ -208,7 +208,8 @@ void frame_server::deinit_images()
 void frame_server::init_sdl()
 {
     uint32_t subsystems = SDL_INIT_EVENTS;
-    putenv((char*)"SDL_VIDEODRIVER=dummy");
+    static char sdl_video_driver[] = "SDL_VIDEODRIVER=dummy";
+    putenv(sdl_video_driver);
     if(SDL_Init(subsystems))
         throw std::runtime_error(SDL_GetError());
 }
