@@ -7,14 +7,14 @@
 
 #include "scene.glsl"
 
-layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray accumulated_diffuse;
-layout(binding = 1, set = 0, rgba32f) uniform image2DArray filtered_diffuse;
-layout(binding = 3, set = 0, rgba32f) uniform image2DArray normal;
+layout(binding = 0, set = 0) uniform readonly image2DArray accumulated_diffuse;
+layout(binding = 1, set = 0) uniform image2DArray filtered_diffuse;
+layout(binding = 3, set = 0) uniform image2DArray normal;
 layout(binding = 4, set = 0) uniform sampler2DArray in_depth;
-layout(binding = 5, set = 0, rgba32f) uniform image2DArray history_length;
-layout(binding = 8, set = 0, rgba32f) uniform image2DArray accumulated_specular;
-layout(binding = 10, set = 0, rgba32f) uniform image2DArray filtered_specular;
-layout(binding = 13, set = 0, rgba32f) uniform image2DArray in_material;
+layout(binding = 5, set = 0) uniform image2DArray history_length;
+layout(binding = 8, set = 0) uniform image2DArray accumulated_specular;
+layout(binding = 10, set = 0) uniform image2DArray filtered_specular;
+layout(binding = 13, set = 0) uniform image2DArray in_material;
 
 layout (local_size_x = 16, local_size_y = 16) in;
 

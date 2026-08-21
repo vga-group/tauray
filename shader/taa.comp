@@ -6,8 +6,8 @@ layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(binding = 0) uniform sampler2DArray src_tex;
 layout(binding = 1) uniform sampler2DArray history_tex;
-layout(binding = 2, rgba32f) writeonly uniform image2DArray dst_img;
-layout(binding = 3, rgba32f) writeonly uniform image2DArray history_out_img;
+layout(binding = 2) writeonly uniform image2DArray dst_img;
+layout(binding = 3) writeonly uniform image2DArray history_out_img;
 layout(binding = 4) uniform sampler2DArray motion_tex;
 #ifdef EDGE_DILATION
 layout(binding = 5) uniform sampler2DArray depth_tex;

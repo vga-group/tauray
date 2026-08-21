@@ -20,8 +20,8 @@ layout(push_constant) uniform push_constant_buffer
 
 layout(local_size_x = DISPATCH_WIDTH, local_size_y = DISPATCH_HEIGHT) in;
 
-layout(binding = 16, rgba32f) writeonly uniform image2D out_color;
-layout(binding = 17, rg32f) writeonly uniform image2D out_length;
+layout(binding = 16) writeonly uniform image2D out_color;
+layout(binding = 17) writeonly uniform image2D out_length;
 
 #include "restir_core.glsl"
 

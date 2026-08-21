@@ -3,8 +3,8 @@
 
 layout(local_size_x = 256) in;
 
-layout(binding = 0, set = 0, rgba32f) uniform readonly image3D input_sh;
-layout(binding = 1, set = 0, rgba16f) uniform writeonly image3D output_sh;
+layout(binding = 0, set = 0) uniform readonly image3D input_sh;
+layout(binding = 1, set = 0) uniform writeonly image3D output_sh;
 
 layout(push_constant) uniform push_constant_buffer
 {

@@ -26,9 +26,9 @@ layout(push_constant) uniform push_constant_buffer
 
 #include "restir_core.glsl"
 
-layout(binding = 21, rgba32f) uniform image2D out_color;
+layout(binding = 21) uniform image2D out_color;
 #ifdef TEMPORAL_GRADIENTS
-layout(binding = 22, rg8) uniform image2D out_temporal_gradients;
+layout(binding = 22) uniform image2D out_temporal_gradients;
 #endif
 
 #ifdef ASSUME_UNCHANGED_TEMPORAL_VISIBILITY

@@ -8,7 +8,7 @@
 // Color
 //==============================================================================
 #ifdef COLOR_TARGET_BINDING
-layout(binding = COLOR_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray color_target;
+layout(binding = COLOR_TARGET_BINDING, set = 0) uniform image2DArray color_target;
 
 void write_gbuffer_color(vec4 color, ivec3 pos)
 {
@@ -58,7 +58,7 @@ vec4 sample_gbuffer_color(sampler2D tex, ivec2 p)
 // Diffuse lighting
 //==============================================================================
 #ifdef DIFFUSE_TARGET_BINDING
-layout(binding = DIFFUSE_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray diffuse_target;
+layout(binding = DIFFUSE_TARGET_BINDING, set = 0) uniform image2DArray diffuse_target;
 
 void write_gbuffer_diffuse(vec4 light, ivec3 pos)
 {
@@ -108,7 +108,7 @@ vec4 sample_gbuffer_diffuse(sampler2D tex, ivec2 p)
 // Reflection
 //==============================================================================
 #ifdef REFLECTION_TARGET_BINDING
-layout(binding = REFLECTION_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray reflection_target;
+layout(binding = REFLECTION_TARGET_BINDING, set = 0) uniform image2DArray reflection_target;
 
 void write_gbuffer_reflection(vec4 light, ivec3 pos)
 {
@@ -154,7 +154,7 @@ vec4 read_gbuffer_reflection(ivec3 pos) { return vec4(0); }
 // Albedo
 //==============================================================================
 #ifdef ALBEDO_TARGET_BINDING
-layout(binding = ALBEDO_TARGET_BINDING, set = 0, rgba16) uniform image2DArray albedo_target;
+layout(binding = ALBEDO_TARGET_BINDING, set = 0) uniform image2DArray albedo_target;
 
 void write_gbuffer_albedo(vec4 albedo, ivec3 pos)
 {
@@ -190,7 +190,7 @@ vec4 sample_gbuffer_albedo(sampler2D tex, ivec2 p)
 //==============================================================================
 
 #ifdef EMISSION_TARGET_BINDING
-layout(binding = EMISSION_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray emission_target;
+layout(binding = EMISSION_TARGET_BINDING, set = 0) uniform image2DArray emission_target;
 
 void write_gbuffer_emission(vec3 emission, ivec3 pos) { imageStore(emission_target, pos, vec4(emission, 0)); }
 vec3 read_gbuffer_emission(ivec3 pos) { return imageLoad(emission_target, pos).xyz; }
@@ -222,7 +222,7 @@ vec3 sample_gbuffer_emission(sampler2D tex, ivec2 p)
 //==============================================================================
 
 #ifdef CURVATURE_TARGET_BINDING
-layout(binding = CURVATURE_TARGET_BINDING, set = 0, r32f) uniform image2DArray curvature_target;
+layout(binding = CURVATURE_TARGET_BINDING, set = 0) uniform image2DArray curvature_target;
 
 void write_gbuffer_curvature(float curvature, ivec3 pos) { imageStore(curvature_target, pos, vec4(curvature)); }
 float read_gbuffer_curvature(ivec3 pos) { return imageLoad(curvature_target, pos).x; }
@@ -278,7 +278,7 @@ sampled_material unpack_gbuffer_material(vec4 packed_mat, vec4 albedo, vec3 emis
 }
 
 #ifdef MATERIAL_TARGET_BINDING
-layout(binding = MATERIAL_TARGET_BINDING, set = 0, rgba8) uniform image2DArray material_target;
+layout(binding = MATERIAL_TARGET_BINDING, set = 0) uniform image2DArray material_target;
 
 void write_gbuffer_material(sampled_material mat, ivec3 pos)
 {
@@ -351,7 +351,7 @@ vec3 unpack_gbuffer_normal(vec2 packed_normal)
 //==============================================================================
 
 #ifdef NORMAL_TARGET_BINDING
-layout(binding = NORMAL_TARGET_BINDING, set = 0, rg16_snorm) uniform image2DArray normal_target;
+layout(binding = NORMAL_TARGET_BINDING, set = 0) uniform image2DArray normal_target;
 
 void write_gbuffer_normal(vec3 normal, ivec3 pos)
 {
@@ -393,7 +393,7 @@ vec3 sample_gbuffer_normal(sampler2D tex, ivec2 p)
 //==============================================================================
 
 #ifdef FLAT_NORMAL_TARGET_BINDING
-layout(binding = FLAT_NORMAL_TARGET_BINDING, set = 0, rg16_snorm) uniform image2DArray flat_normal_target;
+layout(binding = FLAT_NORMAL_TARGET_BINDING, set = 0) uniform image2DArray flat_normal_target;
 
 void write_gbuffer_flat_normal(vec3 normal, ivec3 pos)
 {
@@ -430,7 +430,7 @@ vec3 read_gbuffer_flat_normal(ivec3 pos) { return vec3(0,0,1); }
 //==============================================================================
 
 #ifdef POS_TARGET_BINDING
-layout(binding = POS_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray pos_target;
+layout(binding = POS_TARGET_BINDING, set = 0) uniform image2DArray pos_target;
 
 void write_gbuffer_pos(vec3 view_pos, ivec3 pos)
 {
@@ -469,7 +469,7 @@ vec3 sample_gbuffer_position(sampler2D tex, ivec2 p)
 //==============================================================================
 
 #ifdef SCREEN_MOTION_TARGET_BINDING
-layout(binding = SCREEN_MOTION_TARGET_BINDING, set = 0, rg32f) uniform image2DArray screen_motion_target;
+layout(binding = SCREEN_MOTION_TARGET_BINDING, set = 0) uniform image2DArray screen_motion_target;
 
 void write_gbuffer_screen_motion(vec3 prev_frag_uv, ivec3 pos)
 {
@@ -508,7 +508,7 @@ vec2 sample_gbuffer_screen_motion(sampler2D tex, ivec2 p)
 //==============================================================================
 
 #ifdef INSTANCE_ID_TARGET_BINDING
-layout(binding = INSTANCE_ID_TARGET_BINDING, set = 0, r32i) uniform iimage2DArray instance_id_target;
+layout(binding = INSTANCE_ID_TARGET_BINDING, set = 0) uniform iimage2DArray instance_id_target;
 
 void write_gbuffer_instance_id(int id, ivec3 pos)
 {
@@ -542,7 +542,7 @@ int read_gbuffer_instance_id(ivec3 pos) { return 0; }
 //==============================================================================
 
 #ifdef LINEAR_DEPTH_TARGET_BINDING
-layout(binding = LINEAR_DEPTH_TARGET_BINDING, set = 0, rgba32f) uniform image2DArray linear_depth_target;
+layout(binding = LINEAR_DEPTH_TARGET_BINDING, set = 0) uniform image2DArray linear_depth_target;
 
 void write_gbuffer_linear_depth(ivec3 pos)
 {
@@ -572,6 +572,24 @@ void write_gbuffer_linear_depth()
 void write_gbuffer_linear_depth(ivec3 pos) {}
 void write_gbuffer_linear_depth() {}
 vec3 read_gbuffer_linear_depth(ivec3 pos) { return vec3(0.0); }
+
+#endif
+
+//==============================================================================
+// Depth
+//==============================================================================
+
+#ifdef DEPTH_TARGET_BINDING
+layout(binding = DEPTH_TARGET_BINDING, set = 0) uniform image2DArray depth_target;
+
+void write_gbuffer_depth(float d, ivec3 pos)
+{
+    imageStore(depth_target, pos, vec4(d, 0.0, 0.0, 0.0));
+}
+
+#else
+
+void write_gbuffer_depth(float d, ivec3 pos) {}
 
 #endif
 

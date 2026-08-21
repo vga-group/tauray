@@ -21,7 +21,7 @@ layout(push_constant, scalar) uniform push_constant_buffer
     float regularization_gamma;
 } control;
 
-layout(binding = 0, set = 0, rgba32f) uniform image3D inout_data;
+layout(binding = 0, set = 0) uniform image3D inout_data;
 layout(binding = 1, set = 0) uniform grid_data_buffer
 {
     mat4 transform;

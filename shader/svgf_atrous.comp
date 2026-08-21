@@ -10,26 +10,26 @@
 
 layout (local_size_x = 16, local_size_y = 16) in;
 
-layout(binding = 0, set = 0, rgba32f) uniform image2DArray diffuse_in;
-layout(binding = 1, set = 0, rgba32f) uniform image2DArray diffuse_out;
-layout(binding = 2, set = 0, rgba32f) uniform image2DArray diffuse_hist;
-layout(binding = 3, set = 0, rgba32f) uniform image2DArray final_output;
-layout(binding = 5, set = 0, rgba32f) uniform image2DArray in_normal;
-layout(binding = 6, set = 0, rgba32f) uniform image2DArray in_albedo;
-layout(binding = 7, set = 0, rgba32f) uniform image2DArray specular_in;
-layout(binding = 8, set = 0, rgba32f) uniform image2DArray specular_out;
-layout(binding = 9, set = 0, rgba32f) uniform image2DArray spec_hist;
-layout(binding = 10, set = 0, rgba32f) uniform image2DArray in_material;
+layout(binding = 0, set = 0) uniform image2DArray diffuse_in;
+layout(binding = 1, set = 0) uniform image2DArray diffuse_out;
+layout(binding = 2, set = 0) uniform image2DArray diffuse_hist;
+layout(binding = 3, set = 0) uniform image2DArray final_output;
+layout(binding = 5, set = 0) uniform image2DArray in_normal;
+layout(binding = 6, set = 0) uniform image2DArray in_albedo;
+layout(binding = 7, set = 0) uniform image2DArray specular_in;
+layout(binding = 8, set = 0) uniform image2DArray specular_out;
+layout(binding = 9, set = 0) uniform image2DArray spec_hist;
+layout(binding = 10, set = 0) uniform image2DArray in_material;
 layout(binding = 12, set = 0) uniform sampler2DArray in_depth;
 layout(binding = 13) buffer uniforms
 {
     uint frame_index;
 } uniforms_buffer;
-layout(binding = 14, set = 0, rgba32f) uniform image2DArray raw_diffuse;
-layout(binding = 16, set = 0, rgba32f) uniform image2DArray in_emissive;
-layout(binding = 17, set = 0, rgba32f) uniform image2DArray specular_hit_dist;
-layout(binding = 18, set = 0, rgba32f) uniform image2DArray history_length;
-layout(binding = 19, set = 0, rgba32f) uniform image2DArray temporal_gradient;
+layout(binding = 14, set = 0) uniform image2DArray raw_diffuse;
+layout(binding = 16, set = 0) uniform image2DArray in_emissive;
+layout(binding = 17, set = 0) uniform image2DArray specular_hit_dist;
+layout(binding = 18, set = 0) uniform image2DArray history_length;
+layout(binding = 19, set = 0) uniform image2DArray temporal_gradient;
 
 void main()
 {
