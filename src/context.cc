@@ -206,7 +206,7 @@ void context::end_frame(const dependencies& deps)
     vk::TimelineSemaphoreSubmitInfo timeline_info = local_deps.get_timeline_info(d.id);
     vk::SubmitInfo submit_info = local_deps.get_submit_info(d.id, timeline_info);
     submit_info.signalSemaphoreCount = image_array_layers != 0 ? 1 : 0;
-    submit_info.pSignalSemaphores = frame_finished[frame_index];
+    submit_info.pSignalSemaphores = frame_finished[swapchain_index];
 
     d.graphics_queue.submit(submit_info, frame_fences[frame_index]);
 
@@ -705,19 +705,19 @@ void context::init_resources()
 
     // Create fences & semaphores
     frame_available.resize(MAX_FRAMES_IN_FLIGHT);
-    frame_finished.resize(MAX_FRAMES_IN_FLIGHT);
+    frame_finished.resize(get_swapchain_image_count());
     frame_fences.resize(MAX_FRAMES_IN_FLIGHT);
     image_fences.resize(get_swapchain_image_count());
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         frame_available[i] = create_binary_semaphore(dev_data);
-        frame_finished[i] = create_binary_semaphore(dev_data);
         frame_fences[i] =
             vkm(dev_data, dev_data.logical.createFence({vk::FenceCreateFlagBits::eSignaled}));
     }
 
     for(size_t i = 0; i < get_swapchain_image_count(); ++i)
     {
+        frame_finished[i] = create_binary_semaphore(dev_data);
         image_available.emplace_back(create_timeline_semaphore(dev_data));
     }
 

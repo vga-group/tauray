@@ -58,7 +58,7 @@ void window::finish_image(
     // TODO: Honor display variable? Not really essential here since window
     // doesn't collect datasets.
     (void)d.present_queue.presentKHR({
-        1, frame_finished[frame_index],
+        1, frame_finished[swapchain_index],
         1, &swapchain,
         &swapchain_index
     });

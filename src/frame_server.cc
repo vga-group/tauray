@@ -83,7 +83,7 @@ void frame_server::finish_image(
         // Eat the binary semaphore.
         d.graphics_queue.submit(
             vk::SubmitInfo(
-                1, frame_finished[frame_index], &wait_stage,
+                1, frame_finished[swapchain_index], &wait_stage,
                 0, nullptr,
                 0, nullptr
             ), {}
@@ -103,7 +103,7 @@ void frame_server::finish_image(
     per_image_data& id = per_image[swapchain_index];
     d.graphics_queue.submit(
         vk::SubmitInfo(
-            1, frame_finished[frame_index], &wait_stage,
+            1, frame_finished[swapchain_index], &wait_stage,
             1, id.copy_cb,
             0, nullptr
         ),

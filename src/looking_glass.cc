@@ -112,7 +112,7 @@ void looking_glass::finish_image(
 ){
     device& d = get_display_device();
     (void)d.present_queue.presentKHR({
-        1, frame_finished[frame_index],
+        1, frame_finished[swapchain_index],
         1, &swapchain,
         &swapchain_index
     });

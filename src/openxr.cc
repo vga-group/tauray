@@ -1117,8 +1117,8 @@ void openxr::blit_images(uint32_t frame_index, uint32_t swapchain_index)
         vk::PipelineStageFlagBits::eTopOfPipe
     };
     vk::Semaphore wait_semaphores[2] = {
-        frame_finished[frame_index],
-        frame_finished[frame_index]
+        frame_finished[swapchain_index],
+        frame_finished[swapchain_index]
     };
     if(opt.preview_window)
     {
