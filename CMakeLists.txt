@@ -60,6 +60,7 @@ add_openxr()
 
 if(TARGET openxr_loader)
     target_compile_options(openxr_loader PRIVATE -Wno-uninitialized)
+    target_include_directories(openxr_loader PUBLIC "/usr/include/wayland/")
 endif()
 
 
