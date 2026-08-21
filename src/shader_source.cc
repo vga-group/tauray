@@ -121,12 +121,10 @@ shader_source::shader_source(
         EShLanguage type = detect_shader_language(ext);
         glslang::TShader shader(type);
         const char* c_str = src.c_str();
-        const char* name = path.c_str();
-        int len = src.length();
-
-        shader.setStringsWithLengthsAndNames(&c_str, &len, &name, 1);
-        shader.addSourceText(c_str, len);
-        shader.setSourceFile(name);
+        shader.setStrings(&c_str, 1);
+        shader.setPreamble(
+            "#extension GL_EXT_shader_image_load_formatted : require\n"
+        );
         shader.setEnvInput(glslang::EShSourceGlsl, type, glslang::EShClientVulkan, 100);
         shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
         shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_5);

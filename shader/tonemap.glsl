@@ -1,9 +1,9 @@
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-layout(binding = 2, rgba32f) uniform writeonly image2DArray out_color;
+layout(binding = 2) uniform writeonly image2DArray out_color;
 
 #ifdef MSAA_SAMPLES
-layout(binding = 1, rgba32f) uniform readonly image2DMSArray in_color;
+layout(binding = 1) uniform readonly image2DMSArray in_color;
 vec4 read_tonemap(ivec3 p)
 {
     vec4 sum_col = vec4(0);
@@ -23,7 +23,7 @@ vec4 read_tonemap(ivec3 p)
 #endif
 }
 #else
-layout(binding = 1, rgba32f) uniform readonly image2DArray in_color;
+layout(binding = 1) uniform readonly image2DArray in_color;
 vec4 read_tonemap(ivec3 p) { return tonemap(imageLoad(in_color, p)); }
 #endif
 

@@ -468,6 +468,8 @@ void context::init_devices()
 
         // Request anisotropic filtering support
         feats.features.samplerAnisotropy = true;
+        feats.features.shaderStorageImageReadWithoutFormat = true;
+        feats.features.shaderStorageImageWriteWithoutFormat = true;
         vulkan_12_feats.timelineSemaphore = true;
         vulkan_12_feats.shaderSampledImageArrayNonUniformIndexing = true;
         vulkan_11_feats.multiview = true;
