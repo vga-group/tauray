@@ -970,7 +970,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                 {
                     camera_locked = !camera_locked;
                     SDL_Window* win = SDL_GetWindowFromID(event.key.windowID);
-                    SDL_SetWindowKeyboardGrab(win, !camera_locked);
+                    //SDL_SetWindowKeyboardGrab(win, !camera_locked);
                     SDL_SetWindowMouseGrab(win, !camera_locked);
                     SDL_SetWindowRelativeMouseMode(win, !camera_locked);
                 }

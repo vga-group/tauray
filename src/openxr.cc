@@ -360,7 +360,7 @@ void openxr::init_sdl()
         );
         if(!win) throw std::runtime_error(SDL_GetError());
         SDL_GetWindowSize(win, (int*)&opt.size.x, (int*)&opt.size.y);
-        SDL_SetWindowKeyboardGrab(win, true);
+        //SDL_SetWindowKeyboardGrab(win, true);
         SDL_SetWindowMouseGrab(win, true);
         SDL_SetWindowRelativeMouseMode(win, true);
 

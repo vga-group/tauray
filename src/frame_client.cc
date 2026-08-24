@@ -33,7 +33,7 @@ void frame_client(const options& opt)
     SDL_Renderer* ren = SDL_CreateRenderer(win, nullptr);
     SDL_SetDefaultTextureScaleMode(ren, SDL_SCALEMODE_LINEAR);
     SDL_SetWindowRelativeMouseMode(win, true);
-    SDL_SetWindowKeyboardGrab(win, true);
+    //SDL_SetWindowKeyboardGrab(win, true);
     SDL_SetWindowMouseGrab(win, true);
     SDL_HideCursor();
 
