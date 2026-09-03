@@ -1525,6 +1525,7 @@ void scene_stage::record_command_buffers(size_t light_aabb_count, bool rebuild_a
             if(prev_point_light_count != 0)
             {
                 cb.copyBuffer(point_light_data[dev.id], prev_point_light_data[dev.id], vk::BufferCopy{0, 0, prev_point_light_count * sizeof(point_light_entry)});
+                full_barrier(cb);
             }
 
             instance_data.upload(dev.id, i, cb);
@@ -1662,7 +1663,7 @@ void scene_stage::record_as_build(
 
         vk::MemoryBarrier barrier(
             vk::AccessFlagBits::eTransferWrite,
-            vk::AccessFlagBits::eAccelerationStructureWriteKHR
+            vk::AccessFlagBits::eAccelerationStructureReadKHR|vk::AccessFlagBits::eShaderRead
         );
 
         cb.pipelineBarrier(

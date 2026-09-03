@@ -124,9 +124,9 @@ void raster_pipeline::init_render_pass()
 
     vk::SubpassDependency subpass_dep(
         VK_SUBPASS_EXTERNAL, 0,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        {}, vk::AccessFlagBits::eColorAttachmentWrite
+        vk::PipelineStageFlagBits::eColorAttachmentOutput|vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput|vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        {}, vk::AccessFlagBits::eColorAttachmentWrite|vk::AccessFlagBits::eDepthStencilAttachmentWrite
     );
 
     vk::RenderPassCreateInfo render_pass_info(

@@ -189,6 +189,7 @@ void bottom_level_acceleration_structure::rebuild_from(
     {
         initial_cb = begin_command_buffer(dev);
         transform_buffer.upload(id, frame_index, initial_cb);
+        full_barrier(initial_cb);
         query_pool = vkm(dev, dev.logical.createQueryPool({
             {},
             vk::QueryType::eAccelerationStructureCompactedSizeKHR,
@@ -264,6 +265,7 @@ void bottom_level_acceleration_structure::rebuild_from(
     else
     {
         transform_buffer.upload(id, frame_index, cb);
+        full_barrier(cb);
         cb.buildAccelerationStructuresKHR({blas_info}, range_ptr);
     }
     bd.blas_address = dev.logical.getAccelerationStructureAddressKHR({bd.blas});

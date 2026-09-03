@@ -168,6 +168,7 @@ void svgf_stage::record_command_buffers()
         svgf_timer.begin(cb, dev->id, i);
 
         uniforms.upload(dev->id, i, cb);
+        full_barrier(cb);
 
         scene* cur_scene = ss->get_scene();
         std::vector<entity> cameras = get_sorted_cameras(*cur_scene);
