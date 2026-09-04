@@ -593,8 +593,8 @@ void context::init_devices()
                 {},
                 queue_infos.size(),
                 queue_infos.data(),
-                validation_layers.size(),
-                validation_layers.data(),
+                0,
+                nullptr,
                 enabled_device_extensions.size(),
                 enabled_device_extensions.data(),
                 nullptr

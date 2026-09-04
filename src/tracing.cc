@@ -29,7 +29,6 @@ void tracing_record::init(unsigned max_timestamps)
         {
             timing_data& t = timing_resources[i];
             t.timestamp_pools.resize(MAX_FRAMES_IN_FLIGHT);
-            vk::CommandBuffer cb = begin_command_buffer(devices[i]);
             for(size_t j = 0; j < MAX_FRAMES_IN_FLIGHT; ++j)
             {
                 t.timestamp_pools[j] = vkm(
@@ -38,9 +37,7 @@ void tracing_record::init(unsigned max_timestamps)
                         {}, vk::QueryType::eTimestamp, max_timestamps * 2u
                     })
                 );
-                cb.resetQueryPool(t.timestamp_pools[j], 0, max_timestamps*2u);
             }
-            end_command_buffer(devices[i], cb);
 
             for(unsigned j = 0; j < max_timestamps; ++j)
                 t.available_queries.insert(j);
@@ -68,6 +65,14 @@ void tracing_record::begin_frame()
 
     if(times.size() != 0 && times.front().frame_number + 1 < device_finished_frame_counter)
         times.pop_front();
+
+    auto& devices = ctx->get_devices();
+    for(size_t i = 0; i < devices.size(); ++i)
+    {
+        uint32_t swapchain_index, frame_index;
+        ctx->get_indices(swapchain_index, frame_index);
+        devices[i].logical.resetQueryPool(timing_resources[i].timestamp_pools[frame_index], 0, max_timestamps * 2u);
+    }
 
     times.push_back({frame_counter, {}, {}});
     frame_counter++;
