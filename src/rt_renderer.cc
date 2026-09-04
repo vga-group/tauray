@@ -98,8 +98,6 @@ void rt_renderer<Pipeline>::render()
     for(size_t i = 0; i < devices.size(); ++i)
     {
         dependencies device_deps = common_deps;
-        if(i == ctx->get_display_device().id)
-            device_deps.concat(post_processing->get_gbuffer_write_dependencies());
 
         if(gbuffer_rasterizer && raster_before_rt)
             device_deps = gbuffer_rasterizer->run(device_deps);
@@ -119,8 +117,6 @@ void rt_renderer<Pipeline>::render()
             display_deps.concat(device_deps, i);
         }
     }
-
-    display_deps.concat(post_processing->get_gbuffer_write_dependencies());
 
     if(stitch)
     {
