@@ -1017,7 +1017,7 @@ files. `--exposure=2` doubles the brightness _before_ tonemapping.
 ## Output file
 
 ### File format
-`--filetype=<exr|png|bmp|hdr|raw|none>`
+`--filetype=<exr|png|bmp|hdr|raw|none|mse>`
 
 You can change the file format for the output data of
 [headless mode](#offline-rendering) with `--filetype`. The default is .EXR,
@@ -1034,6 +1034,35 @@ the image yourself, as no metadata is included.
 The `none` format just means that no output is actually written. This can be
 useful for benchmarking Tauray on a server, so you don't end up benchmarking
 disk and EXR compression speed instead.
+
+The `mse` format also writes no images. Instead, it computes the mean squared
+error against reference images for every rendered frame/view. The references
+are specified with `--reference`, which gives the base path of the reference
+images. The per-frame/view suffix (the same one that would be used for the
+output images, e.g. `0_3`) and the `.exr` extension are appended automatically,
+so a single-frame, single-view render compares against
+`<reference>.exr` directly. When rendering a sequence, if the per-frame
+reference does not exist, a single frameless reference is used for all frames
+(`<reference>.exr`, or `<reference><view>_.exr` per view in multi-view
+renders). The only required reference channels are `R`, `G`,
+`B` and `A`; only the channels present in the reference are compared (a
+3-channel reference compares RGB). The reference must have the same image size
+as the output, and must be a regular (non-tiled, non-multipart, non-deep) EXR
+file. `--format` and `--compression` do not apply in this mode.
+
+The results are appended to the single file named by `--headless` (which is
+truncated at start), one line per frame/view:
+
+```
+<frame> <view> <mse>
+```
+
+For example:
+
+```
+0 0 1234.56789012345
+1 0 2345.67890123456
+```
 
 ### Pixel format
 

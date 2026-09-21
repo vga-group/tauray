@@ -69,6 +69,132 @@ vk::Format sdl_to_vk_format(SDL_Surface* display_surface)
     else throw std::runtime_error("SDL has an incompatible pixel format!");
 }
 
+// Computes the mean of (rendered - ref)^2 over all pixels, for the R/G/B/A
+// channels present in the reference image. The rendered data is RGBA
+// interleaved floats, the reference is loaded from an EXR file.
+double compute_mse(
+    const float* rendered,
+    uvec2 size,
+    const std::string& ref_path
+)
+{
+    const char* err = nullptr;
+    EXRVersion exr_version;
+    int ret = ParseEXRVersionFromFile(&exr_version, ref_path.c_str());
+    if(ret != TINYEXR_SUCCESS)
+        throw std::runtime_error(
+            "Failed to open reference " + ref_path
+        );
+    if(exr_version.multipart || exr_version.non_image)
+        throw std::runtime_error(
+            "Reference " + ref_path + " is multipart or deep, which is not "
+            "supported"
+        );
+
+    EXRHeader exr_header;
+    InitEXRHeader(&exr_header);
+    ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, ref_path.c_str(), &err);
+    if(ret != TINYEXR_SUCCESS)
+    {
+        FreeEXRHeader(&exr_header);
+        throw std::runtime_error(
+            "Failed to parse header of reference " + ref_path + ": " +
+            (err ? err : "unknown error")
+        );
+    }
+    if(exr_header.tiled)
+    {
+        FreeEXRHeader(&exr_header);
+        throw std::runtime_error(
+            "Reference " + ref_path + " is tiled, which is not supported"
+        );
+    }
+
+    // Read HALF channels as FLOAT.
+    for(int i = 0; i < exr_header.num_channels; ++i)
+        if(exr_header.pixel_types[i] == TINYEXR_PIXELTYPE_HALF)
+            exr_header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+
+    EXRImage exr_image;
+    InitEXRImage(&exr_image);
+    ret = LoadEXRImageFromFile(&exr_image, &exr_header, ref_path.c_str(), &err);
+    if(ret != TINYEXR_SUCCESS)
+    {
+        FreeEXRHeader(&exr_header);
+        throw std::runtime_error(
+            "Failed to load reference " + ref_path + ": " +
+            (err ? err : "unknown error")
+        );
+    }
+
+    if(
+        exr_image.width != (int)size.x ||
+        exr_image.height != (int)size.y
+    )
+    {
+        FreeEXRImage(&exr_image);
+        FreeEXRHeader(&exr_header);
+        throw std::runtime_error(
+            "Reference " + ref_path + " has size " +
+            std::to_string(exr_image.width) + "x" +
+            std::to_string(exr_image.height) + ", expected " +
+            std::to_string(size.x) + "x" + std::to_string(size.y)
+        );
+    }
+
+    int cid[4] = {-1, -1, -1, -1};
+    for(int c = 0; c < exr_header.num_channels; ++c)
+    {
+        auto name = exr_header.channels[c].name;
+        if(name[0] == 'R') cid[0] = c;
+        else if(name[0] == 'G') cid[1] = c;
+        else if(name[0] == 'B') cid[2] = c;
+        else if(name[0] == 'A') cid[3] = c;
+    }
+
+    if(cid[0] == -1 && cid[1] == -1 && cid[2] == -1 && cid[3] == -1)
+    {
+        FreeEXRImage(&exr_image);
+        FreeEXRHeader(&exr_header);
+        throw std::runtime_error(
+            "Reference " + ref_path + " has no R/G/B/A channels to compare"
+        );
+    }
+
+    size_t pixels = (size_t)exr_image.width*exr_image.height;
+    double sum = 0.0;
+    size_t count = 0;
+    for(int c = 0; c < 4; ++c)
+    {
+        if(cid[c] == -1) continue;
+        void* channel = exr_image.images[cid[c]];
+        if(exr_header.pixel_types[cid[c]] == TINYEXR_PIXELTYPE_UINT)
+        {
+            unsigned int* ref_channel = (unsigned int*)channel;
+            for(size_t i = 0; i < pixels; ++i)
+            {
+                double d = rendered[i*4+c] - ref_channel[i];
+                sum += d*d;
+            }
+        }
+        else
+        {
+            float* ref_channel = (float*)channel;
+            for(size_t i = 0; i < pixels; ++i)
+            {
+                double d = rendered[i*4+c] - ref_channel[i];
+                sum += d*d;
+            }
+        }
+        count += pixels;
+    }
+
+    FreeEXRImage(&exr_image);
+    FreeEXRHeader(&exr_header);
+
+    return sum / count;
+}
+
 }
 
 namespace tr
@@ -88,6 +214,15 @@ headless::headless(const options& opt)
     if(!std::filesystem::exists(output_dir) && !output_dir.empty())
         std::filesystem::create_directories(output_dir);
 
+    if(opt.output_file_type == MSE)
+    {
+        mse_file.open(opt.output_prefix, std::ios::trunc);
+        if(!mse_file)
+            throw std::runtime_error(
+                "Failed to open MSE file " + opt.output_prefix
+            );
+    }
+
     if(opt.viewer) init_sdl();
     init_vulkan(vkGetInstanceProcAddr);
     init_devices();
@@ -100,9 +235,16 @@ headless::~headless()
     if(!opt.viewer)
     {
         for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-            headless::save_image(i);
+        {
+            // An exception thrown here during stack unwinding would call
+            // std::terminate, so just log it; the primary error is already
+            // reported elsewhere.
+            try { headless::save_image(i); }
+            catch(std::exception& e) { TR_ERR(e.what()); }
+        }
         reap_workers(false);
     }
+    mse_file.close();
     deinit_resources();
     deinit_images();
     deinit_devices();
@@ -294,6 +436,10 @@ void headless::save_image(uint32_t swapchain_index)
     device& d = get_display_device();
     per_image_data& id = per_image[swapchain_index];
     if(!id.copy_ongoing) return;
+    // Clear before waiting so that if an exception is thrown during
+    // processing, a later call (e.g. from the destructor) won't wait on a
+    // fence that will never be signaled again.
+    id.copy_ongoing = false;
 
     (void)d.logical.waitForFences(*id.copy_fence, true, UINT64_MAX);
     d.logical.resetFences(*id.copy_fence);
@@ -533,6 +679,27 @@ void headless::save_image(uint32_t swapchain_index)
                 }
                 save_workers_cv.notify_one();
             });
+        }
+        else if(opt.output_file_type == headless::MSE)
+        {
+            std::string ref_path = opt.reference_prefix;
+            if(opt.display_count > 1)
+                ref_path += std::to_string(display_index)+"_";
+            std::string fallback_ref_path = ref_path;
+            if(!opt.single_frame)
+                ref_path += std::to_string(id.frame_number);
+            ref_path += ".exr";
+            if(!opt.single_frame && !std::filesystem::exists(ref_path))
+                ref_path = fallback_ref_path + ".exr";
+
+            double mse = compute_mse(mem, opt.size, ref_path);
+
+            mse_file << id.frame_number << " " << display_index << " ";
+            mse_file.precision(15);
+            mse_file << mse << std::endl;
+            mse_file.flush();
+
+            TR_LOG("MSE ", id.frame_number, " ", display_index, ": ", mse);
         }
     }
     vmaUnmapMemory(d.allocator, id.staging_buffer.get_allocation());

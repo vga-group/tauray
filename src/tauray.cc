@@ -323,6 +323,7 @@ context* create_context(const options& opt)
         hd_opt.output_compression = opt.compression;
         hd_opt.output_format = opt.format;
         hd_opt.output_file_type = opt.filetype;
+        hd_opt.reference_prefix = opt.reference;
         hd_opt.viewer = opt.headful;
         hd_opt.viewer_fullscreen = opt.fullscreen;
         hd_opt.display_count =

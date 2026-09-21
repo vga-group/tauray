@@ -22,7 +22,9 @@
     TR_STRING_OPT(headless, \
         "Run the program without a window, capturing frames using the first "\
         "camera in the scene. The captured frames will be saved as " \
-        "${headless}<index>.exr.", "") \
+        "${headless}<index>.exr. With --filetype=mse, no images are written " \
+        "and this is instead the path of the file that the computed MSE " \
+        "values are written to, one line per rendered frame/view.", "") \
     TR_BOOL_OPT(headful, \
         "Headless-but-not mode that works around some GPU drivers that do " \
         "not expose multiple devices in non-headless Vulkan instances.", \
@@ -66,14 +68,25 @@
         "special 'none' type can be used to omit output. Note that the dynamic " \
         "range of the HDR filetype is not utilized by default. The (default) " \
         "filmic tonemapper clamps the output to [0, 1]. E.g. the linear " \
-        "tonemapper allows larger values.", \
+        "tonemapper allows larger values. The 'mse' type writes no images " \
+        "at all; instead, for every rendered frame/view it computes the mean " \
+        "squared error against a reference image given with --reference " \
+        "(with the same per-frame/view suffixes as the output images, plus " \
+        ".exr) and appends a line to the file named by --headless. " \
+        "--format and --compression do not apply in this mode.", \
         headless::EXR, \
         {"exr", headless::EXR}, \
         {"png", headless::PNG}, \
         {"bmp", headless::BMP}, \
         {"hdr", headless::HDR}, \
         {"raw", headless::RAW}, \
-        {"none", headless::EMPTY} \
+        {"none", headless::EMPTY}, \
+        {"mse", headless::MSE} \
+    )\
+    TR_STRING_OPT(reference, \
+        "Base path of the reference image(s) used by --filetype=mse. The " \
+        "per-frame/view suffix (as used for the output images) and the " \
+        ".exr extension are appended automatically.", "" \
     )\
     TR_BOOL_OPT(skip_render, \
         "Very rarely useful option that disables rendering and frame output " \
