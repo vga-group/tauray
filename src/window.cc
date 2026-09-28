@@ -50,7 +50,7 @@ uint32_t window::prepare_next_image(uint32_t frame_index)
 }
 
 void window::finish_image(
-    uint32_t frame_index,
+    uint32_t /*frame_index*/,
     uint32_t swapchain_index,
     bool /*display*/
 ){
@@ -83,13 +83,12 @@ void window::init_sdl()
 
     win = SDL_CreateWindow(
         "Tauray",
-        window_size.x,
-        window_size.y,
+        opt.size.x,
+        opt.size.y,
         SDL_WINDOW_VULKAN | (opt.fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_ALWAYS_ON_TOP)
     );
     if(!win) throw std::runtime_error(SDL_GetError());
-    SDL_GetWindowSize(win, (int*)&window_size.x, (int*)&window_size.y);
-    opt.size = window_size / opt.views;
+    SDL_GetWindowSize(win, (int*)&opt.size.x, (int*)&opt.size.y);
     //SDL_SetWindowKeyboardGrab(win, true);
     SDL_SetWindowMouseGrab(win, true);
     SDL_SetWindowRelativeMouseMode(win, true);

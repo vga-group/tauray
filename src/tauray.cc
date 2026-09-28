@@ -36,15 +36,11 @@ struct throttler
 {
     throttler(float throttle_fps)
     {
-        if(throttle_fps != 0)
-        {
-            active = true;
-            throttle_time = std::chrono::duration_cast<decltype(throttle_time)>(
-                std::chrono::duration<float>(1.0/throttle_fps)
-            );
-            time = std::chrono::high_resolution_clock::now();
-        }
-        else active = false;
+        throttle_time = std::chrono::duration_cast<decltype(throttle_time)>(
+            std::chrono::duration<float>(1.0/max(throttle_fps, 1.0f))
+        );
+        time = std::chrono::high_resolution_clock::now();
+        active = throttle_fps != 0;
     }
 
     void step()

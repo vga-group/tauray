@@ -266,7 +266,7 @@ uint32_t headless::prepare_next_image(uint32_t frame_index)
 }
 
 void headless::finish_image(
-    uint32_t frame_index,
+    uint32_t /*frame_index*/,
     uint32_t swapchain_index,
     bool display
 ){

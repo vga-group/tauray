@@ -106,7 +106,7 @@ dependencies looking_glass::fill_end_frame_dependencies(const dependencies& deps
 }
 
 void looking_glass::finish_image(
-    uint32_t frame_index,
+    uint32_t /*frame_index*/,
     uint32_t swapchain_index,
     bool /*display*/
 ){
