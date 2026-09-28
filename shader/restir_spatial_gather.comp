@@ -31,7 +31,7 @@ layout(binding = 17) uniform image2D out_reflection;
 // These names are for accumulation-enabled non-demodulated output.
 #define out_color out_reflection
 
-layout(binding = 18, rg32ui) readonly uniform uimage2D spatial_selection;
+layout(binding = 18) readonly uniform uimage2D spatial_selection;
 layout(binding = 19) readonly uniform image2DArray mis_data;
 layout(binding = 20) readonly uniform image2DArray spatial_candidates;
 layout(binding = 21) readonly uniform image2D in_color;

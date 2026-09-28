@@ -300,7 +300,10 @@ context* create_context(const options& opt)
     // during semaphore signal operations
     ctx_opt.physical_device_indices = { -1 };
 #else
-    ctx_opt.physical_device_indices = opt.devices;
+    if (opt.devices.size() == 0)
+        ctx_opt.physical_device_indices = { -1 };
+    else
+        ctx_opt.physical_device_indices = opt.devices;
 #endif
     ctx_opt.max_timestamps = 128;
     ctx_opt.enable_vulkan_validation = opt.validation;

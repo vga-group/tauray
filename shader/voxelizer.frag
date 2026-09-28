@@ -1,6 +1,6 @@
 #version 450
 
-layout(binding = 0, r32ui) uniform writeonly uimage3D occupancy;
+layout(binding = 0) uniform writeonly uimage3D occupancy;
 
 layout(location = 0) flat in int orientation;
 layout(location = 1) flat in vec2 z_range;

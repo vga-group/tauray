@@ -19,7 +19,7 @@ layout(push_constant) uniform push_constant_buffer
     uint camera_index;
 } pc;
 
-layout(binding = 18, rg32ui) writeonly uniform uimage2D spatial_selection;
+layout(binding = 18) writeonly uniform uimage2D spatial_selection;
 layout(binding = 19) writeonly uniform image2DArray spatial_candidates;
 layout(binding = 20) writeonly uniform image2DArray mis_data;
 

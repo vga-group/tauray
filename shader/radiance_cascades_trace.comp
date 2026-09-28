@@ -15,8 +15,8 @@ layout(local_size_x = 16, local_size_y = 2, local_size_z = 2) in;
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 #endif
 
-layout(binding = 0, r32f) uniform writeonly image2DArray cascade_target;
-layout(binding = 1, r32f) uniform writeonly image2DArray cascade_target_visibility;
+layout(binding = 0) uniform writeonly image2DArray cascade_target;
+layout(binding = 1) uniform writeonly image2DArray cascade_target_visibility;
 layout(binding = 2, scalar) buffer dispatch_info_buffer
 {
     uint cascade_end_offset[16];

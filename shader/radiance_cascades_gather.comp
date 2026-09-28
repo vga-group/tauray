@@ -15,18 +15,18 @@ shared float local_values[4][4][4];
 #endif
 
 
-layout(binding = 0, r32f) uniform readonly image2DArray upper_target;
-layout(binding = 1, r32f) uniform image2DArray lower_target;
-layout(binding = 2, r32f) uniform image2DArray lower_target_visibility;
-layout(binding = 3, r32f) uniform readonly image2DArray prev_lower_target;
-layout(binding = 4, r32f) uniform readonly image2DArray prev_lower_target_visibility;
+layout(binding = 0) uniform readonly image2DArray upper_target;
+layout(binding = 1) uniform image2DArray lower_target;
+layout(binding = 2) uniform image2DArray lower_target_visibility;
+layout(binding = 3) uniform readonly image2DArray prev_lower_target;
+layout(binding = 4) uniform readonly image2DArray prev_lower_target_visibility;
 layout(binding = 5, scalar) buffer dispatch_info_buffer
 {
     uint cascade_end_offset[16];
     ivec3 probe_indices[];
 } dispatch_info;
-layout(binding = 6, r32ui) uniform readonly uimage3D occupancy_history;
-layout(binding = 7, r32f) uniform writeonly image2DArray final_target;
+layout(binding = 6) uniform readonly uimage3D occupancy_history;
+layout(binding = 7) uniform writeonly image2DArray final_target;
 
 #include "radiance_cascades.glsl"
 

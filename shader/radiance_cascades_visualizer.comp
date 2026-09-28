@@ -18,8 +18,8 @@ layout(push_constant) uniform push_constant_buffer
     int layer;
 } pc;
 
-layout(binding = 0, rgba32f) uniform writeonly image2D target;
-layout(binding = 1, r32f) uniform readonly image3D occupancy_map;
+layout(binding = 0) uniform writeonly image2D target;
+layout(binding = 1) uniform readonly image3D occupancy_map;
 #define SCENE_SET 1
 #define GET_INTERSECTION_TRIANGLE_POSITIONS
 #define RAY_TRACING

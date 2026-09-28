@@ -18,7 +18,7 @@
     TR_BOOL_OPT(hdr, "Try to find an HDR swap chain.", false) \
     TR_BOOL_SOPT(timing, 't', "Print frame times.") \
     TR_SETINT_OPT(devices, \
-        "Specify used device indices, -1 uses the first compatible device.") \
+        "Specify used device indices, -1 uses the first compatible device. Defaults to -1.") \
     TR_STRING_OPT(headless, \
         "Run the program without a window, capturing frames using the first "\
         "camera in the scene. The captured frames will be saved as " \

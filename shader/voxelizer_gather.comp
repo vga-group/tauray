@@ -14,11 +14,11 @@ layout(push_constant) uniform push_constant_buffer
     int clear;
 } pc;
 
-layout(binding = 0, r32ui) uniform readonly uimage3D src_occupancy;
-layout(binding = 1, r32f) uniform readonly image3D prev_mip;
-layout(binding = 2, r32f) uniform writeonly image3D cur_mip;
+layout(binding = 0) uniform readonly uimage3D src_occupancy;
+layout(binding = 1) uniform readonly image3D prev_mip;
+layout(binding = 2) uniform writeonly image3D cur_mip;
 #ifdef TRACK_HISTORY
-layout(binding = 3, r32ui) uniform uimage3D cur_history_counter;
+layout(binding = 3) uniform uimage3D cur_history_counter;
 #endif
 
 void main()
