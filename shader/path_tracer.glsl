@@ -514,7 +514,6 @@ void evaluate_ray(
 #else
     inout vec3 color,
 #endif
-    //vec4 cliprule,
     bool write_first_hit_info
 ){
     vec3 attenuation = vec3(1);
@@ -532,9 +531,6 @@ void evaluate_ray(
         rayQueryInitializeEXT(rq,
             tlas,
             gl_RayFlagsNoneEXT,
-            //gl_RayFlagsCullNoOpaqueEXT,
-            //gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT,
-            //gl_RayFlagsCullBackFacingTrianglesEXT,
 #ifdef HIDE_LIGHTS
             bounce == 0 ? 0xFF^0x02 : 0xFF,
 #else
@@ -557,9 +553,6 @@ void evaluate_ray(
         if (bounce == 0) include_directional_lights = false;
 #endif
         bool terminal = !get_intersection_info(payload, pos, view, include_directional_lights, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
-
-        //if (bounce == 0 && distance(cliprule.xyz, v.pos) > cliprule.w)
-        //    break;
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
@@ -673,178 +666,6 @@ void evaluate_ray(
         else visibility /= qi;
 #endif
         if(max(attenuation.x, max(attenuation.y, attenuation.z)) <= 0.0f) break;
-    }
-}
-
-void evaluate_ray_matched(
-    inout local_sampler lsampler,
-    vec3 pos,
-    vec3 view,
-#ifdef DEMODULATED_OUTPUT
-    inout vec4 diffuse,
-    inout vec4 reflection,
-#else
-    inout vec3 color,
-#endif
-    bool write_first_hit_info
-){
-    vec3 attenuation = vec3(1);
-
-    float regularization = 1.0f;
-#ifdef DEMODULATED_OUTPUT
-    bsdf_lobes primary_lobes = bsdf_lobes(0,0,0,1);
-#endif
-    pcg4d(lsampler.rs.seed);
-    for(uint bounce = 0; bounce < MAX_BOUNCES-1; ++bounce)
-    {
-        rayQueryEXT rq;
-        rayQueryInitializeEXT(rq,
-            tlas,
-            //gl_RayFlagsNoneEXT,
-            //gl_RayFlagsCullNoOpaqueEXT,
-            gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT,
-            //gl_RayFlagsCullBackFacingTrianglesEXT,
-#ifdef HIDE_LIGHTS
-            bounce == 0 ? 0xFF^0x02 : 0xFF,
-#else
-            0xFF,
-#endif
-            pos,
-            bounce == 0 ? 0.0f : control.min_ray_dist,
-            view,
-            RAY_MAX_DIST
-        );
-
-        hit_info payload = trace_ray_query(rq, lsampler.rs.seed.x);
-
-        pt_vertex_data v;
-        sampled_material mat;
-        intersection_pdf nee_pdf;
-        vec3 light;
-        bool terminal = !get_intersection_info(payload, pos, view, true, v, nee_pdf, mat, light);
-
-        /*
-        if(bounce == 0)
-        {
-#ifdef RADIANCE_CASCADES_SET
-            color = mat.albedo.rgb * eval_diffuse_radiance_cascades(
-                v.pos,
-                v.smooth_normal,
-                -view,
-                mat.roughness,
-                mix(mat.f0, 1.0, mat.metallic)
-            );
-            return;
-#endif
-        }
-        */
-
-        /*
-        light *= attenuation;
-
-#ifdef DEMODULATED_OUTPUT
-        add_demodulated_color(primary_lobes, light, diffuse.rgb, reflection.rgb);
-#else
-        color.rgb += light;
-#endif
-        */
-
-        if(terminal) break;
-
-        mat3 tbn = create_tangent_space(v.mapped_normal);
-        vec3 shading_view = view_to_tangent_space(view, tbn);
-
-        {
-            // Do NEE ray
-            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-
-            vec3 radiance = attenuation * next_event_estimation(
-                generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view, view,
-                mat, v, lobes
-            );
-
-#ifdef DEMODULATED_OUTPUT
-            if(bounce == 0) primary_lobes = lobes;
-            else
-#endif
-                radiance *= modulate_bsdf(mat, lobes);
-
-#ifdef DEMODULATED_OUTPUT
-            add_demodulated_color(primary_lobes, radiance, diffuse.rgb, reflection.rgb);
-            if(bounce == 1)
-                diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
-#else
-            if (!any(isnan(radiance)))
-                color.rgb += radiance;
-#endif
-        }
-
-        // Only NEE contribution for last bounce, to match SIByl for measurements.
-        if(bounce+1 < MAX_BOUNCES-1)
-        {
-            // Lastly, figure out the next ray and assign proper attenuation for it.
-#ifdef RADIANCE_CASCADES_SET
-    #if 1
-            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-            float pdf = 0.0f;
-            uvec4 ray_sample = generate_ray_sample_uint(lsampler, bounce*2+1);
-            view = sample_radiance_cascades(ray_sample.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic),
-                rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic), pdf);
-            ggx_bsdf(view * tbn, shading_view, mat, lobes);
-    #else // Single-sample MIS. Really slow and more noisy but with less fireflies.
-            uvec4 ray_sample_u = generate_ray_sample_uint(lsampler, bounce*2+1);
-            uint rnd = ray_sample_u.z;
-            lcg(rnd);
-            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-            float pdf;
-            if (rnd * INV_UINT32_MAX < 0.5)
-            {
-                float rc_pdf;
-                view = sample_radiance_cascades(ray_sample_u.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic),
-                    rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic), rc_pdf);
-                float bsdf_pdf = material_bsdf_pdf(view * tbn, shading_view, mat, lobes);
-                pdf = 0.5 * (rc_pdf + bsdf_pdf);
-            }
-            else
-            {
-                vec3 prev_view = view;
-                vec4 ray_sample = vec4(ray_sample_u) * INV_UINT32_MAX;
-                float bsdf_pdf;
-                material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
-                view = tbn * view;
-
-                float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -prev_view,
-                    true,
-                    mat.roughness,
-                    mix(0.04, 1.0, mat.metallic),
-                    rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
-                    view
-                );
-                pdf = 0.5 * (rc_pdf + bsdf_pdf);
-            }
-    #endif
-#else
-            bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-            float pdf = 0.0f;
-
-            vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
-            material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, pdf);
-            view = tbn * view;
-#endif
-
-            if(pdf <= 0)
-                break;
-
-            attenuation /= pdf;
-
-#ifdef DEMODULATED_OUTPUT
-            if(bounce == 0) primary_lobes = lobes;
-            else
-#endif
-                attenuation *= modulate_bsdf(mat, lobes);
-
-            pos = v.pos;
-        }
     }
 }
 
