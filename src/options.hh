@@ -205,7 +205,7 @@
         "compatible with the method used in Blender 2.90. This does not " \
         "conserve energy, but unless it's manually specified for a model in " \
         "the input scene, it has no effect.", \
-        true) \
+        false) \
     TR_ENUM_OPT(film, film_filter, \
         "Chooses the film type for path tracing. Point sampling can enable " \
         "some optimizations in > 1spp situations, and may be required for " \
@@ -598,7 +598,7 @@
     ) \
     TR_BOOL_OPT(enable_light_tree, \
         "Use light tree for sampling lights.", \
-        true \
+        false \
     ) \
     TR_INT_OPT(light_tree_width, "Branching factor of the light tree", 3, 2, 1024) \
     TR_FLOAT_OPT(auto_spp, \
