@@ -58,16 +58,18 @@ void evaluate_direct_ray(
     out pt_vertex_data first_hit_vertex,
     out sampled_material first_hit_material
 ){
-    payload.random_seed = pcg4d(lsampler.rs.seed).x;
+    pcg4d(lsampler.rs.seed);
     color = vec3(0);
     diffuse = vec4(0);
     reflection = vec4(0);
 
-    traceRayEXT(tlas, gl_RayFlagsNoneEXT, 0xFF^0x02, 0, 0, 0, pos, 0.0f, view, RAY_MAX_DIST, 0);
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq, tlas, gl_RayFlagsNoneEXT, 0xFF^0x02, pos, 0.0f, view, RAY_MAX_DIST);
+    hit_info payload = trace_ray_query(rq, lsampler.rs.seed.x);
 
     intersection_pdf nee_pdf;
     vec3 light;
-    bool terminal = !get_intersection_info(pos, view, first_hit_vertex, nee_pdf, first_hit_material, light);
+    bool terminal = !get_intersection_info(payload, pos, view, first_hit_vertex, nee_pdf, first_hit_material, light);
 
     color += (light + first_hit_material.emission) * SAMPLES_PER_PASS;
 
@@ -86,7 +88,7 @@ void evaluate_direct_ray(
         // Do NEE ray
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
         vec3 radiance = next_event_estimation(
-            generate_ray_sample_uint(lsampler, ray_sample_index++), tbn, shading_view,
+            generate_ray_sample_uint(lsampler, ray_sample_index++), tbn, shading_view, view,
             first_hit_material, first_hit_vertex, lobes
         );
         color += radiance * modulate_bsdf(first_hit_material, lobes);
@@ -121,12 +123,14 @@ void main()
     color /= SAMPLES_PER_PASS;
     diffuse /= SAMPLES_PER_PASS;
 
-    write_all_outputs(
-        color,
+    write_color_outputs(
+#ifdef DEMODULATED_OUTPUT
         diffuse,
-        reflection,
-        first_hit_vertex,
-        first_hit_material
+        reflection
+#else
+        color
+#endif
     );
+    write_hit_outputs(first_hit_vertex, first_hit_material);
 }
 
