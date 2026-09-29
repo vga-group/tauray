@@ -733,7 +733,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
 
                 ropt.tonemap_options = tonemap;
                 ropt.rc_options = rc_options;
-                ropt.enable_visualizer = opt.radiance_cascades.visualizer;
 
                 if(opt.taa.sequence_length > 1)
                     ropt.taa_options = taa;
@@ -895,8 +894,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
     bool camera_moved = false;
     bool has_events = SDL_WasInit(SDL_INIT_EVENTS);
 
-    int cascade = 0, layer = 0;
-
     ivec3 camera_movement = ivec3(0);
     std::string command_line;
     while(opt.running)
@@ -1024,9 +1021,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
         if(ctx.init_frame())
             break;
-
-        if(rc_renderer* rc = dynamic_cast<rc_renderer*>(rr.get()))
-            rc->set_visualizer_pos(cascade, layer);
 
         if(cameras.size() != 0)
         {

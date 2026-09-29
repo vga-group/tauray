@@ -48,9 +48,6 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
     bool need_full_gbuffer = 
         opt.taa_options || opt.svgf_options || opt.restir_options;
 
-    if(opt.enable_visualizer)
-        need_full_gbuffer = false;
-
     if(need_full_gbuffer)
     {
         if(opt.svgf_options)
@@ -126,174 +123,148 @@ rc_renderer::rc_renderer(context& ctx, const options& opt)
 
     rc.emplace(dev, *scene_update, this->opt.rc_options);
 
-    rc_visualizer_stage::options rcv_opt;
-    rcv_opt.occupancy_map = &voxelizer->get_map();
     gbuffer_target cur = current_gbuffer.get_layer_target(dev.id, 0);
 
-    if(opt.enable_visualizer)
+    if (need_full_gbuffer)
     {
-        rcv.emplace(*rc, cur.color, rcv_opt);
-        cur = current_gbuffer.get_array_target(dev.id);
+        envmap.emplace(dev, *scene_update, cur.color, 0);
+        raster_stage::options raster_opt;
+        raster_opt.clear_color = false;
+        raster_opt.clear_depth = true;
+        raster_opt.sample_shading = false;
+        raster_opt.use_probe_visibility = false;
+        raster_opt.sh_order = 0;
+        raster_opt.estimate_direct = false;
+        raster_opt.estimate_indirect = false;
+        raster_opt.force_alpha_to_coverage = true;
+        raster_opt.base_camera_index = 0;
+        raster_opt.output_layout = vk::ImageLayout::eGeneral;
 
-        std::vector<render_target> display = ctx.get_array_render_target();
-        this->opt.tonemap_options.limit_to_input_layer = 0;
-        this->opt.tonemap_options.limit_to_output_layer = 0;
-        this->opt.tonemap_options.transition_output_layout = true;
-        tonemap.emplace(
+        render_target diffuse = cur.diffuse;
+        render_target reflection = cur.reflection;
+        render_target temporal_gradient = cur.temporal_gradient;
+        render_target confidence = cur.confidence;
+        cur.diffuse = render_target();
+        cur.reflection = render_target();
+        cur.temporal_gradient = render_target();
+        cur.confidence = render_target();
+
+        gbuffer_rasterizer.emplace(dev, *scene_update, cur, raster_opt);
+
+        cur.diffuse = diffuse;
+        cur.reflection = reflection;
+        cur.temporal_gradient = temporal_gradient;
+        cur.confidence = confidence;
+        cur.color.layout = vk::ImageLayout::eGeneral;
+    }
+
+    if(this->opt.pt_options)
+    {
+        cur = current_gbuffer.get_array_target(dev.id);
+        gbuffer_target old = cur;
+        if(need_full_gbuffer)
+        {
+            cur = gbuffer_target();
+            cur.color = old.color;
+            cur.diffuse = old.diffuse;
+            cur.reflection = old.reflection;
+        }
+        if(opt.svgf_options)
+            cur.color = render_target();
+        this->opt.pt_options->rc_source = &*rc;
+        //if (opt.light_tree)
+        //    this->opt.pt_options->light_tree_source = &*light_tree;
+        pt.emplace(dev, *scene_update, cur, *this->opt.pt_options);
+        cur = old;
+    }
+    else if(this->opt.restir_options)
+    {
+        cur = current_gbuffer.get_layer_target(dev.id, 0);
+        gbuffer_target prev = prev_gbuffer.get_layer_target(dev.id, 0);
+        this->opt.restir_options->rc_source = &*rc;
+        this->opt.restir_options->use_ray_cones = false;
+        //if (opt.light_tree)
+        //    this->opt.restir_options->light_tree_source = &*light_tree;
+        restir.emplace(dev, *scene_update, cur, prev, *this->opt.restir_options);
+
+        cur = current_gbuffer.get_array_target(dev.id);
+    }
+
+    gbuffer_target prev;
+    if(opt.svgf_options || opt.restir_options)
+        prev = prev_gbuffer.get_array_target(dev.id);
+
+    if(opt.svgf_options)
+    {
+        //this->opt.svgf_options->atrous_kernel_radius = 1;
+        //this->opt.svgf_options->atrous_diffuse_iters = 5;
+
+        svgf.emplace(
             dev,
-            cur.color,
+            *scene_update,
+            cur,
+            prev,
+            *this->opt.svgf_options
+        );
+    }
+
+    std::vector<render_target> display = ctx.get_array_render_target();
+    this->opt.tonemap_options.limit_to_input_layer = 0;
+    this->opt.tonemap_options.limit_to_output_layer = 0;
+    this->opt.tonemap_options.transition_output_layout = true;
+    if(this->opt.taa_options)
+    {
+        taa_input_target.emplace(
+            dev,
+            ctx.get_size(),
+            1,
+            vk::Format::eR16G16B16A16Sfloat,
+            0, nullptr,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eStorage|vk::ImageUsageFlagBits::eTransferSrc|vk::ImageUsageFlagBits::eSampled,
+            vk::ImageLayout::eGeneral,
+            vk::SampleCountFlagBits::e1
+        );
+        render_target taa_target = taa_input_target->get_array_render_target(dev.id);
+        tonemap.emplace(dev, cur.color, taa_target, this->opt.tonemap_options);
+        this->opt.taa_options->gamma = 2.2f;
+        this->opt.taa_options->base_camera_index = 0;
+        this->opt.taa_options->active_viewport_count = 1;
+        this->opt.taa_options->output_layer = 0;
+
+        taa.emplace(
+            dev,
+            *scene_update,
+            taa_target,
+            cur.screen_motion,
+            cur.depth,
             display,
-            this->opt.tonemap_options
+            *this->opt.taa_options
         );
     }
     else
     {
-        if (need_full_gbuffer)
-        {
-            envmap.emplace(dev, *scene_update, cur.color, 0);
-            raster_stage::options raster_opt;
-            raster_opt.clear_color = false;
-            raster_opt.clear_depth = true;
-            raster_opt.sample_shading = false;
-            raster_opt.use_probe_visibility = false;
-            raster_opt.sh_order = 0;
-            raster_opt.estimate_direct = false;
-            raster_opt.estimate_indirect = false;
-            raster_opt.force_alpha_to_coverage = true;
-            raster_opt.base_camera_index = 0;
-            raster_opt.output_layout = vk::ImageLayout::eGeneral;
+        tonemap.emplace(dev, cur.color, display, this->opt.tonemap_options);
+    }
 
-            render_target diffuse = cur.diffuse;
-            render_target reflection = cur.reflection;
-            render_target temporal_gradient = cur.temporal_gradient;
-            render_target confidence = cur.confidence;
-            cur.diffuse = render_target();
-            cur.reflection = render_target();
-            cur.temporal_gradient = render_target();
-            cur.confidence = render_target();
+    if(prev.entry_count() != 0)
+    {
+        cur.color = render_target();
+        cur.screen_motion = render_target();
+        cur.temporal_gradient = render_target();
+        cur.emission = render_target();
+        prev.color = render_target();
+        prev.screen_motion = render_target();
+        prev.temporal_gradient = render_target();
+        prev.emission = render_target();
 
-            gbuffer_rasterizer.emplace(dev, *scene_update, cur, raster_opt);
-
-            cur.diffuse = diffuse;
-            cur.reflection = reflection;
-            cur.temporal_gradient = temporal_gradient;
-            cur.confidence = confidence;
-            cur.color.layout = vk::ImageLayout::eGeneral;
-        }
-
-        if(this->opt.pt_options)
-        {
-            cur = current_gbuffer.get_array_target(dev.id);
-            gbuffer_target old = cur;
-            if(need_full_gbuffer)
-            {
-                cur = gbuffer_target();
-                cur.color = old.color;
-                cur.diffuse = old.diffuse;
-                cur.reflection = old.reflection;
-            }
-            if(opt.svgf_options)
-                cur.color = render_target();
-            this->opt.pt_options->rc_source = &*rc;
-            //if (opt.light_tree)
-            //    this->opt.pt_options->light_tree_source = &*light_tree;
-            pt.emplace(dev, *scene_update, cur, *this->opt.pt_options);
-            cur = old;
-        }
-        else if(this->opt.restir_options)
-        {
-            cur = current_gbuffer.get_layer_target(dev.id, 0);
-            gbuffer_target prev = prev_gbuffer.get_layer_target(dev.id, 0);
-            this->opt.restir_options->rc_source = &*rc;
-            this->opt.restir_options->use_ray_cones = false;
-            //if (opt.light_tree)
-            //    this->opt.restir_options->light_tree_source = &*light_tree;
-            restir.emplace(dev, *scene_update, cur, prev, *this->opt.restir_options);
-
-            cur = current_gbuffer.get_array_target(dev.id);
-        }
-
-        gbuffer_target prev;
-        if(opt.svgf_options || opt.restir_options)
-            prev = prev_gbuffer.get_array_target(dev.id);
-
-        if(opt.svgf_options)
-        {
-            //this->opt.svgf_options->atrous_kernel_radius = 1;
-            //this->opt.svgf_options->atrous_diffuse_iters = 5;
-
-            svgf.emplace(
-                dev,
-                *scene_update,
-                cur,
-                prev,
-                *this->opt.svgf_options
-            );
-        }
-
-        std::vector<render_target> display = ctx.get_array_render_target();
-        this->opt.tonemap_options.limit_to_input_layer = 0;
-        this->opt.tonemap_options.limit_to_output_layer = 0;
-        this->opt.tonemap_options.transition_output_layout = true;
-        if(this->opt.taa_options)
-        {
-            taa_input_target.emplace(
-                dev,
-                ctx.get_size(),
-                1,
-                vk::Format::eR16G16B16A16Sfloat,
-                0, nullptr,
-                vk::ImageTiling::eOptimal,
-                vk::ImageUsageFlagBits::eStorage|vk::ImageUsageFlagBits::eTransferSrc|vk::ImageUsageFlagBits::eSampled,
-                vk::ImageLayout::eGeneral,
-                vk::SampleCountFlagBits::e1
-            );
-            render_target taa_target = taa_input_target->get_array_render_target(dev.id);
-            tonemap.emplace(dev, cur.color, taa_target, this->opt.tonemap_options);
-            this->opt.taa_options->gamma = 2.2f;
-            this->opt.taa_options->base_camera_index = 0;
-            this->opt.taa_options->active_viewport_count = 1;
-            this->opt.taa_options->output_layer = 0;
-
-            taa.emplace(
-                dev,
-                *scene_update,
-                taa_target,
-                cur.screen_motion,
-                cur.depth,
-                display,
-                *this->opt.taa_options
-            );
-        }
-        else
-        {
-            tonemap.emplace(dev, cur.color, display, this->opt.tonemap_options);
-        }
-
-        if(prev.entry_count() != 0)
-        {
-            cur.color = render_target();
-            cur.screen_motion = render_target();
-            cur.temporal_gradient = render_target();
-            cur.emission = render_target();
-            prev.color = render_target();
-            prev.screen_motion = render_target();
-            prev.temporal_gradient = render_target();
-            prev.emission = render_target();
-
-            copy.emplace(dev, cur, prev, 0, 0);
-        }
+        copy.emplace(dev, cur, prev, 0, 0);
     }
 }
 
 void rc_renderer::set_scene(scene* s)
 {
     scene_update->set_scene(s);
-}
-
-void rc_renderer::set_visualizer_pos(int cascade, int layer)
-{
-    rcv->set_position(cascade, layer);
 }
 
 void rc_renderer::render()
@@ -316,15 +287,11 @@ void rc_renderer::render()
     deps = rc->run(deps);
 
     pt->force_command_buffer_refresh();
-    if(rcv) deps = rcv->run(deps);
-    else
-    {
-        if(envmap) deps = envmap->run(deps);
-        if(gbuffer_rasterizer) deps = gbuffer_rasterizer->run(deps);
-        if(restir) deps = restir->run(deps);
-        if(pt) deps = pt->run(deps);
-        if(svgf) deps = svgf->run(deps);
-    }
+    if(envmap) deps = envmap->run(deps);
+    if(gbuffer_rasterizer) deps = gbuffer_rasterizer->run(deps);
+    if(restir) deps = restir->run(deps);
+    if(pt) deps = pt->run(deps);
+    if(svgf) deps = svgf->run(deps);
     deps = tonemap->run(deps);
     if(taa) deps = taa->run(deps);
     if(copy) deps = copy->run(deps);

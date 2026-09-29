@@ -12,7 +12,6 @@
 #include "restir_stage.hh"
 #include "tonemap_stage.hh"
 #include "light_tree_stage.hh"
-#include "rc_visualizer.hh"
 #include "radiance_cascades_stage.hh"
 #include "shadow_map_stage.hh"
 #include "voxelizer.hh"
@@ -33,8 +32,6 @@ public:
         std::optional<svgf_stage::options> svgf_options;
         std::optional<taa_stage::options> taa_options;
         tonemap_stage::options tonemap_options;
-
-        bool enable_visualizer = false;
     };
 
     rc_renderer(context& ctx, const options& opt);
@@ -42,7 +39,6 @@ public:
     rc_renderer(rc_renderer&& other) = delete;
 
     void set_scene(scene* s) override;
-    void set_visualizer_pos(int cascade, int layer);
     void render() override;
     void reset_accumulation(bool reset_sample_counter) override;
 
@@ -62,7 +58,6 @@ private:
     std::optional<radiance_cascades_stage> rc;
     std::optional<envmap_stage> envmap;
     std::optional<raster_stage> gbuffer_rasterizer;
-    std::optional<rc_visualizer_stage> rcv;
     std::optional<path_tracer_stage> pt;
     std::optional<restir_stage> restir;
     std::optional<svgf_stage> svgf;

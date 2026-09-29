@@ -579,7 +579,6 @@
     TR_STRUCT_OPT(radiance_cascades, \
         "Parameters for radiance cascades", \
         TR_STRUCT_OPT_BOOL(shadow_mapped, false) \
-        TR_STRUCT_OPT_BOOL(visualizer, false) \
         TR_STRUCT_OPT_BOOL(defensive, false) \
         TR_STRUCT_OPT_BOOL(jitter, true) \
         TR_STRUCT_OPT_BOOL(recursive, true) \
