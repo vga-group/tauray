@@ -589,7 +589,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                         spatial_reprojection_stage::options{};
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
-                //rt_opt.accumulate = opt.accumulation;
+                rt_opt.accumulate = opt.accumulation;
                 rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
                     opt.spatial_reprojection,
                     ctx.get_display_count()
@@ -621,7 +621,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                         spatial_reprojection_stage::options{};
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
-                //rt_opt.accumulate = opt.accumulation;
+                rt_opt.accumulate = opt.accumulation;
                 rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
                     opt.spatial_reprojection,
                     ctx.get_display_count()
