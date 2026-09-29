@@ -286,7 +286,7 @@ void rc_renderer::render()
     deps = voxelizer->run(deps);
     deps = rc->run(deps);
 
-    pt->force_command_buffer_refresh();
+    if(pt) pt->force_command_buffer_refresh();
     if(envmap) deps = envmap->run(deps);
     if(gbuffer_rasterizer) deps = gbuffer_rasterizer->run(deps);
     if(restir) deps = restir->run(deps);
