@@ -192,7 +192,7 @@ vec4 sample_gbuffer_albedo(sampler2D tex, ivec2 p)
 #ifdef EMISSION_TARGET_BINDING
 layout(binding = EMISSION_TARGET_BINDING, set = 0) uniform image2DArray emission_target;
 
-void write_gbuffer_emission(vec3 emission, ivec3 pos) { imageStore(emission_target, pos, vec4(emission, 0)); }
+void write_gbuffer_emission(vec3 emission, ivec3 pos) { imageStore(emission_target, pos, vec4(emission, 1)); }
 vec3 read_gbuffer_emission(ivec3 pos) { return imageLoad(emission_target, pos).xyz; }
 
 #elif defined(EMISSION_TARGET_LOCATION)
@@ -584,7 +584,7 @@ layout(binding = DEPTH_TARGET_BINDING, set = 0) uniform image2DArray depth_targe
 
 void write_gbuffer_depth(float d, ivec3 pos)
 {
-    imageStore(depth_target, pos, vec4(d, 0.0, 0.0, 0.0));
+    imageStore(depth_target, pos, vec4(d));
 }
 
 #else

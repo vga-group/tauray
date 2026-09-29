@@ -266,6 +266,7 @@ void rt_renderer<Pipeline>::init_resources()
         if(use_raster_gbuffer)
         {
             gbuffer_target limited_target;
+            limited_target.emission = transfer_target.color;
             limited_target.diffuse = transfer_target.diffuse;
             limited_target.reflection = transfer_target.reflection;
             transfer_target = limited_target;

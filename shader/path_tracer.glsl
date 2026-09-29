@@ -488,6 +488,7 @@ void write_hit_outputs(
 #endif
     {
         write_gbuffer_albedo(first_hit_material.albedo, p);
+        write_gbuffer_emission(first_hit_material.emission, p);
         write_gbuffer_material(first_hit_material, p);
         write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
         write_gbuffer_pos(first_hit_vertex.pos, p);

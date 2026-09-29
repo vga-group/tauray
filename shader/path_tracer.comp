@@ -62,6 +62,10 @@
 #define REFLECTION_TARGET_BINDING 11
 #endif
 
+#ifdef USE_EMISSION_TARGET
+#define EMISSION_TARGET_BINDING 12
+#endif
+
 #define printf debugPrintfEXT
 //#undef RADIANCE_CASCADES_SET
 
