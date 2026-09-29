@@ -35,6 +35,9 @@
 #ifdef USE_INSTANCE_ID_TARGET
 #define INSTANCE_ID_TARGET_BINDING 10
 #endif
+#ifdef USE_EMISSION_TARGET
+#define EMISSION_TARGET_BINDING 11
+#endif
 
 layout(push_constant, scalar) uniform push_constant_buffer
 {
