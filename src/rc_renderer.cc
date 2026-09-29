@@ -301,7 +301,8 @@ void rc_renderer::render()
 
 void rc_renderer::reset_accumulation(bool)
 {
-    pt->reset_accumulated_samples();
+    if (pt.has_value())
+        pt->reset_accumulated_samples();
 }
 
 }
