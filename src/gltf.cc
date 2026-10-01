@@ -809,7 +809,7 @@ scene_assets load_gltf(
         s.remove<added_by_this_file>(id);
     });
 
-    TR_LOG("Finished loading glTF scene", path);
+    TR_LOG("Finished loading glTF scene ", path);
     return md;
 }
 
