@@ -67,7 +67,7 @@ Clone the repository recursively with
 Tauray has been tested on the Ubuntu 26.04 operating system. Building on Ubuntu
 26.04 can be done as follows:
 
-1. Install dependencies: `sudo apt install libvulkan-dev vulkan-validationlayers vulkan-tools imagemagick libnng-dev libcbor-dev libczmq-dev libglm-dev libsdl3-dev`
+1. Install dependencies: `sudo apt install cmake build-essential spirv-tools-dev libsdl3-dev libvulkan-dev libglm-dev libassimp-dev libczmq-dev libnng-dev libcbor-dev glslang-tools`
 2. `cmake -S . -B build`
 3. `cmake --build build`
 4. `build/tauray my_scene.glb`

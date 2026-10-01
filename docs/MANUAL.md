@@ -52,8 +52,8 @@ or more Nvidia RTX GPUs.
 Tauray has some dependencies, so install them first:
 
 ```bash
-sudo apt install libvulkan-dev vulkan-validationlayers vulkan-tools imagemagick libnng-dev \
-    libcbor-dev libczmq-dev libglm-dev libsdl3-dev
+sudo apt install cmake build-essential spirv-tools-dev libsdl3-dev libvulkan-dev \
+                 libglm-dev libassimp-dev libczmq-dev libnng-dev libcbor-dev glslang-tools
 ```
 
 Then, you can build Tauray.

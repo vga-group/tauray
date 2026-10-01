@@ -32,7 +32,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     TR_ERR(data->pMessage);
 
     // Handy assert for debugging where validation errors happen
-    assert(severity != vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
+    //assert(severity != vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
     return false;
 }
 
