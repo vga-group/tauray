@@ -94,9 +94,11 @@ While not the only possible option, [Blender](https://www.blender.org/) is a
 great open-source 3D authoring tool that we recommend for preparing scenes for
 Tauray. Start by installing the newest version, if you don't yet have it.
 
-Next, we'll install the Tauray plugin. First, navigate to the Tauray folder and
-find the `blender` folder. Make a .zip file of the `tr_gltf_extension` file
-included within (unless it already exists).
+Next, we can install the Tauray plugin. It is needed to allow point lights to
+have a non-zero radius, directional lights to have a non-zero solid angle, and
+to place probe volumes for DDISH-GI. Navigate to the Tauray folder and find the
+`blender` folder. Make a .zip file of the `tr_gltf_extension` file included
+within (unless it already exists).
 
 Now, you can open Blender. Go to the preferences and open the "Add-ons" section.
 
@@ -111,13 +113,6 @@ From the file dialog that opens, navigate to the Tauray folder. Go to the
 `Install Add-on` button.
 
 ![Clicking the Install button in the file dialog.](images/blender_addon_install2.png)
-
-Depending on Blender version and whether you already had the plugin installed,
-it may be automatically shown in the Add-ons section. If not, search for
-"tauray". In any case, enable the "Tauray glTF extension" by checking the
-checkbox next to the name.
-
-![Enable the Tauray addon.](images/blender_enable_addon.png)
 
 You only need to install and enable the addon once, Blender will remember it
 across projects. You can now close the preferences window and start working with
