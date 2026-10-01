@@ -585,13 +585,6 @@
         TR_STRUCT_OPT_INT(c0, 4, 4, 16) \
         TR_STRUCT_OPT_INT(gridsize, 7, 1, 10) \
         TR_STRUCT_OPT_FLOAT(avg_bias, 0.0f, 0.0f, 1.0f) \
-        TR_STRUCT_OPT_ENUM(texel, \
-            radiance_cascades_stage::texel_sampling_type, \
-            radiance_cascades_stage::HYBRID, \
-            {"uniform", radiance_cascades_stage::UNIFORM}, \
-            {"brdf", radiance_cascades_stage::BRDF}, \
-            {"hybrid", radiance_cascades_stage::HYBRID} \
-        ) \
         TR_STRUCT_OPT_INT(di_samples, 1, 1, 512) \
         TR_STRUCT_OPT_FLOAT(temporal_ratio, 0.033f, 0.0f, 1.0f) \
     ) \

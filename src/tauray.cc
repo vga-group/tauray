@@ -555,7 +555,6 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_options.log2_resolution = opt.radiance_cascades.gridsize;
     rc_options.recursive = opt.radiance_cascades.recursive;
     rc_options.ambient = (opt.ambient.r+opt.ambient.g+opt.ambient.b)/3.0f;
-    rc_options.texel_sampling = opt.radiance_cascades.texel;
     rc_options.avg_bias = opt.radiance_cascades.avg_bias;
     rc_options.volume = scene_aabb;
     rc_options.temporal_ratio = opt.radiance_cascades.temporal_ratio;

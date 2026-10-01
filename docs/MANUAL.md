@@ -1633,12 +1633,6 @@ accumulation towards accumulating a maximum instead of average. 0 is average,
 1 is maximum. Accumulating the maximum reduces fireflies significantly but is
 not useful for dynamic scenes where data may be invalidated.
 
-`--radiance-cascades.texel=<uniform|brdf|hybrid>` controls how samples are
-selected from within a single texel. `uniform` samples the texel uniformly,
-while `brdf` takes the BRDF into account even within the texel, which is much
-more costly. `hybrid` tries to get the best of both worlds and is the default:
-`uniform` is used for high-roughness materials while `brdf` for low-roughness.
-
 `--radiance-cascades.di-samples=<integer>` how many light samples to take during
 radiance cascade build, per intersection. Does nothing if shadow mapping is
 enabled.

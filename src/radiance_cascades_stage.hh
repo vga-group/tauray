@@ -14,13 +14,6 @@ class light_tree_stage;
 class radiance_cascades_stage: public single_device_stage
 {
 public:
-    enum texel_sampling_type
-    {
-        UNIFORM = 0,
-        BRDF,
-        HYBRID
-    };
-
     struct options
     {
         aabb volume;
@@ -54,9 +47,6 @@ public:
         bool use_raster_di = false;
 
         int rt_di_samples = 0;
-
-        // Adjusts how samples are taken at the individual texel level.
-        texel_sampling_type texel_sampling = UNIFORM;
 
         // 0.0f = texel tracks average
         // 1.0f = texel tracks maximum

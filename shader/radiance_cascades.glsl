@@ -3,10 +3,6 @@
 #include "math.glsl"
 #include "color.glsl"
 #include "ltc.glsl"
-#define MAX_POLYGON_VERTEX_COUNT 5
-#define MIN_POLYGON_VERTEX_COUNT_BEFORE_CLIPPING 4
-#include "brdf-area-light-sampling/polygon_clipping.glsl"
-#include "brdf-area-light-sampling/polygon_sampling.glsl"
 
 ivec3 get_cascade_layout(ivec3 cascade_size, int probe_resolution, ivec3 probe_coord, ivec2 probe_texel)
 {
@@ -259,113 +255,6 @@ void get_texel_corner(
 #define printf
 #endif
 
-vec3 rc_brdf_texel_sample(
-    inout uint seed,
-    bool sample_specular,
-    float specular_prob,
-    ivec2 selected_cell,
-    int probe_resolution,
-    float16_t inv_probe_resolution,
-    f16vec3 tangent,
-    f16vec3 bitangent,
-    f16vec3 normal,
-    f16vec3 ltc_transform,
-    float diffuse_weight,
-    float specular_weight,
-    float sum_brdf_weight,
-    inout float pdf
-#ifdef RC_SAMPLE_SINGLE_LOBE
-    , out float mis_pdf
-#endif
-){
-    // [v00]----[v10]
-    //   |   <-   |
-    //   | v    ^ |
-    //   |   ->   |
-    // [v01]----[v11]
-    f16vec2 h00_h11_x, h00_h11_y, h00_h11_z;
-    get_unclamped_texel_corner(
-        f16vec2(selected_cell) * inv_probe_resolution, f16vec2(0,1), f16vec2(0,1),
-        inv_probe_resolution,
-        tangent, bitangent, normal,
-        h00_h11_x, h00_h11_y, h00_h11_z
-    );
-    f16vec2 h01_h10_x, h01_h10_y, h01_h10_z;
-    get_unclamped_texel_corner(
-        f16vec2(selected_cell) * inv_probe_resolution, f16vec2(0,1), f16vec2(1,0),
-        inv_probe_resolution,
-        tangent, bitangent, normal,
-        h01_h10_x, h01_h10_y, h01_h10_z
-    );
-
-    if (sample_specular)
-    {
-        ltc_transform_dir3(ltc_transform, h00_h11_x, h00_h11_y, h00_h11_z, h00_h11_x, h00_h11_y, h00_h11_z);
-        ltc_transform_dir3(ltc_transform, h01_h10_x, h01_h10_y, h01_h10_z, h01_h10_x, h01_h10_y, h01_h10_z);
-    }
-    vec3 polygon[5] = {
-        vec3(h00_h11_x[0], h00_h11_y[0], h00_h11_z[0]),
-        vec3(h01_h10_x[0], h01_h10_y[0], h01_h10_z[0]),
-        vec3(h00_h11_x[1], h00_h11_y[1], h00_h11_z[1]),
-        vec3(h01_h10_x[1], h01_h10_y[1], h01_h10_z[1]),
-        vec3(0)
-    };
-    uint vertex_count = clip_polygon(4, polygon);
-    projected_solid_angle_polygon_t chosen_poly = prepare_projected_solid_angle_polygon_sampling(vertex_count, polygon);
-
-    pdf *= 1.0f / sum_brdf_weight;
-
-    vec2 uv = vec2(
-        generate_single_uniform_random_fast(seed),
-        generate_single_uniform_random_fast(seed)
-    );
-
-    vec3 r = sample_projected_solid_angle_polygon(chosen_poly, uv);
-
-    if (sample_specular)
-    { // Specular sample
-        vec4 outdir = ltc_inv_transform_dir(vec3(ltc_transform), r);
-        float specular_density = max(r.z, 0.0f) / outdir.w;
-        r = outdir.xyz;
-
-        float mis_mul = specular_weight * specular_density;
-#ifndef RC_SAMPLE_SINGLE_LOBE
-        mis_mul += diffuse_weight * r.z;
-        pdf *= mis_mul;
-#else
-        mis_pdf = pdf;
-        pdf *= mis_mul;
-        mis_mul += diffuse_weight * r.z;
-        mis_pdf *= mis_mul;
-#endif
-    }
-    else
-    { // Diffuse sample
-        vec4 outdir = ltc_transform_dir(vec3(ltc_transform), r);
-        float specular_density = max(outdir.z, 0.0f) * outdir.w;
-        float mis_mul = diffuse_weight * r.z;
-#ifndef RC_SAMPLE_SINGLE_LOBE
-        mis_mul += specular_weight * specular_density;
-        pdf *= mis_mul;
-#else
-        mis_pdf = pdf;
-        pdf *= mis_mul;
-        mis_mul += specular_weight * specular_density;
-        mis_pdf *= mis_mul;
-#endif
-    }
-
-    if(pdf <= 0.0 || r.z <= 0.0 || chosen_poly.projected_solid_angle <= 0 || sum_brdf_weight <= 0)
-        pdf = -1.0f;
-
-    vec3 dir = vec3(
-        r.x * tangent.x + r.y * bitangent.x + r.z * normal.x,
-        r.x * tangent.y + r.y * bitangent.y + r.z * normal.y,
-        r.x * tangent.z + r.y * bitangent.z + r.z * normal.z
-    );
-    return dir;
-}
-
 vec3 rc_uniform_texel_sample(
     inout uint seed,
     bool sample_specular,
@@ -422,7 +311,6 @@ vec3 rc_texel_sample(
     sampled_lobe = sample_specular ? MATERIAL_LOBE_REFLECTION : MATERIAL_LOBE_DIFFUSE;
 #endif
 
-#ifdef RC_SAMPLE_TEXEL_UNIFORM
     return rc_uniform_texel_sample(
         seed, sample_specular, specular_prob, selected_cell, probe_resolution,
         inv_probe_resolution, pdf
@@ -430,105 +318,6 @@ vec3 rc_texel_sample(
         , mis_pdf
 #endif
     );
-#endif
-#ifdef RC_SAMPLE_TEXEL_BRDF
-    return rc_brdf_texel_sample(
-        seed,
-        sample_specular,
-        specular_prob,
-        selected_cell,
-        probe_resolution,
-        inv_probe_resolution,
-        tangent,
-        bitangent,
-        normal,
-        ltc_transform,
-        diffuse_weight,
-        specular_weight,
-        sum_brdf_weight,
-        pdf
-#ifdef RC_SAMPLE_SINGLE_LOBE
-        , mis_pdf
-#endif
-    );
-#endif
-#ifdef RC_SAMPLE_TEXEL_HYBRID
-    if(roughness < 0.1)
-    {
-        return rc_brdf_texel_sample(
-            seed,
-            sample_specular,
-            specular_prob,
-            selected_cell,
-            probe_resolution,
-            inv_probe_resolution,
-            tangent,
-            bitangent,
-            normal,
-            ltc_transform,
-            diffuse_weight,
-            specular_weight,
-            sum_brdf_weight,
-            pdf
-#ifdef RC_SAMPLE_SINGLE_LOBE
-            , mis_pdf
-#endif
-        );
-    }
-    else
-    {
-        return rc_uniform_texel_sample(
-            seed, sample_specular, specular_prob, selected_cell, probe_resolution,
-            inv_probe_resolution, pdf
-#ifdef RC_SAMPLE_SINGLE_LOBE
-            , mis_pdf
-#endif
-        );
-    }
-#endif
-}
-
-float rc_brdf_texel_pdf(
-    vec2 uv,
-    vec3 tdir,
-    f16vec3 ltc_transform,
-    float diffuse_weight,
-    float specular_weight,
-    f16vec2 brdf_weight,
-    float pdf
-#ifdef RC_SAMPLE_SINGLE_LOBE
-    , uint sampled_lobe
-#endif
-){
-    float sum_brdf_weight = (diffuse_weight * brdf_weight.x + specular_weight * brdf_weight.y) * M_PI;
-
-    if (tdir.z < 0)
-        return 0.0f;
-
-    // [v00]----[v10]
-    //   |   <-   |
-    //   | v    ^ |
-    //   |   ->   |
-    // [v01]----[v11]
-    float balance_weight = 1.0f/sum_brdf_weight;
-    pdf *= balance_weight;
-    if (sum_brdf_weight <= 0.0f)
-        pdf = 0.0f;
-
-    vec4 spec_dir = ltc_transform_dir(vec3(ltc_transform), tdir);
-    float specular_density = max(spec_dir.z, 0.0f) * spec_dir.w;
-    float mis_mul = 0.0;
-#ifdef RC_SAMPLE_SINGLE_LOBE
-    if(sampled_lobe == MATERIAL_LOBE_REFLECTION || sampled_lobe == MATERIAL_LOBE_ALL)
-        mis_mul += specular_weight * specular_density;
-    if(sampled_lobe == MATERIAL_LOBE_DIFFUSE || sampled_lobe == MATERIAL_LOBE_ALL)
-        mis_mul += diffuse_weight * tdir.z;
-#else
-    mis_mul = specular_weight * specular_density + diffuse_weight * tdir.z;
-#endif
-
-    pdf *= mis_mul;
-    return pdf;
 }
 
 float rc_uniform_texel_pdf(
@@ -569,22 +358,6 @@ float rc_texel_pdf(
     , uint sampled_lobe
 #endif
 ){
-#ifdef RC_SAMPLE_TEXEL_BRDF
-    return rc_brdf_texel_pdf(
-        uv,
-        tdir,
-        ltc_transform,
-        diffuse_weight,
-        specular_weight,
-        brdf_weight,
-        pdf
-#ifdef RC_SAMPLE_SINGLE_LOBE
-        , sampled_lobe
-#endif
-    );
-#endif
-
-#ifdef RC_SAMPLE_TEXEL_UNIFORM
     return rc_uniform_texel_pdf(
         uv,
         probe_resolution,
@@ -596,39 +369,6 @@ float rc_texel_pdf(
         , sampled_lobe
 #endif
     );
-#endif
-
-#ifdef RC_SAMPLE_TEXEL_HYBRID
-    if(roughness < 0.1)
-    {
-        return rc_brdf_texel_pdf(
-            uv,
-            tdir,
-            ltc_transform,
-            diffuse_weight,
-            specular_weight,
-            brdf_weight,
-            pdf
-#ifdef RC_SAMPLE_SINGLE_LOBE
-            , sampled_lobe
-#endif
-        );
-    }
-    else
-    {
-        return rc_uniform_texel_pdf(
-            uv,
-            probe_resolution,
-            diffuse_weight,
-            specular_weight,
-            brdf_weight,
-            pdf
-#ifdef RC_SAMPLE_SINGLE_LOBE
-            , sampled_lobe
-#endif
-        );
-    }
-#endif
 }
 
 void integrate_quad_half_precision(
