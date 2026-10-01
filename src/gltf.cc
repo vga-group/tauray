@@ -225,36 +225,12 @@ material create_material(
     m.double_sided = mat.doubleSided;
     m.name = mat.name;
 
-    bool discard_tr_emission = false;
-
     if(mat.extensions.count("KHR_materials_emissive_strength"))
     {
         const tinygltf::Value& emissive_ext = mat.extensions["KHR_materials_emissive_strength"];
         if(emissive_ext.Has("emissiveStrength"))
         {
             m.emission_factor *= emissive_ext.Get("emissiveStrength").GetNumberAsDouble();
-            discard_tr_emission = true;
-        }
-    }
-
-    if(mat.pbrMetallicRoughness.extensions.count("TR_data"))
-    {
-        tinygltf::Value* tr_data = &mat.pbrMetallicRoughness.extensions["TR_data"];
-        if(tr_data->Has("transmission"))
-        {
-            m.transmittance = tr_data->Get("transmission").GetNumberAsDouble();
-        }
-        if(tr_data->Has("ior"))
-        {
-            m.ior = tr_data->Get("ior").GetNumberAsDouble();
-        }
-        if(!discard_tr_emission && tr_data->Has("emission"))
-        {
-            m.emission_factor = vec3(
-                tr_data->Get("emission").Get(0).GetNumberAsDouble(),
-                tr_data->Get("emission").Get(1).GetNumberAsDouble(),
-                tr_data->Get("emission").Get(2).GetNumberAsDouble()
-            );
         }
     }
 
