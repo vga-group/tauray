@@ -1,8 +1,0 @@
-`Tauray`:
-- Run on Ubuntu 25.04.
-- Build instructions are included in the README.md, they are not different in this branch.
-- There's a configuration file included, rcpg.cfg. After building tauray in e.g. `build`, run it with `build/tauray --config=rcpg.cfg`.
-- Modify `rcpg.cfg` according to what you want to measure.
-- The RCPG implementation is in the following files: `src/radiance_cascades_stage.{cc,hh}`, `shader/radiance_cascades_*`, `shader/ltc.glsl`, `shader/path_tracer.comp` and `shader/path_tracer.glsl`.
-    - Note that `path_tracer.comp` has a commented out `evaluate_ray(` line - this is the more featureful, normal path tracer.
-    - The currently enabled `evaluate_ray_matched` is the function that was used to match SIByLEngine's behavior in experimental comparison with VXPG. It does not support alpha-blending and the last bounce only includes the NEE bounce, no BSDF bounce.
