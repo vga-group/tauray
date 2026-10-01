@@ -934,6 +934,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
         SDL_Event event;
 
+        int next_camera_index = camera_index;
         while(has_events && SDL_PollEvent(&event)) switch(event.type)
         {
         case SDL_EVENT_QUIT:
@@ -947,12 +948,12 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                 if(event.key.key == SDLK_RETURN) paused = !paused;
                 if(event.key.key == SDLK_PAGEUP)
                 {
-                    camera_index++;
+                    next_camera_index++;
                     camera_moved = true;
                 }
                 if(event.key.key == SDLK_PAGEDOWN)
                 {
-                    camera_index--;
+                    next_camera_index--;
                     camera_moved = true;
                 }
                 if(event.key.key == SDLK_T && !opt.timing)
@@ -1023,11 +1024,12 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         if(ctx.init_frame())
             break;
 
-        if(cameras.size() != 0)
+        if(next_camera_index != camera_index && cameras.size() != 0)
         {
             s.get<camera_metadata>(cameras[camera_index])->enabled = false;
-            while(camera_index < 0) camera_index += cameras.size();
-            camera_index %= cameras.size();
+            while(next_camera_index < 0) next_camera_index += cameras.size();
+            next_camera_index %= cameras.size();
+            camera_index = next_camera_index;
             s.get<camera_metadata>(cameras[camera_index])->enabled = true;
         }
 
