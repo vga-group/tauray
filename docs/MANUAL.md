@@ -870,7 +870,7 @@ accumulation speed for moments used to drive the variance guidance.
 `--devices=<int,int,...>`
 
 You can define which devices to use with the `--devices` argument. By default,
-it uses the first ray tracing-capable GPUs that can be found. This is equivalent
+it uses the first ray tracing-capable GPU that can be found. This is equivalent
 to `--devices=-1`. You can also give a list of integers to define multiple GPUs
 to use.
 
