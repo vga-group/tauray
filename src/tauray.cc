@@ -305,7 +305,7 @@ context* create_context(const options& opt)
     else
         ctx_opt.physical_device_indices = opt.devices;
 #endif
-    ctx_opt.max_timestamps = 128;
+    ctx_opt.max_timestamps = 1024;
     ctx_opt.enable_vulkan_validation = opt.validation;
     ctx_opt.fake_device_multiplier = opt.fake_devices;
 
