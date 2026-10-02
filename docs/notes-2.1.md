@@ -40,6 +40,7 @@ Tauray v2.1 release
 ## Bug fixes
 
 - Fixed `--accumulation` having no effect in replay/headless rendering, where accumulation was reset before every frame.
+- Blender add-on modernized for Blender 5.2.
 - `TR_data` material data (transmission, IOR, emission) is no longer used in favor of standard glTF extensions.
     - The extension still exists but is only used to add radius to point lights, solid angle to directional lights, and probe grids for DDISH-GI.
 - Fixed environment map alias table generation reading past-the-end of pixel array.
@@ -53,8 +54,6 @@ Tauray v2.1 release
 - Fixed camera switching with PageUp/PageDown indexing the camera list before the index was wrapped.
 - Fixed headless output directory creation when the output path has no directory component.
 - Fixed a missing space in the glTF scene loading log message.
-- Blender add-on modernized for Blender 5.2.
-    - Trimmed `TR_data` to not include material stuff that is already in standard glTF extensions.
 - Fixed spurious timestamp errors.
 - Fixed running out of timestamp slots in some multi-view setups.
 
