@@ -20,6 +20,7 @@ placeholders::placeholders(context& ctx)
         device_mask::all(ctx),
         uvec3(1),
         vk::Format::eR8G8B8A8Unorm,
+        0, nullptr,
         vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eSampled,
         vk::ImageLayout::eShaderReadOnlyOptimal

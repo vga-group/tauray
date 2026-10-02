@@ -124,9 +124,9 @@ void raster_pipeline::init_render_pass()
 
     vk::SubpassDependency subpass_dep(
         VK_SUBPASS_EXTERNAL, 0,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        {}, vk::AccessFlagBits::eColorAttachmentWrite
+        vk::PipelineStageFlagBits::eColorAttachmentOutput|vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput|vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        {}, vk::AccessFlagBits::eColorAttachmentWrite|vk::AccessFlagBits::eDepthStencilAttachmentWrite
     );
 
     vk::RenderPassCreateInfo render_pass_info(
@@ -162,6 +162,7 @@ void raster_pipeline::init_pipeline()
 
     load_shader_module(state.src.vert, vk::ShaderStageFlagBits::eVertex, stages, state.specialization);
     load_shader_module(state.src.frag, vk::ShaderStageFlagBits::eFragment, stages, state.specialization);
+    load_shader_module(state.src.geom, vk::ShaderStageFlagBits::eGeometry, stages, state.specialization);
 
     vk::PipelineVertexInputStateCreateInfo vertex_input(
         {},
@@ -202,9 +203,18 @@ void raster_pipeline::init_pipeline()
     std::vector<vk::DynamicState> dynamic_states;
     if(state.dynamic_viewport)
         dynamic_states.push_back(vk::DynamicState::eViewport);
+
     vk::PipelineDynamicStateCreateInfo dynamic_state = {
         {}, (uint32_t)dynamic_states.size(), dynamic_states.data()
     };
+
+    vk::PipelineRasterizationConservativeStateCreateInfoEXT cons_state;
+    if(state.conservative_rasterization)
+    {
+        cons_state.conservativeRasterizationMode = vk::ConservativeRasterizationModeEXT::eOverestimate;
+        cons_state.extraPrimitiveOverestimationSize = 0.0;
+        rasterization.pNext = &cons_state;
+    }
 
     std::vector<vk::PipelineColorBlendAttachmentState> color_blend_attachments;
 

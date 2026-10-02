@@ -1,6 +1,16 @@
 #ifndef MATH_GLSL
 #define MATH_GLSL
 
+/*
+#define FORCE_FULL_PRECISION
+#ifdef FORCE_FULL_PRECISION
+#define float16_t float
+#define f16vec2 vec2
+#define f16vec3 vec3
+#define f16vec4 vec4
+#endif
+*/
+
 #define M_PI 3.14159265359
 #define M_1_SQRT3 0.57735026918962576451
 #define SQRT2 1.41421356237
@@ -8,6 +18,7 @@
 #define GOLDEN_RATIO 1.61803398874989484820
 #define FLT_MAX 3.402823466e+38
 #define INV_UINT32_MAX 2.3283064365386963e-10f
+#define INV_UINT16_MAX 1.5259021896696422e-05f
 
 vec3 create_tangent(vec3 normal)
 {
@@ -26,6 +37,17 @@ vec3 create_tangent(vec3 normal)
 mat3 create_tangent_space(vec3 normal)
 {
     vec3 tangent = create_tangent(normal);
+    vec3 bitangent = cross(normal, tangent);
+    return mat3(tangent, bitangent, normal);
+}
+
+// Creates a tangent space where x is aligned with the given view vector.
+mat3 create_tangent_space(vec3 normal, vec3 view)
+{
+    vec3 tangent = view - normal*dot(view, normal);
+    float len2 = dot(tangent, tangent);
+    if(len2 < 1e-7) tangent = create_tangent(normal);
+    tangent = normalize(tangent);
     vec3 bitangent = cross(normal, tangent);
     return mat3(tangent, bitangent, normal);
 }
@@ -117,6 +139,17 @@ uvec4 pcg1to4(inout uint seed)
     pcg4d(seed4);
     seed = seed4.x;
     return seed4;
+}
+
+uint lcg(inout uint seed)
+{
+    seed = seed * 1664525u + 1013904223u;
+    return seed;
+}
+
+float generate_uniform_random_lq(inout uint seed)
+{
+    return lcg(seed) * 2.3283064365386963e-10f;
 }
 
 #include "sobol_lookup_table.glsl"
@@ -443,6 +476,21 @@ float triangle_area_pdf(vec3 p, vec3 a, vec3 b, vec3 c)
     return 2.0 * p_dist2*sqrt(p_dist2)/abs(dot(normal, p));
 }
 
+float intersect_aabb(vec3 aabb_min, vec3 aabb_max, vec3 ray_origin, vec3 ray_dir)
+{
+    vec3 inv_ray_dir = 1.0 / ray_dir;
+    vec3 t0 = (aabb_min - ray_origin) * inv_ray_dir;
+    vec3 t1 = (aabb_max - ray_origin) * inv_ray_dir;
+    vec3 mins = min(t0,t1);
+    vec3 maxs = max(t0,t1);
+    float near = max(mins.x, max(mins.y, mins.z));
+    float far = min(maxs.x, min(maxs.y, maxs.z));
+
+    if(near <= far && (far > 0 || near > 0))
+        return near < 0 ? far : near;
+    else return -1;
+}
+
 // Assumes that ray starts from vec3(0)
 float ray_plane_intersection_dist(
     vec3 dir, vec3 A, vec3 B, vec3 C
@@ -582,6 +630,143 @@ vec2 r2_noise(vec2 x)
 vec3 r3_noise(vec3 x)
 {
     return fract(x * vec3(0.819172513f, 0.671043606f, 0.549700478f));
+}
+
+vec3 l1_normalize(vec3 v)
+{
+    vec3 va = abs(v);
+    float l1 = max(va.x, max(va.y, va.z));
+    return v / l1;
+}
+
+// From "Fast Equal-Area Mapping of the (Hemi)Sphere using SIMD", Petrik Clarberg, 2008.
+// Appears to be identical to Collignon Quincuncial projection.
+vec3 concentric_octahedral_mapping(vec2 u)
+{
+    u = u * 2.0f - 1.0f;
+    vec2 au = abs(u);
+    float d = 1 - au.x - au.y;
+    float r = 1 - abs(d);
+    float phi = (M_PI/4) * ((au.y-au.x)/max(r, 1e-10f)+1);
+    float r2 = r * r;
+    float s = r * sqrt(2 - r2);
+    return vec3(
+        cos(phi) * s * sign(u.x),
+        (1-r2) * sign(d),
+        sin(phi) * s * sign(u.y)
+    );
+}
+
+vec2 concentric_octahedral_mapping_inverse(vec3 dir)
+{
+    vec3 adir = abs(dir);
+    float phi = atan(adir.z, adir.x);
+    float r = sqrt(1-adir.y);
+
+    vec2 uv;
+    uv.y = (2/M_PI) * r * phi;
+    uv.x = r - uv.y;
+
+    if(dir.y < 0) uv.xy = 1 - uv.yx;
+
+    uv.x *= sign(dir.x);
+    uv.y *= sign(dir.z);
+
+    uv = uv * 0.5f + 0.5f;
+    return uv;
+}
+
+vec3 octahedral_mapping(vec2 packed_normal)
+{
+    vec3 normal = vec3(
+        packed_normal.x,
+        1.0f - abs(packed_normal.x) - abs(packed_normal.y),
+        packed_normal.y
+    );
+    float ny = clamp(normal.y, -1.0f, 0.0f);
+    normal.x += normal.x > 0.0f ? ny : -ny;
+    normal.z += normal.z > 0.0f ? ny : -ny;
+    return normalize(normal);
+}
+
+vec2 octahedral_mapping_inverse(vec3 normal)
+{
+    normal /= abs(normal.x) + abs(normal.y) + abs(normal.z);
+    return normal.y >= 0.0 ?
+        normal.xz : (1 - abs(normal.zx)) * (step(vec2(0), normal.xz)*2-1);
+}
+
+float octahedral_mapping_abs_jacobian_det(vec2 packed_normal)
+{
+    float u = abs(packed_normal.x);
+    float v = abs(packed_normal.y);
+
+    float d = u*u + u*v + v*v;
+    float t = 1.0f - u - v;
+    d = (t < 0.0f ? 2.0f : 1.0f) * t + d;
+    d = 2.0f * d - 1.0f;
+    return d * sqrt(d);
+}
+
+bvec2 and(bvec2 a, bvec2 b) { return mix(b, a, b); }
+bvec3 and(bvec3 a, bvec3 b) { return mix(b, a, b); }
+bvec4 and(bvec4 a, bvec4 b) { return mix(b, a, b); }
+
+uint ipow(uint base, uint e)
+{
+    uint result = 1;
+    while(e != 0)
+    {
+        if((e&1) != 0) result *= base;
+        e >>= 1;
+        base *= base;
+    }
+    return result;
+}
+
+uint morton_encode_3d(uvec3 x)
+{
+    x &= 0x000003ffu;
+    x = (x ^ (x << 16u)) & 0xff0000ffu;
+    x = (x ^ (x << 8u)) & 0x0300f00fu;
+    x = (x ^ (x << 4u)) & 0x030c30c3u;
+    x = (x ^ (x << 2u)) & 0x09249249u;
+    return x.x + 2u * x.y + 4u * x.z;
+}
+
+uint morton_to_hilbert_3d(uint morton, uint bits)
+{
+    uint shift = 0u;
+    uint signs = 0u;
+    uint block = bits * 3u - 3u;
+    for(uint i = 0u; i < bits; ++i, block -= 3u)
+    {
+        uint mcode = (morton >> block) & 7u;
+        uint hcode = ((mcode | (mcode << 3u)) >> shift) & 7u ^ signs;
+        morton ^= (mcode ^ hcode) << block;
+        hcode <<= 2u;
+        uint tmp = (0x20212021u >> hcode) & 3u;
+        signs = (((signs | (signs << 3u)) >> tmp) ^ (0x53560300u >> hcode)) & 7u;
+        shift = (0x48u >> (7u - shift - tmp)) & 3u;
+    }
+    morton ^= (morton >> 1u) & 0x92492492u;
+    morton ^= (morton >> 1u) & 0x49249249u;
+    return morton;
+}
+
+uint hilbert_encode_3d(uvec3 x)
+{
+    return morton_to_hilbert_3d(morton_encode_3d(x), 10);
+}
+
+vec4 sort_vec4(vec4 v)
+{
+    if (v.x > v.z) v.xz = v.zx;
+    if (v.y > v.w) v.yw = v.wy;
+    if (v.x > v.y) v.xy = v.yx;
+    if (v.z > v.w) v.zw = v.wz;
+    if (v.y > v.z) v.yz = v.zy;
+    return v;
 }
 
 #endif

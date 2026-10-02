@@ -87,21 +87,6 @@ void tonemap_stage::init(std::vector<render_target>& output_frames)
     desc.reset(dev->id, MAX_FRAMES_IN_FLIGHT * (uint32_t)output_frames.size());
     comp.init(src, {&desc});
 
-    if(this->opt.reorder.size() != input_target.layer_count)
-    {
-        this->opt.reorder.resize(input_target.layer_count);
-        std::iota(this->opt.reorder.begin(), this->opt.reorder.end(), 0);
-
-        if(opt.limit_to_input_layer >= 0)
-            this->opt.reorder[opt.limit_to_input_layer] = opt.limit_to_output_layer;
-    }
-
-    vk::BufferCreateInfo info(
-        {}, this->opt.reorder.size() * sizeof(uint32_t),
-        vk::BufferUsageFlagBits::eStorageBuffer, vk::SharingMode::eExclusive
-    );
-    output_reorder_buf = create_buffer(*dev, info, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, this->opt.reorder.data());
-
     this->opt.output_image_layout =
         opt.output_image_layout == vk::ImageLayout::eUndefined ?
         dev->ctx->get_expected_display_layout() : opt.output_image_layout;
@@ -117,7 +102,6 @@ void tonemap_stage::init(std::vector<render_target>& output_frames)
         desc.set_buffer(cb_index, "info", index_data);
         desc.set_image(dev->id, cb_index, "in_color", {{{}, input_target.view, vk::ImageLayout::eGeneral}});
         desc.set_image(dev->id, cb_index, "out_color", {{{}, output.view, vk::ImageLayout::eGeneral}});
-        desc.set_buffer(dev->id, cb_index, "output_reorder", {{output_reorder_buf, 0, VK_WHOLE_SIZE}});
 
         // Record command buffer
         vk::CommandBuffer cb = begin_compute();

@@ -58,13 +58,13 @@ public:
     void set_displaying(bool displaying);
     bool get_displaying() const;
 
-    size_t get_swapchain_image_count() const;
+    virtual size_t get_swapchain_image_count() const;
     // The default implementations of these functions assume that there is only
     // one display per image (and not that one image is divided into multiple
     // separate viewports).
     size_t get_display_count() const;
     // If vector length is > 1, one render target per in-flight frame.
-    std::vector<render_target> get_array_render_target();
+    virtual std::vector<render_target> get_array_render_target();
 
     placeholders& get_placeholders();
 

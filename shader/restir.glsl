@@ -57,14 +57,6 @@ struct restir_config
     float max_spatial_radius;
 };
 
-const uint NULL_INSTANCE_ID = 0xFFFFFFFF;
-const uint POINT_LIGHT_INSTANCE_ID = 0xFFFFFFFF-1;
-const uint DIRECTIONAL_LIGHT_INSTANCE_ID = 0xFFFFFFFF-2;
-const uint ENVMAP_INSTANCE_ID = 0xFFFFFFFF-3;
-// Both directional + envmap.
-const uint MISS_INSTANCE_ID = 0xFFFFFFFF-4;
-const uint UNCONNECTED_PATH_ID = MISS_INSTANCE_ID-1;
-
 struct reconnection_vertex
 {
     // Either triangle mesh index or type tag (see above INSTANCE_ID constants)

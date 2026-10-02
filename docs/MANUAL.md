@@ -1,5 +1,5 @@
 ---
-title: Tauray 2.0 User Manual
+title: Tauray 2.1 User Manual
 author: Julius Ikkala
 geometry: margin=2.4cm
 numbersections: true
@@ -19,7 +19,7 @@ output:
 
 ![The logo of Tauray.](images/tauray_logo.png){width=50%}
 
-**Tauray 2.0** is a GPU-accelerated rendering software developed at Tampere
+**Tauray 2.1** is a GPU-accelerated rendering software developed at Tampere
 University. Its focus is on speed and scalability. Tauray can be used for
 generating datasets as well as developing real-time rendering algorithms.
 It is primarily used as a command-line program, which makes scripting and
@@ -44,7 +44,7 @@ results.
 
 # Installing Tauray
 
-It is recommended that you run Tauray on a PC running Ubuntu 22.04 LTS with one
+It is recommended that you run Tauray on a PC running Ubuntu 26.04 LTS with one
 or more Nvidia RTX GPUs.
 
 ## Building Tauray
@@ -52,8 +52,8 @@ or more Nvidia RTX GPUs.
 Tauray has some dependencies, so install them first:
 
 ```bash
-sudo apt install libvulkan-dev vulkan-validationlayers vulkan-tools imagemagick libnng-dev \
-    libcbor-dev libczmq-dev libglm-dev libsdl2-dev
+sudo apt install cmake build-essential spirv-tools-dev libsdl3-dev libvulkan-dev \
+                 libglm-dev libassimp-dev libczmq-dev libnng-dev libcbor-dev glslang-tools
 ```
 
 Then, you can build Tauray.
@@ -94,9 +94,11 @@ While not the only possible option, [Blender](https://www.blender.org/) is a
 great open-source 3D authoring tool that we recommend for preparing scenes for
 Tauray. Start by installing the newest version, if you don't yet have it.
 
-Next, we'll install the Tauray plugin. First, navigate to the Tauray folder and
-find the `blender` folder. Make a .zip file of the `tr_gltf_extension` file
-included within (unless it already exists).
+Next, we can install the Tauray plugin. It is needed to allow point lights to
+have a non-zero radius, directional lights to have a non-zero solid angle, and
+to place probe volumes for DDISH-GI. Navigate to the Tauray folder and find the
+`blender` folder. Make a .zip file of the `tr_gltf_extension` file included
+within (unless it already exists).
 
 Now, you can open Blender. Go to the preferences and open the "Add-ons" section.
 
@@ -111,13 +113,6 @@ From the file dialog that opens, navigate to the Tauray folder. Go to the
 `Install Add-on` button.
 
 ![Clicking the Install button in the file dialog.](images/blender_addon_install2.png)
-
-Depending on Blender version and whether you already had the plugin installed,
-it may be automatically shown in the Add-ons section. If not, search for
-"tauray". In any case, enable the "Tauray glTF extension" by checking the
-checkbox next to the name.
-
-![Enable the Tauray addon.](images/blender_enable_addon.png)
 
 You only need to install and enable the addon once, Blender will remember it
 across projects. You can now close the preferences window and start working with
@@ -311,6 +306,10 @@ the `--` and replace the equals-sign with a space.
 +-------------------------------+----------------------------------------------------------------------------------------+
 | Preset                        | Image                                                                                  |
 +:=============================:+:======================================================================================:+
+| `minimal`: Minimal path       | ![](images/preset_minimal.png)                                                         |
+| tracer with no importance     |                                                                                        |
+| sampling.                     |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
 | `accumulation`: Interactive   | ![](images/preset_accumulation.png)                                                    |
 | renderer that slowly reduces  |                                                                                        |
 | noise when not moving.        |                                                                                        |
@@ -476,6 +475,13 @@ Table: Summary of renderers included in Tauray.
 | `restir-hybrid`: ReSTIR       | ![](images/restir-hybrid.png)                                                          |
 | hybridized with DDISH-GI.     |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
+| `rc`: Experimental path       | ![](images/rc.png)                                                                     |
+| guiding algorithm based on    |                                                                                        |
+| radiance cascades: RCPG.      |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
+| `rc-restir`: RCPG combined    | ![](images/rc-restir.png)                                                              |
+| with ReSTIR.                  |                                                                                        |
++-------------------------------+----------------------------------------------------------------------------------------+
 | `albedo`: Albedo of the first | ![](images/albedo.png)                                                                 |
 | intersection.                 |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
@@ -609,7 +615,7 @@ enable specific biases / assumptions for increased performance.
 changed between frames in temporal reuse, saving some bandwidth in material
 storage and reading.
 
-`--restir.assume-unchanged-acceleration-structure=<on|off>` assumes that
+`--restir.assume-unchanged-acceleration-structures=<on|off>` assumes that
 geometry in the acceleration structures has not changed between frames. If there
 are moving objects in the scene, this introduces brightening and darkening bias
 near them.
@@ -842,7 +848,7 @@ so will reduce noise. Usually, you also use denoising in conjunction with
 
 ### SVGF parameters
 
-`--svgf=<atrous-diff-iter,atrous-spec-iter,atrous-kernel-radius,sigma-l,sigma-z,sigma-n,min-alpha-color,min-alpha-moments>`
+`--svgf=<atrous-diffuse-iter,atrous-spec-iter,atrous-kernel-radius,sigma-l,sigma-z,sigma-n,min-alpha-color,min-alpha-moments>`
 
 This sets the parameters for the SVGF denoiser. Note that the defaults are quite
 general, and it's unlikely that you'll gain much by changing these parameters.
@@ -859,12 +865,11 @@ accumulation speed for moments used to drive the variance guidance.
 `--devices=<int,int,...>`
 
 You can define which devices to use with the `--devices` argument. By default,
-it uses all ray tracing-capable GPUs that are found. If you only want one GPU,
-you can use `--devices=-1` (which picks the default GPU) or `--devices=0` (which
-picks the first one) and so on. You can also give a list of integers to define
-a subset of GPUs to use.
+it uses the first ray tracing-capable GPU that can be found. This is equivalent
+to `--devices=-1`. You can also give a list of integers to define multiple GPUs
+to use.
 
-If only have one GPU, but want to debug multi-GPU stuff, yuo can use the
+If only have one GPU, but want to debug multi-GPU stuff, you can use the
 `--fake-devices=<N>` option, which creates N logical devices for each physical
 device.
 
@@ -887,23 +892,29 @@ each GPU.
 
 ## Display
 
-`--display=<headless|window|openxr|looking-glass|frame-server|frame-client>`
+`--display=<headless|window|openxr|looking-glass|frame-server|frame-client|headful>`
 
 Display type. If you use `--headless`, the `headless` display is forced on.
 Otherwise, you can pick whether you want to output to a window, to a VR HMD with
 OpenXR or a Looking Glass light field display. `frame-server` and `frame-client`
 are special, see [frame streaming](#frame-streaming).
 
+The `headful` mode is a fallback mode for when you have GPU devices but none of
+them are able to present directly on the screen. It is implemented as if it was
+headless, but instead of saving images, it copies them to the host for presenting
+outside of Vulkan. This can be useful in some virtual machine or remote desktop
+scenarios.
+
 ### Looking Glass
 
-`--lkg-params=<viewports,midplane,depthiness,relative_view_distance>`
+`--lkg-params=<viewports,midplane,depth,relative_dist>`
 
 You can set the parameters for rendering to a Looking Glass display with the
 `--lkg-params` option. `viewports` is the number of discrete viewports to
 render, this would usually be between 48 to 128. `midplane` is the plane of
 convergence, i.e. which scene depth corresponds to the actual physical distance
-of the display from the viewer's eye. `depthiness` can be used to adjust the
-distance between viewports, and `relative_view_distance` is the distance of the
+of the display from the viewer's eye. `depth` can be used to adjust the
+distance between viewports, and `relative_dist` is the distance of the
 user's eye relative to the size of the display (this is needed for the Y axis,
 as the Looking Glass displays only have multiple horizontal views.)
 
@@ -949,13 +960,13 @@ They are also nice in larger scenes as well.
 
 By default, environment maps are importance sampled. This has a noticeable
 performance impact and you may want to disable the importance sampling sometimes.
-You can do this with `--sample-envmap=off`. Note that this importance
+You can do this with `--sample-envmap=0`. Note that this importance
 sampling is basically required if your environment map includes the sun or any
 other small and bright light source:
 
 | ![without](images/envmap_unsampled.png){width=50%} | ![with](images/envmap_sampled.png){width=50%}      |
 |:--------------------------------------------------:|:--------------------------------------------------:|
-| `--sample-envmap=off`                   | `--sample-envmap=on` (default)          |
+| `--sample-envmap=0`                                | `--sample-envmap=1` (default)                      |
 
 ## Tone mapping
 
@@ -1017,7 +1028,7 @@ files. `--exposure=2` doubles the brightness _before_ tonemapping.
 ## Output file
 
 ### File format
-`--filetype=<exr|png|bmp|hdr|raw|none>`
+`--filetype=<exr|png|bmp|hdr|raw|none|mse>`
 
 You can change the file format for the output data of
 [headless mode](#offline-rendering) with `--filetype`. The default is .EXR,
@@ -1034,6 +1045,35 @@ the image yourself, as no metadata is included.
 The `none` format just means that no output is actually written. This can be
 useful for benchmarking Tauray on a server, so you don't end up benchmarking
 disk and EXR compression speed instead.
+
+The `mse` format also writes no images. Instead, it computes the mean squared
+error against reference images for every rendered frame/view. The references
+are specified with `--reference`, which gives the base path of the reference
+images. The per-frame/view suffix (the same one that would be used for the
+output images, e.g. `0_3`) and the `.exr` extension are appended automatically,
+so a single-frame, single-view render compares against
+`<reference>.exr` directly. When rendering a sequence, if the per-frame
+reference does not exist, a single frameless reference is used for all frames
+(`<reference>.exr`, or `<reference><view>_.exr` per view in multi-view
+renders). The only required reference channels are `R`, `G`,
+`B` and `A`; only the channels present in the reference are compared (a
+3-channel reference compares RGB). The reference must have the same image size
+as the output, and must be a regular (non-tiled, non-multipart, non-deep) EXR
+file. `--format` and `--compression` do not apply in this mode.
+
+The results are appended to the single file named by `--headless` (which is
+truncated at start), one line per frame/view:
+
+```
+<frame> <view> <mse>
+```
+
+For example:
+
+```
+0 0 1234.56789012345
+1 0 2345.67890123456
+```
 
 ### Pixel format
 
@@ -1077,6 +1117,9 @@ details such as sharp shadows may still appear aliased. SSAA is enabled by
 setting `--sample-shading=on`. This method is very slow, as it linearly
 increases the workload by your `--samples-per-pixel` value. However, it
 generally works the best.
+
+`--tonemap-post-resolve=on` can be used to improve the performance of AA
+resolving slightly, but it significantly hurts the antialiasing quality.
 
 Table: Comparison between anti-aliasing methods for rasterization.
 
@@ -1394,9 +1437,11 @@ A sampler picks the samples for Monte Carlo integration in the path tracer.
 The difference between them is that `sobol-z2` is using a typical 2D Morton curve,
 while `sobol-z3` is using a 3D Morton curve where frame index/time is the third axis.
 
-`sobol-z3` is the default, as it seems to perform fairly well in most cases.
-For low-spp renders, you may want to go for `sobol-z2` instead. For maximum
-performance, `uniform-random` is the fastest.
+`uniform-random` is the default, as other samplers are more difficult to
+implement consistently across renderers and the `sobol` samplers rely on large
+constant arrays which have caused instabilities with some drivers in the past.
+For low-spp renders, you may want to try `sobol-z2`. For maximum performance,
+`uniform-random` is the fastest.
 
 | ![uniform random](images/sampler_uniform_random.png){width=20%} | ![sobol owen](images/sampler_sobol_owen.png){width=20%}         | ![sobol z2](images/sampler_sobol_z2.png){width=20%}             | ![sobol z3](images/sampler_sobol_z3.png){width=20%}             |
 |:---------------------------------------------------------------:|:---------------------------------------------------------------:|:---------------------------------------------------------------:|:---------------------------------------------------------------:|
@@ -1449,7 +1494,7 @@ of point lights.
 
 ### Directional lights
 
-`--sample-directional=<float>` can be used to set the relative weight
+`--sample-directional-lights=<float>` can be used to set the relative weight
 of sampling directional lights in next event estimation. Higher values emphasize
 directional lights more than other light types. 0 disables next event estimation
 of directional lights.
@@ -1473,6 +1518,15 @@ of emissive triangles.
 are sampled. The `area` method is robust, but noisy. `solid-angle` has less
 noise, but is also less robust to very small triangles. `hybrid` should be
 robust and low-noise, but it is also slower.
+
+### Light tree
+
+`--enable-light-tree=<on|off>`
+
+Enables a very basic light BVH approach for next event estimation. Can improve
+sampling quality significantly, but with a high performance cost. The branching
+factor of the light tree is constant and controllable with
+`--light-tree-width=<integer>`.
 
 ### Samples per pixel
 
@@ -1499,6 +1553,9 @@ For performance, you may consider setting `--samples-per-pass=8` or so. This
 parameter makes one shader pass calculate more samples, reducing overall
 overhead. However, too high values can cause driver timeouts, as their watchdogs
 bite Tauray if it takes too many seconds to run one pass.
+
+For equal-time offline runs, you can use `--auto-spp=<float>` to auto-adjust
+SPP to be as close as possible to the given number of milliseconds.
 
 ## DDISH-GI
 
@@ -1543,29 +1600,47 @@ and slow down rendering significantly. It's disabled by default.
 |:-------------------------------------------:|:-------------------------------------------:|
 | DDISH-GI with `--use-probe-visibility=off`. | Same, but with `--use-probe-visibility=on`. |
 
-## Reprojection
+## RCPG
 
-Reprojection can be used with path tracing to re-use data from previous frames
-or other viewports. These are the *temporal* and *spatial* reprojection,
-respectively.
+Radiance cascade path guiding can be enabled via `--renderer=rc`. It is
+recommended that you also set `--enable-light-tree=on` with the method. The
+method is experimental and may not work well in all scenes. In particular, the
+implementation does not support transparency, refractions or zero-roughness
+surfaces.
 
-### Spatial reprojection
+`--radiance-cascades.shadow-mapped=on` can be set to use shadow maps instead
+of ray tracing when computing intersection shading during radiance cascade
+build.
 
-`--spatial-reprojection=<int,int,...>`
+`--radiance-cascades.defensive=on` can be used to enable an experimental
+defensive sampling approach. This approach was not used in the RCPG publication
+and its value is dubious at best.
 
-This type of reprojection is only useful for light-field rendering. You list the
-viewport indices that are rendered, and the rest are then reprojected from
-those.
+`--radiance-cascades.jitter=off` can be used to disable intra-cell jittering. Doing so is not 
+at all recommended and never useful.
 
-### Temporal reprojection
+`--radiance-cascades.recursive=off` can be used to disable using the previous frame's radiance
+cascades to shade intersections during radiance cascade build. This helps with
+performance, but harms sampling quality in multi-bounce renders.
 
-`--temporal-reprojection=<number>`
+`--radiance-cascades.c0=<integer>` controls cascade 0 angular resolution.
 
-Temporal reprojection can be used with regular renders as well, though it's
-most useful in [interactive mode](#interactive-rendering). This method re-uses
-pixel values from the previous frame to deliver a more noise-free image.
-The given number affects the ratio of data re-used from the previous frame,
-where 0 is no re-use and 0.5 is 50/50 new and old frame.
+`--radiance-cascades.gridsize=<integer>` sets the cascade 0 grid resolution as a power of two. For
+example, `--gridsize=8` uses 256x256x256.
+
+`--radiance-cascades.avg-bias=<float>` accepts value from 0 to 1. It biases the radiance cascade
+accumulation towards accumulating a maximum instead of average. 0 is average,
+1 is maximum. Accumulating the maximum reduces fireflies significantly but is
+not useful for dynamic scenes where data may be invalidated.
+
+`--radiance-cascades.di-samples=<integer>` how many light samples to take during
+radiance cascade build, per intersection. Does nothing if shadow mapping is
+enabled.
+
+`--radiance-cascades.temporal-ratio=<float>` is the weight of new data introduced
+per frame into the running average used for accumulating radiance cascade probes.
+Values close to 0 are more stable but react to lighting changes slower, whereas
+values close to 1 are more temporally unstable but react quicker.
 
 ## Accumulation
 
@@ -1608,6 +1683,15 @@ textures. On further bounces, the materials are back to their usual colors, so
 you still get color bleeding!
 
 ![The usual scene, but with `--use-white-albedo-on-first-bounce`.](images/white_albedo.png)
+
+## Shadow terminator fix
+
+`--shadow-terminator-fix=<on|off>`
+
+Enables support for a workaround for the shadow terminator issue, compatible
+with the method used in Blender 2.90. This does not conserve energy, but unless
+it's manually specified for a model in the input scene, it has no effect. It is
+off by default.
 
 ## Up axis
 

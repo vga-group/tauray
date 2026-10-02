@@ -192,7 +192,7 @@ std::vector<animation::sample<T>> read_animation_accessors(
 
 texture* get_texture(tinygltf::Model& model, scene_assets& md, int index)
 {
-    if(index == -1) return nullptr;
+    if(index == -1) return md.textures.back().get();
     return md.textures[model.textures[index].source].get();
 }
 
@@ -215,7 +215,7 @@ material create_material(
     );
 
     m.normal_factor = 1.0f;
-    m.normal_tex.first = get_texture(model, md, mat.normalTexture.index);
+    m.normal_tex.first = mat.normalTexture.index < 0 ? nullptr : get_texture(model, md, mat.normalTexture.index);
 
     m.ior = 1.45f;
 
@@ -225,36 +225,12 @@ material create_material(
     m.double_sided = mat.doubleSided;
     m.name = mat.name;
 
-    bool discard_tr_emission = false;
-
     if(mat.extensions.count("KHR_materials_emissive_strength"))
     {
         const tinygltf::Value& emissive_ext = mat.extensions["KHR_materials_emissive_strength"];
         if(emissive_ext.Has("emissiveStrength"))
         {
             m.emission_factor *= emissive_ext.Get("emissiveStrength").GetNumberAsDouble();
-            discard_tr_emission = true;
-        }
-    }
-
-    if(mat.pbrMetallicRoughness.extensions.count("TR_data"))
-    {
-        tinygltf::Value* tr_data = &mat.pbrMetallicRoughness.extensions["TR_data"];
-        if(tr_data->Has("transmission"))
-        {
-            m.transmittance = tr_data->Get("transmission").GetNumberAsDouble();
-        }
-        if(tr_data->Has("ior"))
-        {
-            m.ior = tr_data->Get("ior").GetNumberAsDouble();
-        }
-        if(!discard_tr_emission && tr_data->Has("emission"))
-        {
-            m.emission_factor = vec3(
-                tr_data->Get("emission").Get(0).GetNumberAsDouble(),
-                tr_data->Get("emission").Get(1).GetNumberAsDouble(),
-                tr_data->Get("emission").Get(2).GetNumberAsDouble()
-            );
         }
     }
 
@@ -439,6 +415,7 @@ void load_gltf_node(
             directional_light dl;
             dl.set_color(color);
             dl.set_angle(degrees(meta.light_angle));
+            //dl.set_angle(0);
             s.attach(id, std::move(dl));
         }
         else if(l.type == "point")
@@ -464,7 +441,7 @@ void load_gltf_node(
     {
         tinygltf::Value light_probe = tr_data->Get("light_probe");
         std::string type = light_probe.Get("type").Get<std::string>();
-        if(type == "GRID") // Irradiance volume
+        if(type == "VOLUME" || type =="GRID") // Irradiance volume
         {
             uvec3 res;
             res.x = light_probe.Get("resolution_x").GetNumberAsDouble();
@@ -527,6 +504,7 @@ scene_assets load_gltf(
     if(!loader.LoadBinaryFromFile(&gltf_model, &err, &warn, path))
         throw std::runtime_error(err);
 
+
     for(tinygltf::Image& image: gltf_model.images)
     {
         if(image.bufferView != -1)
@@ -576,6 +554,20 @@ scene_assets load_gltf(
             md.textures.emplace_back(new texture(dev, image.uri));
         }
     }
+
+    uint8_t placeholder_data[4] = {255,255,255,255};
+    md.textures.emplace_back(new texture(
+        dev,
+        uvec2(1, 1),
+        1,
+        vk::Format::eR8G8B8A8Unorm,
+        4,
+        placeholder_data,
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eSampled,
+        vk::ImageLayout::eShaderReadOnlyOptimal
+    ));
+    md.textures.back()->set_opaque(true);
 
     // Add animations
     node_meta_info meta;
@@ -793,7 +785,7 @@ scene_assets load_gltf(
         s.remove<added_by_this_file>(id);
     });
 
-    TR_LOG("Finished loading glTF scene", path);
+    TR_LOG("Finished loading glTF scene ", path);
     return md;
 }
 

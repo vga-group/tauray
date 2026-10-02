@@ -17,6 +17,7 @@
 #include "feature_stage.hh"
 #include "stitch_stage.hh"
 #include "scene_stage.hh"
+#include "light_tree_stage.hh"
 #include "renderer.hh"
 #include "device_transfer.hh"
 #include "post_processing_renderer.hh"
@@ -33,6 +34,7 @@ public:
     {
         scene_stage::options scene_options = {};
         post_processing_renderer::options post_process = {};
+        std::optional<light_tree_stage::options> light_tree = {};
         bool accumulate = false;
     };
 
@@ -62,6 +64,7 @@ private:
     {
         gbuffer_texture gbuffer_copy;
         std::unique_ptr<device_transfer_interface> transfer;
+        std::unique_ptr<light_tree_stage> light_tree;
         std::unique_ptr<Pipeline> ray_tracer;
         distribution_params dist;
     };

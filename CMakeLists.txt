@@ -7,24 +7,25 @@ option(VULKAN_VALIDATION "Load Vulkan validation layers by default when present"
 
 find_package(Threads)
 
-find_package(Git QUIET)
-if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
-    option(GIT_SUBMODULE "Check submodules during build" ON)
-    if(GIT_SUBMODULE)
-        message(STATUS "Submodule update")
-        execute_process(COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
-                        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                        RESULT_VARIABLE GIT_SUBMOD_RESULT)
-        if(NOT GIT_SUBMOD_RESULT EQUAL "0")
-            message(FATAL_ERROR "git submodule update --init --recursive failed with ${GIT_SUBMOD_RESULT}, please checkout submodules")
-        endif()
-    endif()
-endif()
+#find_package(Git QUIET)
+#if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
+#    option(GIT_SUBMODULE "Check submodules during build" ON)
+#    if(GIT_SUBMODULE)
+#        message(STATUS "Submodule update")
+#        execute_process(COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
+#                        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+#                        RESULT_VARIABLE GIT_SUBMOD_RESULT)
+#        if(NOT GIT_SUBMOD_RESULT EQUAL "0")
+#            message(FATAL_ERROR "git submodule update --init --recursive failed with ${GIT_SUBMOD_RESULT}, please checkout submodules")
+#        endif()
+#    endif()
+#endif()
 
 function(add_glslang)
     # This just gives us a scope so that we don't overwrite CMAKE_BUILD_TYPE.
     set(SKIP_GLSLANG_INSTALL ON CACHE BOOL "" FORCE)
     set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
+    set(ALLOW_EXTERNAL_SPIRV_TOOLS ON CACHE BOOL "" FORCE)
     set(ENABLE_OPT ON CACHE BOOL "" FORCE)
     set(ENABLE_PCH OFF CACHE BOOL "" FORCE)
     set(ENABLE_CTEST OFF CACHE BOOL "" FORCE)
@@ -36,6 +37,12 @@ function(add_glslang)
     add_subdirectory(external/glslang)
 endfunction()
 add_glslang()
+
+foreach(glslang_target glslang SPIRV)
+    if(TARGET ${glslang_target})
+        target_compile_options(${glslang_target} PRIVATE -Wno-maybe-uninitialized)
+    endif()
+endforeach()
 
 function(add_openxr)
     # This just gives us a scope so that we don't overwrite CMAKE_BUILD_TYPE.
@@ -51,6 +58,11 @@ function(add_openxr)
 endfunction()
 add_openxr()
 
+if(TARGET openxr_loader)
+    target_compile_options(openxr_loader PRIVATE -Wno-uninitialized)
+    target_include_directories(openxr_loader PUBLIC "/usr/include/wayland/")
+endif()
+
 
 set(TAURAY_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 string(LENGTH "${TAURAY_PROJECT_ROOT}/" TAURAY_PROJECT_ROOT_PATH_SIZE)
@@ -58,13 +70,15 @@ add_compile_definitions("TAURAY_PROJECT_ROOT_PATH_SIZE=${TAURAY_PROJECT_ROOT_PAT
 
 add_subdirectory(external/fuchsia_radix_sort)
 
-find_package(SDL2 REQUIRED)
+find_package(SDL3 REQUIRED)
 find_package(glm REQUIRED)
 find_package(czmq QUIET)
 find_package(nng QUIET)
 find_package(libcbor QUIET)
 find_package(Vulkan REQUIRED)
 find_package(assimp REQUIRED)
+
+set_property(SOURCE external/spirv_reflect.c APPEND PROPERTY COMPILE_OPTIONS -Wno-switch)
 
 add_library(tauray-core STATIC
   external/stb_image.c
@@ -102,6 +116,7 @@ add_library(tauray-core STATIC
   src/gpu_buffer.cc
   src/headless.cc
   src/light.cc
+  src/light_tree_stage.cc
   src/load_balancer.cc
   src/log.cc
   src/looking_glass.cc
@@ -111,6 +126,7 @@ add_library(tauray-core STATIC
   src/mesh.cc
   src/misc.cc
   src/model.cc
+  src/multiview_composition_stage.cc
   src/assimp.cc
   src/openxr.cc
   src/options.cc
@@ -118,6 +134,8 @@ add_library(tauray-core STATIC
   src/placeholders.cc
   src/post_processing_renderer.cc
   src/progress_tracker.cc
+  src/radiance_cascades_stage.cc
+  src/rc_renderer.cc
   src/radix_sort.cc
   src/raster_pipeline.cc
   src/raster_stage.cc
@@ -143,19 +161,18 @@ add_library(tauray-core STATIC
   src/shader_source.cc
   src/shadow_map.cc
   src/shadow_map_stage.cc
-  src/spatial_reprojection_stage.cc
   src/stage.cc
   src/stitch_stage.cc
   src/svgf_stage.cc
   src/taa_stage.cc
   src/tauray.cc
-  src/temporal_reprojection_stage.cc
   src/texture.cc
   src/timer.cc
   src/tonemap_stage.cc
   src/tracing.cc
   src/transformable.cc
   src/vkm.cc
+  src/voxelizer.cc
   src/window.cc
   src/z_pass_stage.cc
 )
@@ -169,8 +186,8 @@ target_include_directories(tauray-core PUBLIC SYSTEM
     "external/SPIRV-Headers/include"
     "external/Vulkan-Headers/include"
 )
-target_link_libraries(tauray-core PUBLIC SDL2::SDL2 glm::glm glslang SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp)
-target_link_libraries(tauray PUBLIC tauray-core SDL2::SDL2main)
+target_link_libraries(tauray-core PUBLIC SDL3::SDL3 glm::glm glslang glslang-default-resource-limits SPIRV openxr_loader Vulkan::Vulkan vk-radix-sort assimp::assimp)
+target_link_libraries(tauray PUBLIC tauray-core)
 
 if(MSVC)
   target_compile_options(tauray-core PRIVATE /W4 /WX- /MP)

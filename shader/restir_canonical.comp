@@ -20,8 +20,8 @@ layout(push_constant) uniform push_constant_buffer
 
 layout(local_size_x = DISPATCH_WIDTH, local_size_y = DISPATCH_HEIGHT) in;
 
-layout(binding = 16, rgba32f) writeonly uniform image2D out_color;
-layout(binding = 17, rg32f) writeonly uniform image2D out_length;
+layout(binding = 16) writeonly uniform image2D out_color;
+layout(binding = 17) writeonly uniform image2D out_length;
 
 #include "restir_core.glsl"
 
@@ -38,7 +38,9 @@ void sample_path_nee_leaf(
     inout vec4 primary_bsdf,
     inout reservoir r
 ){
+#ifdef USE_RAY_CONES
     ray_cone_apply_roughness(src.mat.roughness, src.rc);
+#endif
     vec3 candidate_dir = vec3(0);
     vec3 candidate_normal = vec3(0);
     float candidate_dist = 0.0f;
@@ -59,7 +61,21 @@ void sample_path_nee_leaf(
     rand32.w += 7u;
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     vec3 tdir = candidate_dir * src.tbn;
-    float bsdf_pdf = ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
+    float bsdf_pdf;
+#ifdef RADIANCE_CASCADES_SET
+    ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
+    bsdf_pdf = radiance_cascades_pdf(
+        src.pos, src.tbn[2], -src.view,
+        vertex.instance_id >= MISS_INSTANCE_ID,
+        src.mat.roughness,
+        mix(0.04, 1.0, src.mat.metallic),
+        rgb_to_luminance(src.mat.albedo.rgb) * (1.0-src.mat.metallic),
+        candidate_dir,
+        MATERIAL_LOBE_ALL
+    );
+#else
+    bsdf_pdf = ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
+#endif
 
     // If the sampled light is infinitesimal, there's no way for the BSDF
     // sampling to sample it. So the PDF is set to zero.
@@ -73,10 +89,16 @@ void sample_path_nee_leaf(
 #ifdef USE_PRIMARY_SAMPLE_SPACE
     throughput /= nee_pdf;
 #endif
+    float vis = test_visibility(rand32.w, src.pos, candidate_dir, candidate_dist, src.flat_normal);
 
-    throughput *= test_visibility(rand32.w, src.pos, candidate_dir, candidate_dist, src.flat_normal);
+    throughput *= vis;
 
     total_throughput *= throughput;
+    if(candidate.tail_length == 1)
+    {
+        // No BRDF but include visibility still.
+        tail_throughput *= vis;
+    }
     if(candidate.tail_length > 1)
         tail_throughput *= throughput;
 
@@ -149,14 +171,34 @@ bool sample_path_bsdf_bounce(
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
     float bsdf_pdf = 0;
     float bsdf_mis_pdf = 0;
+    float regularization_pdf = 0;
+#ifdef RADIANCE_CASCADES_SET
+    vec3 dir = sample_radiance_cascades(
+        rand32.x, src.pos, src.tbn[2],
+        -src.view,
+        src.mat.roughness, mix(0.04, 1.0, src.mat.metallic),
+        rgb_to_luminance(src.mat.albedo.rgb) * (1.0-src.mat.metallic),
+        bsdf_pdf,
+        bsdf_mis_pdf,
+        sampled_lobe
+    );
+    regularization_pdf = ggx_bsdf_lobe_pdf(sampled_lobe, dir * src.tbn, src.tview, src.mat, lobes);
+#else
     ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
+    regularization_pdf = bsdf_pdf;
     vec3 dir = src.tbn * tdir;
+#endif
+
+    if(bsdf_pdf < 0)
+        return false;
 
     if(candidate.head_length + candidate.tail_length == 0)
         bias_ray_origin(src.pos, sampled_lobe == MATERIAL_LOBE_TRANSMISSION, src);
 
-    update_regularization(bsdf_pdf, regularization);
+    update_regularization(regularization_pdf, regularization);
+#ifdef USE_RAY_CONES
     ray_cone_apply_roughness(sampled_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : src.mat.roughness, src.rc);
+#endif
 
     vec3 throughput = get_bounce_throughput(
         candidate.head_length + candidate.tail_length, src, dir, lobes, primary_bsdf

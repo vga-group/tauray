@@ -22,7 +22,6 @@ struct hit_payload
 
 #ifdef PAYLOAD_IN
 layout(location = 0) rayPayloadInEXT hit_payload payload;
-layout(location = 1) rayPayloadInEXT float shadow_visibility;
 #else
 layout(location = 0) rayPayloadEXT hit_payload payload;
 layout(location = 1) rayPayloadEXT float shadow_visibility;

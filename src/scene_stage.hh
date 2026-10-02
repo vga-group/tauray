@@ -109,6 +109,10 @@ public:
     const std::vector<shadow_map_instance>& get_shadow_maps() const;
     atlas* get_shadow_map_atlas() const;
 
+    gpu_buffer& get_point_lights_buffer();
+    uint32_t get_point_light_count() const;
+    uint32_t get_tri_light_count() const;
+
 protected:
     void update(uint32_t frame_index) override;
 
@@ -245,6 +249,8 @@ private:
     std::vector<uint32_t> forward_point_light_ids;
     size_t prev_instance_count;
     size_t prev_point_light_count;
+    uint32_t point_light_count;
+    uint32_t tri_light_count;
 
     gpu_buffer temporal_tables;
     gpu_buffer prev_point_light_data;

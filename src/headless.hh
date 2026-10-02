@@ -3,18 +3,14 @@
 
 #include "context.hh"
 
-#if _WIN32
-#include <SDL.h>
-#include <SDL_vulkan.h>
-#else
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_vulkan.h>
-#endif
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <map>
+#include <fstream>
 
 namespace tr
 {
@@ -46,7 +42,8 @@ public:
         BMP,
         HDR,
         RAW,
-        EMPTY
+        EMPTY,
+        MSE
     };
 
     struct options: context::options
@@ -56,6 +53,7 @@ public:
         compression_type output_compression = PIZ;
         pixel_format output_format = RGB16;
         image_file_type output_file_type = EXR;
+        std::string reference_prefix;
 
         // The viewer mode only exists as a workaround for Nvidia's
         // incompetence.
@@ -112,6 +110,7 @@ private:
     options opt;
     SDL_Window* win;
     SDL_Surface* display_surface;
+    std::ofstream mse_file;
 
     struct per_image_data
     {

@@ -2,10 +2,14 @@
 #define TAURAY_PATH_TRACER_STAGE_HH
 #include "rt_camera_stage.hh"
 #include "rt_common.hh"
+#include "compute_pipeline.hh"
 #include "descriptor_set.hh"
 
 namespace tr
 {
+
+class radiance_cascades_stage;
+class light_tree_stage;
 
 class path_tracer_stage: public rt_camera_stage
 {
@@ -27,6 +31,9 @@ public:
         light_sampling_weights sampling_weights;
         bounce_sampling_mode bounce_mode = bounce_sampling_mode::MATERIAL;
         tri_light_sampling_mode tri_light_mode = tri_light_sampling_mode::HYBRID;
+
+        light_tree_stage* light_tree_source = nullptr;
+        radiance_cascades_stage* rc_source = nullptr;
     };
 
     path_tracer_stage(
@@ -47,7 +54,7 @@ protected:
 
 private:
     push_descriptor_set desc;
-    rt_pipeline gfx;
+    compute_pipeline pt_pipeline;
     options opt;
 };
 

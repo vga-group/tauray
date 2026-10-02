@@ -24,6 +24,8 @@ public:
     void set_factor(vec3 factor);
     vec3 get_factor() const;
 
+    double get_average_luminance() const;
+
     projection get_projection() const;
     vk::Buffer get_alias_table(size_t device_index) const;
 

@@ -1,0 +1,58 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+
+layout(local_size_x = 1) in;
+
+layout(binding = 0, scalar) buffer dispatch_size_buffer
+{
+    uvec4 live_counter[16];
+    uvec4 trace_gather[16];
+} dispatch_size;
+
+layout(binding = 1, scalar) buffer dispatch_info_buffer
+{
+    uint cascade_end_offset[16];
+    ivec3 probe_indices[];
+} dispatch_info;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    int cascade;
+    int cascade_count;
+    int c0_angular_resolution;
+    int print_info;
+} pc;
+
+void main()
+{
+    uint cur_end = dispatch_info.cascade_end_offset[pc.cascade];
+    uint prev_end = pc.cascade+1 >= pc.cascade_count ? 0 : dispatch_info.cascade_end_offset[pc.cascade+1];
+    if(pc.cascade != 0)
+        dispatch_info.cascade_end_offset[pc.cascade-1] = cur_end;
+
+    uint live_count = cur_end - prev_end;
+
+    dispatch_size.live_counter[pc.cascade] = uvec4((live_count+7u)/8u,1,1,0);
+
+    int angular_resolution = pc.c0_angular_resolution << pc.cascade;
+    uint total_pixels =
+        live_count * angular_resolution * angular_resolution;
+    int workgroup_pixel_count = 4*4*4;
+
+    dispatch_size.trace_gather[pc.cascade] = uvec4(
+        (total_pixels + workgroup_pixel_count-1) / workgroup_pixel_count,1,1,0
+    );
+
+    //uvec4 dsSize = dispatch_size.trace_gather[pc.cascade];
+    /*
+    if (pc.print_info != 0)
+    {
+        uint mem = total_pixels;
+        debugPrintfEXT("Cascade %d live probes: %u (mem: %u)", pc.cascade, live_count, mem);
+    }
+    */
+}

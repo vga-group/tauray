@@ -83,7 +83,7 @@ void frame_server::finish_image(
         // Eat the binary semaphore.
         d.graphics_queue.submit(
             vk::SubmitInfo(
-                1, frame_finished[frame_index], &wait_stage,
+                1, frame_finished[swapchain_index], &wait_stage,
                 0, nullptr,
                 0, nullptr
             ), {}
@@ -103,7 +103,7 @@ void frame_server::finish_image(
     per_image_data& id = per_image[swapchain_index];
     d.graphics_queue.submit(
         vk::SubmitInfo(
-            1, frame_finished[frame_index], &wait_stage,
+            1, frame_finished[swapchain_index], &wait_stage,
             1, id.copy_cb,
             0, nullptr
         ),
@@ -208,8 +208,9 @@ void frame_server::deinit_images()
 void frame_server::init_sdl()
 {
     uint32_t subsystems = SDL_INIT_EVENTS;
-    putenv((char*)"SDL_VIDEODRIVER=dummy");
-    if(SDL_Init(subsystems))
+    static char sdl_video_driver[] = "SDL_VIDEODRIVER=dummy";
+    putenv(sdl_video_driver);
+    if(!SDL_Init(subsystems))
         throw std::runtime_error(SDL_GetError());
 }
 

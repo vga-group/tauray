@@ -54,6 +54,8 @@ public:
 
         vk::SpecializationInfo specialization = {};
         bool dynamic_viewport = false;
+
+        bool conservative_rasterization = false;
     };
 
     raster_pipeline(device& dev);

@@ -10,14 +10,13 @@
 #include "raster_renderer.hh"
 #include "dshgi_renderer.hh"
 #include "restir_renderer.hh"
+#include "rc_renderer.hh"
 #include "dshgi_server.hh"
 #include "frame_client.hh"
 #include "rt_renderer.hh"
 #include "scene.hh"
 #include "camera.hh"
-#include "texture.hh"
 #include "environment_map.hh"
-#include "sampler.hh"
 #include "material.hh"
 #include "gltf.hh"
 #include "assimp.hh"
@@ -26,7 +25,6 @@
 #include <chrono>
 #include <iostream>
 #include <thread>
-#include <numeric>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -38,15 +36,11 @@ struct throttler
 {
     throttler(float throttle_fps)
     {
-        if(throttle_fps != 0)
-        {
-            active = true;
-            throttle_time = std::chrono::duration_cast<decltype(throttle_time)>(
-                std::chrono::duration<float>(1.0/throttle_fps)
-            );
-            time = std::chrono::high_resolution_clock::now();
-        }
-        else active = false;
+        throttle_time = std::chrono::duration_cast<decltype(throttle_time)>(
+            std::chrono::duration<float>(1.0/max(throttle_fps, 1.0f))
+        );
+        time = std::chrono::high_resolution_clock::now();
+        active = throttle_fps != 0;
     }
 
     void step()
@@ -117,6 +111,39 @@ void apply_transform(scene& s, const mat4& transform)
         if(t.get_parent() == nullptr)
             t.set_transform(t.get_transform() * transform);
     });
+}
+
+// This can be really slow. Don't call it every frame.
+aabb compute_aabb(scene& s)
+{
+    aabb volume = {vec3(FLT_MAX), vec3(-FLT_MAX)};
+    s.foreach([&](transformable& t, model& mod){
+        mat4 transform = t.get_global_transform();
+
+        for (model::vertex_group& vg: mod)
+        {
+            if (!vg.m) continue;
+
+            for (mesh::vertex& v: vg.m->get_vertices())
+            {
+                vec3 p = transform * vec4(v.pos, 1.0);
+
+                volume.min = min(volume.min, p);
+                volume.max = max(volume.max, p);
+            }
+        }
+    });
+
+
+    vec3 radius = volume.max - volume.min;
+
+    printf("Scene size: [%f, %f, %f]\n", radius.x, radius.y, radius.z);
+    float max_radius = max(radius.x, max(radius.y, radius.z)) * 1.01f;
+    vec3 center = (volume.max + volume.min) * 0.5f;
+
+    volume.min = center - max_radius * 0.5f;
+    volume.max = center + max_radius * 0.5f;
+    return volume;
 }
 
 scene_data load_scenes(context& ctx, const options& opt)
@@ -273,9 +300,12 @@ context* create_context(const options& opt)
     // during semaphore signal operations
     ctx_opt.physical_device_indices = { -1 };
 #else
-    ctx_opt.physical_device_indices = opt.devices;
+    if (opt.devices.size() == 0)
+        ctx_opt.physical_device_indices = { -1 };
+    else
+        ctx_opt.physical_device_indices = opt.devices;
 #endif
-    ctx_opt.max_timestamps = 128;
+    ctx_opt.max_timestamps = 1024;
     ctx_opt.enable_vulkan_validation = opt.validation;
     ctx_opt.fake_device_multiplier = opt.fake_devices;
 
@@ -292,17 +322,14 @@ context* create_context(const options& opt)
         hd_opt.output_compression = opt.compression;
         hd_opt.output_format = opt.format;
         hd_opt.output_file_type = opt.filetype;
+        hd_opt.reference_prefix = opt.reference;
         hd_opt.viewer = opt.headful;
         hd_opt.viewer_fullscreen = opt.fullscreen;
         hd_opt.display_count =
             opt.headful ? 1 : opt.camera_grid.w * opt.camera_grid.h;
         hd_opt.single_frame = !opt.animation_flag && !opt.frames;
         hd_opt.first_frame_index = opt.skip_frames;
-        hd_opt.skip_nan_check =
-            (std::holds_alternative<feature_stage::feature>(opt.renderer) &&
-             isnan(opt.default_value)) ||
-            (opt.spatial_reprojection.size() != 0 &&
-             opt.spatial_reprojection.size() < hd_opt.display_count);
+        hd_opt.skip_nan_check = std::holds_alternative<feature_stage::feature>(opt.renderer) && isnan(opt.default_value);
         return new headless(hd_opt);
     }
     else if(opt.display == options::display_type::OPENXR)
@@ -345,6 +372,7 @@ context* create_context(const options& opt)
         window::options win_opt;
         (context::options&)win_opt = ctx_opt;
         win_opt.size = uvec2(opt.width, opt.height);
+        win_opt.views = uvec2(opt.camera_grid.w, opt.camera_grid.h);
         win_opt.fullscreen = opt.fullscreen;
         win_opt.vsync = opt.vsync;
         win_opt.hdr_display = opt.hdr;
@@ -376,6 +404,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         }
     });
 
+    aabb scene_aabb = compute_aabb(s);
+
     scene_stage::options scene_options;
     scene_options.max_instances = get_instance_count(s);
     scene_options.max_samplers = get_sampler_count(s);
@@ -401,10 +431,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.rng_seed = opt.rng_seed;
     rc_opt.local_sampler = opt.sampler;
     rc_opt.transparent_background = opt.transparent_background;
-    rc_opt.active_viewport_count =
-        opt.spatial_reprojection.size() == 0 ?
-        ctx.get_display_count() :
-        opt.spatial_reprojection.size();
+    rc_opt.active_viewport_count = ctx.get_display_count();
 
     if(opt.progress)
     {
@@ -419,6 +446,16 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     sampling_weights.directional_lights = has_directional_lights ? opt.sample_directional_lights : 0.0f;
     sampling_weights.envmap = get_environment_map(s) ? opt.sample_envmap : 0.0f;
     sampling_weights.emissive_triangles = has_tri_lights ? opt.sample_emissive_triangles : 0.0f;
+
+    light_tree_stage::options lt_options;
+    lt_options.directional_light_weight = sampling_weights.directional_lights;
+    lt_options.envmap_weight = sampling_weights.envmap;
+    lt_options.light_aabb = scene_aabb;
+    lt_options.tree_width = opt.light_tree_width;
+    lt_options.exclude_explicit_lights = 
+        sampling_weights.point_lights == 0 &&
+        sampling_weights.envmap == 0 &&
+        sampling_weights.directional_lights == 0;
 
     sh_renderer::options sh;
     (rt_stage::options&)sh = rc_opt;
@@ -453,6 +490,69 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         vec2(0.005, opt.shadow_map_bias*2)
     );
 
+    path_tracer_stage::options pt_opt;
+    (rt_camera_stage::options&)pt_opt = rc_opt;
+    pt_opt.use_shadow_terminator_fix =
+        opt.shadow_terminator_fix && use_shadow_terminator_fix;
+    pt_opt.use_white_albedo_on_first_bounce =
+        opt.use_white_albedo_on_first_bounce;
+    pt_opt.film = opt.film;
+    pt_opt.mis_mode = opt.multiple_importance_sampling;
+    pt_opt.film_radius = opt.film_radius;
+    pt_opt.russian_roulette_delta = opt.russian_roulette;
+    pt_opt.indirect_clamping = opt.indirect_clamping;
+    pt_opt.regularization_gamma = opt.regularization;
+    pt_opt.sampling_weights = sampling_weights;
+    pt_opt.bounce_mode = opt.bounce_mode;
+    pt_opt.tri_light_mode = opt.tri_light_mode;
+    pt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
+    pt_opt.hide_lights = opt.hide_lights;
+    pt_opt.distribution.strategy = opt.distribution_strategy;
+    if(ctx.get_devices().size() == 1)
+        pt_opt.distribution.strategy = DISTRIBUTION_DUPLICATE;
+
+    svgf_stage::options svgf_opt{};
+    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
+    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
+    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
+    svgf_opt.sigma_l = opt.svgf.sigma_l;
+    svgf_opt.sigma_n = opt.svgf.sigma_n;
+    svgf_opt.sigma_z = opt.svgf.sigma_z;
+    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
+    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
+
+    restir_stage::options restir_opt{};
+    restir_opt.sampling_weights = sampling_weights;
+    restir_opt.max_bounces = opt.max_ray_depth-1;
+    restir_opt.regularization_gamma = opt.regularization;
+    restir_opt.max_confidence = opt.restir.max_confidence;
+    restir_opt.temporal_reuse = opt.restir.temporal_reuse;
+    restir_opt.canonical_samples = opt.restir.canonical_samples;
+    restir_opt.spatial_samples = opt.restir.spatial_samples;
+    restir_opt.spatial_sample_oriented_disk = opt.restir.sample_spatial_disk;
+    restir_opt.shift_map = opt.restir.shift_mapping_type;
+    restir_opt.passes = opt.restir.passes;
+    restir_opt.reconnection_scale = opt.restir.reconnection_scale;
+    restir_opt.max_spatial_search_radius = opt.restir.max_search_radius;
+    restir_opt.min_spatial_search_radius = opt.restir.min_search_radius;
+    restir_opt.assume_unchanged_material = opt.restir.assume_unchanged_material;
+    restir_opt.assume_unchanged_acceleration_structures = opt.restir.assume_unchanged_acceleration_structures;
+    restir_opt.assume_unchanged_reconnection_radiance = opt.restir.assume_unchanged_reconnection_radiance;
+    restir_opt.assume_unchanged_temporal_visibility = opt.restir.assume_unchanged_temporal_visibility;
+
+    radiance_cascades_stage::options rc_options{};
+    rc_options.use_raster_di = opt.radiance_cascades.shadow_mapped;
+    rc_options.rt_di_samples = opt.radiance_cascades.di_samples;
+    rc_options.jitter = opt.radiance_cascades.jitter;
+    rc_options.c0_probe_resolution = opt.radiance_cascades.c0;
+    rc_options.log2_resolution = opt.radiance_cascades.gridsize;
+    rc_options.recursive = opt.radiance_cascades.recursive;
+    rc_options.ambient = (opt.ambient.r+opt.ambient.g+opt.ambient.b)/3.0f;
+    rc_options.avg_bias = opt.radiance_cascades.avg_bias;
+    rc_options.volume = scene_aabb;
+    rc_options.temporal_ratio = opt.radiance_cascades.temporal_ratio;
+    rc_options.defensive_mode = opt.radiance_cascades.defensive;
+
     if(auto rtype = std::get_if<feature_stage::feature>(&opt.renderer))
     {
         feature_renderer::options rt_opt;
@@ -470,55 +570,18 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
         case options::PATH_TRACER:
             {
                 path_tracer_renderer::options rt_opt;
-                (rt_camera_stage::options&)rt_opt = rc_opt;
-                rt_opt.use_shadow_terminator_fix =
-                    opt.shadow_terminator_fix && use_shadow_terminator_fix;
-                rt_opt.use_white_albedo_on_first_bounce =
-                    opt.use_white_albedo_on_first_bounce;
-                rt_opt.film = opt.film;
-                rt_opt.mis_mode = opt.multiple_importance_sampling;
-                rt_opt.film_radius = opt.film_radius;
-                rt_opt.russian_roulette_delta = opt.russian_roulette;
-                rt_opt.indirect_clamping = opt.indirect_clamping;
-                rt_opt.regularization_gamma = opt.regularization;
-                rt_opt.sampling_weights = sampling_weights;
-                rt_opt.bounce_mode = opt.bounce_mode;
-                rt_opt.tri_light_mode = opt.tri_light_mode;
+                (path_tracer_stage::options&)rt_opt = pt_opt;
+                if (opt.enable_light_tree)
+                    rt_opt.light_tree = lt_options;
                 rt_opt.post_process.tonemap = tonemap;
-                rt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
-                if(opt.temporal_reprojection > 0.0f)
-                    rt_opt.post_process.temporal_reprojection =
-                        temporal_reprojection_stage::options{opt.temporal_reprojection, {}};
-                if(opt.spatial_reprojection.size() > 0)
-                    rt_opt.post_process.spatial_reprojection =
-                        spatial_reprojection_stage::options{};
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
-                rt_opt.hide_lights = opt.hide_lights;
                 rt_opt.accumulate = opt.accumulation;
-                rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
-                    opt.spatial_reprojection,
-                    ctx.get_display_count()
-                );
                 if (opt.denoiser == options::denoiser_type::SVGF)
-                {
-                    svgf_stage::options svgf_opt{};
-                    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
-                    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
-                    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
-                    svgf_opt.sigma_l = opt.svgf.sigma_l;
-                    svgf_opt.sigma_n = opt.svgf.sigma_n;
-                    svgf_opt.sigma_z = opt.svgf.sigma_z;
-                    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
-                    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
-                }
                 else if (opt.denoiser == options::denoiser_type::BMFR)
                     rt_opt.post_process.bmfr = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY };
                 rt_opt.scene_options = scene_options;
-                rt_opt.distribution.strategy = opt.distribution_strategy;
-                if(ctx.get_devices().size() == 1)
-                    rt_opt.distribution.strategy = DISTRIBUTION_DUPLICATE;
                 return new path_tracer_renderer(ctx, rt_opt);
             }
         case options::DIRECT:
@@ -526,37 +589,18 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 direct_renderer::options rt_opt;
                 (rt_camera_stage::options&)rt_opt = rc_opt;
                 rt_opt.film = opt.film;
+                if (opt.enable_light_tree)
+                    rt_opt.light_tree = lt_options;
                 rt_opt.film_radius = opt.film_radius;
                 rt_opt.sampling_weights = sampling_weights;
                 rt_opt.bounce_mode = opt.bounce_mode;
                 rt_opt.tri_light_mode = opt.tri_light_mode;
                 rt_opt.post_process.tonemap = tonemap;
-                if(opt.temporal_reprojection > 0.0f)
-                    rt_opt.post_process.temporal_reprojection =
-                        temporal_reprojection_stage::options{opt.temporal_reprojection, {}};
-                if(opt.spatial_reprojection.size() > 0)
-                    rt_opt.post_process.spatial_reprojection =
-                        spatial_reprojection_stage::options{};
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
                 rt_opt.accumulate = opt.accumulation;
-                rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
-                    opt.spatial_reprojection,
-                    ctx.get_display_count()
-                );
-                if(opt.denoiser == options::denoiser_type::SVGF)
-                {
-                    svgf_stage::options svgf_opt{};
-                    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
-                    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
-                    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
-                    svgf_opt.sigma_l = opt.svgf.sigma_l;
-                    svgf_opt.sigma_n = opt.svgf.sigma_n;
-                    svgf_opt.sigma_z = opt.svgf.sigma_z;
-                    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
-                    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
+                if (opt.denoiser == options::denoiser_type::SVGF)
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
-                }
                 else if(opt.denoiser == options::denoiser_type::BMFR)
                     rt_opt.post_process.bmfr = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY };
                 rt_opt.scene_options = scene_options;
@@ -629,48 +673,46 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
             {
                 restir_renderer::options re_opt;
                 re_opt.scene_options = scene_options;
+                re_opt.scene_options.alloc_sh_grids = *rtype == options::RESTIR_HYBRID && has_sh_grids;
                 re_opt.tonemap_options = tonemap;
                 re_opt.sh_options = sh;
                 re_opt.sh_options.max_ray_depth = 4;
                 re_opt.sm_filter = sm_filter;
-                re_opt.restir_options.sampling_weights = sampling_weights;
-                re_opt.restir_options.max_bounces = opt.max_ray_depth-1;
-                re_opt.restir_options.regularization_gamma = opt.regularization;
-                re_opt.restir_options.max_confidence = opt.restir.max_confidence;
-                re_opt.restir_options.temporal_reuse = opt.restir.temporal_reuse;
-                re_opt.restir_options.canonical_samples = opt.restir.canonical_samples;
-                re_opt.restir_options.spatial_samples = opt.restir.spatial_samples;
-                re_opt.restir_options.spatial_sample_oriented_disk = opt.restir.sample_spatial_disk;
-                re_opt.restir_options.shift_map = opt.restir.shift_mapping_type;
-                re_opt.restir_options.passes = opt.restir.passes;
-                re_opt.restir_options.reconnection_scale = opt.restir.reconnection_scale;
-                re_opt.restir_options.max_spatial_search_radius = opt.restir.max_search_radius;
-                re_opt.restir_options.min_spatial_search_radius = opt.restir.min_search_radius;
-                re_opt.restir_options.assume_unchanged_material = opt.restir.assume_unchanged_material;
-                re_opt.restir_options.assume_unchanged_acceleration_structures = opt.restir.assume_unchanged_acceleration_structures;
-                re_opt.restir_options.assume_unchanged_reconnection_radiance = opt.restir.assume_unchanged_reconnection_radiance;
-                re_opt.restir_options.assume_unchanged_temporal_visibility = opt.restir.assume_unchanged_temporal_visibility;
+                re_opt.restir_options = restir_opt;
                 re_opt.restir_options.shade_all_explicit_lights = *rtype == options::RESTIR_HYBRID;
                 re_opt.restir_options.shade_fake_indirect = *rtype == options::RESTIR_HYBRID && has_sh_grids;
 
                 if(opt.taa.sequence_length > 1)
                     re_opt.taa_options = taa;
-
                 if (opt.denoiser == options::denoiser_type::SVGF)
-                {
-                    svgf_stage::options svgf_opt{};
-                    svgf_opt.atrous_diffuse_iters = opt.svgf.atrous_diffuse_iter;
-                    svgf_opt.atrous_spec_iters = opt.svgf.atrous_spec_iter;
-                    svgf_opt.atrous_kernel_radius = opt.svgf.atrous_kernel_radius;
-                    svgf_opt.sigma_l = opt.svgf.sigma_l;
-                    svgf_opt.sigma_n = opt.svgf.sigma_n;
-                    svgf_opt.sigma_z = opt.svgf.sigma_z;
-                    svgf_opt.temporal_alpha_color = opt.svgf.min_alpha_color;
-                    svgf_opt.temporal_alpha_moments = opt.svgf.min_alpha_moments;
                     re_opt.svgf_options = svgf_opt;
-                }
 
                 return new restir_renderer(ctx, re_opt);
+            }
+        case options::RC:
+        case options::RC_RESTIR:
+            {
+                rc_renderer::options ropt;
+                ropt.scene_options = scene_options;
+                if(*rtype == options::RC_RESTIR)
+                    ropt.restir_options = restir_opt;
+                else
+                {
+                    ropt.pt_options = pt_opt;
+                }
+
+                if (opt.enable_light_tree)
+                    ropt.light_tree = lt_options;
+
+                ropt.tonemap_options = tonemap;
+                ropt.rc_options = rc_options;
+
+                if(opt.taa.sequence_length > 1)
+                    ropt.taa_options = taa;
+                if (opt.denoiser == options::denoiser_type::SVGF)
+                    ropt.svgf_options = svgf_opt;
+
+                return new rc_renderer(ctx, ropt);
             }
         };
     }
@@ -782,7 +824,7 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
     transformable* cam = s.get<transformable>(cam_id);
 
-    std::vector<entity> cameras = generate_cameras(cam_id, s, opt, false);
+    std::vector<entity> cameras = generate_cameras(cam_id, s, opt, true);
     if(cameras.size() != 0)
         s.get<camera_metadata>(cameras[0])->enabled = true;
 
@@ -810,9 +852,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         lkg->setup_cameras(s, cam);
     }
 
-    s.foreach([&](camera_metadata& md){
-        md.actively_rendered = opt.spatial_reprojection.count(md.index);
-    });
     set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
 
     std::chrono::steady_clock::time_point start =
@@ -864,43 +903,46 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
 
         SDL_Event event;
 
+        int next_camera_index = camera_index;
         while(has_events && SDL_PollEvent(&event)) switch(event.type)
         {
-        case SDL_QUIT:
+        case SDL_EVENT_QUIT:
             opt.running = false;
             break;
-        case SDL_KEYDOWN:
-        case SDL_KEYUP:
-            if(event.type == SDL_KEYDOWN)
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
+            if(event.type == SDL_EVENT_KEY_DOWN)
             {
-                if(event.key.keysym.sym == SDLK_ESCAPE) opt.running = false;
-                if(event.key.keysym.sym == SDLK_RETURN) paused = !paused;
-                if(event.key.keysym.sym == SDLK_PAGEUP)
+                if(event.key.key == SDLK_ESCAPE) opt.running = false;
+                if(event.key.key == SDLK_RETURN) paused = !paused;
+                if(event.key.key == SDLK_PAGEUP)
                 {
-                    camera_index++;
+                    next_camera_index++;
                     camera_moved = true;
                 }
-                if(event.key.keysym.sym == SDLK_PAGEDOWN)
+                if(event.key.key == SDLK_PAGEDOWN)
                 {
-                    camera_index--;
+                    next_camera_index--;
                     camera_moved = true;
                 }
-                if(event.key.keysym.sym == SDLK_t && !opt.timing)
+                if(event.key.key == SDLK_T && !opt.timing)
                     ctx.get_timing().print_last_trace(opt.trace);
-                if(event.key.keysym.sym == SDLK_0)
+                if(event.key.key == SDLK_0)
                 {
                     // Full camera reset, for when you get lost ;)
                     cam->set_global_position();
                     cam->set_global_orientation();
                     camera_moved = true;
                 }
-                if(event.key.keysym.sym == SDLK_F1)
+                if(event.key.key == SDLK_F1)
                 {
                     camera_locked = !camera_locked;
-                    SDL_SetWindowGrab(SDL_GetWindowFromID(event.key.windowID), (SDL_bool)!camera_locked);
-                    SDL_SetRelativeMouseMode((SDL_bool)!camera_locked);
+                    SDL_Window* win = SDL_GetWindowFromID(event.key.windowID);
+                    //SDL_SetWindowKeyboardGrab(win, !camera_locked);
+                    SDL_SetWindowMouseGrab(win, !camera_locked);
+                    SDL_SetWindowRelativeMouseMode(win, !camera_locked);
                 }
-                if(event.key.keysym.sym == SDLK_F5)
+                if(event.key.key == SDLK_F5)
                 {
                     shader_source::clear_binary_cache();
                     rr.reset();
@@ -908,28 +950,28 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                     crash_on_exception = false;
                 }
             }
-            if(event.key.repeat == SDL_FALSE)
+            if(!event.key.repeat)
             {
-                int direction = event.type == SDL_KEYDOWN ? 1 : -1;
-                if(event.key.keysym.scancode == SDL_SCANCODE_W)
+                int direction = event.type == SDL_EVENT_KEY_DOWN ? 1 : -1;
+                if(event.key.scancode == SDL_SCANCODE_W)
                     camera_movement.z -= direction;
-                if(event.key.keysym.scancode == SDL_SCANCODE_S)
+                if(event.key.scancode == SDL_SCANCODE_S)
                     camera_movement.z += direction;
-                if(event.key.keysym.scancode == SDL_SCANCODE_A)
+                if(event.key.scancode == SDL_SCANCODE_A)
                     camera_movement.x -= direction;
-                if(event.key.keysym.scancode == SDL_SCANCODE_D)
+                if(event.key.scancode == SDL_SCANCODE_D)
                     camera_movement.x += direction;
-                if(event.key.keysym.scancode == SDL_SCANCODE_LSHIFT)
+                if(event.key.scancode == SDL_SCANCODE_LSHIFT)
                     camera_movement.y -= direction;
-                if(event.key.keysym.scancode == SDL_SCANCODE_SPACE)
+                if(event.key.scancode == SDL_SCANCODE_SPACE)
                     camera_movement.y += direction;
             }
             break;
-        case SDL_MOUSEWHEEL:
+        case SDL_EVENT_MOUSE_WHEEL:
             if(event.wheel.y != 0)
                 speed *= pow(1.1, event.wheel.y);
             break;
-        case SDL_MOUSEMOTION:
+        case SDL_EVENT_MOUSE_MOTION:
             if(focused && !camera_locked)
             {
                 pitch = std::clamp(
@@ -940,22 +982,23 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
                 camera_moved = true;
             }
             break;
-        case SDL_WINDOWEVENT:
-            if(event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
-                focused = false;
-            if(event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
-                focused = true;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            focused = false;
+            break;
+        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+            focused = true;
             break;
         }
 
         if(ctx.init_frame())
             break;
 
-        if(cameras.size() != 0)
+        if(next_camera_index != camera_index && cameras.size() != 0)
         {
             s.get<camera_metadata>(cameras[camera_index])->enabled = false;
-            while(camera_index < 0) camera_index += cameras.size();
-            camera_index %= cameras.size();
+            while(next_camera_index < 0) next_camera_index += cameras.size();
+            next_camera_index %= cameras.size();
+            camera_index = next_camera_index;
             s.get<camera_metadata>(cameras[camera_index])->enabled = true;
         }
 
@@ -1041,9 +1084,6 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
             camera_logs.emplace_back(&t, &cam);
     });
 
-    s.foreach([&](camera_metadata& md){
-        md.actively_rendered = opt.spatial_reprojection.count(md.index);
-    });
     set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
 
     std::unique_ptr<renderer> rr;
@@ -1067,7 +1107,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
         if(!opt.frames && is_animated && !is_playing(s))
             break;
 
-        if(!rr)
+        if(!rr && (int)i >= opt.skip_frames)
         {
             rr.reset(create_renderer(ctx, opt, s));
             rr->set_scene(&s);
@@ -1082,6 +1122,7 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
                     lb.update(*rr);
                 }
             }
+            rr->reset_accumulation();
             ctx.set_displaying(true);
         }
 
@@ -1098,7 +1139,8 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
         {
             if(!opt.skip_render && (int)i >= opt.skip_frames)
             {
-                rr->reset_accumulation();
+                if (!opt.accumulation)
+                    rr->reset_accumulation();
                 rr->render();
                 if(opt.timing) ctx.get_timing().print_last_trace(opt.trace);
             }
@@ -1113,7 +1155,8 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
             else break;
         }
 
-        lb.update(*rr);
+        if (rr)
+            lb.update(*rr);
     }
 
     if(opt.camera_log != "")
@@ -1164,6 +1207,105 @@ void headless_server(context& ctx, scene_data& sd, options& opt)
     // Ensure everything is finished before going to destructors.
     ctx.sync();
     TR_LOG("Server shutting down.");
+}
+
+void search_matching_spp(context& ctx, scene_data& sd, options& opt, float target_milliseconds)
+{
+    scene& s = *sd.s;
+    load_balancer lb(ctx, opt.workload);
+
+    entity cam_id = INVALID_ENTITY;
+    s.foreach([&](entity id, camera_metadata& md){
+        if(md.enabled) cam_id = id;
+    });
+
+    std::vector<camera_log> camera_logs;
+    std::vector<entity> cameras = generate_cameras(cam_id, s, opt, true);
+
+    s.foreach([&](transformable& t, camera& cam, camera_metadata& md){
+        if(md.enabled)
+            camera_logs.emplace_back(&t, &cam);
+    });
+
+    set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
+
+    std::unique_ptr<renderer> rr;
+
+    double closest_delta = target_milliseconds;
+    int best_spp = 0;
+    int step_size = 1;
+    bool initial = true;
+
+    ctx.set_displaying(false);
+    for(;;)
+    {
+        TR_LOG("Attempting SPP ", opt.samples_per_pixel);
+        rr.reset(create_renderer(ctx, opt, s));
+        rr->set_scene(&s);
+        lb.update(*rr);
+        double duration_sum = 0;
+        for(int i = 0; i < 1024+256; ++i)
+        {
+            update(s, 0, true);
+            rr->render();
+            lb.update(*rr);
+            if (i >= 1024)
+                duration_sum += ctx.get_timing().get_total_duration(0) * 1e-6f;
+            if (rr)
+                lb.update(*rr);
+        }
+
+        double duration = duration_sum / 256;
+        TR_LOG("Duration was ", duration);
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+        double delta = fabs(duration - target_milliseconds);
+
+        if (delta < closest_delta)
+        {
+            closest_delta = delta;
+            if (opt.samples_per_pixel == best_spp)
+                break;
+            best_spp = opt.samples_per_pixel;
+        }
+
+        if (initial)
+        {
+            if (duration < target_milliseconds)
+                step_size *= 2;
+            if (2*duration < target_milliseconds)
+                opt.samples_per_pixel += step_size;
+            else
+                initial = false;
+        }
+
+        if (!initial)
+        {
+            step_size = step_size / 2;
+            if (step_size == 0)
+                step_size = 1;
+
+            if (duration < target_milliseconds)
+                opt.samples_per_pixel += step_size;
+            else
+            {
+                if(opt.samples_per_pixel <= step_size)
+                    opt.samples_per_pixel = 1;
+                else
+                    opt.samples_per_pixel -= step_size;
+            }
+
+        }
+
+        if (step_size == 1 && opt.samples_per_pixel == best_spp)
+            break;
+    }
+    ctx.set_displaying(true);
+
+    opt.samples_per_pixel = best_spp;
+
+    TR_LOG("Found best SPP: ", opt.samples_per_pixel, " (", closest_delta, ")");
+
+    ctx.get_timing().wait_all_frames(opt.timing, opt.trace);
 }
 
 void run(context& ctx, scene_data& sd, options& opt)

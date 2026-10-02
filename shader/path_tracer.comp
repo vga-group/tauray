@@ -1,0 +1,138 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_ray_query : enable
+
+// Flags:
+// USE_NEXT_EVENT_ESTIMATION:
+//   NEE makes the samples much better, but doubles the number of rays casted
+//   and is quite expensive in that way.
+// USE_RUSSIAN_ROULETTE:
+//   Enables russian roulette, which kills rays based on a user-defined factor,
+//   attenuation and luck.
+// USE_BOX_FILTER:
+//   Film is sampled with box filter.
+// USE_BLACKMAN_HARRIS_FILTER:
+//   Film is sampled with Blackman-Harris filter.
+
+#define DISTRIBUTION_DATA_BINDING 0
+#define SAMPLING_DATA_BINDING 1
+
+#ifdef USE_COLOR_TARGET
+#define COLOR_TARGET_BINDING 2
+#endif
+
+#ifdef USE_DIRECT_TARGET
+#define DIRECT_TARGET_BINDING 3
+#endif
+
+#ifdef USE_DIFFUSE_TARGET
+#define DIFFUSE_TARGET_BINDING 4
+#endif
+
+#ifdef USE_ALBEDO_TARGET
+#define ALBEDO_TARGET_BINDING 5
+#endif
+
+#ifdef USE_MATERIAL_TARGET
+#define MATERIAL_TARGET_BINDING 6
+#endif
+
+#ifdef USE_NORMAL_TARGET
+#define NORMAL_TARGET_BINDING 7
+#endif
+
+#ifdef USE_POS_TARGET
+#define POS_TARGET_BINDING 8
+#endif
+
+#ifdef USE_SCREEN_MOTION_TARGET
+#define SCREEN_MOTION_TARGET_BINDING 9
+#endif
+
+#ifdef USE_INSTANCE_ID_TARGET
+#define INSTANCE_ID_TARGET_BINDING 10
+#endif
+
+#ifdef USE_REFLECTION_TARGET
+#define REFLECTION_TARGET_BINDING 11
+#endif
+
+#ifdef USE_EMISSION_TARGET
+#define EMISSION_TARGET_BINDING 12
+#endif
+
+#define printf debugPrintfEXT
+//#undef RADIANCE_CASCADES_SET
+
+layout(push_constant, scalar) uniform push_constant_buffer
+{
+    uint samples;
+    uint previous_samples;
+    float min_ray_dist;
+    float indirect_clamping;
+    float film_radius;
+    float russian_roulette_delta;
+    int antialiasing;
+    float regularization_gamma;
+} control;
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+#define gl_LaunchIDEXT gl_GlobalInvocationID
+#define gl_LaunchSizeEXT (gl_WorkGroupSize * gl_NumWorkGroups)
+#include "path_tracer.glsl"
+
+void main()
+{
+#ifdef DEMODULATED_OUTPUT
+    vec4 sum_diffuse = vec4(0,0,0,0);
+    vec4 sum_reflection = vec4(0,0,0,0);
+#else
+    vec3 sum_color = vec3(0,0,0);
+#endif
+
+#if SAMPLES_PER_PASS != 1
+    for(int i = 0; i < SAMPLES_PER_PASS; ++i)
+#else
+    const int i = 0;
+#endif
+    {
+        local_sampler lsampler = init_local_sampler(
+            uvec4(
+                get_pixel_pos(),
+                gl_LaunchIDEXT.z,
+                control.previous_samples + i
+            )
+        );
+
+        vec3 origin;
+        vec3 dir;
+        get_world_camera_ray(lsampler, origin, dir);
+
+        evaluate_ray(
+            lsampler, origin, dir,
+#ifdef DEMODULATED_OUTPUT
+            sum_diffuse,
+            sum_reflection,
+#else
+            sum_color,
+#endif
+            i == 0
+        );
+    }
+
+    write_color_outputs(
+#ifdef DEMODULATED_OUTPUT
+        sum_diffuse / SAMPLES_PER_PASS,
+        sum_reflection / SAMPLES_PER_PASS
+#else
+        sum_color.rgb / SAMPLES_PER_PASS
+#endif
+    );
+}
+

@@ -25,9 +25,11 @@ struct device
     vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rt_props;
     vk::PhysicalDeviceRayTracingPipelineFeaturesKHR rt_feats;
     vk::PhysicalDeviceRayQueryFeaturesKHR rq_feats;
+    vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR rp_feats;
     vk::PhysicalDeviceAccelerationStructurePropertiesKHR as_props;
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR as_feats;
     vk::PhysicalDeviceMultiviewProperties mv_props;
+    vk::PhysicalDeviceConservativeRasterizationPropertiesEXT cr_props;
     uint32_t graphics_family_index = 0;
     uint32_t compute_family_index = 0;
     uint32_t present_family_index = 0;

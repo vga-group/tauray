@@ -4,6 +4,10 @@
 #include "rt.glsl"
 #include "random_sampler.glsl"
 
+#ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
+#extension GL_EXT_ray_tracing_position_fetch : require
+#endif
+
 struct hit_info
 {
     // Negative if the ray escaped the scene or otherwise died. Otherwise, it's
@@ -18,6 +22,11 @@ struct hit_info
 
     // Barycentric coordinates to the triangle that was hit.
     vec2 barycentrics;
+
+#ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
+    float hit_t;
+    vec3 positions[3];
+#endif
 };
 
 float get_mesh_hit_coverage(uint instance_id, uint primitive_index, vec2 barycentrics)
@@ -52,11 +61,10 @@ float get_point_light_hit_t(point_light pl, vec3 origin, vec3 dir)
 
 #ifdef USE_RAY_QUERIES
 
+#extension GL_EXT_ray_query : enable
+
 float trace_ray_query_visibility(rayQueryEXT rq)
 {
-    const vec3 origin = rayQueryGetWorldRayOriginEXT(rq);
-    const vec3 dir = rayQueryGetWorldRayDirectionEXT(rq);
-
     float visibility = 1.0f;
     while(rayQueryProceedEXT(rq))
     {
@@ -77,6 +85,9 @@ float trace_ray_query_visibility(rayQueryEXT rq)
         /*
         else if(type == gl_RayQueryCandidateIntersectionAABBEXT)
         { // Point lights
+            const vec3 origin = rayQueryGetWorldRayOriginEXT(rq);
+            const vec3 dir = rayQueryGetWorldRayDirectionEXT(rq);
+
             point_light pl = point_lights.lights[rayQueryGetIntersectionPrimitiveIndexEXT(rq, false)];
             float hit = get_point_light_hit_t(pl, origin, dir);
             if(hit > 0) rayQueryGenerateIntersectionEXT(rq, hit);
@@ -91,16 +102,12 @@ float trace_ray_query_visibility(rayQueryEXT rq)
 
 hit_info trace_ray_query(rayQueryEXT rq, inout uint seed)
 {
-    const vec3 origin = rayQueryGetWorldRayOriginEXT(rq);
-    const vec3 dir = rayQueryGetWorldRayDirectionEXT(rq);
-
-    hit_info hi;
     while(rayQueryProceedEXT(rq))
     {
         uint type = rayQueryGetIntersectionTypeEXT(rq, false);
         if(type == gl_RayQueryCandidateIntersectionTriangleEXT)
         {
-            float alpha_cutoff = generate_single_uniform_random(seed);
+            float alpha_cutoff = generate_single_uniform_random_fast(seed);
             float alpha = get_mesh_hit_coverage(
                 rayQueryGetIntersectionInstanceCustomIndexEXT(rq, false) +
                 rayQueryGetIntersectionGeometryIndexEXT(rq, false),
@@ -113,6 +120,8 @@ hit_info trace_ray_query(rayQueryEXT rq, inout uint seed)
         else if(type == gl_RayQueryCandidateIntersectionAABBEXT)
         { // Point lights
             point_light pl = point_lights.lights[rayQueryGetIntersectionPrimitiveIndexEXT(rq, false)];
+            const vec3 origin = rayQueryGetWorldRayOriginEXT(rq);
+            const vec3 dir = rayQueryGetWorldRayDirectionEXT(rq);
             float hit = get_point_light_hit_t(pl, origin, dir);
             if(hit > 0) rayQueryGenerateIntersectionEXT(rq, hit);
         }
@@ -120,15 +129,36 @@ hit_info trace_ray_query(rayQueryEXT rq, inout uint seed)
 
     uint type = rayQueryGetIntersectionTypeEXT(rq, true);
     if(type == gl_RayQueryCommittedIntersectionTriangleEXT)
+    {
+#ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
+        vec3 positions[3];
+        rayQueryGetIntersectionTriangleVertexPositionsEXT(rq, true, positions);
+#endif
         return hit_info(
             rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true) + rayQueryGetIntersectionGeometryIndexEXT(rq, true),
             rayQueryGetIntersectionPrimitiveIndexEXT(rq, true),
             rayQueryGetIntersectionBarycentricsEXT(rq, true)
+#ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
+            , rayQueryGetIntersectionTEXT(rq, true), positions
+#endif
         );
+    }
     else if(type == gl_RayQueryCommittedIntersectionGeneratedEXT)
-        return hit_info(-1, rayQueryGetIntersectionPrimitiveIndexEXT(rq, true), vec2(rayQueryGetIntersectionTEXT(rq, true)));
+        return hit_info(
+            -1, rayQueryGetIntersectionPrimitiveIndexEXT(rq, true),
+            vec2(rayQueryGetIntersectionTEXT(rq, true))
+#ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
+            , rayQueryGetIntersectionTEXT(rq, true),
+            vec3[3](vec3(0), vec3(0), vec3(0))
+#endif
+        );
     else
-        return hit_info(-1, -1, vec2(0));
+        return hit_info(-1, -1, vec2(0)
+#ifdef GET_INTERSECTION_TRIANGLE_POSITIONS
+            , rayQueryGetIntersectionTEXT(rq, true),
+            vec3[3](vec3(0), vec3(0), vec3(0))
+#endif
+        );
 }
 
 #ifdef TEMPORAL_TABLE_SET
@@ -136,9 +166,6 @@ hit_info trace_ray_query(rayQueryEXT rq, inout uint seed)
 // Assumes IDs are outdated.
 float trace_ray_query_visibility_prev(rayQueryEXT rq)
 {
-    const vec3 origin = rayQueryGetWorldRayOriginEXT(rq);
-    const vec3 dir = rayQueryGetWorldRayDirectionEXT(rq);
-
     float visibility = 1.0f;
     while(rayQueryProceedEXT(rq))
     {
@@ -166,6 +193,8 @@ float trace_ray_query_visibility_prev(rayQueryEXT rq)
         else if(type == gl_RayQueryCandidateIntersectionAABBEXT)
         { // Point lights
             point_light pl = prev_point_lights.lights[rayQueryGetIntersectionPrimitiveIndexEXT(rq, false)];
+            const vec3 origin = rayQueryGetWorldRayOriginEXT(rq);
+            const vec3 dir = rayQueryGetWorldRayDirectionEXT(rq);
             float hit = get_point_light_hit_t(pl, origin, dir);
             if(hit > 0) rayQueryGenerateIntersectionEXT(rq, hit);
         }
@@ -180,9 +209,6 @@ float trace_ray_query_visibility_prev(rayQueryEXT rq)
 // Assumes IDs are outdated.
 hit_info trace_ray_query_prev(rayQueryEXT rq, inout uint seed)
 {
-    const vec3 origin = rayQueryGetWorldRayOriginEXT(rq);
-    const vec3 dir = rayQueryGetWorldRayDirectionEXT(rq);
-    hit_info hi;
     while(rayQueryProceedEXT(rq))
     {
         uint type = rayQueryGetIntersectionTypeEXT(rq, false);
@@ -207,6 +233,8 @@ hit_info trace_ray_query_prev(rayQueryEXT rq, inout uint seed)
         else if(type == gl_RayQueryCandidateIntersectionAABBEXT)
         { // Point lights
             point_light pl = prev_point_lights.lights[rayQueryGetIntersectionPrimitiveIndexEXT(rq, false)];
+            const vec3 origin = rayQueryGetWorldRayOriginEXT(rq);
+            const vec3 dir = rayQueryGetWorldRayDirectionEXT(rq);
             float hit = get_point_light_hit_t(pl, origin, dir);
             if(hit > 0) rayQueryGenerateIntersectionEXT(rq, hit);
         }

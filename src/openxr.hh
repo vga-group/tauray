@@ -5,9 +5,9 @@
 #include "camera.hh"
 #include "scene.hh"
 
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 #if _WIN32
-#include <SDL.h>
-#include <SDL_vulkan.h>
 #define XR_USE_PLATFORM_WIN32
 #include "windows.h"
 #ifdef near
@@ -18,8 +18,6 @@
 #endif
 #include "unknwn.h"
 #else
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_vulkan.h>
 #define XR_USE_PLATFORM_XLIB
 #define XR_USE_PLATFORM_WAYLAND
 #endif

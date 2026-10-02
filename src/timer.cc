@@ -42,7 +42,6 @@ void timer::begin(
     if(tid < 0) return;
     uint32_t query_id = tid * 2u;
     vk::QueryPool pool = timer_id.get_context()->get_timing().get_timestamp_pool(id, frame_index);
-    cb.resetQueryPool(pool, query_id, 2);
     cb.writeTimestamp(stage, pool, query_id);
 }
 

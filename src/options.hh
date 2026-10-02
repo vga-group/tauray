@@ -18,11 +18,13 @@
     TR_BOOL_OPT(hdr, "Try to find an HDR swap chain.", false) \
     TR_BOOL_SOPT(timing, 't', "Print frame times.") \
     TR_SETINT_OPT(devices, \
-        "Specify used device indices, -1 uses the first compatible device.") \
+        "Specify used device indices, -1 uses the first compatible device. Defaults to -1.") \
     TR_STRING_OPT(headless, \
         "Run the program without a window, capturing frames using the first "\
         "camera in the scene. The captured frames will be saved as " \
-        "${headless}<index>.exr.", "") \
+        "${headless}<index>.exr. With --filetype=mse, no images are written " \
+        "and this is instead the path of the file that the computed MSE " \
+        "values are written to, one line per rendered frame/view.", "") \
     TR_BOOL_OPT(headful, \
         "Headless-but-not mode that works around some GPU drivers that do " \
         "not expose multiple devices in non-headless Vulkan instances.", \
@@ -66,14 +68,25 @@
         "special 'none' type can be used to omit output. Note that the dynamic " \
         "range of the HDR filetype is not utilized by default. The (default) " \
         "filmic tonemapper clamps the output to [0, 1]. E.g. the linear " \
-        "tonemapper allows larger values.", \
+        "tonemapper allows larger values. The 'mse' type writes no images " \
+        "at all; instead, for every rendered frame/view it computes the mean " \
+        "squared error against a reference image given with --reference " \
+        "(with the same per-frame/view suffixes as the output images, plus " \
+        ".exr) and appends a line to the file named by --headless. " \
+        "--format and --compression do not apply in this mode.", \
         headless::EXR, \
         {"exr", headless::EXR}, \
         {"png", headless::PNG}, \
         {"bmp", headless::BMP}, \
         {"hdr", headless::HDR}, \
         {"raw", headless::RAW}, \
-        {"none", headless::EMPTY} \
+        {"none", headless::EMPTY}, \
+        {"mse", headless::MSE} \
+    )\
+    TR_STRING_OPT(reference, \
+        "Base path of the reference image(s) used by --filetype=mse. The " \
+        "per-frame/view suffix (as used for the output images) and the " \
+        ".exr extension are appended automatically.", "" \
     )\
     TR_BOOL_OPT(skip_render, \
         "Very rarely useful option that disables rendering and frame output " \
@@ -156,6 +169,8 @@
         {"dshgi-client", options::DSHGI_CLIENT}, \
         {"restir", options::RESTIR}, \
         {"restir-hybrid", options::RESTIR_HYBRID}, \
+        {"rc", options::RC}, \
+        {"rc-restir", options::RC_RESTIR}, \
         {"albedo", feature_stage::ALBEDO}, \
         {"world-normal", feature_stage::WORLD_NORMAL}, \
         {"view-normal", feature_stage::VIEW_NORMAL}, \
@@ -190,7 +205,7 @@
         "compatible with the method used in Blender 2.90. This does not " \
         "conserve energy, but unless it's manually specified for a model in " \
         "the input scene, it has no effect.", \
-        true) \
+        false) \
     TR_ENUM_OPT(film, film_filter, \
         "Chooses the film type for path tracing. Point sampling can enable " \
         "some optimizations in > 1spp situations, and may be required for " \
@@ -364,14 +379,6 @@
         {"sobol-z3", rt_stage::sampler_type::SOBOL_Z_ORDER_3D}, \
         {"sobol-owen", rt_stage::sampler_type::SOBOL_OWEN} \
     )\
-    TR_SETINT_OPT(spatial_reprojection, \
-        "Specify active viewport indices for lightfield rendering. Others " \
-        "are inactivated when this flag is used. Inactive viewports aren't " \
-        "rendered, but are being reprojected to.") \
-    TR_FLOAT_OPT(temporal_reprojection, \
-        "Ratio of temporal reuse for temporal reprojection. 0 disables " \
-        "temporal reprojection.", \
-        0, 0, 0.9999f) \
     TR_STRUCT_OPT(lkg_params, \
         "Sets parameters for rendering to a Looking Glass display. " \
         "v is the number of viewports, m is the distance of the plane of " \
@@ -560,7 +567,27 @@
         TR_STRUCT_OPT_BOOL(assume_unchanged_acceleration_structures, false) \
         TR_STRUCT_OPT_BOOL(assume_unchanged_reconnection_radiance, false) \
         TR_STRUCT_OPT_BOOL(assume_unchanged_temporal_visibility, false) \
-    )
+    ) \
+    TR_STRUCT_OPT(radiance_cascades, \
+        "Parameters for radiance cascades", \
+        TR_STRUCT_OPT_BOOL(shadow_mapped, false) \
+        TR_STRUCT_OPT_BOOL(defensive, false) \
+        TR_STRUCT_OPT_BOOL(jitter, true) \
+        TR_STRUCT_OPT_BOOL(recursive, true) \
+        TR_STRUCT_OPT_INT(c0, 4, 4, 16) \
+        TR_STRUCT_OPT_INT(gridsize, 7, 1, 10) \
+        TR_STRUCT_OPT_FLOAT(avg_bias, 0.0f, 0.0f, 1.0f) \
+        TR_STRUCT_OPT_INT(di_samples, 1, 1, 512) \
+        TR_STRUCT_OPT_FLOAT(temporal_ratio, 0.033f, 0.0f, 1.0f) \
+    ) \
+    TR_BOOL_OPT(enable_light_tree, \
+        "Use light tree for sampling lights.", \
+        false \
+    ) \
+    TR_INT_OPT(light_tree_width, "Branching factor of the light tree", 3, 2, 1024) \
+    TR_FLOAT_OPT(auto_spp, \
+        "Automatically adjusts SPP such that the overall rendering time is as close as possible to the given number of milliseconds.", \
+        0.0f, 0.0f, 1000.0f)
 //==============================================================================
 // END OF OPTIONS
 //==============================================================================
@@ -569,6 +596,7 @@
 #include "headless.hh"
 #include "tonemap_stage.hh"
 #include "path_tracer_stage.hh"
+#include "radiance_cascades_stage.hh"
 #include "restir_stage.hh"
 #include "rt_renderer.hh"
 #include "rt_common.hh"
@@ -642,7 +670,9 @@ struct options
         DSHGI_SERVER,
         DSHGI_CLIENT,
         RESTIR,
-        RESTIR_HYBRID
+        RESTIR_HYBRID,
+        RC,
+        RC_RESTIR
     };
     using renderer_option_type = std::variant<
         tr::options::basic_pipeline_type, feature_stage::feature>;

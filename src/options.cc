@@ -416,6 +416,24 @@ void parse_command_line_options(char** argv, options& opt)
     if(opt.headless.size())
         opt.display = options::display_type::HEADLESS;
 
+    if(opt.filetype == headless::MSE)
+    {
+        if(opt.headless.size() == 0)
+            throw option_parse_error(
+                "--filetype=mse requires --headless to specify the path of "
+                "the file to write the MSE values to"
+            );
+        if(opt.reference.size() == 0)
+            throw option_parse_error(
+                "--filetype=mse requires --reference to specify the path of "
+                "the reference image(s)"
+            );
+        if(opt.headful)
+            throw option_parse_error(
+                "--filetype=mse is not compatible with --headful"
+            );
+    }
+
     // XR is not compatible with a lot of camera options, as it overrides those.
     if(opt.display == options::display_type::OPENXR)
     {
@@ -509,6 +527,10 @@ bool parse_config_options(const char* config_str, fs::path relative_path, option
         {
             print_options(opt, param == "full");
             continue;
+        }
+        else if(identifier == "scene")
+        {
+            opt.scene_paths.push_back(arg);
         }
 #define TR_BOOL_OPT(name, description, default) \
         else if(identifier == DASHIFY(name)) \

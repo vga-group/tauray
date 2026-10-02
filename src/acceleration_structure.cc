@@ -126,11 +126,12 @@ void bottom_level_acceleration_structure::rebuild_from(
 
     vk::AccelerationStructureBuildGeometryInfoKHR blas_info(
         vk::AccelerationStructureTypeKHR::eBottomLevel,
-        dynamic ?
+        vk::BuildAccelerationStructureFlagBitsKHR::eAllowDataAccess|
+        (dynamic ?
             vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild|
             vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate :
             vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace|
-            vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction,
+            vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction),
         update ?
             vk::BuildAccelerationStructureModeKHR::eUpdate :
             vk::BuildAccelerationStructureModeKHR::eBuild,
@@ -188,6 +189,7 @@ void bottom_level_acceleration_structure::rebuild_from(
     {
         initial_cb = begin_command_buffer(dev);
         transform_buffer.upload(id, frame_index, initial_cb);
+        full_barrier(initial_cb);
         query_pool = vkm(dev, dev.logical.createQueryPool({
             {},
             vk::QueryType::eAccelerationStructureCompactedSizeKHR,
@@ -263,6 +265,7 @@ void bottom_level_acceleration_structure::rebuild_from(
     else
     {
         transform_buffer.upload(id, frame_index, cb);
+        full_barrier(cb);
         cb.buildAccelerationStructuresKHR({blas_info}, range_ptr);
     }
     bd.blas_address = dev.logical.getAccelerationStructureAddressKHR({bd.blas});
@@ -319,6 +322,7 @@ top_level_acceleration_structure::top_level_acceleration_structure(
 
         vk::AccelerationStructureBuildGeometryInfoKHR tlas_info(
             vk::AccelerationStructureTypeKHR::eTopLevel,
+            vk::BuildAccelerationStructureFlagBitsKHR::eAllowDataAccess|
             vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace|
             vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate,
             vk::BuildAccelerationStructureModeKHR::eBuild,

@@ -1,12 +1,10 @@
 #ifndef TAURAY_MISC_HH
 #define TAURAY_MISC_HH
-#include "vkm.hh"
+#include "context.hh"
+#include <stdexcept>
 
 namespace tr
 {
-
-struct device;
-class context;
 
 template<typename T, size_t count>
 inline std::string to_string(const vk::ArrayWrapper1D<T, count>& vkstring)
@@ -100,7 +98,8 @@ vkm<vk::Image> sync_create_gpu_image(
     vk::ImageCreateInfo info,
     vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal,
     size_t data_size = 0,
-    void* data = nullptr
+    void* data = nullptr,
+    bool data_contains_mipmaps = false
 );
 
 // The hammer for all problems (if you don't care about performance at all)
@@ -114,6 +113,7 @@ vk::SampleCountFlagBits get_max_available_sample_count(context& ctx);
 
 std::string get_resource_path(const std::string& path);
 std::string load_text_file(const std::string& path);
+std::vector<uint8_t> load_binary_file(const std::string& path);
 bool nonblock_getline(std::string& line);
 
 template<typename T>
@@ -194,7 +194,8 @@ void set_debug_object_name(const tr::device& device, const T& vulkan_object, con
         info.objectHandle = (uint64_t)static_cast<typename T::CType>(vulkan_object);
         info.objectType = vulkan_object.objectType;
         info.pObjectName = name;
-        device.logical.setDebugUtilsObjectNameEXT(&info);
+        if(device.logical.setDebugUtilsObjectNameEXT(&info) != vk::Result::eSuccess)
+            throw std::runtime_error("Failed to set debug object name");
     }
 }
 

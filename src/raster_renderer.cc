@@ -44,7 +44,6 @@ void raster_renderer::render()
 dependencies raster_renderer::render_core(dependencies deps)
 {
     deps = sms->run(deps);
-    deps.concat(post_processing->get_gbuffer_write_dependencies());
 
     deps = envmap->run(deps);
     if(z_pass) deps = z_pass->run(deps);

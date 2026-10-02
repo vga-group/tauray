@@ -1,0 +1,107 @@
+#version 460
+#line 2
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+
+// gl_GlobalInvocationID.x = parent probe index
+// gl_LocalInvocationID.y = child probe index
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform readonly image3D occupancy_map;
+layout(binding = 1, scalar) buffer dispatch_info_buffer
+{
+    uint cascade_end_offset[16];
+    ivec3 probe_indices[];
+} dispatch_info;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    vec4 base_offset;
+    vec4 xyz_step;
+    int cascade;
+    int cascade_count;
+    float interval_end;
+    int cascade_size;
+    uint index_buffer_size;
+} pc;
+
+bool get_live(int cascade, ivec3 coord)
+{
+    return imageLoad(occupancy_map, coord).r == 1.0;
+}
+
+shared uint live_count[gl_WorkGroupSize.x*gl_WorkGroupSize.y];
+shared uint base_offset;
+
+void main()
+{
+    bool live = true;
+    ivec3 probe_index;
+    if(pc.cascade == pc.cascade_count-1)
+    {
+        ivec3 parent_probe_index;
+        int x = int(gl_GlobalInvocationID.x);
+        int parent_cascade_size = pc.cascade_size/2;
+        parent_probe_index.x = x % parent_cascade_size;
+        x /= parent_cascade_size;
+        parent_probe_index.y = x % parent_cascade_size;
+        x /= parent_cascade_size;
+        parent_probe_index.z = x % parent_cascade_size;
+
+        int i = int(gl_LocalInvocationID.y);
+        probe_index = parent_probe_index * 2 + (ivec3(i,i/2,i/4)&1);
+    }
+    else
+    {
+        uint parent_start_index = pc.cascade+2 < pc.cascade_count ? dispatch_info.cascade_end_offset[pc.cascade+2] : 0;
+        uint parent_end_index = dispatch_info.cascade_end_offset[pc.cascade+1];
+        uint parent_index = parent_start_index + gl_GlobalInvocationID.x;
+        if(parent_index < parent_end_index)
+        {
+            ivec3 parent_probe_index = dispatch_info.probe_indices[parent_index];
+            int i = int(gl_LocalInvocationID.y);
+            probe_index = parent_probe_index * 2 + (ivec3(i,i/2,i/4)&1);
+        }
+        else
+        {
+            live = false;
+        }
+    }
+
+    if(any(greaterThanEqual(probe_index, ivec3(pc.cascade_size))))
+        live = false;
+
+    bool first_cascade = pc.cascade == 0;
+
+    live = live && get_live(pc.cascade, probe_index);
+
+    live_count[gl_LocalInvocationIndex] = subgroupInclusiveAdd(live ? 1 : 0);
+
+    barrier();
+
+    for(uint i = gl_SubgroupSize; i < gl_WorkGroupSize.x * gl_WorkGroupSize.y; i <<= 1)
+    {
+        uint base = gl_LocalInvocationIndex & ((i<<1)-1);
+        if(base >= i)
+            live_count[gl_LocalInvocationIndex] += live_count[gl_LocalInvocationIndex+i-base-1];
+        barrier();
+    }
+
+    uint total_live_count = live_count[gl_WorkGroupSize.x * gl_WorkGroupSize.y-1];
+    if(gl_LocalInvocationIndex == 0)
+    {
+        base_offset = atomicAdd(dispatch_info.cascade_end_offset[pc.cascade], total_live_count);
+    }
+
+    barrier();
+
+    if(live)
+    {
+        uint write_index = base_offset + live_count[gl_LocalInvocationIndex] - 1;
+        if(write_index < pc.index_buffer_size)
+            dispatch_info.probe_indices[write_index] = probe_index;
+    }
+}

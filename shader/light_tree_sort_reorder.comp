@@ -1,0 +1,68 @@
+#version 460
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_GOOGLE_include_directive : enable
+
+#include "light_tree_data.glsl"
+
+layout(binding = 0, set = 0) readonly buffer unsorted_light_link_buffer
+{
+    light_link array[];
+} unsorted_light_links;
+
+layout(binding = 1, set = 0) readonly buffer unsorted_light_tree_leaf_buffer
+{
+    light_tree_node array[];
+} unsorted_leaf_data;
+
+layout(binding = 2, set = 0) readonly buffer sort_order_buffer
+{
+    uvec2 pairs[];
+} sort_order;
+
+layout(binding = 3, set = 0) writeonly buffer sorted_light_link_buffer
+{
+    light_link array[];
+} sorted_light_links;
+
+layout(binding = 4, set = 0) writeonly buffer sorted_light_tree_leaf_buffer
+{
+    light_tree_node array[];
+} sorted_leaf_data;
+
+layout(binding = 5, set = 0) writeonly buffer trail_data_buffer
+{
+    uint array[];
+} trail_data;
+
+layout(local_size_x = 256) in;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    uint entry_count;
+    uint tree_height;
+    uint tree_width;
+    uint branch_bits;
+} pc;
+
+void main()
+{
+    uint entry_index = gl_GlobalInvocationID.x;
+
+    if(entry_index < pc.entry_count)
+    {
+        uint source_index = sort_order.pairs[entry_index].x;
+        sorted_light_links.array[entry_index] = unsorted_light_links.array[source_index];
+        sorted_leaf_data.array[entry_index] = unsorted_leaf_data.array[source_index];
+
+        uint trail = 0;
+        uint tmp = entry_index;
+        for(int i = 0; i < pc.tree_height; ++i)
+        {
+            trail = (trail << pc.branch_bits) | (tmp % pc.tree_width);
+            tmp /= pc.tree_width;
+        }
+        trail_data.array[source_index] = trail;
+    }
+}
+
+
