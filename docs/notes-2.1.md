@@ -28,6 +28,7 @@ Tauray v2.1 release
 - Debian packaging (`debian/`) was removed as untested and unused.
 - CMake no longer runs `git submodule update --init --recursive` automatically.
     - Submodules must be initialized manually (`git submodule update --init --recursive`).
+- Removed `--spatial-reprojection` \& `--temporal-reprojection` as unmaintained and broken.
 
 ## Build and portability
 

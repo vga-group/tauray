@@ -329,11 +329,7 @@ context* create_context(const options& opt)
             opt.headful ? 1 : opt.camera_grid.w * opt.camera_grid.h;
         hd_opt.single_frame = !opt.animation_flag && !opt.frames;
         hd_opt.first_frame_index = opt.skip_frames;
-        hd_opt.skip_nan_check =
-            (std::holds_alternative<feature_stage::feature>(opt.renderer) &&
-             isnan(opt.default_value)) ||
-            (opt.spatial_reprojection.size() != 0 &&
-             opt.spatial_reprojection.size() < hd_opt.display_count);
+        hd_opt.skip_nan_check = std::holds_alternative<feature_stage::feature>(opt.renderer) && isnan(opt.default_value);
         return new headless(hd_opt);
     }
     else if(opt.display == options::display_type::OPENXR)
@@ -435,10 +431,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     rc_opt.rng_seed = opt.rng_seed;
     rc_opt.local_sampler = opt.sampler;
     rc_opt.transparent_background = opt.transparent_background;
-    rc_opt.active_viewport_count =
-        opt.spatial_reprojection.size() == 0 ?
-        ctx.get_display_count() :
-        opt.spatial_reprojection.size();
+    rc_opt.active_viewport_count = ctx.get_display_count();
 
     if(opt.progress)
     {
@@ -581,19 +574,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 if (opt.enable_light_tree)
                     rt_opt.light_tree = lt_options;
                 rt_opt.post_process.tonemap = tonemap;
-                if(opt.temporal_reprojection > 0.0f)
-                    rt_opt.post_process.temporal_reprojection =
-                        temporal_reprojection_stage::options{opt.temporal_reprojection, {}};
-                if(opt.spatial_reprojection.size() > 0)
-                    rt_opt.post_process.spatial_reprojection =
-                        spatial_reprojection_stage::options{};
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
                 rt_opt.accumulate = opt.accumulation;
-                rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
-                    opt.spatial_reprojection,
-                    ctx.get_display_count()
-                );
                 if (opt.denoiser == options::denoiser_type::SVGF)
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
                 else if (opt.denoiser == options::denoiser_type::BMFR)
@@ -613,19 +596,9 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                 rt_opt.bounce_mode = opt.bounce_mode;
                 rt_opt.tri_light_mode = opt.tri_light_mode;
                 rt_opt.post_process.tonemap = tonemap;
-                if(opt.temporal_reprojection > 0.0f)
-                    rt_opt.post_process.temporal_reprojection =
-                        temporal_reprojection_stage::options{opt.temporal_reprojection, {}};
-                if(opt.spatial_reprojection.size() > 0)
-                    rt_opt.post_process.spatial_reprojection =
-                        spatial_reprojection_stage::options{};
                 if(opt.taa.sequence_length != 0)
                     rt_opt.post_process.taa = taa;
                 rt_opt.accumulate = opt.accumulation;
-                rt_opt.post_process.tonemap.reorder = get_viewport_reorder_mask(
-                    opt.spatial_reprojection,
-                    ctx.get_display_count()
-                );
                 if (opt.denoiser == options::denoiser_type::SVGF)
                     rt_opt.post_process.svgf_denoiser = svgf_opt;
                 else if(opt.denoiser == options::denoiser_type::BMFR)
@@ -879,9 +852,6 @@ void interactive_viewer(context& ctx, scene_data& sd, options& opt)
         lkg->setup_cameras(s, cam);
     }
 
-    s.foreach([&](camera_metadata& md){
-        md.actively_rendered = opt.spatial_reprojection.count(md.index);
-    });
     set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
 
     std::chrono::steady_clock::time_point start =
@@ -1114,9 +1084,6 @@ void replay_viewer(context& ctx, scene_data& sd, options& opt)
             camera_logs.emplace_back(&t, &cam);
     });
 
-    s.foreach([&](camera_metadata& md){
-        md.actively_rendered = opt.spatial_reprojection.count(md.index);
-    });
     set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
 
     std::unique_ptr<renderer> rr;
@@ -1260,9 +1227,6 @@ void search_matching_spp(context& ctx, scene_data& sd, options& opt, float targe
             camera_logs.emplace_back(&t, &cam);
     });
 
-    s.foreach([&](camera_metadata& md){
-        md.actively_rendered = opt.spatial_reprojection.count(md.index);
-    });
     set_camera_jitter(s, get_camera_jitter_sequence(opt.taa.sequence_length, ctx.get_size()));
 
     std::unique_ptr<renderer> rr;

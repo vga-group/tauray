@@ -27,11 +27,6 @@ layout(binding = 1) uniform readonly image2DArray in_color;
 vec4 read_tonemap(ivec3 p) { return tonemap(imageLoad(in_color, p)); }
 #endif
 
-layout(binding = 3, scalar) buffer output_reorder_buffer
-{
-    int indices[];
-} output_reorder;
-
 void main()
 {
     ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
@@ -50,6 +45,6 @@ void main()
             vec3 alpha_color = (grid.x^grid.y) == 0 ? vec3(0.4) : vec3(0.6);
             col.rgb = mix(alpha_color, col.rgb, col.a);
         }
-        imageStore(out_color, ivec3(p.xy, output_reorder.indices[p.z]), col);
+        imageStore(out_color, ivec3(p.xy, p.z), col);
     }
 }

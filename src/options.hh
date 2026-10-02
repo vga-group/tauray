@@ -379,14 +379,6 @@
         {"sobol-z3", rt_stage::sampler_type::SOBOL_Z_ORDER_3D}, \
         {"sobol-owen", rt_stage::sampler_type::SOBOL_OWEN} \
     )\
-    TR_SETINT_OPT(spatial_reprojection, \
-        "Specify active viewport indices for lightfield rendering. Others " \
-        "are inactivated when this flag is used. Inactive viewports aren't " \
-        "rendered, but are being reprojected to.") \
-    TR_FLOAT_OPT(temporal_reprojection, \
-        "Ratio of temporal reuse for temporal reprojection. 0 disables " \
-        "temporal reprojection.", \
-        0, 0, 0.9999f) \
     TR_STRUCT_OPT(lkg_params, \
         "Sets parameters for rendering to a Looking Glass display. " \
         "v is the number of viewports, m is the distance of the plane of " \

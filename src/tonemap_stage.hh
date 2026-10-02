@@ -32,7 +32,6 @@ public:
         bool post_resolve = false;
         bool transition_output_layout = true;
         bool alpha_grid_background = false;
-        std::vector<uint32_t> reorder = {};
         // If you only want to tonemap one layer of an array, use this.
         int limit_to_input_layer = -1;
         int limit_to_output_layer = -1;
@@ -61,7 +60,6 @@ private:
     compute_pipeline comp;
     options opt;
     render_target input_target;
-    vkm<vk::Buffer> output_reorder_buf;
     gpu_buffer index_data;
     timer tonemap_timer;
 };
