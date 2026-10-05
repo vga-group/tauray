@@ -11,6 +11,8 @@ using namespace monkero;
 
 class environment_map;
 class sh_grid;
+// Used for internal camera list reordering; it's needed for spatial
+// reprojection from sparsely rendered viewports.
 struct camera_metadata
 {
     bool enabled;
@@ -28,6 +30,11 @@ struct animation_update_event
 
 void set_camera_jitter(scene& s, const std::vector<vec2>& jitter);
 std::vector<entity> get_sorted_cameras(scene& s);
+
+std::vector<uint32_t> get_viewport_reorder_mask(
+    const std::set<int>& active_indices,
+    size_t viewport_count
+);
 
 size_t get_instance_count(scene& s);
 size_t get_sampler_count(scene& s);

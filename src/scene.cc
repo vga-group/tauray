@@ -45,6 +45,24 @@ std::vector<entity> get_sorted_cameras(scene& s)
     return cameras;
 }
 
+std::vector<uint32_t> get_viewport_reorder_mask(
+    const std::set<int>& active_indices,
+    size_t viewport_count
+){
+    std::vector<uint32_t> reorder;
+    for(size_t i = 0; i < viewport_count; ++i)
+    {
+        if(active_indices.count(i))
+            reorder.push_back(i);
+    }
+    for(size_t i = 0; i < viewport_count; ++i)
+    {
+        if(!active_indices.count(i))
+            reorder.push_back(i);
+    }
+    return reorder;
+}
+
 size_t get_instance_count(scene& s)
 {
     size_t total = 0;

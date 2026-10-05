@@ -161,11 +161,13 @@ add_library(tauray-core STATIC
   src/shader_source.cc
   src/shadow_map.cc
   src/shadow_map_stage.cc
+  src/spatial_reprojection_stage.cc
   src/stage.cc
   src/stitch_stage.cc
   src/svgf_stage.cc
   src/taa_stage.cc
   src/tauray.cc
+  src/temporal_reprojection_stage.cc
   src/texture.cc
   src/timer.cc
   src/tonemap_stage.cc

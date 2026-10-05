@@ -24,6 +24,19 @@ post_processing_renderer::~post_processing_renderer()
 
 void post_processing_renderer::set_gbuffer_spec(gbuffer_spec& spec) const
 {
+    if(opt.temporal_reprojection.has_value())
+    {
+        spec.normal_present = true;
+        spec.pos_present = true;
+        spec.screen_motion_present = true;
+    }
+
+    if(opt.spatial_reprojection.has_value())
+    {
+        spec.normal_present = true;
+        spec.pos_present = true;
+    }
+
     if(opt.svgf_denoiser.has_value())
     {
         spec.normal_present = true;
@@ -62,6 +75,12 @@ dependencies post_processing_renderer::render(dependencies deps)
     dev->ctx->get_indices(swapchain_index, frame_index);
     bool first_frame = dev->ctx->get_frame_counter() <= 1;
 
+    if(temporal_reprojection && !first_frame)
+        deps = temporal_reprojection->run(deps);
+
+    if(spatial_reprojection)
+        deps = spatial_reprojection->run(deps);
+
     if(svgf)
         deps = svgf->run(deps);
 
@@ -84,10 +103,22 @@ void post_processing_renderer::init_pipelines()
     gbuffer_target input_target = input_gbuffer;
     vk::SampleCountFlagBits msaa = input_target.color.msaa;
 
+    if(opt.spatial_reprojection.has_value())
+    {
+        opt.spatial_reprojection->active_viewport_count = opt.active_viewport_count;
+
+        spatial_reprojection.reset(new spatial_reprojection_stage(
+            *dev,
+            *ss,
+            input_target,
+            opt.spatial_reprojection.value()
+        ));
+    }
+
     render_target in_color = input_target.color;
     render_target out_color = input_target.color;
 
-    bool need_temporal = opt.svgf_denoiser.has_value() || opt.bmfr.has_value();
+    bool need_temporal = opt.temporal_reprojection.has_value() || opt.svgf_denoiser.has_value() || opt.bmfr.has_value();
     gbuffer_target prev_gbuffer;
     if(need_temporal)
     {
@@ -95,6 +126,18 @@ void post_processing_renderer::init_pipelines()
         delay.reset(new frame_delay_stage(*dev, simplified));
 
         prev_gbuffer = delay->get_output();
+    }
+
+    if(opt.temporal_reprojection.has_value())
+    {
+        opt.temporal_reprojection->active_viewport_count =
+            opt.active_viewport_count;
+        temporal_reprojection.reset(new temporal_reprojection_stage(
+            *dev,
+            input_target,
+            prev_gbuffer,
+            opt.temporal_reprojection.value()
+        ));
     }
 
     bool need_pingpong =
@@ -189,6 +232,8 @@ void post_processing_renderer::init_pipelines()
 
 void post_processing_renderer::deinit_pipelines()
 {
+    temporal_reprojection.reset();
+    spatial_reprojection.reset();
     svgf.reset();
     taa.reset();
     tonemap.reset();

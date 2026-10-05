@@ -1642,6 +1642,30 @@ per frame into the running average used for accumulating radiance cascade probes
 Values close to 0 are more stable but react to lighting changes slower, whereas
 values close to 1 are more temporally unstable but react quicker.
 
+## Reprojection
+
+Reprojection can be used with path tracing to re-use data from previous frames
+or other viewports. These are the *temporal* and *spatial* reprojection,
+respectively.
+
+### Spatial reprojection
+
+`--spatial-reprojection=<int,int,...>`
+
+This type of reprojection is only useful for light-field rendering. You list the
+viewport indices that are rendered, and the rest are then reprojected from
+those.
+
+### Temporal reprojection
+
+`--temporal-reprojection=<number>`
+
+Temporal reprojection can be used with regular renders as well, though it's
+most useful in [interactive mode](#interactive-rendering). This method re-uses
+pixel values from the previous frame to deliver a more noise-free image.
+The given number affects the ratio of data re-used from the previous frame,
+where 0 is no re-use and 0.5 is 50/50 new and old frame.
+
 ## Accumulation
 
 `--accumulation=<on|off>`
