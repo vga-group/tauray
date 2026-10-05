@@ -266,9 +266,16 @@ void rt_renderer<Pipeline>::init_resources()
         if(use_raster_gbuffer)
         {
             gbuffer_target limited_target;
-            limited_target.emission = transfer_target.color;
-            limited_target.diffuse = transfer_target.diffuse;
-            limited_target.reflection = transfer_target.reflection;
+            if(transfer_target.diffuse || transfer_target.reflection)
+            {
+                limited_target.emission = transfer_target.color;
+                limited_target.diffuse = transfer_target.diffuse;
+                limited_target.reflection = transfer_target.reflection;
+            }
+            else
+            {
+                limited_target.color = transfer_target.color;
+            }
             transfer_target = limited_target;
         }
         transfer_target.set_layout(is_display_device ?
