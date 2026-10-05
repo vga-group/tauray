@@ -1,6 +1,8 @@
 #ifndef TAURAY_MATH_HH
 #define TAURAY_MATH_HH
 
+// Dearest windows, go f*** yourself
+#define NOMINMAX
 #define GLM_ENABLE_EXPERIMENTAL
 // Makes GLM angles predictable
 #define GLM_FORCE_RADIANS

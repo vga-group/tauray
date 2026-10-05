@@ -1,6 +1,6 @@
 {
   "name": "tauray",
-  "version-string": "0.0.0",
+  "version-string": "2.1.0",
   "dependencies": [
     "glm",
     "czmq",
@@ -12,14 +12,21 @@
     {
       "name": "sdl3",
       "default-features": false,
-      "features": [ "x11", "wayland", "vulkan" ],
+      "features": [
+        "x11",
+        "wayland",
+        "vulkan"
+      ],
       "platform": "linux"
     },
     {
       "name": "sdl3",
       "default-features": false,
-      "features": [ "vulkan" ],
+      "features": [
+        "vulkan"
+      ],
       "platform": "windows"
     }
-  ]
+  ],
+  "builtin-baseline": "19780d9cdf84d0944cf9a318666703b89ab6629c"
 }
