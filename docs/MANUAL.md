@@ -306,35 +306,35 @@ the `--` and replace the equals-sign with a space.
 +-------------------------------+----------------------------------------------------------------------------------------+
 | Preset                        | Image                                                                                  |
 +:=============================:+:======================================================================================:+
-| `minimal`: Minimal path       | ![](images/preset_minimal.png)                                                         |
+| `minimal`: Minimal path       | ![](images/preset_minimal.png){width=100%}                                             |
 | tracer with no importance     |                                                                                        |
 | sampling.                     |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
-| `accumulation`: Interactive   | ![](images/preset_accumulation.png)                                                    |
+| `accumulation`: Interactive   | ![](images/preset_accumulation.png){width=100%}                                        |
 | renderer that slowly reduces  |                                                                                        |
 | noise when not moving.        |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
-| `ddish-gi`: Interactive       | ![](images/preset_ddish-gi.png)                                                        |
+| `ddish-gi`: Interactive       | ![](images/preset_ddish-gi.png){width=100%}                                            |
 | rendering with a fast global  |                                                                                        |
 | illumination approximation.   |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
-| `denoised`: Interactive       | ![](images/preset_denoised.png)                                                        |
+| `denoised`: Interactive       | ![](images/preset_denoised.png){width=100%}                                            |
 | renderer that produces        |                                                                                        |
 | denoised images.              |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
-| `direct`: Interactive         | ![](images/preset_direct.png)                                                          |
+| `direct`: Interactive         | ![](images/preset_direct.png){width=100%}                                              |
 | renderer that computes        |                                                                                        |
 | direct light references.      |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
-| `quality`: Offline renderer   | ![](images/preset_quality.png)                                                         |
+| `quality`: Offline renderer   | ![](images/preset_quality.png){width=100%}                                             |
 | that creates high-quality     |                                                                                        |
 | images fairly quickly.        |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
-| `reference`: Reference        | ![](images/preset_reference.png)                                                       |
+| `reference`: Reference        | ![](images/preset_reference.png){width=100%}                                           |
 | renderer that avoids biased   |                                                                                        |
 | images.                       |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
-| `restir-hybrid`: Hybrid       | ![](images/preset_restir_hybrid.png)                                                   |
+| `restir-hybrid`: Hybrid       | ![](images/preset_restir_hybrid.png){width=100%}                                       |
 | renderer between ddish-gi     |                                                                                        |
 | and restir.                   |                                                                                        |
 +-------------------------------+----------------------------------------------------------------------------------------+
@@ -415,7 +415,7 @@ info for one frame only.
 is only meaningful in interactive mode and is used to combat display tearing
 artifacts occurring in motion:
 
-| ![tearing](images/vsync_off.png){width=50%}  | ![tear-free](images/vsync_on.png){width=50%} |
+| ![tearing](images/vsync_off.png){width=70%}  | ![tear-free](images/vsync_on.png){width=70%} |
 |:--------------------------------------------:|:--------------------------------------------:|
 | Tearing with `--vsync=off`.                  | No tearing with `--vsync=on`                 |
 
@@ -774,7 +774,7 @@ If you want to force a different field of view than the original, you can do so
 with `--fov`. Adjusting FOV is just like adjusting zoom on a camera.
 Lower FOV = more zoomed in.
 
-| ![fov=30](images/fov_30.png){width=50%} | ![fov=40](images/fov_40.png){width=50%}  |
+| ![fov=30](images/fov_30.png){width=100%} | ![fov=40](images/fov_40.png){width=100%}|
 |:---------------------------------------:|:----------------------------------------:|
 | `--fov=30`                              | `--fov=40`                               |
 
@@ -964,7 +964,7 @@ You can do this with `--sample-envmap=0`. Note that this importance
 sampling is basically required if your environment map includes the sun or any
 other small and bright light source:
 
-| ![without](images/envmap_unsampled.png){width=50%} | ![with](images/envmap_sampled.png){width=50%}      |
+| ![without](images/envmap_unsampled.png)            | ![with](images/envmap_sampled.png)                 |
 |:--------------------------------------------------:|:--------------------------------------------------:|
 | `--sample-envmap=0`                                | `--sample-envmap=1` (default)                      |
 
@@ -985,23 +985,23 @@ Table: Summary of available tonemapping operators.
 +-------------------------------------+-----------------------------------------------------------------------------------+
 | Operator                            | Image                                                                             |
 +:===================================:+:=================================================================================:+
-| `filmic`: Looks generally good, but | ![Filmic](images/tonemap_filmic.png)                                              |
+| `filmic`: Looks generally good, but | ![](images/tonemap_filmic.png)                                                    |
 | has relatively stark contrast for   |                                                                                   |
 | an HDR operator.                    |                                                                                   |
 +-------------------------------------+-----------------------------------------------------------------------------------+
-| `gamma-correction`: Plain and       | ![Gamma](images/tonemap_gamma.png)                                                |
+| `gamma-correction`: Plain and       | ![](images/tonemap_gamma.png)                                                     |
 | susceptible to clipping, but        |                                                                                   |
 | sometimes required for science.     |                                                                                   |
 +-------------------------------------+-----------------------------------------------------------------------------------+
-| `linear`: Looks wrong on regular    | ![Linear](images/tonemap_linear.png)                                              |
+| `linear`: Looks wrong on regular    | ![](images/tonemap_linear.png)                                                    |
 | displays, but is useful if you      |                                                                                   |
 | intend to do math with the output.  |                                                                                   |
 +-------------------------------------+-----------------------------------------------------------------------------------+
-| `reinhard`: A bit plain, but works  | ![Reinhard](images/tonemap_reinhard.png)                                          |
+| `reinhard`: A bit plain, but works  | ![](images/tonemap_reinhard.png)                                                  |
 | well with HDR. Often seen in        |                                                                                   |
 | literature.                         |                                                                                   |
 +-------------------------------------+-----------------------------------------------------------------------------------+
-| `reinhard-luminance`: Reinhard done | ![Reinhardl](images/tonemap_reinhardl.png)                                        |
+| `reinhard-luminance`: Reinhard done | ![](images/tonemap_reinhardl.png)                                                 |
 | on luminance instead of color       |                                                                                   |
 | channels. Technically incorrect,    |                                                                                   |
 | but preserves saturation better.    |                                                                                   |
@@ -1012,7 +1012,7 @@ Then, you can adjust `gamma`, to change the
 It affects every operator except `linear`. It's usually best to leave this as
 the default value 2.2 unless your display expects a different gamma value.
 
-| ![gamma=1.5](images/gamma_1_5.png){width=50%} | ![gamma=2.5](images/gamma_2_5.png){width=50%} |
+| ![gamma=1.5](images/gamma_1_5.png)            | ![gamma=2.5](images/gamma_2_5.png)            |
 |:---------------------------------------------:|:---------------------------------------------:|
 | Filmic tonemapping with `--gamma=1.5`.        | The same scene, with `--gamma=2.5`.           |
 
@@ -1125,9 +1125,9 @@ Table: Comparison between anti-aliasing methods for rasterization.
 
 | Anti-aliasing mode | Image                                                 |
 |:------------------:|:-----------------------------------------------------:|
-| No anti-aliasing   | ![dshgi without aa](images/dshgi_noaa.png){width=32%} |
-| 8 x MSAA           | ![dshgi with msaa](images/dshgi_msaa.png){width=32%}  |
-| 8 x SSAA           | ![dshgi with ssaa](images/dshgi_ssaa.png){width=32%}  |
+| No anti-aliasing   | ![dshgi without aa](images/dshgi_noaa.png){width=60%} |
+| 8 x MSAA           | ![dshgi with msaa](images/dshgi_msaa.png){width=60%}  |
+| 8 x SSAA           | ![dshgi with ssaa](images/dshgi_ssaa.png){width=60%}  |
 
 ### Path tracing
 
@@ -1227,9 +1227,9 @@ In path tracing, light sources are also rendered. For example, a spherical light
 will appear as a bright sphere. You can disable this from primary rays with
 `--hide-lights`.
 
-| ![with visible light](images/fov_40.png){width=50%}  | ![without visible light](images/fov_40_hide.png){width=50%} |
-|:----------------------------------------------------:|:-----------------------------------------------------------:|
-| Note how the light source is visible.                | With `--hide-lights`, it's hidden!                          |
+| ![with visible light](images/fov_40.png){width=100%}        | ![without visible light](images/fov_40_hide.png){width=100%}|
+|:-----------------------------------------------------------:|:-----------------------------------------------------------:|
+| Note how the light source is visible.                       | With `--hide-lights`, it's hidden!                          |
 
 ## Firefly mitigation (path space regularization & indirect clamping)
 
@@ -1265,7 +1265,7 @@ just 3-4.  Especially in bright outdoor areas, you can get away with a low numbe
 of bounces. 2 is direct light only (camera-\>surface-\>light). 1 shows only
 emissive objects (camera-\>light)
 
-| ![dark cornell box](images/cornell3.png){width=50%} | ![bright cornell box](images/cornell8.png){width=50%} |
+| ![dark cornell box](images/cornell3.png)            | ![bright cornell box](images/cornell8.png)            |
 |:---------------------------------------------------:|:-----------------------------------------------------:|
 | `--max-ray-depth=3`                                 | `--max-ray-depth=8`                                   |
 
@@ -1443,9 +1443,9 @@ constant arrays which have caused instabilities with some drivers in the past.
 For low-spp renders, you may want to try `sobol-z2`. For maximum performance,
 `uniform-random` is the fastest.
 
-| ![uniform random](images/sampler_uniform_random.png){width=20%} | ![sobol owen](images/sampler_sobol_owen.png){width=20%}         | ![sobol z2](images/sampler_sobol_z2.png){width=20%}             | ![sobol z3](images/sampler_sobol_z3.png){width=20%}             |
-|:---------------------------------------------------------------:|:---------------------------------------------------------------:|:---------------------------------------------------------------:|:---------------------------------------------------------------:|
-| `uniform-random`                                                | `sobol-owen`                                                    | `sobol-z2`                                                      | `sobol-z3`                                                      |
+| ![uniform random](images/sampler_uniform_random.png) | ![sobol owen](images/sampler_sobol_owen.png)         | ![sobol z2](images/sampler_sobol_z2.png)             | ![sobol z3](images/sampler_sobol_z3.png)             |
+|:----------------------------------------------------:|:----------------------------------------------------:|:----------------------------------------------------:|:----------------------------------------------------:|
+| `uniform-random`                                     | `sobol-owen`                                         | `sobol-z2`                                           | `sobol-z3`                                           |
 
 ### Russian roulette sampling
 
@@ -1545,9 +1545,9 @@ contexts.
 
 Table: Effects of samples per pixel (SPP) counts to noise in path tracing.
 
-| ![1](images/pt1.png){width=12%}       | ![4](images/pt4.png){width=12%}       | ![16](images/pt16.png){width=12%}     | ![64](images/pt64.png){width=12%}     | ![256](images/pt256.png){width=12%}   | ![1024](images/pt1024.png){width=12%} | ![4096](images/pt4096.png){width=12%} |
-|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|:-------------------------------------:|
-|            1 SPP                      |            4 SPP                      |            16 SPP                     |            64 SPP                     |            256 SPP                    |            1024 SPP                   |            4096 SPP                   |
+| ![1](images/pt1.png)       | ![4](images/pt4.png)       | ![16](images/pt16.png)     | ![64](images/pt64.png)     | ![256](images/pt256.png)   | ![1024](images/pt1024.png) | ![4096](images/pt4096.png) |
+|:--------------------------:|:--------------------------:|:--------------------------:|:--------------------------:|:--------------------------:|:--------------------------:|:--------------------------:|
+|            1 SPP           |            4 SPP           |            16 SPP          |            64 SPP          |            256 SPP         |            1024 SPP        |            4096 SPP        |
 
 For performance, you may consider setting `--samples-per-pass=8` or so. This
 parameter makes one shader pass calculate more samples, reducing overall
@@ -1585,9 +1585,9 @@ By default, spherical harmonics up to L2 are used for the probe data. You can
 select orders between 1 and 4. Higher orders store more detailed information,
 which can be visible in reflections, but are increasingly slower.
 
-| ![l2 spherical harmonics](images/sh_l2.png){width=50%} | ![l4 spherical harmonics](images/sh_l4.png){width=50%} |
-|:------------------------------------------------------:|:------------------------------------------------------:|
-| DDISH-GI with `--sh-order=2`.                          | Same, but with `--sh-order=4`.                         |
+| ![l2 spherical harmonics](images/sh_l2.png) | ![l4 spherical harmonics](images/sh_l4.png) |
+|:-------------------------------------------:|:-------------------------------------------:|
+| DDISH-GI with `--sh-order=2`.               | Same, but with `--sh-order=4`.              |
 
 ### Probe visibility approximation
 
