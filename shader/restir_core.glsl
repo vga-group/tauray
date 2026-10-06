@@ -655,17 +655,7 @@ bool resolve_reconnection_vertex(
         to.dist = TR_RESTIR.max_ray_dist;
         to.normal = vec3(0);
 
-#if defined(RESTIR_TEMPORAL) && !defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
-        to.emission = vec3(0);
-        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
-        {
-            directional_light dl = directional_lights.lights[i];
-            float visible = step(dl.dir_cutoff, dot(to.dir, -dl.dir));
-            to.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
-        }
-#else
         to.emission = rs.vertex.radiance_estimate;
-#endif
         to.nee_pdf = uintBitsToFloat(rs.vertex.primitive_id);
     }
 #ifndef SHADE_ALL_EXPLICIT_LIGHTS
