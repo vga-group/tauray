@@ -93,7 +93,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
 
     gbuffer_spec gs;
     gs.color_present = true;
-    if(opt.svgf_options)
+    if(opt.svgf_options || opt.bmfr_options)
     {
         gs.diffuse_present = true;
         gs.reflection_present = true;
@@ -206,7 +206,7 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         cur.color.layout = vk::ImageLayout::eGeneral;
 
         this->opt.restir_options.max_bounces = max(this->opt.restir_options.max_bounces, 1u);
-        this->opt.restir_options.demodulated_output = opt.svgf_options.has_value();
+        this->opt.restir_options.demodulated_output = opt.svgf_options.has_value() || opt.bmfr_options.has_value();
         this->opt.restir_options.camera_index = i;
         this->opt.restir_options.expect_taa_jitter = has_taa;
         //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
@@ -234,6 +234,18 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
                 cur,
                 prev,
                 *this->opt.svgf_options
+            );
+        }
+        else if(opt.bmfr_options)
+        {
+            cur = data.current_gbuffer.get_render_target(devices[device_index].id, view);
+            prev = data.prev_gbuffer.get_render_target(devices[device_index].id, view);
+
+            pv.bmfr.emplace(
+                devices[device_index],
+                cur,
+                prev,
+                *this->opt.bmfr_options
             );
         }
 
@@ -424,6 +436,7 @@ void restir_renderer::render()
         deps = pv.gbuffer_rasterizer->run(deps);
         deps = pv.restir->run(deps);
         if(pv.svgf) deps = pv.svgf->run(deps);
+        else if(pv.bmfr) deps = pv.bmfr->run(deps);
         deps = pv.tonemap->run(deps);
         if(pv.taa) deps = pv.taa->run(deps);
         deps = pv.copy->run(deps);

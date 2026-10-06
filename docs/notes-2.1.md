@@ -14,6 +14,9 @@ Tauray v2.1 release
     - Experimentally, this appeared to improve performance on Nvidia GPUs (counterintuitively).
 - glTF loader adds a white 1x1 placeholder texture for missing textures.
     - This allows unconditional texture loads in shaders, improving performance. 
+- BMFR (`--denoiser=bmfr`) can be run in combination with ReSTIR (`--renderer=restir` and `--renderer=restir-hybrid`).
+    - Previously, ReSTIR supported only the SVGF denoiser.
+    - BMFR denoises only the diffuse component, as it does with other renderers.
 
 ## Changed defaults and behavior
 

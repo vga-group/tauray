@@ -713,6 +713,8 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
                     re_opt.taa_options = taa;
                 if (opt.denoiser == options::denoiser_type::SVGF)
                     re_opt.svgf_options = svgf_opt;
+                else if (opt.denoiser == options::denoiser_type::BMFR)
+                    re_opt.bmfr_options = bmfr_stage::options{ bmfr_stage::bmfr_settings::DIFFUSE_ONLY };
 
                 return new restir_renderer(ctx, re_opt);
             }
