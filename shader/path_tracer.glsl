@@ -1,7 +1,6 @@
 #ifndef PATH_TRACER_GLSL
 #define PATH_TRACER_GLSL
 
-#define USE_RAY_QUERIES
 #extension GL_EXT_ray_flags_primitive_culling : enable
 
 #ifdef USE_SCREEN_MOTION_TARGET
@@ -50,8 +49,13 @@ struct intersection_pdf
 
 #include "ggx.glsl"
 
+#ifndef USE_RAY_QUERIES
+#include "rt_common_payload.glsl"
+#endif
+
 float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
 {
+#ifdef USE_RAY_QUERIES
     rayQueryEXT rq;
     rayQueryInitializeEXT(rq,
         tlas,
@@ -62,8 +66,24 @@ float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
         dir,
         max_dist
     );
-
     return trace_ray_query_visibility(rq);
+#else
+    shadow_visibility = 1.0f;
+    traceRayEXT(
+        tlas,
+        gl_RayFlagsTerminateOnFirstHitEXT,
+        0x02^0xFF, // Exclude lights from shadow rays
+        1,
+        0,
+        1,
+        pos,
+        min_dist,
+        dir,
+        max_dist,
+        1
+    );
+    return shadow_visibility;
+#endif
 }
 
 float bsdf_mis_pdf(
@@ -119,7 +139,7 @@ float nee_mis_pdf(float nee_pdf, float bsdf_pdf)
 }
 
 bool get_intersection_info(
-    hit_info payload,
+    hit_info hi,
     vec3 origin,
     vec3 view,
     out pt_vertex_data v,
@@ -138,18 +158,18 @@ bool get_intersection_info(
     mat.metallic = 1;
     mat.albedo = vec4(0);
 
-    if(payload.instance_id >= 0)
+    if(hi.instance_id >= 0)
     {
         float pdf = 0.0f;
         vertex_data vd = get_interpolated_vertex(
-            view, payload.barycentrics,
-            payload.instance_id,
-            payload.primitive_id
+            view, hi.barycentrics,
+            hi.instance_id,
+            hi.primitive_id
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
             , origin, pdf
 #endif
         );
-        mat = sample_material(payload.instance_id, vd);
+        mat = sample_material(hi.instance_id, vd);
         mat.albedo.a = 1.0; // Alpha blending was handled by the any-hit shader!
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
         nee_pdf.tri_light_pdf = pdf == 0.0f ? 0.0f : pdf;
@@ -160,11 +180,11 @@ bool get_intersection_info(
 #endif
 
 #ifdef LIGHT_TREE_SET
-        int light_base_id = instances.o[payload.instance_id].light_base_id;
+        int light_base_id = instances.o[hi.instance_id].light_base_id;
         if (light_base_id >= 0)
         {
-            nee_pdf.instance_id = payload.instance_id;
-            nee_pdf.primitive_id = payload.primitive_id;
+            nee_pdf.instance_id = hi.instance_id;
+            nee_pdf.primitive_id = hi.primitive_id;
         }
 #endif
 
@@ -178,9 +198,9 @@ bool get_intersection_info(
         v.instance_id = vd.instance_id;
         return true;
     }
-    else if(payload.primitive_id >= 0)
+    else if(hi.primitive_id >= 0)
     {
-        point_light pl = point_lights.lights[payload.primitive_id];
+        point_light pl = point_lights.lights[hi.primitive_id];
         vec3 color = get_spotlight_intensity(pl, view) * pl.color / (pl.radius * pl.radius * M_PI);
 #ifdef NEE_SAMPLE_POINT_LIGHTS
         mat.emission = vec3(0);
@@ -193,10 +213,10 @@ bool get_intersection_info(
 
 #ifdef LIGHT_TREE_SET
         nee_pdf.instance_id = POINT_LIGHT_INSTANCE_ID;
-        nee_pdf.primitive_id = payload.primitive_id;
+        nee_pdf.primitive_id = hi.primitive_id;
 #endif
 
-        v.pos = origin + payload.barycentrics.x * view;
+        v.pos = origin + hi.barycentrics.x * view;
         #ifdef CALC_PREV_VERTEX_POS
         v.prev_pos = v.pos; // TODO?
         #endif
@@ -527,6 +547,7 @@ void evaluate_ray(
 
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
+#ifdef USE_RAY_QUERIES
         rayQueryEXT rq;
         rayQueryInitializeEXT(rq,
             tlas,
@@ -545,13 +566,36 @@ void evaluate_ray(
             RAY_MAX_DIST
         );
 
-        hit_info payload = trace_ray_query(rq, lsampler.rs.seed.x);
+        hit_info hi = trace_ray_query(rq, lsampler.rs.seed.x);
+#else
+        traceRayEXT(
+            tlas,
+            gl_RayFlagsNoneEXT,
+#ifdef HIDE_LIGHTS
+            bounce == 0 ? 0xFF^0x02 : 0xFF,
+#else
+            0xFF,
+#endif
+            0,
+            0,
+            0,
+            pos,
+            bounce == 0 ? 0.0f : control.min_ray_dist,
+            view,
+            RAY_MAX_DIST,
+            0
+        );
+        hit_info hi;
+        hi.instance_id = payload.instance_id;
+        hi.primitive_id = payload.primitive_id;
+        hi.barycentrics = payload.barycentrics;
+#endif
 
         pt_vertex_data v;
         sampled_material mat;
         intersection_pdf nee_pdf;
         vec3 light;
-        bool terminal = !get_intersection_info(payload, pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
+        bool terminal = !get_intersection_info(hi, pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.

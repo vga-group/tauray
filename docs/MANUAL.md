@@ -1724,6 +1724,14 @@ off by default.
 This rotates the scene such that the given axis points up. By default, the
 Y-axis points up.
 
+## RT pipeline
+
+`--use-rt-pipeline=<on|off>`
+
+Setting this to `on` enables using ray tracing pipelines for path tracing.
+Defaults to `off`, where ray queries are used instead. This can be faster or
+slower depending on hardware.
+
 # Limitations
 
 There are things that Tauray does not handle well. In such cases, you may want

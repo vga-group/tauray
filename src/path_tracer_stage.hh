@@ -27,6 +27,7 @@ public:
         float indirect_clamping = 0; // 0 disables indirect clamping.
         float regularization_gamma = 0.0f; // 0 disables path regularization
         bool depth_of_field = false; // false disregards camera focus parameters.
+        bool use_rt_pipeline = false;
 
         light_sampling_weights sampling_weights;
         bounce_sampling_mode bounce_mode = bounce_sampling_mode::MATERIAL;
@@ -54,7 +55,8 @@ protected:
 
 private:
     push_descriptor_set desc;
-    compute_pipeline pt_pipeline;
+    compute_pipeline rq;
+    rt_pipeline rt;
     options opt;
 };
 

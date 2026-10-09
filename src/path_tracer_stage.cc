@@ -39,7 +39,8 @@ path_tracer_stage::path_tracer_stage(
         opt.samples_per_pixel / opt.samples_per_pass
     ),
     desc(dev),
-    pt_pipeline(dev),
+    rq(dev),
+    rt(dev),
     opt(opt)
 {
     std::map<std::string, std::string> defines;
@@ -96,14 +97,60 @@ path_tracer_stage::path_tracer_stage(
 
     get_common_defines(defines);
 
-    shader_source src = {"shader/path_tracer.comp", defines};
-    desc.add(src);
-    std::vector<tr::descriptor_set_layout*> layout = {&desc, &ss.get_descriptors()};
-    if(opt.rc_source)
-        layout.push_back(&opt.rc_source->get_descriptors());
-    if(opt.light_tree_source)
-        layout.push_back(&opt.light_tree_source->get_descriptors());
-    pt_pipeline.init(src, layout);
+    if (opt.use_rt_pipeline)
+    {
+        shader_source pl_rint("shader/rt_common_point_light.rint");
+        shader_source shadow_chit("shader/rt_common_shadow.rchit");
+        rt_shader_sources src = {
+            {"shader/path_tracer.rgen", defines},
+            {
+                {
+                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+                    {"shader/rt_common.rchit", defines},
+                    {"shader/rt_common.rahit", defines}
+                },
+                {
+                    vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+                    shadow_chit,
+                    {"shader/rt_common_shadow.rahit", defines}
+                },
+                {
+                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
+                    {"shader/rt_common_point_light.rchit", defines},
+                    {},
+                    pl_rint
+                },
+                {
+                    vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
+                    shadow_chit,
+                    {},
+                    pl_rint
+                }
+            },
+            {
+                {"shader/rt_common.rmiss", defines},
+                {"shader/rt_common_shadow.rmiss", defines}
+            }
+        };
+        desc.add(src);
+        std::vector<tr::descriptor_set_layout*> layout = {&desc, &ss.get_descriptors()};
+        if(opt.rc_source)
+            layout.push_back(&opt.rc_source->get_descriptors());
+        if(opt.light_tree_source)
+            layout.push_back(&opt.light_tree_source->get_descriptors());
+        rt.init(src, layout);
+    }
+    else
+    {
+        shader_source src = {"shader/path_tracer.comp", defines};
+        desc.add(src);
+        std::vector<tr::descriptor_set_layout*> layout = {&desc, &ss.get_descriptors()};
+        if(opt.rc_source)
+            layout.push_back(&opt.rc_source->get_descriptors());
+        if(opt.light_tree_source)
+            layout.push_back(&opt.light_tree_source->get_descriptors());
+        rq.init(src, layout);
+    }
 }
 
 void path_tracer_stage::record_command_buffer_pass(
@@ -113,17 +160,18 @@ void path_tracer_stage::record_command_buffer_pass(
     uvec3 expected_dispatch_size,
     bool first_in_command_buffer
 ){
+    basic_pipeline* pp = opt.use_rt_pipeline ? (basic_pipeline*)&rt : (basic_pipeline*)&rq;
     if(first_in_command_buffer)
     {
-        pt_pipeline.bind(cb);
+        pp->bind(cb);
         get_descriptors(desc);
-        pt_pipeline.push_descriptors(cb, desc, 0);
-        pt_pipeline.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+        pp->push_descriptors(cb, desc, 0);
+        pp->set_descriptors(cb, ss->get_descriptors(), 0, 1);
         int set_index = 2;
         if(opt.rc_source)
-            pt_pipeline.set_descriptors(cb, opt.rc_source->get_descriptors(), 0, set_index++);
+            pp->set_descriptors(cb, opt.rc_source->get_descriptors(), 0, set_index++);
         if(opt.light_tree_source)
-            pt_pipeline.set_descriptors(cb, opt.light_tree_source->get_descriptors(), 0, set_index++);
+            pp->set_descriptors(cb, opt.light_tree_source->get_descriptors(), 0, set_index++);
     }
 
     push_constant_buffer control;
@@ -138,14 +186,21 @@ void path_tracer_stage::record_command_buffer_pass(
     control.samples = opt.samples_per_pass;
     control.antialiasing = opt.film != film_filter::POINT ? 1 : 0;
 
-    pt_pipeline.push_constants(cb, control);
+    pp->push_constants(cb, control);
 
-    uvec3 wg = uvec3(
-        (expected_dispatch_size.x+7u)/8u,
-        (expected_dispatch_size.y+7u)/8u,
-        expected_dispatch_size.z
-    );
-    cb.dispatch(wg.x, wg.y, wg.z);
+    if (opt.use_rt_pipeline)
+    {
+        rt.trace_rays(cb, expected_dispatch_size);
+    }
+    else
+    {
+        uvec3 wg = uvec3(
+            (expected_dispatch_size.x+7u)/8u,
+            (expected_dispatch_size.y+7u)/8u,
+            expected_dispatch_size.z
+        );
+        cb.dispatch(wg.x, wg.y, wg.z);
+    }
 }
 
 }

@@ -85,6 +85,7 @@ layout(local_size_x = 8, local_size_y = 8) in;
 
 #define gl_LaunchIDEXT gl_GlobalInvocationID
 #define gl_LaunchSizeEXT (gl_WorkGroupSize * gl_NumWorkGroups)
+#define USE_RAY_QUERIES
 #include "path_tracer.glsl"
 
 void main()

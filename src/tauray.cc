@@ -512,6 +512,7 @@ renderer* create_renderer(context& ctx, options& opt, scene& s)
     pt_opt.sampling_weights = sampling_weights;
     pt_opt.bounce_mode = opt.bounce_mode;
     pt_opt.tri_light_mode = opt.tri_light_mode;
+    pt_opt.use_rt_pipeline = opt.use_rt_pipeline;
     pt_opt.depth_of_field = opt.depth_of_field.f_stop != 0;
     pt_opt.hide_lights = opt.hide_lights;
     pt_opt.distribution.strategy = opt.distribution_strategy;

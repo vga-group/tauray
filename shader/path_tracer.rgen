@@ -61,6 +61,10 @@
 #define REFLECTION_TARGET_BINDING 11
 #endif
 
+#ifdef USE_EMISSION_TARGET
+#define EMISSION_TARGET_BINDING 12
+#endif
+
 #define printf debugPrintfEXT
 //#undef RADIANCE_CASCADES_SET
 
@@ -120,8 +124,8 @@ void main()
 
     write_color_outputs(
 #ifdef DEMODULATED_OUTPUT
-        sum_diffuse.rgb / SAMPLES_PER_PASS,
-        sum_reflection.rgb / SAMPLES_PER_PASS
+        sum_diffuse / SAMPLES_PER_PASS,
+        sum_reflection / SAMPLES_PER_PASS
 #else
         sum_color.rgb / SAMPLES_PER_PASS
 #endif
