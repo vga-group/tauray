@@ -10,8 +10,9 @@ Tauray v2.1 release
 - Headless MSE comparison mode against reference images (`--filetype=mse`, `--reference=<path>`).
 - Automatic SPP calibration to a target frame time (`--auto-spp=<ms>`).
 - Scenes can be specified in config and preset files (`scene=<path>`).
-- The path tracer is now a compute pipeline using ray queries instead of a ray tracing pipeline.
+- The path tracer now defaults to a compute pipeline using ray queries instead of a ray tracing pipeline.
     - Experimentally, this appeared to improve performance on Nvidia GPUs (counterintuitively).
+    - RT pipeline can still be enabled with `--use-rt-pipeline=true`.
 - glTF loader adds a white 1x1 placeholder texture for missing textures.
     - This allows unconditional texture loads in shaders, improving performance. 
 - BMFR (`--denoiser=bmfr`) can be run in combination with ReSTIR (`--renderer=restir` and `--renderer=restir-hybrid`).
