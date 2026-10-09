@@ -6,7 +6,7 @@ function(renderer_test renderer stage tolerance)
     add_executable("${renderer}_crash"
         crash_test.cc
     )
-    target_link_libraries("${renderer}_crash" PUBLIC tauray-core SDL2::SDL2main)
+    target_link_libraries("${renderer}_crash" PUBLIC tauray-core)
     target_compile_definitions("${renderer}_crash" PUBLIC "TEST_RENDERER=tr::${stage}")
     target_include_directories("${renderer}_crash" PUBLIC "${CMAKE_SOURCE_DIR}/src")
     add_test(NAME "${renderer}_crash_test"

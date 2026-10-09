@@ -9,8 +9,7 @@ hitAttributeEXT vec2 attribs;
 #include "rt.glsl"
 #include "ggx.glsl"
 
-#define PAYLOAD_IN
-#include "rt_common_payload.glsl"
+layout(location = 1) rayPayloadInEXT float shadow_visibility;
 
 void main()
 {

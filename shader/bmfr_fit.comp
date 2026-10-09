@@ -41,7 +41,7 @@ layout(binding = 3, set = 0) uniform uniform_buffer_t
     uint frame_counter;
 } uniform_buffer;
 
-layout(binding = 4, set = 0, rgba16f) uniform image2DArray in_color;
+layout(binding = 4, set = 0) uniform image2DArray in_color;
 
 shared float sum_vec[8];    // Assuming subgroup size of 32, if it's actually larger it's fine. 
                             // If it's smaller this is a problem.

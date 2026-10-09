@@ -53,6 +53,7 @@ public:
 
     void get_common_defines(std::map<std::string, std::string>& defines);
 
+    void force_command_buffer_refresh();
 
 protected:
     void update(uint32_t frame_index) override;
@@ -64,7 +65,6 @@ protected:
     ) = 0;
     void get_descriptors(push_descriptor_set& desc);
     void record_command_buffers();
-    void force_command_buffer_refresh();
 
     unsigned get_pass_count() const;
 

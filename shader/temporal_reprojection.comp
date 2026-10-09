@@ -8,14 +8,14 @@
 
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-layout(binding = 0, rgba16f) uniform image2DArray current_color;
-layout(binding = 1, rg16_snorm) uniform readonly image2DArray current_normal;
-layout(binding = 2, rgba32f) uniform readonly image2DArray current_pos;
-layout(binding = 3, rg32f) uniform readonly image2DArray current_screen_motion;
+layout(binding = 0) uniform image2DArray current_color;
+layout(binding = 1) uniform readonly image2DArray current_normal;
+layout(binding = 2) uniform readonly image2DArray current_pos;
+layout(binding = 3) uniform readonly image2DArray current_screen_motion;
 
-layout(binding = 4, rgba16f) uniform readonly image2DArray previous_color;
-layout(binding = 5, rg16_snorm) uniform readonly image2DArray previous_normal;
-layout(binding = 6, rgba32f) uniform readonly image2DArray previous_pos;
+layout(binding = 4) uniform readonly image2DArray previous_color;
+layout(binding = 5) uniform readonly image2DArray previous_normal;
+layout(binding = 6) uniform readonly image2DArray previous_pos;
 
 layout(push_constant) uniform push_constant_buffer
 {

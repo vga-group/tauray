@@ -69,13 +69,6 @@ void post_processing_renderer::set_display(gbuffer_target input_gbuffer)
     init_pipelines();
 }
 
-dependencies post_processing_renderer::get_gbuffer_write_dependencies() const
-{
-    uint32_t swapchain_index, frame_index;
-    dev->ctx->get_indices(swapchain_index, frame_index);
-    return delay_deps[(frame_index + 1) % MAX_FRAMES_IN_FLIGHT];
-}
-
 dependencies post_processing_renderer::render(dependencies deps)
 {
     uint32_t swapchain_index, frame_index;
@@ -100,7 +93,7 @@ dependencies post_processing_renderer::render(dependencies deps)
         out_deps = taa->run(out_deps);
 
     if(delay)
-        delay_deps[frame_index] = delay->run(deps);
+        out_deps = delay->run(out_deps);
 
     return out_deps;
 }

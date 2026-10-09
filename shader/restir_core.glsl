@@ -15,15 +15,15 @@ layout(binding = 4) uniform sampler2D curvature_tex;
 layout(binding = 5) uniform sampler2D material_tex;
 
 
-layout(binding = 6, rgba32ui) readonly uniform uimage2D in_reservoir_ris_data_tex;
-layout(binding = 7, rgba32ui) readonly uniform uimage2D in_reservoir_reconnection_data_tex;
-layout(binding = 8, rgba32f) readonly uniform image2D in_reservoir_reconnection_radiance_tex;
-layout(binding = 9, rgba32ui) readonly uniform uimage2D in_reservoir_rng_seeds_tex;
+layout(binding = 6) readonly uniform uimage2D in_reservoir_ris_data_tex;
+layout(binding = 7) readonly uniform uimage2D in_reservoir_reconnection_data_tex;
+layout(binding = 8) readonly uniform image2D in_reservoir_reconnection_radiance_tex;
+layout(binding = 9) readonly uniform uimage2D in_reservoir_rng_seeds_tex;
 
-layout(binding = 10, rgba32ui) uniform uimage2D out_reservoir_ris_data_tex;
-layout(binding = 11, rgba32ui) uniform uimage2D out_reservoir_reconnection_data_tex;
-layout(binding = 12, rgba32f) uniform image2D out_reservoir_reconnection_radiance_tex;
-layout(binding = 13, rgba32ui) uniform uimage2D out_reservoir_rng_seeds_tex;
+layout(binding = 10) uniform uimage2D out_reservoir_ris_data_tex;
+layout(binding = 11) uniform uimage2D out_reservoir_reconnection_data_tex;
+layout(binding = 12) uniform image2D out_reservoir_reconnection_radiance_tex;
+layout(binding = 13) uniform uimage2D out_reservoir_rng_seeds_tex;
 
 #define SH_INTERPOLATION_TRILINEAR
 #include "alias_table.glsl"
@@ -31,7 +31,9 @@ layout(binding = 13, rgba32ui) uniform uimage2D out_reservoir_rng_seeds_tex;
 #include "random_sampler.glsl"
 #include "ggx.glsl"
 #include "spherical_harmonics.glsl"
+#ifdef USE_RAY_CONES
 #include "ray_cone.glsl"
+#endif
 
 #ifdef RESTIR_TEMPORAL
 layout(binding = 14) uniform sampler2D prev_depth_or_position_tex;
@@ -45,6 +47,9 @@ layout(binding = 20) uniform sampler2D motion_tex;
 #include "temporal_tables.glsl"
 #endif
 
+#define RC_SAMPLE_SINGLE_LOBE
+#include "radiance_cascades.glsl"
+
 #include "gbuffer.glsl"
 #include "projection.glsl"
 
@@ -56,7 +61,9 @@ struct domain
     vec3 flat_normal;
     vec3 view;
     vec3 tview;
+#ifdef USE_RAY_CONES
     ray_cone rc;
+#endif
 };
 
 sampled_material get_material(ivec2 p)
@@ -100,10 +107,12 @@ bool read_domain(camera_data cam, ivec2 p, out domain d)
     d.view = (d.pos - origin) / len;
     d.tview = view_to_tangent_space(d.view, d.tbn);
 
+#ifdef USE_RAY_CONES
     float curvature = sample_gbuffer_curvature(curvature_tex, p);
     d.rc = init_pixel_ray_cone(cam.projection_info, p, ivec2(TR_RESTIR.display_size));
     ray_cone_apply_dist(len, d.rc);
     ray_cone_apply_curvature(curvature, d.rc);
+#endif
 
     return miss;
 }
@@ -127,6 +136,19 @@ void bias_ray(inout vec3 pos, inout vec3 dir, inout float len, in domain d)
     bias_ray_origin(pos, exit_below, d);
     len = distance(target, pos);
     dir = (target - pos) / len;
+#endif
+}
+
+vec3 bias_ray_shading_dir(vec3 dir, float len, in domain d)
+{
+#ifndef USE_POSITION
+    bool exit_below = dot(dir, d.flat_normal) < 0;
+    vec3 pos = d.pos;
+    vec3 target = pos + dir * len;
+    bias_ray_origin(pos, exit_below, d);
+    return normalize(target - pos);
+#else
+    return dir;
 #endif
 }
 
@@ -177,10 +199,12 @@ bool read_prev_domain(camera_data cam, ivec2 p, domain cur_domain, out domain d)
     d.view = (d.pos - origin) / len;
     d.tview = view_to_tangent_space(d.view, d.tbn);
 
+#ifdef USE_RAY_CONES
     float curvature = sample_gbuffer_curvature(prev_curvature_tex, p);
     d.rc = init_pixel_ray_cone(cam.projection_info, p, ivec2(TR_RESTIR.display_size));
     ray_cone_apply_dist(len, d.rc);
     ray_cone_apply_curvature(curvature, d.rc);
+#endif
 
     return miss;
 }
@@ -478,8 +502,9 @@ vec3 shade_explicit_lights(
 }
 #endif
 
-float test_visibility(uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal)
-{
+float test_visibility(
+    uint seed, vec3 pos, vec3 dir, float dist, vec3 flat_normal
+){
     rayQueryEXT rq;
     rayQueryInitializeEXT(rq,
         tlas,
@@ -630,17 +655,7 @@ bool resolve_reconnection_vertex(
         to.dist = TR_RESTIR.max_ray_dist;
         to.normal = vec3(0);
 
-#if defined(RESTIR_TEMPORAL) && !defined(ASSUME_UNCHANGED_RECONNECTION_RADIANCE)
-        to.emission = vec3(0);
-        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
-        {
-            directional_light dl = directional_lights.lights[i];
-            float visible = step(dl.dir_cutoff, dot(to.dir, -dl.dir));
-            to.emission += visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
-        }
-#else
         to.emission = rs.vertex.radiance_estimate;
-#endif
         to.nee_pdf = uintBitsToFloat(rs.vertex.primitive_id);
     }
 #ifndef SHADE_ALL_EXPLICIT_LIGHTS
@@ -714,11 +729,30 @@ bool resolve_reconnection_vertex(
         }
         vd.mapped_normal = vd.smooth_normal;
 
-        to.lobes = bsdf_lobes(0,0,0,0);
-        vec3 tdir = to.dir * to_domain.tbn;
-        to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
-        update_regularization(to.bsdf_pdf, regularization);
+        vec3 shading_dir = to.dir;
+        if(rs.head_length == 0)
+            shading_dir = bias_ray_shading_dir(to.dir, to.dist, to_domain);
 
+        to.lobes = bsdf_lobes(0,0,0,0);
+        vec3 tdir = shading_dir * to_domain.tbn;
+        float regularization_pdf;
+#ifdef RADIANCE_CASCADES_SET
+        regularization_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
+        to.bsdf_pdf = radiance_cascades_pdf(
+            to_domain.pos, to_domain.tbn[2], -to_domain.view,
+            false,
+            to_domain.mat.roughness,
+            mix(0.04, 1.0, to_domain.mat.metallic),
+            rgb_to_luminance(to_domain.mat.albedo.rgb) * (1.0-to_domain.mat.metallic),
+            shading_dir,
+            rs.head_lobe
+        );
+#else
+        regularization_pdf = to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
+#endif
+        update_regularization(regularization_pdf, regularization);
+
+#ifdef USE_RAY_CONES
         ray_cone rc = to_domain.rc;
         ray_cone_apply_dist(to.dist, rc);
         vec2 puvdx;
@@ -733,6 +767,7 @@ bool resolve_reconnection_vertex(
             vd.triangle_uv,
             puvdx, puvdy
         );
+#endif
 
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd, puvdx, puvdy);
         apply_regularization(regularization, mat);
@@ -742,10 +777,29 @@ bool resolve_reconnection_vertex(
 #endif
     }
 
+
+    vec3 shading_dir = to.dir;
+    if(rs.head_length == 0)
+        shading_dir = bias_ray_shading_dir(to.dir, to.dist, to_domain);
+
     to.lobes = bsdf_lobes(0,0,0,0);
-    vec3 tdir = to.dir * to_domain.tbn;
-    to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
-    update_regularization(to.bsdf_pdf, regularization);
+    vec3 tdir = shading_dir * to_domain.tbn;
+    float regularization_pdf;
+#ifdef RADIANCE_CASCADES_SET
+    regularization_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
+    to.bsdf_pdf = radiance_cascades_pdf(
+        to_domain.pos, to_domain.tbn[2], -to_domain.view,
+        rs.vertex.instance_id >= MISS_INSTANCE_ID,
+        to_domain.mat.roughness,
+        mix(0.04, 1.0, to_domain.mat.metallic),
+        rgb_to_luminance(to_domain.mat.albedo.rgb) * (1.0-to_domain.mat.metallic),
+        shading_dir,
+        rs.head_lobe
+    );
+#else
+    regularization_pdf = to.bsdf_pdf = ggx_bsdf_lobe_pdf(rs.head_lobe, tdir, to_domain.tview, to_domain.mat, to.lobes);
+#endif
+    update_regularization(regularization_pdf, regularization);
     return true;
 }
 #endif
@@ -788,7 +842,9 @@ bool allow_reconnection(
 bool get_intersection_info(
     vec3 ray_origin,
     vec3 ray_direction,
+#ifdef USE_RAY_CONES
     ray_cone rc,
+#endif
     hit_info payload,
     uint bounce_index,
     bool in_past,
@@ -839,6 +895,7 @@ bool get_intersection_info(
         if(in_past) info.vd.pos = info.vd.prev_pos;
 #endif
 
+#ifdef USE_RAY_CONES
         ray_cone_apply_dist(distance(ray_origin, info.vd.pos), rc);
         vec2 puvdx;
         vec2 puvdy;
@@ -852,6 +909,10 @@ bool get_intersection_info(
             info.vd.triangle_uv,
             puvdx, puvdy
         );
+#else
+        vec2 puvdx = vec2(0);
+        vec2 puvdy = vec2(0);
+#endif
         info.mat = sample_material(payload.instance_id, info.vd, puvdx, puvdy);
 
         apply_regularization(regularization, info.mat);
@@ -1015,6 +1076,10 @@ hit_info trace_prev_ray(
 }
 #endif
 
+#ifdef LIGHT_TREE_SET
+#define LIGHT_SAMPLE_HIT_INFO
+#include "light_tree.glsl"
+#else
 struct light_sample
 {
     bool infinitesimal;
@@ -1031,8 +1096,12 @@ struct light_sample
 // Warning: does NOT update the seed! You need to do that yourself.
 light_sample sample_light(
     uvec4 rand32,
+#ifdef USE_RAY_CONES
     ray_cone rc,
+#endif
     vec3 pos,
+    vec3 normal,
+    float transmission,
     float min_dist,
     float max_dist
 ){
@@ -1100,6 +1169,7 @@ light_sample sample_light(
                 unpackHalf2x16(tl.uv[2])
             };
             vec2 uv = bary.x * uvs[0] + bary.y * uvs[1] + bary.z * uvs[2];
+#ifdef USE_RAY_CONES
             ray_cone_apply_dist(ls.dist+min_dist, rc);
             vec2 puvdx;
             vec2 puvdy;
@@ -1114,6 +1184,10 @@ light_sample sample_light(
                 puvdx,
                 puvdy
             );
+#else
+            vec2 puvdx = vec2(0);
+            vec2 puvdy = vec2(0);
+#endif
             ls.color *= textureGrad(textures[nonuniformEXT(tl.emission_tex_id)], uv, puvdx, puvdy).rgb;
         }
 
@@ -1166,7 +1240,10 @@ float calculate_light_pdf(
     uint instance_id,
     uint primitive_id,
     float local_pdf,
-    float envmap_pdf
+    float envmap_pdf,
+    vec3 pos,
+    vec3 normal,
+    float transmission
 ){
     float point_prob, triangle_prob, dir_prob, envmap_prob;
     get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
@@ -1187,6 +1264,7 @@ float calculate_light_pdf(
     }
     return 0;
 }
+#endif
 
 bool generate_nee_vertex(
     uvec4 rand32,
@@ -1199,8 +1277,12 @@ bool generate_nee_vertex(
 ){
     light_sample ls = sample_light(
         rand32,
+#ifdef USE_RAY_CONES
         d.rc,
+#endif
         d.pos,
+        d.tbn[2],
+        1.0f,
         TR_RESTIR.min_ray_dist,
         TR_RESTIR.max_ray_dist
     );
@@ -1247,11 +1329,16 @@ bool generate_bsdf_vertex(
 #else
     const bool get_in_past = false;
 #endif
-    bool bounces = get_intersection_info(cur_domain.pos, dir, cur_domain.rc, hi, bounce_index, get_in_past, regularization, info, vertex);
+    bool bounces = get_intersection_info(cur_domain.pos, dir,
+#ifdef USE_RAY_CONES
+        cur_domain.rc,
+#endif
+        hi, bounce_index, get_in_past, regularization, info, vertex);
 
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_ENVMAP)
     nee_pdf = calculate_light_pdf(
-        vertex.instance_id, vertex.primitive_id, info.local_pdf, info.envmap_pdf
+        vertex.instance_id, vertex.primitive_id, info.local_pdf, info.envmap_pdf,
+        cur_domain.pos, cur_domain.tbn[2], 1.0f
     );
 #else
     nee_pdf = 0;
@@ -1260,8 +1347,10 @@ bool generate_bsdf_vertex(
     next_domain.mat = info.mat;
     next_domain.mat.emission = vertex.radiance_estimate;
     next_domain.pos = info.vd.pos;
+#ifdef USE_RAY_CONES
     next_domain.rc = cur_domain.rc;
     ray_cone_apply_dist(distance(cur_domain.pos, next_domain.pos), next_domain.rc);
+#endif
     // TODO: Apply curvature?
     next_domain.tbn = create_tangent_space(info.vd.mapped_normal);
     next_domain.flat_normal = info.vd.hard_normal;
@@ -1284,7 +1373,9 @@ bool replay_path_nee_leaf(
     inout bool head_allows_reconnection,
     inout bool reconnected
 ){
+#ifdef USE_RAY_CONES
     ray_cone_apply_roughness(src.mat.roughness, src.rc);
+#endif
 
     vec3 candidate_dir = vec3(0);
     vec3 candidate_normal = vec3(0);
@@ -1305,7 +1396,21 @@ bool replay_path_nee_leaf(
     rand32.w += 7u;
     vec3 tdir = candidate_dir * src.tbn;
     bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-    float bsdf_pdf = ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
+    float bsdf_pdf;
+#ifdef RADIANCE_CASCADES_SET
+    ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
+    bsdf_pdf = radiance_cascades_pdf(
+        src.pos, src.tbn[2], -src.view,
+        vertex.instance_id >= MISS_INSTANCE_ID,
+        src.mat.roughness,
+        mix(0.04, 1.0, src.mat.metallic),
+        rgb_to_luminance(src.mat.albedo.rgb) * (1.0-src.mat.metallic),
+        candidate_dir,
+        MATERIAL_LOBE_ALL
+    );
+#else
+    bsdf_pdf = ggx_bsdf_pdf(tdir, src.tview, src.mat, lobes);
+#endif
 
     path_throughput *= get_bounce_throughput(
         bounce_index, src, candidate_dir, lobes, primary_bsdf
@@ -1339,15 +1444,33 @@ bool replay_path_bsdf_bounce(
     uint sampled_lobe = 0;
     float bsdf_pdf = 0;
     float bsdf_mis_pdf = 0;
+    float regularization_pdf = 0;
+#ifdef RADIANCE_CASCADES_SET
+    vec3 dir = sample_radiance_cascades(
+        rand32.x, src.pos, src.tbn[2],
+        -src.view,
+        src.mat.roughness, mix(0.04, 1.0, src.mat.metallic),
+        rgb_to_luminance(src.mat.albedo.rgb) * (1.0-src.mat.metallic),
+        bsdf_pdf,
+        bsdf_mis_pdf,
+        sampled_lobe
+    );
+    regularization_pdf = ggx_bsdf_lobe_pdf(sampled_lobe, dir * src.tbn, src.tview, src.mat, lobes);
+#else
     ggx_bsdf_sample_lobe(u, src.tview, src.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
+    regularization_pdf = bsdf_pdf;
+    vec3 dir = src.tbn * tdir;
+#endif
 
     if(bounce_index == 0)
         bias_ray_origin(src.pos, sampled_lobe == MATERIAL_LOBE_TRANSMISSION, src);
 
-    update_regularization(bsdf_pdf, regularization);
+    update_regularization(regularization_pdf, regularization);
+
+#ifdef USE_RAY_CONES
     ray_cone_apply_roughness(sampled_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : src.mat.roughness, src.rc);
+#endif
     if(bsdf_pdf == 0) bsdf_pdf = 1;
-    vec3 dir = src.tbn * tdir;
 
     path_throughput *= get_bounce_throughput(
         bounce_index, src, dir, lobes, primary_bsdf
@@ -1446,9 +1569,24 @@ void update_tail_radiance(domain tail_domain, float regularization, bool end_nee
         uint sampled_lobe = 0;
         float bsdf_pdf = 0.0f;
         float bsdf_mis_pdf = 0;
+        float regularization_pdf = 0.0f;
+#ifdef RADIANCE_CASCADES_SET
+        vec3 dir = sample_radiance_cascades(
+            rand32.x, tail_domain.pos, tail_domain.tbn[2],
+            -tail_domain.view,
+            tail_domain.mat.roughness, mix(0.04, 1.0, tail_domain.mat.metallic),
+            rgb_to_luminance(tail_domain.mat.albedo.rgb) * (1.0-tail_domain.mat.metallic),
+            bsdf_pdf,
+            bsdf_mis_pdf,
+            sampled_lobe
+        );
+        regularization_pdf = ggx_bsdf_lobe_pdf(sampled_lobe, dir * tail_domain.tbn, tail_domain.tview, tail_domain.mat, lobes);
+#else
         ggx_bsdf_sample_lobe(u, tail_domain.tview, tail_domain.mat, tdir, lobes, bsdf_pdf, bsdf_mis_pdf, sampled_lobe);
+        regularization_pdf = bsdf_pdf;
         vec3 dir = tail_domain.tbn * tdir;
-        update_regularization(bsdf_pdf, regularization);
+#endif
+        update_regularization(regularization_pdf, regularization);
 
         if(bsdf_pdf == 0) bsdf_pdf = 1;
 
@@ -1539,10 +1677,13 @@ bool reconnection_shift_map(
     if(rs.vertex.instance_id == NULL_INSTANCE_ID || rs.vertex.instance_id == UNCONNECTED_PATH_ID)
         return false;
 
+#ifdef USE_RAY_CONES
     ray_cone_apply_roughness(rs.head_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : to_domain.mat.roughness, to_domain.rc);
+#endif
 
     float regularization = 1;
     resolved_vertex to;
+
     if(!resolve_reconnection_vertex(rs, !cur_to_prev, to_domain, regularization, to))
     {
         // Failed to reconnect, vertex may have ceased to exist.
@@ -1567,6 +1708,7 @@ bool reconnection_shift_map(
 #endif
         );
 
+#ifdef USE_RAY_CONES
         ray_cone rc = to_domain.rc;
         ray_cone_apply_dist(to.dist, rc);
         vec2 puvdx;
@@ -1581,10 +1723,16 @@ bool reconnection_shift_map(
             vd.triangle_uv,
             puvdx, puvdy
         );
+#else
+        vec2 puvdx = vec2(0);
+        vec2 puvdy = vec2(0);
+#endif
 
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd, puvdx, puvdy);
         apply_regularization(regularization, mat);
+#ifdef USE_RAY_CONES
         ray_cone_apply_roughness(rs.tail_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : mat.roughness, rc);
+#endif
 
         mat3 tbn = create_tangent_space(vd.mapped_normal);
         vec3 tview = -to.dir * tbn;
@@ -1592,7 +1740,12 @@ bool reconnection_shift_map(
 
         // Turn radiance into emission
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-        float pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
+        float pdf;
+#ifdef RADIANCE_CASCADES_SET
+        pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
+#else
+        pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
+#endif
         update_regularization(pdf, regularization);
         vec3 bsdf = modulate_bsdf(mat, lobes);
 
@@ -1608,7 +1761,9 @@ bool reconnection_shift_map(
             tail_domain.flat_normal = vd.hard_normal;
             tail_domain.view = to.dir;
             tail_domain.tview = tview;
+#ifdef USE_RAY_CONES
             tail_domain.rc = rc;
+#endif
             update_tail_radiance(tail_domain, regularization, rs.nee_terminal, rs.tail_length, rs.tail_rng_seed, rs.vertex.radiance_estimate, rs.vertex.incident_direction);
         }
 #endif
@@ -1752,7 +1907,9 @@ bool hybrid_shift_map(
     if(!allow_initial_reconnection(to_domain.mat))
         return false;
 
+#ifdef USE_RAY_CONES
     ray_cone_apply_roughness(rs.head_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : to_domain.mat.roughness, to_domain.rc);
+#endif
 
     resolved_vertex to;
     if(!resolve_reconnection_vertex(rs, !cur_to_prev, to_domain, regularization, to))
@@ -1783,6 +1940,7 @@ bool hybrid_shift_map(
 #endif
         );
 
+#ifdef USE_RAY_CONES
         ray_cone rc = to_domain.rc;
         ray_cone_apply_dist(to.dist, rc);
         vec2 puvdx;
@@ -1797,10 +1955,16 @@ bool hybrid_shift_map(
             vd.triangle_uv,
             puvdx, puvdy
         );
+#else
+        vec2 puvdx = vec2(0);
+        vec2 puvdy = vec2(0);
+#endif
 
         sampled_material mat = sample_material(int(rs.vertex.instance_id), vd, puvdx, puvdy);
         apply_regularization(regularization, mat);
+#ifdef USE_RAY_CONES
         ray_cone_apply_roughness(rs.tail_lobe == MATERIAL_LOBE_DIFFUSE ? 1.0f : mat.roughness, rc);
+#endif
         mat3 tbn = create_tangent_space(vd.mapped_normal);
 
         bool allowed = true;
@@ -1812,9 +1976,23 @@ bool hybrid_shift_map(
 
         // Turn radiance into to.emission
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
-        float bsdf_pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
+        float regularization_pdf = ggx_bsdf_lobe_pdf(rs.tail_lobe, incident_dir, tview, mat, lobes);
+        float bsdf_pdf;
+#ifdef RADIANCE_CASCADES_SET
+        bsdf_pdf = radiance_cascades_pdf(
+            vd.pos, tbn[2], -to.dir,
+            rs.vertex.instance_id >= MISS_INSTANCE_ID,
+            mat.roughness,
+            mix(0.04, 1.0, mat.metallic),
+            rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
+            rs.vertex.incident_direction,
+            rs.tail_lobe
+        );
+#else
+        bsdf_pdf = regularization_pdf;
+#endif
         v1_pdf = rs.tail_lobe == MATERIAL_LOBE_ALL ? rs.tail_nee_pdf : bsdf_pdf;
-        update_regularization(bsdf_pdf, regularization);
+        update_regularization(regularization_pdf, regularization);
         vec3 bsdf = modulate_bsdf(mat, lobes);
 
         // Optionally, update radiance based on tail path in the timeframe of
@@ -1829,7 +2007,9 @@ bool hybrid_shift_map(
             tail_domain.flat_normal = vd.hard_normal;
             tail_domain.view = to.dir;
             tail_domain.tview = tview;
+#ifdef USE_RAY_CONES
             tail_domain.rc = rc;
+#endif
             update_tail_radiance(tail_domain, regularization, rs.nee_terminal, rs.tail_length, rs.tail_rng_seed, rs.vertex.radiance_estimate, rs.vertex.incident_direction);
         }
 #endif

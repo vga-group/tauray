@@ -1,0 +1,207 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
+
+//layout(local_size_x = 8, local_size_y = 8) in;
+#if RC_C0_ANGULAR_RESOLUTION == 2
+layout(local_size_x = 16, local_size_y = 2, local_size_z = 2) in;
+#else
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+shared float local_values[4][4][4];
+#endif
+
+
+layout(binding = 0) uniform readonly image2DArray upper_target;
+layout(binding = 1) uniform image2DArray lower_target;
+layout(binding = 2) uniform image2DArray lower_target_visibility;
+layout(binding = 3) uniform readonly image2DArray prev_lower_target;
+layout(binding = 4) uniform readonly image2DArray prev_lower_target_visibility;
+layout(binding = 5, scalar) buffer dispatch_info_buffer
+{
+    uint cascade_end_offset[16];
+    ivec3 probe_indices[];
+} dispatch_info;
+layout(binding = 6) uniform readonly uimage3D occupancy_history;
+layout(binding = 7) uniform writeonly image2DArray final_target;
+
+#include "radiance_cascades.glsl"
+
+layout(push_constant) uniform push_constant_buffer
+{
+    int cascade;
+    int cascade_count;
+    int c0_angular_resolution;
+    float blend_ratio;
+    int cascade_size;
+    int carry_from_previous;
+} pc;
+
+bool get_probe_coordinate(out ivec2 texel_coordinate, out ivec3 probe_coordinate)
+{
+    ivec2 tile_coord = ivec2(gl_LocalInvocationID.yz);
+
+    int resolution = pc.c0_angular_resolution << pc.cascade;
+    int num_tiles_per_probe = resolution * resolution / int(gl_WorkGroupSize.y * gl_WorkGroupSize.z);
+
+    int tile_index = int(gl_GlobalInvocationID.x) % num_tiles_per_probe;
+    int probe_index = int(gl_GlobalInvocationID.x) / num_tiles_per_probe;
+
+    int tile_x_index = tile_index % int(resolution / gl_WorkGroupSize.y);
+    int tile_y_index = tile_index / int(resolution / gl_WorkGroupSize.z);
+
+    texel_coordinate = tile_coord + ivec2(gl_WorkGroupSize.y * tile_x_index, gl_WorkGroupSize.z * tile_y_index);
+
+    uint prev_end = dispatch_info.cascade_end_offset[pc.cascade+1];
+    uint cur_end = dispatch_info.cascade_end_offset[pc.cascade];
+
+    if(pc.cascade+1 >= pc.cascade_count)
+        prev_end = 0;
+
+    if(prev_end + probe_index >= cur_end)
+        return false;
+    probe_coordinate = dispatch_info.probe_indices[prev_end + probe_index];
+    return true;
+}
+
+void main()
+{
+    int lower_angular_resolution = pc.c0_angular_resolution << pc.cascade;
+    //get_cascade_layout_inverse(p, ivec3(pc.cascade_size), lower_angular_resolution, lower_probe_index, lower_map_texel);
+
+    ivec3 lower_probe_index;
+    ivec2 lower_map_texel;
+    if(!get_probe_coordinate(lower_map_texel, lower_probe_index))
+        return;
+    ivec3 p = get_cascade_layout(ivec3(pc.cascade_size), lower_angular_resolution, lower_probe_index, lower_map_texel);
+
+    ivec3 upper_probe_index = lower_probe_index / 2;
+    ivec2 upper_map_base_texel = lower_map_texel * 2;
+
+    int upper_cascade_size = pc.cascade_size/2;
+    int upper_probe_resolution = lower_angular_resolution*2;
+
+    ivec3 q0 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel);
+    ivec3 q1 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(1,0));
+    ivec3 q2 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(0,1));
+    ivec3 q3 = get_cascade_layout(ivec3(upper_cascade_size), upper_probe_resolution, upper_probe_index, upper_map_base_texel+ivec2(1,1));
+
+    float r0 = imageLoad(upper_target, q0).r;
+    float r1 = imageLoad(upper_target, q1).r;
+    float r2 = imageLoad(upper_target, q2).r;
+    float r3 = imageLoad(upper_target, q3).r;
+
+    float dst_col = imageLoad(lower_target, p).r;
+    float dst_vis = imageLoad(lower_target_visibility, p).r;
+    float prev_col = imageLoad(prev_lower_target, p).r;
+    float prev_vis = imageLoad(prev_lower_target_visibility, p).r;
+    uint history_frames = imageLoad(occupancy_history, lower_probe_index).r;
+
+    float blend_ratio = max(1.0f / max(history_frames+1u, 1u), pc.blend_ratio);
+
+    if (history_frames <= 1)
+    {
+        prev_col = 0.0f;
+        prev_vis = 0.0f;
+
+        float sum_weight = 0;
+
+        const ivec3[6] neighbor_probes = ivec3[6](
+            ivec3(-1,0,0),
+            ivec3(1,0,0),
+            ivec3(0,-1,0),
+            ivec3(0,1,0),
+            ivec3(0,0,-1),
+            ivec3(0,0,1)
+        );
+
+        [[unroll]] for(int i = 0; i < 6; ++i)
+        {
+            ivec3 neighbor_index = neighbor_probes[i] + lower_probe_index;
+            float neighbor_weight = float(imageLoad(occupancy_history, neighbor_index).r)-1;
+            ivec3 q = get_cascade_layout(ivec3(pc.cascade_size), lower_angular_resolution, neighbor_index, lower_map_texel);
+            float neighbor_col = imageLoad(prev_lower_target, q).r;
+            float neighbor_vis = imageLoad(prev_lower_target_visibility, q).r;
+            if (neighbor_weight > 0)
+            {
+                sum_weight += neighbor_weight;
+                prev_col += neighbor_col * neighbor_weight;
+                prev_vis += neighbor_vis * neighbor_weight;
+            }
+        }
+
+        if (sum_weight > 0)
+        {
+            float denom = 1.0f / sum_weight;
+            prev_col *= denom;
+            prev_vis *= denom;
+        }
+    }
+
+    dst_vis = mix(prev_vis, dst_vis, blend_ratio);
+
+    if(pc.carry_from_previous != 0)
+    {
+#ifdef RC_DEFENSIVE
+        float rmax = max(r0, max(r1, max(r2,r3)));
+        vec4 r = sort_vec4(vec4(r0,r1,r2,r3));
+        float o = 1.0f - dst_vis;
+        //float src_contrib = 
+        //    (o > 0.75 ? r.x * 0.25 : 0) +
+        //    (o > 0.50 ? r.y * 0.25 : 0) +
+        //    (o > 0.25 ? r.z * 0.25 : 0) +
+        //    (o > 0.00 ? r.w * 0.25 : 0);
+        float src_contrib = dot(r, clamp(o-vec4(0.75,0.50,0.25,0.00), vec4(0), vec4(0.25)));
+#else
+        float src_contrib = (r0+r1+r2+r3) * 0.25f * (1.0f - dst_vis);
+#endif
+        dst_col += src_contrib;
+    }
+
+    // This is used to bias result towards the larger value, which reduces
+    // underestimation and thus fireflies. Big exponents increase overall
+    // noise level, though.
+#ifdef BIAS_EXPONENT
+    const float biasexponent = BIAS_EXPONENT;
+    dst_col = pow(mix(pow(prev_col, biasexponent), pow(dst_col, biasexponent), blend_ratio), 1.0/biasexponent);
+#else
+    // TODO: to try: compute both max and avg, then in sampling, use
+    // 2*max-max*max/avg. That can also be precomputed into yet another
+    // texture if necessary.
+    dst_col = max(prev_col, dst_col);
+#endif
+
+    local_values[gl_LocalInvocationID.x][gl_LocalInvocationID.y][gl_LocalInvocationID.z] = dst_col;
+
+    barrier();
+
+    float nonzero_col = dst_col;
+
+    float sum = 0.0f;
+    if (pc.cascade == 0)
+    {
+        for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            sum += local_values[gl_LocalInvocationID.x][i][j];
+        sum /= 4*4;
+    }
+    else
+    {
+        ivec2 base = ivec2(gl_LocalInvocationID.yz)/2*2;
+        for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            sum += local_values[gl_LocalInvocationID.x][base.x+i][base.y+j];
+        sum /= 2*2;
+    }
+
+    nonzero_col += sum * 0.05;
+    if (nonzero_col <= 0.0f)
+        nonzero_col = 0.01f;
+
+    imageStore(lower_target, p, vec4(dst_col));
+    imageStore(lower_target_visibility, p, vec4(dst_vis));
+    imageStore(final_target, p, vec4(nonzero_col));
+}

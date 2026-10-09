@@ -20,17 +20,7 @@ struct push_constants
     float sigma_l;
     float temporal_alpha_color;
     float temporal_alpha_moments;
-    uint input_mask;
 };
-
-uint get_input_mask(gbuffer_target& input_features)
-{
-    uint mask = 0;
-    if(input_features.temporal_gradient) mask |= 1<<0;
-    if(input_features.confidence) mask |= 1<<1;
-    if(input_features.curvature) mask |= 1<<2;
-    return mask;
-}
 
 static_assert(sizeof(push_constants) <= 128);
 }
@@ -76,30 +66,38 @@ svgf_stage::svgf_stage(
     scene_state_counter(0),
     uniforms(dev, sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer)
 {
+    std::map<std::string, std::string> defines;
+    if (opt.color_buffer_contains_direct_light) defines["COLOR_IS_ADDITIVE"] = "";
+
+    if(input_features.temporal_gradient)
+        defines["INPUT_TEMPORAL_GRADIENTS"];
+    if(input_features.confidence)
+        defines["INPUT_CONFIDENCE"];
+    if(input_features.curvature)
+        defines["INPUT_CURVATURE"];
+
     {
-        std::map<std::string, std::string> defines;
-        if (opt.color_buffer_contains_direct_light) defines["COLOR_IS_ADDITIVE"] = "";
         shader_source src("shader/svgf_atrous.comp", defines);
         atrous_desc.add(src);
         atrous_comp.init(src, { &atrous_desc,  &ss.get_descriptors() });
     }
     {
-        shader_source src("shader/svgf_temporal.comp");
+        shader_source src("shader/svgf_temporal.comp", defines);
         temporal_desc.add(src);
         temporal_comp.init(src, {&temporal_desc, &ss.get_descriptors()});
     }
     {
-        shader_source src("shader/svgf_firefly_suppression.comp");
+        shader_source src("shader/svgf_firefly_suppression.comp", defines);
         firefly_suppression_desc.add(src);
         firefly_suppression_comp.init(src, {&firefly_suppression_desc});
     }
     {
-        shader_source src("shader/svgf_disocclusion_fix.comp");
+        shader_source src("shader/svgf_disocclusion_fix.comp", defines);
         disocclusion_fix_desc.add(src);
         disocclusion_fix_comp.init(src, { &disocclusion_fix_desc, &ss.get_descriptors() });
     }
     {
-        shader_source src("shader/svgf_hit_dist_reconstruction.comp");
+        shader_source src("shader/svgf_hit_dist_reconstruction.comp", defines);
         hit_dist_reconstruction_desc.add(src);
         hit_dist_reconstruction_comp.init(src, { &hit_dist_reconstruction_desc, &ss.get_descriptors() });
     }
@@ -170,6 +168,7 @@ void svgf_stage::record_command_buffers()
         svgf_timer.begin(cb, dev->id, i);
 
         uniforms.upload(dev->id, i, cb);
+        full_barrier(cb);
 
         scene* cur_scene = ss->get_scene();
         std::vector<entity> cameras = get_sorted_cameras(*cur_scene);
@@ -185,7 +184,6 @@ void svgf_stage::record_command_buffers()
         control.sigma_n = opt.sigma_n;
         control.temporal_alpha_color = opt.temporal_alpha_color;
         control.temporal_alpha_moments = opt.temporal_alpha_moments;
-        control.input_mask = get_input_mask(input_features);
 
         vk::MemoryBarrier barrier{
             vk::AccessFlagBits::eShaderWrite,
@@ -234,10 +232,13 @@ void svgf_stage::record_command_buffers()
         temporal_desc.set_image(dev->id, "out_specular_hit_distance", { {{}, specular_hit_distance[1 - i].view, vk::ImageLayout::eGeneral}});
         temporal_desc.set_image(dev->id, "previous_material", { {my_sampler.get_sampler(dev->id), prev_features.material.view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_buffer("uniforms_buffer", uniforms);
-        temporal_desc.set_image(dev->id, "in_confidence", { {{}, input_features.confidence.view, vk::ImageLayout::eGeneral} });
+        if(input_features.confidence)
+            temporal_desc.set_image(dev->id, "in_confidence", { {{}, input_features.confidence.view, vk::ImageLayout::eGeneral} });
         temporal_desc.set_image(dev->id, "in_flat_normal", { {{}, input_features.flat_normal.view, vk::ImageLayout::eGeneral} });
-        temporal_desc.set_image(dev->id, "in_temporal_gradient", { {my_sampler.get_sampler(dev->id), input_features.temporal_gradient.view, vk::ImageLayout::eGeneral} });
-        temporal_desc.set_image(dev->id, "in_curvature", {{{}, input_features.curvature.view, vk::ImageLayout::eGeneral}});
+        if(input_features.temporal_gradient)
+            temporal_desc.set_image(dev->id, "in_temporal_gradient", { {my_sampler.get_sampler(dev->id), input_features.temporal_gradient.view, vk::ImageLayout::eGeneral} });
+        if(input_features.curvature)
+            temporal_desc.set_image(dev->id, "in_curvature", {{{}, input_features.curvature.view, vk::ImageLayout::eGeneral}});
         temporal_comp.push_descriptors(cb, temporal_desc, 0);
         temporal_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);
         temporal_comp.push_constants(cb, control);
@@ -327,7 +328,8 @@ void svgf_stage::record_command_buffers()
             atrous_desc.set_buffer("uniforms_buffer", uniforms);
             atrous_desc.set_image(dev->id, "specular_hit_dist", { {{}, specular_hit_distance[1 - i].view, vk::ImageLayout::eGeneral}});
             atrous_desc.set_image(dev->id, "history_length", { {{}, history_length[1 - i].view, vk::ImageLayout::eGeneral} });
-            atrous_desc.set_image(dev->id, "temporal_gradient", { {{}, input_features.temporal_gradient.view, vk::ImageLayout::eGeneral}});
+            if(input_features.temporal_gradient)
+                atrous_desc.set_image(dev->id, "temporal_gradient", { {{}, input_features.temporal_gradient.view, vk::ImageLayout::eGeneral}});
 
             atrous_comp.push_descriptors(cb, atrous_desc, 0);
             atrous_comp.set_descriptors(cb, ss->get_descriptors(), 0, 1);

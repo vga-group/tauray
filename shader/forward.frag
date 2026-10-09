@@ -162,6 +162,7 @@ void main()
 {
     vertex_data v = get_vertex_data();
     sampled_material mat = sample_material(v);
+    mat.albedo.a = mat.albedo.a < 0.5 ? 0.0 : 1.0;
     vec3 view = normalize(v.pos - camera.pairs[control.base_camera_index + gl_ViewIndex].current.origin.xyz);
     mat3 tbn = create_tangent_space(v.mapped_normal);
     vec3 shading_view = -view * tbn;

@@ -42,6 +42,11 @@ vec4 generate_single_uniform_random(inout uvec4 seed)
     return vec4(pcg4d(seed)) * INV_UINT32_MAX;
 }
 
+float generate_single_uniform_random_fast(inout uint seed)
+{
+    return float(lcg(seed)) * INV_UINT32_MAX;
+}
+
 // Gives a random color, useful for debugging.
 vec3 debug_color(uvec4 param)
 {

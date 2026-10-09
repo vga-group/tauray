@@ -4,6 +4,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
 
 // Flags:
 // USE_NEXT_EVENT_ESTIMATION:
@@ -60,6 +61,13 @@
 #define REFLECTION_TARGET_BINDING 11
 #endif
 
+#ifdef USE_EMISSION_TARGET
+#define EMISSION_TARGET_BINDING 12
+#endif
+
+#define printf debugPrintfEXT
+//#undef RADIANCE_CASCADES_SET
+
 layout(push_constant, scalar) uniform push_constant_buffer
 {
     uint samples;
@@ -76,11 +84,14 @@ layout(push_constant, scalar) uniform push_constant_buffer
 
 void main()
 {
-    pt_vertex_data first_hit_vertex;
-    sampled_material first_hit_material;
-    vec3 sum_color = vec3(0,0,0);
+
+#ifdef DEMODULATED_OUTPUT
     vec4 sum_diffuse = vec4(0,0,0,0);
     vec4 sum_reflection = vec4(0,0,0,0);
+#else
+    vec3 sum_color = vec3(0,0,0);
+#endif
+
 #if SAMPLES_PER_PASS != 1
     for(int i = 0; i < SAMPLES_PER_PASS; ++i)
 #else
@@ -99,29 +110,24 @@ void main()
         vec3 dir;
         get_world_camera_ray(lsampler, origin, dir);
 
-        vec4 diffuse, reflection;
         evaluate_ray(
             lsampler, origin, dir,
-            diffuse, reflection,
-            first_hit_vertex, first_hit_material
+#ifdef DEMODULATED_OUTPUT
+            sum_diffuse,
+            sum_reflection,
+#else
+            sum_color,
+#endif
+            i == 0
         );
-#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
-        vec3 old_color = first_hit_material.albedo.rgb;
-        first_hit_material.albedo.rgb = vec3(1);
-#endif
-        sum_color += first_hit_material.emission + modulate_color(first_hit_material, diffuse.rgb, reflection.rgb);
-        sum_diffuse += diffuse;
-        sum_reflection += reflection;
-#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
-        first_hit_material.albedo.rgb = old_color;
-#endif
     }
 
-    write_all_outputs(
-        sum_color.rgb / SAMPLES_PER_PASS,
-        sum_diffuse.rgba / SAMPLES_PER_PASS,
-        sum_reflection.rgba / SAMPLES_PER_PASS,
-        first_hit_vertex,
-        first_hit_material
+    write_color_outputs(
+#ifdef DEMODULATED_OUTPUT
+        sum_diffuse / SAMPLES_PER_PASS,
+        sum_reflection / SAMPLES_PER_PASS
+#else
+        sum_color.rgb / SAMPLES_PER_PASS
+#endif
     );
 }

@@ -1,6 +1,7 @@
 #include "restir_renderer.hh"
 #include "vulkan/vulkan_format_traits.hpp"
 #include "log.hh"
+#include "misc.hh"
 
 namespace tr
 {
@@ -26,6 +27,9 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         this->opt.restir_options.sampling_weights.point_lights = 0;
     }
 
+    if(this->opt.rc_options && this->opt.rc_options->use_raster_di)
+        this->opt.scene_options.shadow_mapping = true;
+
     if(!this->opt.restir_options.assume_unchanged_acceleration_structures)
         this->opt.scene_options.track_prev_tlas = true;
 
@@ -38,11 +42,58 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         this->opt.scene_options.track_prev_tlas = false;
     }
 
+    if(this->opt.rc_options.has_value())
+    {
+        this->opt.rc_options.reset();
+        /*
+        std::vector<uint8_t> distance_field_data = load_binary_file(opt.distance_field_path);
+        uint8_t* dfdata = distance_field_data.data();
+        memcpy(&this->opt.rc_options->volume.min, dfdata, sizeof(float)*3);
+        dfdata += sizeof(float)*3;
+        memcpy(&this->opt.rc_options->volume.max, dfdata, sizeof(float)*3);
+        dfdata += sizeof(float)*3;
+        vec3 resolution;
+        memcpy(&resolution, dfdata, sizeof(float)*3);
+        dfdata += sizeof(float)*3;
+
+        printf("Distance field:\n");
+        printf("    Resolution: %u x %u x %u\n", uint(resolution.x), uint(resolution.y), uint(resolution.z));
+        printf("    Range: [%f, %f, %f] - [%f, %f, %f]\n",
+            this->opt.rc_options->volume.min.x,
+            this->opt.rc_options->volume.min.y,
+            this->opt.rc_options->volume.min.z,
+            this->opt.rc_options->volume.max.x,
+            this->opt.rc_options->volume.max.y,
+            this->opt.rc_options->volume.max.z
+        );
+
+        int max_res = round(log2(resolution.x));
+        if (this->opt.rc_options->log2_resolution > max_res)
+        {
+            TR_WARN("Cannot have a higher c0 density than distance field!");
+            this->opt.rc_options->log2_resolution = max_res;
+        }
+
+        distance_field.emplace(texture(
+            display_device,
+            uvec3(resolution),
+            vk::Format::eR32Sfloat,
+            distance_field_data.data()+distance_field_data.size()-dfdata,
+            dfdata,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage,
+            vk::ImageLayout::eGeneral,
+            true
+        ));
+        this->opt.rc_options->distance_field = &distance_field.value();
+        */
+    }
+
     bool has_taa = this->opt.taa_options.has_value();
 
     gbuffer_spec gs;
     gs.color_present = true;
-    if(opt.svgf_options)
+    if(opt.svgf_options || opt.bmfr_options)
     {
         gs.diffuse_present = true;
         gs.reflection_present = true;
@@ -89,8 +140,10 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         per_device[i].prev_gbuffer.reset(devices[i], ctx.get_size(), view_count);
         per_device[i].prev_gbuffer.add(gs, vk::ImageLayout::eGeneral);
 
-        if(this->opt.restir_options.shade_all_explicit_lights)
+        if(this->opt.restir_options.shade_all_explicit_lights || (this->opt.rc_options && this->opt.rc_options->use_raster_di))
             per_device[i].sms.reset(new shadow_map_stage(devices[i], *scene_update, shadow_map_stage::options{}));
+        if(this->opt.rc_options)
+            per_device[i].rc.reset(new radiance_cascades_stage(devices[i], *scene_update, *this->opt.rc_options));
     }
     if(this->opt.restir_options.shade_all_explicit_lights && this->opt.restir_options.shade_fake_indirect)
         sh.reset(new sh_renderer(dev, *scene_update, this->opt.sh_options));
@@ -153,10 +206,12 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
         cur.color.layout = vk::ImageLayout::eGeneral;
 
         this->opt.restir_options.max_bounces = max(this->opt.restir_options.max_bounces, 1u);
-        this->opt.restir_options.demodulated_output = opt.svgf_options.has_value();
+        this->opt.restir_options.demodulated_output = opt.svgf_options.has_value() || opt.bmfr_options.has_value();
         this->opt.restir_options.camera_index = i;
         this->opt.restir_options.expect_taa_jitter = has_taa;
         //this->opt.restir_options.shift_map = restir_stage::RANDOM_REPLAY_SHIFT;
+        if(data.rc)
+            this->opt.restir_options.rc_source = data.rc.get();
         pv.restir.emplace(devices[device_index], *scene_update, cur, prev, this->opt.restir_options);
 
         texture_view_params view = {
@@ -179,6 +234,18 @@ restir_renderer::restir_renderer(context& ctx, const options& opt)
                 cur,
                 prev,
                 *this->opt.svgf_options
+            );
+        }
+        else if(opt.bmfr_options)
+        {
+            cur = data.current_gbuffer.get_render_target(devices[device_index].id, view);
+            prev = data.prev_gbuffer.get_render_target(devices[device_index].id, view);
+
+            pv.bmfr.emplace(
+                devices[device_index],
+                cur,
+                prev,
+                *this->opt.bmfr_options
             );
         }
 
@@ -355,8 +422,10 @@ void restir_renderer::render()
 
     for(auto& pd: per_device)
     {
-        if(opt.restir_options.shade_all_explicit_lights)
+        if(pd.sms)
             deps = pd.sms->run(deps);
+        if(pd.rc)
+            deps = pd.rc->run(deps);
     }
 
     if(sh) deps = sh->render(deps);
@@ -367,6 +436,7 @@ void restir_renderer::render()
         deps = pv.gbuffer_rasterizer->run(deps);
         deps = pv.restir->run(deps);
         if(pv.svgf) deps = pv.svgf->run(deps);
+        else if(pv.bmfr) deps = pv.bmfr->run(deps);
         deps = pv.tonemap->run(deps);
         if(pv.taa) deps = pv.taa->run(deps);
         deps = pv.copy->run(deps);

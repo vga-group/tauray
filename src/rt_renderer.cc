@@ -98,11 +98,12 @@ void rt_renderer<Pipeline>::render()
     for(size_t i = 0; i < devices.size(); ++i)
     {
         dependencies device_deps = common_deps;
-        if(i == ctx->get_display_device().id)
-            device_deps.concat(post_processing->get_gbuffer_write_dependencies());
 
         if(gbuffer_rasterizer && raster_before_rt)
             device_deps = gbuffer_rasterizer->run(device_deps);
+
+        if(per_device[i].light_tree)
+            device_deps = per_device[i].light_tree->run(device_deps);
 
         device_deps = per_device[i].ray_tracer->run(device_deps);
         last_frame_deps.concat(device_deps);
@@ -116,8 +117,6 @@ void rt_renderer<Pipeline>::render()
             display_deps.concat(device_deps, i);
         }
     }
-
-    display_deps.concat(post_processing->get_gbuffer_write_dependencies());
 
     if(stitch)
     {
@@ -267,14 +266,28 @@ void rt_renderer<Pipeline>::init_resources()
         if(use_raster_gbuffer)
         {
             gbuffer_target limited_target;
-            limited_target.color = transfer_target.color;
-            limited_target.diffuse = transfer_target.diffuse;
-            limited_target.reflection = transfer_target.reflection;
+            if(transfer_target.diffuse || transfer_target.reflection)
+            {
+                limited_target.emission = transfer_target.color;
+                limited_target.diffuse = transfer_target.diffuse;
+                limited_target.reflection = transfer_target.reflection;
+            }
+            else
+            {
+                limited_target.color = transfer_target.color;
+            }
             transfer_target = limited_target;
         }
         transfer_target.set_layout(is_display_device ?
             vk::ImageLayout::eGeneral : vk::ImageLayout::eTransferSrcOptimal
         );
+
+        if (opt.light_tree.has_value())
+        {
+            r.light_tree.reset(new light_tree_stage(d, *scene_update, *opt.light_tree));
+            if constexpr (std::is_same_v<Pipeline, path_tracer_stage>)
+                rt_opt.light_tree_source = r.light_tree.get();
+        }
 
         r.ray_tracer.reset(new Pipeline(d, *scene_update, transfer_target, rt_opt));
 

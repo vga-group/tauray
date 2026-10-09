@@ -1,0 +1,109 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_control_flow_attributes : enable
+
+#include "scene.glsl"
+#include "light_tree_data.glsl"
+
+layout(binding = 0, set = 0) writeonly buffer light_link_buffer
+{
+    light_link array[];
+} light_links;
+
+layout(binding = 1, set = 0) writeonly buffer light_tree_leaf_buffer
+{
+    light_tree_node array[];
+} leaf_data;
+
+layout(binding = 2, set = 0) writeonly buffer sort_order_buffer
+{
+    uvec2 pairs[];
+} sort_order;
+
+layout(local_size_x = 256) in;
+
+layout(push_constant) uniform push_constant_buffer
+{
+    vec4 bounds_min;
+    vec4 bounds_inv_step;
+    uint output_offset;
+    uint key_shift;
+    uint triangle_count;
+    uint instance_id;
+} pc;
+
+void main()
+{
+    uint primitive = gl_GlobalInvocationID.x;
+    if(primitive < pc.triangle_count)
+    {
+        instance i = instances.o[pc.instance_id];
+
+        uint index0 = indices[nonuniformEXT(pc.instance_id)].i[3*primitive+0];
+        uint index1 = indices[nonuniformEXT(pc.instance_id)].i[3*primitive+1];
+        uint index2 = indices[nonuniformEXT(pc.instance_id)].i[3*primitive+2];
+
+        vertex v0 = vertices[nonuniformEXT(pc.instance_id)].v[index0];
+        vertex v1 = vertices[nonuniformEXT(pc.instance_id)].v[index1];
+        vertex v2 = vertices[nonuniformEXT(pc.instance_id)].v[index2];
+
+#ifdef PRE_TRANSFORMED_VERTICES
+        vec3 pos0 = v0.pos;
+        vec3 pos1 = v1.pos;
+        vec3 pos2 = v2.pos;
+#else
+        vec3 pos0 = (i.model * vec4(v0.pos, 1)).xyz;
+        vec3 pos1 = (i.model * vec4(v1.pos, 1)).xyz;
+        vec3 pos2 = (i.model * vec4(v2.pos, 1)).xyz;
+#endif
+
+        const uint emission_texture = i.mat.emission_tex_id;
+        vec3 emission = i.mat.emission_factor.rgb;
+        if(emission_texture >= 0)
+        {
+            vec2 uv0 = v0.uv;
+            vec2 uv1 = v1.uv;
+            vec2 uv2 = v2.uv;
+
+            vec2 uv = (uv0 + uv1 + uv2) / 3.0f;
+            vec2 grad = max(abs(uv0 - uv), max(abs(uv1 - uv), abs(uv2 - uv)));
+            emission *= textureGrad(textures[nonuniformEXT(emission_texture)], uv, grad, grad).rgb;
+        }
+
+        light_link ll;
+        ll.kind = TRI_LIGHT_KIND;
+        ll.primitive_id = i.light_base_id + primitive;
+        light_links.array[pc.output_offset + primitive] = ll;
+
+        vec3 min_pos = min(pos0, min(pos1, pos2));
+        vec3 max_pos = max(pos0, max(pos1, pos2));
+
+        light_tree_node leaf;
+
+        leaf.center_radius = vec4(
+            (min_pos + max_pos) * 0.5f,
+            distance(min_pos, max_pos) * 0.5f
+        );
+        leaf.radius_brightness = vec4(
+            (max_pos - min_pos) * 0.5f,
+            rgb_to_luminance(emission) * triangle_surface_area(pos0, pos1, pos2)
+        );
+
+        leaf_data.array[pc.output_offset + primitive] = leaf;
+
+        vec3 center = (pos0+pos1+pos2) * (1.0f / 3.0f);
+        ivec3 coord = clamp(
+            ivec3((center - pc.bounds_min.xyz) * pc.bounds_inv_step.xyz),
+            ivec3(0), ivec3(1<<10)-1
+        );
+        uint order = hilbert_encode_3d(coord);
+        //uint order = morton_encode_3d(coord);
+
+        sort_order.pairs[pc.output_offset + primitive] = uvec2(
+            pc.output_offset + primitive,
+            order << pc.key_shift
+        );
+    }
+}

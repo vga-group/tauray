@@ -25,6 +25,11 @@ vec3 environment_map::get_factor() const
     return factor;
 }
 
+double environment_map::get_average_luminance() const
+{
+    return average_luminance;
+}
+
 environment_map::projection environment_map::get_projection() const
 {
     return proj;
@@ -88,7 +93,7 @@ void environment_map::generate_alias_table()
     {
         if(weight > 1.0f)
         {
-            if(i > pixel_count) break;
+            if(i >= pixel_count) break;
             alias_table[i].probability = ldexp(importance[i], 32);
             alias_table[i].alias_id = j;
             weight = (weight + importance[i]) - 1.0f;

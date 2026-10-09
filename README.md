@@ -1,6 +1,13 @@
 Tauray
 =======
 
+> [!NOTE]
+> Tauray is currently "mothballed" and no-one is actively developing the project
+> at this time. Issues and PRs remain open, but are not regularly monitored.
+> Contributions towards keeping the project working on modern operating systems
+> and hardware are welcomed, including build system fixes, validation error
+> fixes and fixes to broken features.
+
 |![Sponza and lots of teapots rendered in Tauray.](docs/images/teapot_sponza.png)                                                                          |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------|
 | The famous "Sponza" scene with teapots. 1920x1080 image (4096 spp, 4 bounces), rendered with Tauray in 15 seconds on a dual-GPU setup with RTX 3090 and RTX 2080 Ti. |
@@ -11,11 +18,11 @@ extension, but comes with a fallback rasterization mode that can be used on devi
 do not have that extension.
 
 Tauray development is led by the [VGA research group](https://webpages.tuni.fi/vga/)
-in Tampere University. The project is described in a conference publication ([DOI link](https://doi.org/10.1145/3550340.3564225)),
-which includes performance benchmarks and more information on Tauray.
-[A pre-print is available.](https://webpages.tuni.fi/vga/publications/Tauray2022.pdf)
+in Tampere University. The project is described in an open-access conference
+publication ([DOI link](https://doi.org/10.1145/3550340.3564225)), which
+includes performance benchmarks and more information on Tauray.
 
-Measurements in the publication are done with the [v1.0.0 release](https://github.com/vga-group/tauray/releases/tag/v1.0.0).
+Measurements in that publication are done with the [v1.0.0 release](https://github.com/vga-group/tauray/releases/tag/v1.0.0).
 For practical purposes however, we recommend always using the latest available
 release instead, as there are bug fixes and additional features included.
 
@@ -31,6 +38,8 @@ separate license text files.
 - Real-time path tracing (`--renderer=path-tracer`)
   - Accumulation mode (`--accumulation`)
   - Denoising (`--denoiser=svgf` or `--denoiser=bmfr`)
+- Radiance Cascade Path Guiding (`--renderer=rc` or `--renderer=rc-restir`)
+  - For the version used in the [RCPG publication](https://doi.org/10.1145/3840291), please see the [`rcpg`](https://github.com/vga-group/tauray/tree/rcpg) branch specifically. The performance of the version in the main branch may not match the paper.
 - ReSTIR DI & PT (`--renderer=restir`)
   - DI is used when (`--max-ray-depth=2`, e.g. single bounce)
   - Supports reconnection shift, random replay shift and hybrid shift
@@ -55,10 +64,10 @@ And more, [see the user manual for details.](docs/tauray_user_manual.pdf)
 Clone the repository recursively with
 `git clone --recursive https://github.com/vga-group/tauray/`.
 
-Tauray has been tested on the Ubuntu 22.04 operating system. Building on Ubuntu
-22.04 can be done as follows:
+Tauray has been tested on the Ubuntu 26.04 operating system. Building on Ubuntu
+26.04 can be done as follows:
 
-1. Install dependencies: `sudo apt install build-essential cmake libsdl2-dev libglm-dev libczmq-dev libnng-dev libcbor-dev vulkan-tools libvulkan-dev vulkan-validationlayers libxcb-glx0-dev glslang-tools libassimp-dev`
+1. Install dependencies: `sudo apt install cmake build-essential spirv-tools-dev libsdl3-dev libvulkan-dev libglm-dev libassimp-dev libczmq-dev libnng-dev libcbor-dev glslang-tools`
 2. `cmake -S . -B build`
 3. `cmake --build build`
 4. `build/tauray my_scene.glb`
@@ -107,8 +116,7 @@ initialization still runs, so please exclude those if possible.
 
 ## Citation
 
-If you use Tauray in a research paper, please cite our paper with the
-format below:
+If you use Tauray in a research paper, please cite our paper with the format below:
 
 ```bibtex
 @inproceedings{Ikkala22,
@@ -120,7 +128,6 @@ format below:
     location={Daegu, Republic of Korea},
     doi={10.1145/3550340.3564225},
     address={New York, NY, USA},
-    publisher={Association for Computing Machinery},
-    url={https://webpages.tuni.fi/vga/publications/Tauray2022.pdf}
+    publisher={Association for Computing Machinery}
 }
 ```

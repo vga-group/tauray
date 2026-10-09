@@ -24,6 +24,8 @@ public:
         pvec4 tangent;
     };
 
+    static_assert(sizeof(vertex) == 48);
+
     // Skeletal animation in Tauray works such that one mesh is the original
     // mesh, from which the animated meshes are continuously generated. Models
     // need to indicate the original mesh where possible. The joints are stored

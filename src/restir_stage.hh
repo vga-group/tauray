@@ -17,6 +17,8 @@ namespace tr
 {
 
 class scene_stage;
+class radiance_cascades_stage;
+class light_tree_stage;
 
 class restir_stage: public single_device_stage
 {
@@ -172,6 +174,11 @@ public:
         int camera_index = 0;
 
         bool expect_taa_jitter = false;
+
+        bool use_ray_cones = true;
+
+        light_tree_stage* light_tree_source = nullptr;
+        radiance_cascades_stage* rc_source = nullptr;
     };
 
     // TODO: Doesn't expect multi-view targets for now.

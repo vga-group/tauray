@@ -25,6 +25,32 @@
 //
 // Optimization tip: precalculate ETA, refactor transmission equations to use
 // ETA alone instead of both ior_in and ior_out.
+//
+// This separation to the inner and outer parts only exists for reuse in path
+// tracing code.
+
+void diffuse_brdf(vec3 out_dir, inout bsdf_lobes bsdf)
+{
+    bsdf.diffuse += max(out_dir.z, 0.0f) / M_PI;
+}
+
+float diffuse_brdf_pdf(vec3 out_dir, inout bsdf_lobes bsdf)
+{
+    float pdf = max(out_dir.z, 0.0f) / M_PI;
+    bsdf.diffuse += pdf;
+    return pdf;
+}
+
+void diffuse_brdf_sample(
+    vec4 uniform_random,
+    out vec3 out_dir,
+    inout bsdf_lobes bsdf,
+    out float pdf
+){
+    out_dir = sample_cosine_hemisphere(uniform_random.xy);
+    pdf = max(out_dir.z, 0.0f) / M_PI;
+    bsdf.diffuse += pdf;
+}
 
 // Also known as F
 float ggx_fresnel_schlick(float cos_d, float f0)
@@ -118,6 +144,43 @@ float ggx_distribution(float h_dot_n, float a)
     return a2 / (M_PI * denom * denom);
 }
 
+vec3 ggx_brdf_fast(
+    vec3 out_dir,
+    vec3 view_dir,
+    vec3 normal,
+    vec3 albedo,
+    float roughness,
+    float metallic
+){
+    float f0 = mix(0.04, 1.0, metallic);
+
+    vec3 h = normalize(view_dir + out_dir);
+    float cos_h = dot(normal, h);
+    float cos_d = dot(view_dir, h);
+
+    float fresnel = ggx_fresnel_schlick(cos_d, f0);
+    float distribution = ggx_distribution(cos_h, roughness);
+
+    float cos_l = dot(normal, out_dir);
+    float cos_v = dot(normal, view_dir);
+
+    float geometry = ggx_masking_shadowing_predivided(
+        cos_v, cos_d, cos_l, cos_d, roughness);
+
+    // This is not strictly part of the GGX brdf. It's an addition to use the
+    // non-transmissive part that isn't reflected for diffuse lighting.
+    float kd = (1.0f - fresnel) * (1.0f - metallic);
+
+    cos_l = max(cos_l, 0.0f);
+
+    float ref = geometry * distribution * cos_l;
+    float diffuse = kd * cos_l * (1.0 / M_PI);
+    float dielectric_reflection = fresnel * ref * (1.0f - metallic);
+    float metallic_reflection = ref * metallic;
+
+    return albedo * (metallic_reflection + diffuse) + dielectric_reflection;
+}
+
 // This separation to the inner and outer parts only exists for reuse in path
 // tracing code.
 void ggx_brdf_inner(
@@ -168,6 +231,9 @@ void ggx_bsdf(
     sampled_material mat,
     inout bsdf_lobes bsdf
 ){
+#if 0
+    diffuse_brdf_pdf(out_dir, bsdf);
+#else
     float cos_l = out_dir.z; // dot(normal, out_dir)
     float cos_v = view_dir.z; // dot(normal, view_dir)
 
@@ -206,6 +272,7 @@ void ggx_bsdf(
         // source is inside the volume...
         bsdf.transmission += -cos_l * abs(cos_d * cos_o) * mat.transmittance * (1.0f - mat.metallic) * (1.0f - fresnel) * geometry * distribution / (denom * denom);
     }
+#endif
 }
 
 // Eric Heitz. A Simpler and Exact Sampling Routine for the GGX Distribution of
@@ -382,9 +449,13 @@ void ggx_bsdf_sample(
     inout bsdf_lobes bsdf,
     out float pdf
 ){
+#if 0
+    diffuse_brdf_sample(uniform_random, out_dir, bsdf, pdf);
+#else
     uint lobe_index;
     float mis_pdf;
     ggx_bsdf_sample_core(uniform_random, view_dir, mat, out_dir, bsdf, true, pdf, mis_pdf, lobe_index);
+#endif
 }
 
 void ggx_bsdf_sample_lobe(
@@ -496,7 +567,11 @@ float ggx_bsdf_pdf(
     sampled_material mat,
     inout bsdf_lobes bsdf
 ){
+#if 0
+    return diffuse_brdf_pdf(out_dir, bsdf);
+#else
     return ggx_bsdf_lobe_pdf(MATERIAL_LOBE_ALL, out_dir, view_dir, mat, bsdf);
+#endif
 }
 
 void material_bsdf_sample(

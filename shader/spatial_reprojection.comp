@@ -18,9 +18,9 @@ layout(push_constant) uniform push_constant_buffer
     uint source_count;
 } control;
 
-layout(binding = 0, rgba16f) uniform image2DArray color_tex;
-layout(binding = 1, rg16_snorm) uniform readonly image2DArray normal_tex;
-layout(binding = 2, rgba32f) uniform readonly image2DArray position_tex;
+layout(binding = 0) uniform image2DArray color_tex;
+layout(binding = 1) uniform readonly image2DArray normal_tex;
+layout(binding = 2) uniform readonly image2DArray position_tex;
 
 layout(binding = 3) buffer camera_data_buffer
 {

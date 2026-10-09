@@ -1,6 +1,7 @@
 #include "tauray.hh"
 #include <iostream>
 #include <fstream>
+#include <cstring>
 
 int main(int, char** argv) try
 {
@@ -25,13 +26,21 @@ int main(int, char** argv) try
         tr::log_output_streams[(uint32_t)tr::log_type::TIMING] = &timing_output_file.value();
     }
 
+    if (opt.auto_spp > 0.0f)
+    {
+        tr::options tmp_opt = opt;
+        std::unique_ptr<tr::context> ctx(tr::create_context(tmp_opt));
+        tr::scene_data sd = tr::load_scenes(*ctx, tmp_opt);
+        tr::search_matching_spp(*ctx, sd, tmp_opt, tmp_opt.auto_spp);
+        opt.samples_per_pixel = tmp_opt.samples_per_pixel;
+    }
+
     std::unique_ptr<tr::context> ctx(tr::create_context(opt));
 
     tr::scene_data sd = tr::load_scenes(*ctx, opt);
 
     tr::run(*ctx, sd, opt);
-
-    return 0;
+    return opt.samples_per_pixel;
 }
 catch (std::runtime_error& e)
 {

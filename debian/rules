@@ -1,6 +1,0 @@
-#!/usr/bin/make -f
-# debian/rules
-# -*- makefile -*-
-
-%:
-	dh $@

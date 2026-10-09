@@ -2,10 +2,7 @@
 #include <glslang/Public/ShaderLang.h>
 #include <SPIRV/GlslangToSpv.h>
 #include <StandAlone/DirStackFileIncluder.h>
-
-// Yeah, I know this is horribly ugly. It's just how we get
-// DefaultTBuiltInResource.
-#include <StandAlone/ResourceLimits.cpp>
+#include <glslang/Public/ResourceLimits.h>
 #include "spirv_reflect.h"
 
 #include <filesystem>
@@ -104,6 +101,8 @@ shader_source::shader_source(
 
     // Splice defines into the source
     std::string definition_src = generate_definition_src(defines);
+    //definition_src += "#extension GL_GOOGLE_cpp_style_line_directive : enable\n";
+    //definition_src += "#line 1 \"" + path + "\"\n";
 
     size_t offset = src.find("#version");
     if(offset == std::string::npos) src = definition_src + src;
@@ -123,20 +122,23 @@ shader_source::shader_source(
         glslang::TShader shader(type);
         const char* c_str = src.c_str();
         shader.setStrings(&c_str, 1);
+        shader.setPreamble(
+            "#extension GL_EXT_shader_image_load_formatted : require\n"
+        );
         shader.setEnvInput(glslang::EShSourceGlsl, type, glslang::EShClientVulkan, 100);
         shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
         shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_5);
 
-        TBuiltInResource resources = glslang::DefaultTBuiltInResource;
+        const TBuiltInResource* resources = GetDefaultResources();
 
         EShMessages messages = (EShMessages)(EShMsgSpvRules|EShMsgVulkanRules);
 
         // Preprocessing
         DirStackFileIncluder includer;
-        includer.pushExternalLocalDirectory(dir_path);
+        includer.pushExternalDirectory(dir_path);
 
         // Compiling
-        if(!shader.parse(&resources, 100, ENoProfile, false, false, messages, includer))
+        if(!shader.parse(resources, 100, ENoProfile, false, false, messages, includer))
             throw std::runtime_error(
                 "Failed to compile " + path + ": " + shader.getInfoLog()
             );
@@ -152,6 +154,7 @@ shader_source::shader_source(
         spv::SpvBuildLogger logger;
         glslang::SpvOptions options;
         options.generateDebugInfo = true;
+        options.disableOptimizer = false;
         glslang::GlslangToSpv(
             *program.getIntermediate(type), data, &logger, &options
         );
@@ -242,6 +245,7 @@ get_push_constant_ranges(const raster_shader_sources& src)
     std::vector<vk::PushConstantRange> ranges;
     append_shader_pc_ranges(ranges, src.vert);
     append_shader_pc_ranges(ranges, src.frag);
+    append_shader_pc_ranges(ranges, src.geom);
     return ranges;
 }
 

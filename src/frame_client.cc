@@ -20,22 +20,22 @@ void upload_texture(nng_msg* msg, SDL_Texture* tex, int width, int height)
 
 void frame_client(const options& opt)
 {
-    SDL_Init(SDL_INIT_EVENTS|SDL_INIT_VIDEO);
+    if(!SDL_Init(SDL_INIT_EVENTS|SDL_INIT_VIDEO))
+        throw std::runtime_error(SDL_GetError());
 
     uint32_t width = opt.width;
     uint32_t height = opt.height;
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
     SDL_Window* win = SDL_CreateWindow(
-        "Tauray", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+        "Tauray",
         opt.width, opt.height,
-        (opt.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0)
+        (opt.fullscreen ? SDL_WINDOW_FULLSCREEN : 0)
     );
-    SDL_Renderer* ren = SDL_CreateRenderer(
-        win, -1, SDL_RENDERER_ACCELERATED
-    );
-    SDL_SetRelativeMouseMode((SDL_bool)true);
-    SDL_SetWindowGrab(win, (SDL_bool)true);
-    SDL_ShowCursor(SDL_DISABLE);
+    SDL_Renderer* ren = SDL_CreateRenderer(win, nullptr);
+    SDL_SetDefaultTextureScaleMode(ren, SDL_SCALEMODE_LINEAR);
+    SDL_SetWindowRelativeMouseMode(win, true);
+    //SDL_SetWindowKeyboardGrab(win, true);
+    SDL_SetWindowMouseGrab(win, true);
+    SDL_HideCursor();
 
     SDL_Texture* tex = SDL_CreateTexture(
         ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, opt.width, opt.height
@@ -56,11 +56,11 @@ void frame_client(const options& opt)
         SDL_Event event;
         while(SDL_PollEvent(&event)) switch(event.type)
         {
-        case SDL_QUIT:
+        case SDL_EVENT_QUIT:
             running = false;
             break;
-        case SDL_KEYDOWN:
-            if(event.key.keysym.sym == SDLK_ESCAPE)
+        case SDL_EVENT_KEY_DOWN:
+            if(event.key.key == SDLK_ESCAPE)
             {
                 running = false;
                 break;
@@ -115,7 +115,7 @@ void frame_client(const options& opt)
 
                 upload_texture(msg, tex, width, height);
 
-                SDL_RenderCopy(ren, tex, nullptr, nullptr);
+                SDL_RenderTexture(ren, tex, nullptr, nullptr);
 
                 SDL_RenderPresent(ren);
             }

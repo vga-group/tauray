@@ -2,8 +2,7 @@
 #extension GL_EXT_ray_tracing : require
 #extension GL_GOOGLE_include_directive : enable
 
-#define PAYLOAD_IN
-#include "rt_common_payload.glsl"
+layout(location = 1) rayPayloadInEXT float shadow_visibility;
 
 void main()
 {

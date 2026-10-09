@@ -1,0 +1,382 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_ray_query : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_ray_flags_primitive_culling : enable
+
+//layout(local_size_x = 8, local_size_y = 8) in;
+#if RC_C0_ANGULAR_RESOLUTION == 2
+layout(local_size_x = 16, local_size_y = 2, local_size_z = 2) in;
+#else
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+#endif
+
+layout(binding = 0) uniform writeonly image2DArray cascade_target;
+layout(binding = 1) uniform writeonly image2DArray cascade_target_visibility;
+layout(binding = 2, scalar) buffer dispatch_info_buffer
+{
+    uint cascade_end_offset[16];
+    ivec3 probe_indices[];
+} dispatch_info;
+
+#define RADIANCE_CASCADES_SET 3
+#include "radiance_cascades.glsl"
+
+#define RAY_TRACING
+#define USE_RAY_QUERIES
+#define GET_INTERSECTION_TRIANGLE_POSITIONS
+#define SCENE_SET 1
+#define SCENE_RASTER_SET 2
+#include "scene.glsl"
+#include "rt_common.glsl"
+#include "scene_raster.glsl"
+#include "ggx.glsl"
+
+#ifdef LIGHT_TREE_SET
+#include "light_tree.glsl"
+#endif
+
+layout(push_constant) uniform push_constant_buffer
+{
+    vec4 base_offset;
+    vec4 xyz_step;
+    vec4 origin_jitter;
+    vec2 jitter;
+    int cascade;
+    int cascade_count;
+    float interval_start;
+    float interval_end;
+    int c0_angular_resolution;
+    int cascade_size;
+    shadow_mapping_parameters sm_params;
+    int frame_counter;
+} pc;
+
+#define SHADOW_MAPPING_PARAMS pc.sm_params
+#define SHADOW_MAPPING_SCREEN_COORD ivec2(0)
+#include "shadow_mapping.glsl"
+
+bool get_probe_coordinate(out ivec2 texel_coordinate, out ivec3 probe_coordinate)
+{
+    ivec2 tile_coord = ivec2(gl_LocalInvocationID.yz);
+
+    int resolution = pc.c0_angular_resolution << pc.cascade;
+    int num_tiles_per_probe = resolution * resolution / int(gl_WorkGroupSize.y * gl_WorkGroupSize.z);
+
+    int tile_index = int(gl_GlobalInvocationID.x) % num_tiles_per_probe;
+    int probe_index = int(gl_GlobalInvocationID.x) / num_tiles_per_probe;
+
+    int tile_x_index = tile_index % int(resolution / gl_WorkGroupSize.y);
+    int tile_y_index = tile_index / int(resolution / gl_WorkGroupSize.z);
+
+    texel_coordinate = tile_coord + ivec2(gl_WorkGroupSize.y * tile_x_index, gl_WorkGroupSize.z * tile_y_index);
+
+    uint prev_end = dispatch_info.cascade_end_offset[pc.cascade+1];
+    uint cur_end = dispatch_info.cascade_end_offset[pc.cascade];
+
+    if(pc.cascade+1 >= pc.cascade_count)
+        prev_end = 0;
+
+    if(prev_end + probe_index >= cur_end)
+        return false;
+    probe_coordinate = dispatch_info.probe_indices[prev_end + probe_index];
+    return true;
+}
+
+float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
+{
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq,
+        tlas,
+        gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT|gl_RayFlagsTerminateOnFirstHitEXT,
+        //0x02^0xFF, // Exclude lights from shadow rays
+        0xFF,
+        pos,
+        min_dist,
+        dir,
+        max_dist
+    );
+
+    return trace_ray_query_visibility(rq);
+}
+
+hit_info trace_primary_ray(
+    vec3 origin,
+    vec3 dir,
+    float len
+){
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq,
+        tlas,
+        gl_RayFlagsCullBackFacingTrianglesEXT,
+//#ifdef USE_BACKFACE_CULLING
+//        gl_RayFlagsCullNoOpaqueEXT|gl_RayFlagsCullBackFacingTrianglesEXT,
+//#else
+//        gl_RayFlagsCullNoOpaqueEXT,
+//#endif
+        0xFF,
+        origin,
+        0,
+        dir,
+        len
+    );
+
+    uint seed = 0;
+    return trace_ray_query(rq, seed);
+}
+
+vec4 simple_shade(vec3 ray_origin, vec3 ray_direction, hit_info info)
+{
+    if(info.instance_id >= 0)
+    { // Hit an emissive surface.
+        // Only fetch material info for textured surfaces.
+        ivec3 i = ivec3(
+            indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+0],
+            indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+1],
+            indices[nonuniformEXT(info.instance_id)].i[3*info.primitive_id+2]
+        );
+        vertex v0 = vertices[nonuniformEXT(info.instance_id)].v[i.x];
+        vertex v1 = vertices[nonuniformEXT(info.instance_id)].v[i.y];
+        vertex v2 = vertices[nonuniformEXT(info.instance_id)].v[i.z];
+        vec3 b = vec3(1.0f - info.barycentrics.x - info.barycentrics.y, info.barycentrics);
+        instance o = instances.o[info.instance_id];
+        vec3 normal = normalize(TRANSFORM_MAT(
+            mat3(o.model_normal),
+            (v0.normal * b.x + v1.normal * b.y + v2.normal * b.z)
+        ));
+        vec3 hard_normal = normalize(cross(
+            info.positions[1] - info.positions[0],
+            info.positions[2] - info.positions[0]
+        ));
+        if(dot(hard_normal, ray_direction) > 0)
+            //normal = -normal;
+            return vec4(0,0,0, 1.0f);
+        vec3 pos = ray_origin + info.hit_t * ray_direction;
+        vec3 color = o.mat.albedo_factor.rgb;
+        vec2 mr = o.mat.metallic_roughness_factor.xy;
+        if(o.mat.albedo_tex_id >= 0 || o.mat.metallic_roughness_tex_id >= 0)
+        {
+            vec2 uv = v0.uv * b.x + v1.uv * b.y + v2.uv * b.z;
+            if(o.mat.albedo_tex_id >= 0)
+            {
+                vec3 tex_col = sample_texture(o.mat.albedo_tex_id, uv).rgb;
+                tex_col = inverse_srgb_correction(tex_col);
+                color *= tex_col;
+            }
+            if(o.mat.metallic_roughness_tex_id >= 0)
+                mr *= sample_texture(o.mat.metallic_roughness_tex_id, uv).bg;
+        }
+        float metallic = mr[0];
+        float roughness = mr[1] * mr[1];
+
+        vec3 emission = o.mat.emission_factor.rgb;
+
+#ifdef USE_RASTER_DI
+        // Shade as if it was a diffuse surface.
+        // TODO: Try to allow specularity as well.
+        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+        {
+            directional_light dl = directional_lights.lights[i];
+            float shadow = 1.0f;
+            if(dl.shadow_map_index >= 0 && dot(normal, -dl.dir) > 0)
+                shadow = calc_directional_shadow(
+                    dl.shadow_map_index, pos, normal, -dl.dir
+                );
+            if(dot(normal, dl.dir) > 0)
+                shadow = 0.0f;
+
+            emission += color * shadow * dl.color * max(dot(normal, -dl.dir), 0) / M_PI;
+        }
+
+        POINT_LIGHT_FOR_BEGIN(v.pos)
+            point_light pl = point_lights.lights[item_index];
+            vec3 light_dir;
+            float light_dist;
+            vec3 light_color;
+            get_point_light_info(pl, pos, light_dir, light_dist, light_color);
+
+            float shadow = 1.0f;
+            if(pl.shadow_map_index >= 0 && dot(normal, light_dir) > 0)
+                shadow = calc_point_shadow(
+                    pl.shadow_map_index, pos, normal, light_dir
+                );
+            if(dot(normal, light_dir) < 0)
+                shadow = 0.0f;
+
+            emission += color * shadow * light_color * max(dot(normal, light_dir), 0) / M_PI;
+        POINT_LIGHT_FOR_END
+#elif defined(RT_DI_SAMPLES) && defined(LIGHT_TREE_SET)
+        uvec4 rand_uint = uvec4(pc.frame_counter, gl_GlobalInvocationID.xyz);
+        pcg4d(rand_uint);
+        for(uint i = 0; i < RT_DI_SAMPLES; ++i)
+        {
+            pcg4d(rand_uint);
+            light_sample s = sample_light(
+                rand_uint,
+                pos,
+                normal,
+                1.0f,
+                1e-4f,
+                1e9f
+            );
+
+            vec3 contrib = s.color / abs(s.pdf);
+
+            contrib *= shadow_ray(pos, 1e-4f, s.dir, s.dist);
+
+            emission += ggx_brdf_fast(s.dir, -ray_direction, normal, color, roughness, metallic) * contrib * (1.0/RT_DI_SAMPLES);
+            //emission += color * contrib * max(dot(normal, s.dir), 0) * (1.0/(M_PI * RT_DI_SAMPLES));
+        }
+#endif
+
+#ifdef RECURSIVE_LIGHTING
+        if(pc.frame_counter != 0)
+        {
+            emission += color * eval_radiance_cascades(
+                pos,
+                normal,
+                -ray_direction,
+                roughness,
+                mix(0.04, 1.0, metallic)
+            );
+        }
+#endif
+        return vec4(emission, 1.0f);
+    }
+    else if(info.primitive_id >= 0)
+    { // Point light
+#if defined(USE_RASTER_DI) || (defined(RT_DI_SAMPLES) && defined(LIGHT_TREE_SET))
+        return vec4(vec3(0), 1.0f);
+#else
+        point_light pl = point_lights.lights[info.primitive_id];
+
+        // No worries, radius cannot be zero -- we couldn't hit the light here
+        // if it was!
+        vec3 emission = get_spotlight_intensity(pl, ray_direction) * pl.color / (pl.radius * pl.radius * M_PI);
+        return vec4(emission, 1.0f);
+#endif
+    }
+    else if(pc.cascade+1 == pc.cascade_count)
+    { // Only last cascade gets the environment lighting.
+#if !defined(USE_RASTER_DI) && !(defined(RT_DI_SAMPLES) && defined(LIGHT_TREE_SET))
+        vec4 color = scene_metadata.environment_factor;
+        if(scene_metadata.environment_proj >= 0)
+        {
+            vec2 uv = vec2(0);
+            uv.y = asin(-ray_direction.y)/M_PI+0.5f;
+            uv.x = atan(ray_direction.z, ray_direction.x)/(2*M_PI)+0.5f;
+            color.rgb *= texture(environment_map_tex, uv).rgb;
+        }
+        vec3 emission = color.rgb;
+
+        for(uint i = 0; i < scene_metadata.directional_light_count; ++i)
+        {
+            directional_light dl = directional_lights.lights[i];
+            if(dl.dir_cutoff >= 1.0f)
+                continue;
+            float visible = step(dl.dir_cutoff, dot(ray_direction, -dl.dir));
+            vec3 color = visible * dl.color / (2.0f * M_PI * (1.0f - dl.dir_cutoff));
+            emission += color;
+        }
+        return vec4(emission, 1.0f);
+#else
+        return vec4(0);
+#endif
+    }
+    return vec4(0);
+}
+
+float correct_ray_origin(vec3 origin, vec3 dir, vec3 cell_size)
+{
+    vec3 inv_dir = 1.0 / dir;
+    vec3 pmax = cell_size * 0.5;
+    vec3 pmin = -pmax;
+
+    vec3 t0 = (pmin - origin) * inv_dir;
+    vec3 t1 = (pmax - origin) * inv_dir;
+
+    vec3 maxs = max(t0,t1);
+    return min(maxs.x, min(maxs.y, maxs.z));
+}
+
+float sphere_outer_intersection(
+    vec3 sphere_pos, float sphere_radius, vec3 ray_origin, vec3 ray_direction
+){
+    vec3 oc = ray_origin - sphere_pos;
+    float a = dot(ray_direction, ray_direction);
+    float b = 2.0f * dot(oc, ray_direction);
+    float c = dot(oc, oc) - sphere_radius * sphere_radius;
+    float discriminant = b * b - 4.0f * a * c;
+    if(discriminant < 0) return -1.0f;
+    else return (-b + sqrt(discriminant)) / (2.0f * a);
+}
+
+void main()
+{
+    bool first_cascade = pc.cascade == 0;
+    bool last_cascade = pc.cascade+1 == pc.cascade_count;
+
+    int angular_resolution = pc.c0_angular_resolution << pc.cascade;
+    int next_angular_resolution = pc.c0_angular_resolution << (pc.cascade+1);
+
+    ivec3 probe_index;
+    ivec2 map_texel;
+    if(!get_probe_coordinate(map_texel, probe_index))
+        return;
+
+    ivec3 p = get_cascade_layout(ivec3(pc.cascade_size), angular_resolution, probe_index, map_texel);
+    //get_cascade_layout_inverse(p, ivec3(pc.cascade_size), angular_resolution, probe_index, map_texel);
+
+    //vec2 map_uv = (vec2(map_texel) + 0.5 + (pc.jitter-0.5) * 2.0) / angular_resolution;
+    vec2 map_uv = (vec2(map_texel) + pc.jitter) / angular_resolution;
+
+    vec3 probe_dir = radiance_cascade_probe_mapping(map_uv);
+    //vec3 probe_origin = pc.base_offset.xyz + (probe_index + 2.0 * pc.origin_jitter.xyz) * pc.xyz_step.xyz;
+    vec3 probe_origin = pc.base_offset.xyz + (probe_index + pc.origin_jitter.xyz) * pc.xyz_step.xyz;
+    //vec3 probe_origin = pc.base_offset.xyz + probe_index * pc.xyz_step.xyz;
+
+#if 1
+    //float edge_t = correct_ray_origin(pc.origin_jitter.xyz * pc.xyz_step.xyz, probe_dir, pc.xyz_step.xyz);
+    //float start_t = edge_t + pc.interval_start;
+    //float end_t = edge_t + pc.interval_end;
+    float start_t = pc.interval_start;
+    float end_t = pc.interval_end;
+
+    vec3 ray_origin = probe_origin + probe_dir * start_t;
+    vec3 ray_end = probe_origin + probe_dir * end_t;
+#else
+    vec3 cell_origin = pc.base_offset.xyz + probe_index * pc.xyz_step.xyz;
+    ivec3 next_index = ivec3(probe_index.xyz/2);
+    vec3 next_origin = pc.base_offset.xyz + 0.5f * pc.xyz_step.xyz + next_index * pc.xyz_step.xyz * 2.0f;
+    if(last_cascade) next_origin = probe_origin;
+
+    // We determine the ray length based on the "near-shell" of the next cascade.
+    // This avoids light leaking issues quite well, but not perfectly.
+    float start_t = max(sphere_outer_intersection(cell_origin, pc.interval_start, probe_origin, probe_dir), 0);
+    float end_t = max(sphere_outer_intersection(next_origin, pc.interval_end, probe_origin, probe_dir), 0);
+
+    if (start_t < 0) start_t = pc.interval_start;
+    if (end_t < 0) end_t = pc.interval_end;
+
+    vec3 ray_origin = probe_origin + probe_dir * start_t;
+    vec3 ray_end = probe_origin + probe_dir * end_t;
+#endif
+
+    vec3 ray_dir = ray_end - ray_origin;
+    float ray_len = length(ray_dir);
+    ray_dir /= ray_len;
+
+    hit_info hi = trace_primary_ray(ray_origin, ray_dir, ray_len);
+
+    vec4 hit_color = simple_shade(ray_origin, ray_dir, hi);
+    float hit_luminance = rgb_to_luminance(hit_color.rgb);
+    if (isnan(hit_luminance))
+        hit_luminance = 0.0;
+
+    imageStore(cascade_target, p, vec4(hit_luminance));
+    imageStore(cascade_target_visibility, p, vec4(hit_color.a));
+}

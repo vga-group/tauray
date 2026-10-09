@@ -50,10 +50,10 @@ layout(binding = 29, set = 0) uniform parity_data_buffer
     int parity;
 } parity_data;
 
-layout(binding = 30, set = 0, rgba32f) uniform image2DArray reservoir_data;
-layout(binding = 31, set = 0, rg16) uniform image2DArray light_data_uni;
-layout(binding = 32, set = 0, rg16_snorm) uniform image2DArray previous_normal_data;
-layout(binding = 33, set = 0, rgba32f) uniform image2DArray previous_pos_data;
+layout(binding = 30, set = 0) uniform image2DArray reservoir_data;
+layout(binding = 31, set = 0) uniform image2DArray light_data_uni;
+layout(binding = 32, set = 0) uniform image2DArray previous_normal_data;
+layout(binding = 33, set = 0) uniform image2DArray previous_pos_data;
 
 #include "ggx.glsl"
 #include "rt_common_payload.glsl"

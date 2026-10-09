@@ -8,10 +8,10 @@
 #include "math.glsl"
 #include "scene.glsl"
 
-layout(binding = 0, set = 0, rgba32f) uniform readonly image2DArray in_specular;
-layout(binding = 1, set = 0, rgba32f) uniform image2DArray out_specular;
-layout(binding = 2, set = 0, rgba32f) uniform readonly image2DArray in_material;
-layout(binding = 3, set = 0, rgba32f) uniform readonly image2DArray in_normal;
+layout(binding = 0, set = 0) uniform readonly image2DArray in_specular;
+layout(binding = 1, set = 0) uniform image2DArray out_specular;
+layout(binding = 2, set = 0) uniform readonly image2DArray in_material;
+layout(binding = 3, set = 0) uniform readonly image2DArray in_normal;
 layout(binding = 4, set = 0) uniform sampler2DArray in_depth;
 
 layout (local_size_x = 16, local_size_y = 16) in;

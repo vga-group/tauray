@@ -1,0 +1,721 @@
+#include "radiance_cascades_stage.hh"
+#include "light_tree_stage.hh"
+#include "shadow_map.hh"
+#include "misc.hh"
+
+namespace
+{
+using namespace tr;
+
+struct trace_push_constant_buffer
+{
+    pvec4 base_offset;
+    pvec4 xyz_step;
+    pvec4 origin_jitter;
+    pvec2 jitter;
+    int cascade;
+    int cascade_count;
+    float interval_start;
+    float interval_end;
+    int c0_angular_resolution;
+    int cascade_size;
+    gpu_shadow_mapping_parameters sm_params;
+    int frame_counter;
+};
+
+struct gather_push_constant_buffer
+{
+    int cascade;
+    int cascade_count;
+    int c0_angular_resolution;
+    float blend_ratio;
+    int cascade_size;
+    int carry_from_previous;
+};
+
+struct live_counter_push_constant_buffer
+{
+    pvec4 base_offset;
+    pvec4 xyz_step;
+    int cascade;
+    int cascade_count;
+    float interval_end;
+    int cascade_size;
+    uint index_buffer_size;
+};
+
+struct live_dispatcher_push_constant_buffer
+{
+    int cascade;
+    int cascade_count;
+    int c0_angular_resolution;
+    int print_info;
+};
+
+struct cascade_metadata_buffer
+{
+    pvec4 aabb_min;
+    pvec4 aabb_max;
+    // size.x = c0 width (x)
+    // size.y = c0 height (y)
+    // size.z = c0 depth (z)
+    // size.w = cascade count
+    pivec4 size;
+    int c0_angular_resolution;
+};
+
+}
+
+namespace tr
+{
+
+radiance_cascades_stage::radiance_cascades_stage(
+    device& dev,
+    scene_stage& ss,
+    const options& opt
+):  single_device_stage(dev),
+    ss(&ss),
+    trace_desc(dev),
+    gather_desc(dev),
+    live_counter_desc(dev),
+    live_dispatcher_desc(dev),
+    cascade_descriptors(dev),
+    //cascade_sampler(dev, vk::Filter::eLinear, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest, 0, false, false, false, 0.0f),
+    cascade_sampler(dev, vk::Filter::eNearest, vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, vk::SamplerAddressMode::eClampToEdge, vk::SamplerMipmapMode::eNearest, 0, false, false, false, 0.0f),
+    trace(dev),
+    trace_c0(dev),
+    gather(dev),
+    live_counter(dev),
+    live_dispatcher(dev),
+    opt(opt),
+    prev_cascades_valid(false),
+    stage_timer(dev, "radiance cascade update"),
+    trace_timer(dev, "radiance cascade trace"),
+    gather_timer(dev, "radiance cascade gather"),
+    live_counter_timer(dev, "radiance cascade live count"),
+    history_frames(0),
+    cascades_metadata(dev, sizeof(cascade_metadata_buffer), vk::BufferUsageFlagBits::eUniformBuffer)
+{
+    bool has_prev_cascades =
+        opt.recursive || (opt.jitter && opt.temporal_ratio < 1.0f);
+    descriptor_set& scene_ds = ss.get_descriptors();
+    descriptor_set& raster_scene_ds = ss.get_raster_descriptors();
+
+    cascade_descriptors.add("radiance_cascades", {0, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    cascade_descriptors.add("radiance_cascades_visibility", {1, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    cascade_descriptors.add("radiance_cascades_read", {2, vk::DescriptorType::eCombinedImageSampler, 16, vk::ShaderStageFlagBits::eAll, nullptr}, vk::DescriptorBindingFlagBits::ePartiallyBound);
+    cascade_descriptors.add("radiance_cascade_metadata", {3, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eAll, nullptr});
+
+    vec3 extent = opt.volume.max - opt.volume.min;
+    float diagonal_range = length(extent);
+
+    size_t total_probes = 0;
+    size_t total_memory = 0;
+    for(uint32_t cascade = 0; cascade <= opt.log2_resolution; ++cascade)
+    {
+        size_t cascade_size = 1<<(opt.log2_resolution-cascade);
+        size_t resolution = opt.c0_probe_resolution << cascade;
+
+        vec2 interval = get_cascade_interval(cascade);
+        // Cascade starting distance is out of cascade volume
+        // => no point in allocating or rendering the rest of the layers.
+        if(interval[0] > diagonal_range)
+            break;
+
+        printf("Cascade %d: [%f, %f]\n", cascade, interval.x, interval.y);
+
+        total_probes += cascade_size * cascade_size * cascade_size;
+        total_memory += (sizeof(float)+sizeof(uint8_t)) * cascade_size * cascade_size * cascade_size * resolution * resolution;
+
+        cascades.emplace_back(
+            device_mask(dev),
+            //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+            uvec2(cascade_size*resolution),
+            cascade_size,
+            //vk::Format::eR16Sfloat,
+            vk::Format::eR32Sfloat,
+            0,
+            nullptr,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
+            vk::ImageLayout::eGeneral
+        );
+        cascades_visibility.emplace_back(
+            device_mask(dev),
+            //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+            uvec2(cascade_size*resolution),
+            cascade_size,
+            vk::Format::eR8Unorm,
+            0,
+            nullptr,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
+            vk::ImageLayout::eGeneral
+        );
+        read_cascades.emplace_back(
+            device_mask(dev),
+            //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+            uvec2(cascade_size*resolution),
+            cascade_size,
+            vk::Format::eR32Sfloat,
+            0,
+            nullptr,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
+            vk::ImageLayout::eGeneral
+        );
+        if(has_prev_cascades)
+        {
+            alt_cascades.emplace_back(
+                device_mask(dev),
+                //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+                uvec2(cascade_size*resolution),
+                cascade_size,
+                //vk::Format::eR16Sfloat,
+                vk::Format::eR32Sfloat,
+                0,
+                nullptr,
+                vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
+                vk::ImageLayout::eGeneral
+            );
+            alt_cascades_visibility.emplace_back(
+                device_mask(dev),
+                //uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size),
+                uvec2(cascade_size*resolution),
+                cascade_size,
+                vk::Format::eR8Unorm,
+                0,
+                nullptr,
+                vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eSampled|vk::ImageUsageFlagBits::eStorage,
+                vk::ImageLayout::eGeneral
+            );
+        }
+    }
+    printf("Total probes %lu\n", total_probes);
+    printf("Total memory %lu\n", total_memory);
+
+    vk::BufferCreateInfo bufferInfo;
+    bufferInfo.size = 16 * sizeof(uint) + total_probes * sizeof(puvec3);
+    bufferInfo.usage =
+        vk::BufferUsageFlagBits::eStorageBuffer |
+        vk::BufferUsageFlagBits::eTransferDst;
+    dispatch_info_buffer = create_buffer(dev, bufferInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+
+    bufferInfo.size = 32 * sizeof(uvec4);
+    bufferInfo.usage |= vk::BufferUsageFlagBits::eIndirectBuffer;
+    dispatch_size_buffer = create_buffer(dev, bufferInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+
+    dispatch_index_max_size = total_probes;
+
+    std::map<std::string, std::string> defines;
+    add_defines(defines);
+
+    if(opt.use_raster_di)
+        defines["USE_RASTER_DI"];
+
+    if(opt.rt_di_samples > 0)
+        defines["RT_DI_SAMPLES"] = std::to_string(opt.rt_di_samples);
+
+    if(opt.recursive)
+        defines["RECURSIVE_LIGHTING"];
+
+    if(opt.avg_bias < 1.0)
+        defines["BIAS_EXPONENT"] = std::to_string(1.0/(1.0-opt.avg_bias));
+
+    std::vector<tr::descriptor_set_layout*> trace_layout = {
+        &trace_desc, &scene_ds, &raster_scene_ds, &cascade_descriptors
+    };
+
+    if(opt.light_tree_source)
+    {
+        defines["LIGHT_TREE_SET"] = "4";
+        opt.light_tree_source->add_defines(defines);
+        trace_layout.push_back(&opt.light_tree_source->get_descriptors());
+    }
+
+    {
+        shader_source src("shader/radiance_cascades_trace.comp", defines);
+        trace_desc.add(src);
+        trace.init(src, trace_layout);
+    }
+
+    {
+        defines["USE_BACKFACE_CULLING"];
+        shader_source src("shader/radiance_cascades_trace.comp", defines);
+        trace_c0.init(src, trace_layout);
+    }
+
+    {
+        shader_source src("shader/radiance_cascades_gather.comp", defines);
+        gather_desc.add(src);
+        gather.init(src, {&gather_desc});
+    }
+
+    {
+        shader_source src("shader/radiance_cascades_live_counter.comp", defines);
+        live_counter_desc.add(src);
+        live_counter.init(src, {&live_counter_desc});
+    }
+
+    {
+        shader_source src("shader/radiance_cascades_live_dispatcher.comp", defines);
+        live_dispatcher_desc.add(src);
+        live_dispatcher.init(src, {&live_dispatcher_desc});
+    }
+}
+
+descriptor_set& radiance_cascades_stage::get_descriptors()
+{
+    return cascade_descriptors;
+}
+
+size_t radiance_cascades_stage::get_cascade_count() const
+{
+    return cascades.size();
+}
+
+float radiance_cascades_stage::get_cascade_t0(int cascade) const
+{
+    // If we jitter, it's OK to start the cascade from 0 length. Imagine the
+    // below situation:
+    //
+    // +----------+ <---- C0 grid cell
+    // |          |
+    // |   #<------------ receiver surface
+    // |   #      |
+    // |   #_____<----- lit surface
+    // |          |
+    // +----------+
+    //
+    // If a lit surface is inside a grid cell and can illuminate a surface in
+    // that same cell, ray length for c0 should be 0 so that the surface can get
+    // proper representation.
+    if(cascade == 0) return 0.0f;
+
+    vec3 extent = opt.volume.max - opt.volume.min;
+    float max_extent = max(extent.x, max(extent.y, extent.z));
+
+    const vec2 octahedral_theta_table[] = {
+        vec2(1.570796e+00, 3.141593e+00), // 2
+        vec2(7.853982e-01, 1.570796e+00), // 4
+        vec2(3.217506e-01, 9.553166e-01), // 8
+        vec2(1.418971e-01, 5.148060e-01), // 16
+        vec2(6.656816e-02, 2.631283e-01), // 32
+        vec2(3.224688e-02, 1.323247e-01), // 64
+        vec2(1.587168e-02, 6.625893e-02), // 128
+        vec2(7.873853e-03, 3.314159e-02), // 256
+        vec2(3.921549e-03, 1.657231e-02), // 512
+        vec2(1.956945e-03, 8.286344e-03), // 1024
+        vec2(9.775168e-04, 4.143196e-03), // 2048
+        vec2(4.885197e-04, 2.071601e-03), // 4096
+        vec2(2.442002e-04, 1.035801e-03), // 8192
+        vec2(1.220852e-04, 5.179005e-04), // 16384
+        vec2(6.103888e-05, 2.589502e-04)  // 32768
+    };
+
+    int i = cascade;
+
+    i += findMSB(opt.c0_probe_resolution)-2;
+
+    /*
+    float h0 = max(extent.x, max(extent.y, extent.z))/float(1<<opt.log2_resolution);
+    return (1<<cascade) * h0 / tan(octahedral_theta_table[cascade].x);
+    */
+    //float h = (1<<(cascade-1)) * length(extent) / float(1<<opt.log2_resolution);
+    float l = (1<<(cascade-1)) * max_extent / float(1<<opt.log2_resolution);
+
+    // If 't_max' is too long, limiting factor is probe resolution -> available detail is lost
+    // If 't_max' is too short, limiting factor is parallax -> excess resolution in probe.
+    //
+    // With the below setup, 't_max' is always underestimated, meaning that
+    // the entire radiance range has excess probe resolution for any visible 
+    // point.
+    float t_max = l / (2.0 * sin(octahedral_theta_table[i].x));
+
+    // Instead of doing that, we intentionally overestimate t_max by 
+    // a factor of 2 to move the "switchover" point from excess resolution to
+    // not enough resolution to be in the halfway point of the radiance
+    // interval. Empirically, this results in slightly higher performance and
+    // better image quality.
+    t_max *= 2.0;
+
+    return t_max;
+}
+
+vec2 radiance_cascades_stage::get_cascade_interval(int cascade) const
+{
+    return vec2(get_cascade_t0(cascade), get_cascade_t0(cascade+1));
+}
+
+uvec3 radiance_cascades_stage::get_cascade_size(int cascade) const
+{
+    size_t cascade_size = 1<<(opt.log2_resolution-cascade);
+    size_t resolution = opt.c0_probe_resolution << cascade;
+    return uvec3(cascade_size*resolution, cascade_size*resolution, cascade_size);
+}
+
+void radiance_cascades_stage::add_defines(std::map<std::string, std::string>& defines) const
+{
+    defines["RC_C0_ANGULAR_RESOLUTION"] = std::to_string(opt.c0_probe_resolution);
+    defines["RC_C0_SPATIAL_RESOLUTION"] = std::to_string(1<<opt.log2_resolution);
+    defines["RC_CASCADE_COUNT"] = std::to_string(get_cascade_count());
+    if (opt.use_raster_di)
+        defines["RC_USE_RASTER_DI"];
+    if(opt.defensive_mode)
+        defines["RC_DEFENSIVE"];
+}
+
+void radiance_cascades_stage::update(uint32_t frame_index)
+{
+    clear_commands();
+
+    cascades_metadata.map<cascade_metadata_buffer>(
+        frame_index, [&](cascade_metadata_buffer* data){
+            data->aabb_min = vec4(opt.volume.min, 0);
+            data->aabb_max = vec4(opt.volume.max, 0);
+            data->size = pivec4(
+                1<<opt.log2_resolution,
+                1<<opt.log2_resolution,
+                1<<opt.log2_resolution,
+                get_cascade_count()
+            );
+            data->c0_angular_resolution = opt.c0_probe_resolution;
+        }
+    );
+
+    vk::CommandBuffer cb = begin_compute();
+    stage_timer.begin(cb, dev->id, frame_index);
+
+    cascades_metadata.upload(dev->id, frame_index, cb);
+
+    cb.fillBuffer(dispatch_info_buffer, 0, 16 * sizeof(uint), 0);
+    cb.fillBuffer(dispatch_size_buffer, 0, VK_WHOLE_SIZE, 0);
+
+    std::vector<texture>* next_cascades = &cascades;
+    std::vector<texture>* prev_cascades = nullptr;
+    std::vector<texture>* next_cascades_visibility = &cascades_visibility;
+    std::vector<texture>* prev_cascades_visibility = nullptr;
+
+    if(opt.recursive || (opt.jitter && opt.temporal_ratio < 1.0f))
+    {
+        next_cascades = (frame_index&1) ? &cascades : &alt_cascades;
+        prev_cascades = (frame_index&1) ? &alt_cascades : &cascades;
+        next_cascades_visibility = (frame_index&1) ? &cascades_visibility : &alt_cascades_visibility;
+        prev_cascades_visibility = (frame_index&1) ? &alt_cascades_visibility : &cascades_visibility;
+    }
+
+    std::vector<vk::ImageMemoryBarrier> image_barriers;
+    std::vector<vk::BufferMemoryBarrier> buffer_barriers;
+    std::vector<vk::DescriptorImageInfo> dii;
+    std::vector<vk::DescriptorImageInfo> dii_visibility;
+    std::vector<vk::DescriptorImageInfo> dii_read;
+    for(size_t i = 0; i < next_cascades->size(); ++i)
+    {
+        image_barriers.push_back(vk::ImageMemoryBarrier(
+            {}, vk::AccessFlagBits::eShaderWrite,
+            vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            (*next_cascades)[i].get_image(dev->id),
+            {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+        ));
+        image_barriers.push_back(vk::ImageMemoryBarrier(
+            {}, vk::AccessFlagBits::eShaderWrite,
+            vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            (*next_cascades_visibility)[i].get_image(dev->id),
+            {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+        ));
+        image_barriers.push_back(vk::ImageMemoryBarrier(
+            {}, vk::AccessFlagBits::eShaderWrite|vk::AccessFlagBits::eShaderRead,
+            vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            read_cascades[i].get_image(dev->id),
+            {vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}
+        ));
+
+        buffer_barriers.push_back(vk::BufferMemoryBarrier(
+            vk::AccessFlagBits::eTransferWrite,
+            vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead,
+            0, 0,
+            *dispatch_info_buffer,
+            0, VK_WHOLE_SIZE
+        ));
+        buffer_barriers.push_back(vk::BufferMemoryBarrier(
+            vk::AccessFlagBits::eTransferWrite,
+            vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead,
+            0, 0,
+            *dispatch_size_buffer,
+            0, VK_WHOLE_SIZE
+        ));
+
+        dii.push_back(vk::DescriptorImageInfo{
+            cascade_sampler.get_sampler(dev->id),
+            (*next_cascades)[i].get_array_image_view(dev->id),
+            vk::ImageLayout::eGeneral
+        });
+        dii_visibility.push_back(vk::DescriptorImageInfo{
+            cascade_sampler.get_sampler(dev->id),
+            (*next_cascades_visibility)[i].get_array_image_view(dev->id),
+            vk::ImageLayout::eGeneral
+        });
+        dii_read.push_back(vk::DescriptorImageInfo{
+            cascade_sampler.get_sampler(dev->id),
+            read_cascades[i].get_array_image_view(dev->id),
+            vk::ImageLayout::eGeneral
+        });
+    }
+
+    cb.pipelineBarrier(
+        vk::PipelineStageFlagBits::eAllCommands,
+        vk::PipelineStageFlagBits::eAllCommands,
+        {}, {}, buffer_barriers, image_barriers
+    );
+    if(history_frames == 0)
+    {
+        cascade_descriptors.reset(cascade_descriptors.get_mask(), 1);
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_visibility", std::move(dii_visibility));
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_read", std::move(dii_read));
+        cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
+    }
+
+    //==========================================================================
+    // Live counting & dispatch generation
+    //==========================================================================
+    // Counts the number of live probes on each cascade, and generates the
+    // necessary data for indirect dispatching the computation for those probes.
+    live_counter_timer.begin(cb, dev->id, frame_index);
+
+    assert(calculate_mipmap_count(opt.occupancy->get_size()) == opt.log2_resolution+1);
+
+    for(int cascade = get_cascade_count()-1; cascade >= 0; --cascade)
+    {
+        {
+            live_counter.bind(cb);
+            live_counter_desc.set_image(dev->id, "occupancy_map", {{
+                {},
+                opt.occupancy->get_mip_image_view(dev->id, cascade),
+                vk::ImageLayout::eGeneral
+            }});
+            live_counter_desc.set_buffer(dev->id, "dispatch_info", {{*dispatch_info_buffer, 0, VK_WHOLE_SIZE}});
+            live_counter.push_descriptors(cb, live_counter_desc, 0);
+
+            size_t cascade_size = 1<<(opt.log2_resolution-cascade);
+
+            live_counter_push_constant_buffer pc;
+
+            vec3 half_step = float(1<<cascade) * (opt.volume.max-opt.volume.min)/float(2<<opt.log2_resolution);
+            pc.base_offset = pvec4(opt.volume.min + half_step, 0);
+            pc.xyz_step = pvec4(half_step * 2.0f, 0.0f);
+            pc.cascade = cascade;
+
+            vec2 interval = get_cascade_interval(cascade);
+            pc.interval_end = cascade+1 == get_cascade_count() ? 1e9 : interval[1];
+            pc.cascade_size = cascade_size;
+            pc.cascade_count = get_cascade_count();
+            pc.index_buffer_size = dispatch_index_max_size;
+
+            live_counter.push_constants(cb, pc);
+
+            if(cascade == get_cascade_count() - 1)
+            {
+                size_t parent_cascade_size = max(cascade_size >> 1, size_t(1));
+                cb.dispatch(((parent_cascade_size*parent_cascade_size*parent_cascade_size)+7u)/8u, 1,1);
+            }
+            else
+            {
+                cb.dispatchIndirect(*dispatch_size_buffer, sizeof(uvec4) * (cascade+1));
+            }
+        }
+
+        vk::BufferMemoryBarrier barriers[2] = {
+            {
+                vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead,
+                vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead,
+                0, 0,
+                *dispatch_info_buffer,
+                0, VK_WHOLE_SIZE
+            },
+            {
+                vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead,
+                vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead,
+                0, 0,
+                *dispatch_size_buffer,
+                0, VK_WHOLE_SIZE
+            }
+        };
+        cb.pipelineBarrier(
+            vk::PipelineStageFlagBits::eAllCommands,
+            vk::PipelineStageFlagBits::eAllCommands,
+            {}, {}, barriers, {}
+        );
+
+        {
+            live_dispatcher.bind(cb);
+            live_dispatcher_desc.set_buffer(dev->id, "dispatch_size", {{*dispatch_size_buffer, 0, VK_WHOLE_SIZE}});
+            live_dispatcher_desc.set_buffer(dev->id, "dispatch_info", {{*dispatch_info_buffer, 0, VK_WHOLE_SIZE}});
+            live_dispatcher.push_descriptors(cb, live_dispatcher_desc, 0);
+            live_dispatcher_push_constant_buffer pc;
+            pc.cascade = cascade;
+            pc.cascade_count = get_cascade_count();
+            pc.print_info = history_frames == 0 ? 1 : 0;
+            pc.c0_angular_resolution = opt.c0_probe_resolution;
+            live_dispatcher.push_constants(cb, pc);
+            cb.dispatch(1,1,1);
+        }
+
+        cb.pipelineBarrier(
+            vk::PipelineStageFlagBits::eAllCommands,
+            vk::PipelineStageFlagBits::eAllCommands,
+            {}, {}, barriers, {}
+        );
+    }
+    live_counter_timer.end(cb, dev->id, frame_index);
+
+    //==========================================================================
+    // Trace pass - traces rays for radiance intervals
+    //==========================================================================
+    trace_timer.begin(cb, dev->id, frame_index);
+
+    trace_push_constant_buffer pc;
+    shadow_map_filter sm_filter = {0,0,0,0};
+    pc.sm_params = create_shadow_mapping_parameters(sm_filter, *ss);
+    pc.jitter = opt.jitter ? r2_noise(vec2(dev->ctx->get_frame_counter())) : vec2(0.5f);
+    pc.origin_jitter = vec4(opt.jitter ? r3_noise(vec3(dev->ctx->get_frame_counter()))-0.5f : vec3(0.0f), 0.0f);
+    pc.interval_start = 0;
+    pc.interval_end = 0;
+    pc.c0_angular_resolution = opt.c0_probe_resolution;
+    pc.frame_counter = history_frames;
+
+    for(uint32_t cascade = 0; cascade < get_cascade_count(); ++cascade)
+    {
+        auto& trace = cascade == 0 ? this->trace_c0 : this->trace;
+
+        trace.bind(cb);
+        trace.set_descriptors(cb, ss->get_descriptors(), 0, 1);
+        trace.set_descriptors(cb, ss->get_raster_descriptors(), 0, 2);
+        trace.set_descriptors(cb, cascade_descriptors, 0, 3);
+        if (opt.light_tree_source)
+            trace.set_descriptors(cb, opt.light_tree_source->get_descriptors(), 0, 4);
+
+        texture& target = (*next_cascades)[cascade];
+        texture& target_visibility = (*next_cascades_visibility)[cascade];
+        trace_desc.set_image(dev->id, "cascade_target", {{{}, target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        trace_desc.set_image(dev->id, "cascade_target_visibility", {{{}, target_visibility.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        //trace_desc.set_image(dev->id, "distance_field", {{{}, opt.distance_field->get_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        trace_desc.set_buffer(dev->id, "dispatch_info", {{*dispatch_info_buffer, 0, VK_WHOLE_SIZE}});
+        trace.push_descriptors(cb, trace_desc, 0);
+
+        size_t cascade_size = 1<<(opt.log2_resolution-cascade);
+
+        pc.cascade = cascade;
+        pc.cascade_count = get_cascade_count();
+
+        vec2 interval = get_cascade_interval(cascade);
+        pc.interval_start = interval[0];
+        // Last iteration gets to cover the entire world.
+        pc.interval_end = cascade+1 == get_cascade_count() ? 1e9 : interval[1];
+        vec3 half_step = float(1<<cascade) * (opt.volume.max-opt.volume.min)/float(2<<opt.log2_resolution);
+        pc.base_offset = pvec4(opt.volume.min + half_step, 0);
+        pc.xyz_step = pvec4(half_step * 2.0f, 0.0f);
+        pc.cascade_size = cascade_size;
+
+        trace.push_constants(cb, pc);
+
+        cb.dispatchIndirect(*dispatch_size_buffer, sizeof(uvec4) * (16+cascade));
+    }
+
+    if(history_frames != 0)
+    {
+        cascade_descriptors.reset(cascade_descriptors.get_mask(), 1);
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades", std::move(dii));
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_visibility", std::move(dii_visibility));
+        cascade_descriptors.set_image(dev->id, 0, "radiance_cascades_read", std::move(dii_read));
+        cascade_descriptors.set_buffer(0, "radiance_cascade_metadata", cascades_metadata);
+    }
+    trace_timer.end(cb, dev->id, frame_index);
+
+    //==========================================================================
+    // Gather pass - fills importance values for missed rays & implements
+    // temporal accumulation.
+    //==========================================================================
+    gather_timer.begin(cb, dev->id, frame_index);
+    for(auto& b: image_barriers)
+    {
+        b.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+        b.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+        b.oldLayout = vk::ImageLayout::eGeneral;
+    }
+
+    cb.pipelineBarrier(
+        vk::PipelineStageFlagBits::eAllCommands,
+        vk::PipelineStageFlagBits::eAllCommands,
+        {}, {}, {}, image_barriers
+    );
+
+    gather.bind(cb);
+
+    for(uint32_t i = 0; i < get_cascade_count(); ++i)
+    {
+        uint32_t cur_cascade = get_cascade_count()-1-i;
+        uint32_t upper_cascade = cur_cascade+1;
+        texture& cur_target = (*next_cascades)[cur_cascade];
+        texture& cur_target_visibility = (*next_cascades_visibility)[cur_cascade];
+        texture& final_target = read_cascades[cur_cascade];
+        texture& upper_target = i == 0 ? cur_target : (*next_cascades)[upper_cascade];
+        texture& prev_target = prev_cascades ?
+            (*prev_cascades)[cur_cascade] : cur_target;
+        texture& prev_target_visibility = prev_cascades_visibility ?
+            (*prev_cascades_visibility)[cur_cascade] : cur_target_visibility;
+        gather_desc.set_image(dev->id, "upper_target", {{{}, upper_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "lower_target", {{{}, cur_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "final_target", {{{}, final_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "lower_target_visibility", {{{}, cur_target_visibility.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "prev_lower_target", {{{}, prev_target.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_image(dev->id, "prev_lower_target_visibility", {{{}, prev_target_visibility.get_array_image_view(dev->id), vk::ImageLayout::eGeneral}});
+        gather_desc.set_buffer(dev->id, "dispatch_info", {{*dispatch_info_buffer, 0, VK_WHOLE_SIZE}});
+        gather_desc.set_image(dev->id, "occupancy_history", {{
+            {},
+            opt.occupancy_history->get_mip_image_view(dev->id, cur_cascade),
+            vk::ImageLayout::eGeneral
+        }});
+        gather.push_descriptors(cb, gather_desc, 0);
+
+        size_t cascade_size = 1<<(opt.log2_resolution-cur_cascade);
+
+        gather_push_constant_buffer pc;
+        pc.cascade = cur_cascade;
+        pc.cascade_count = get_cascade_count();
+        pc.c0_angular_resolution = opt.c0_probe_resolution;
+        pc.blend_ratio = opt.temporal_ratio;
+        pc.cascade_size = cascade_size;
+        pc.carry_from_previous = i != 0 ? 1 : 0;
+        gather.push_constants(cb, pc);
+
+        cb.dispatchIndirect(*dispatch_size_buffer, sizeof(uvec4) * (16+cur_cascade));
+    }
+
+    // Change layout to sampleable
+    for(auto& b: image_barriers)
+    {
+        b.srcAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+        b.dstAccessMask = {};
+        b.newLayout = vk::ImageLayout::eGeneral;
+    }
+
+    cb.pipelineBarrier(
+        vk::PipelineStageFlagBits::eAllCommands,
+        vk::PipelineStageFlagBits::eAllCommands,
+        {}, {}, {}, image_barriers
+    );
+
+    gather_timer.end(cb, dev->id, frame_index);
+    stage_timer.end(cb, dev->id, frame_index);
+    end_compute(cb, frame_index);
+    prev_cascades_valid = true;
+    history_frames++;
+}
+
+}

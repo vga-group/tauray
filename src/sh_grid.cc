@@ -27,6 +27,7 @@ texture sh_grid::create_target_texture(
             resolution.z * samples_per_probe
         ),
         vk::Format::eR32G32B32A32Sfloat,
+        0, nullptr,
         vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eStorage,
         vk::ImageLayout::eGeneral
@@ -57,6 +58,7 @@ texture sh_grid::create_texture(device_mask dev)
             resolution.z
         ),
         vk::Format::eR16G16B16A16Sfloat,
+        0, nullptr,
         vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eStorage|vk::ImageUsageFlagBits::eSampled|
         vk::ImageUsageFlagBits::eTransferSrc|vk::ImageUsageFlagBits::eTransferDst,

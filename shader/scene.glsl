@@ -90,7 +90,7 @@ sampled_material sample_material(material mat, inout vertex_data v, vec2 duvdx, 
     textureGrad(textures[nonuniformEXT(index)], uv, duvdx, duvdy)
 #else
 sampled_material sample_material(material mat, inout vertex_data v)
-#define sample_texture(index, uv) texture(textures[nonuniformEXT(index)], uv)
+#define sample_texture(index, uv) textureLod(textures[nonuniformEXT(index)], uv, 0)
 #endif
 {
     sampled_material res;
@@ -148,6 +148,17 @@ sampled_material sample_material(material mat, inout vertex_data v)
     res.f0 = f0;
     res.flags = mat.flags;
     res.shadow_terminator_mul = 1.0f;
+
+    /*
+    res.roughness = max(res.roughness, 1.0f);
+    res.metallic = 0.0f;
+    res.roughness = max(res.roughness, 0.05f);
+    if(mat.albedo_tex_id > 0 && v.pos.x < -1.8)
+    {
+        res.albedo.rgb = vec3(0);
+        res.metallic = 1.0;
+    }
+    */
     return res;
 }
 

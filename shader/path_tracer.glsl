@@ -1,12 +1,27 @@
 #ifndef PATH_TRACER_GLSL
 #define PATH_TRACER_GLSL
 
+#extension GL_EXT_ray_flags_primitive_culling : enable
+
 #ifdef USE_SCREEN_MOTION_TARGET
 #define CALC_PREV_VERTEX_POS
 #endif
 
+#if defined(DIFFUSE_TARGET_BINDING) && defined(REFLECTION_TARGET_BINDING) && defined(COLOR_TARGET_BINDING)
+#error "Can only output color OR demodulated diffuse & reflection, not all at the same time."
+#endif
+
+#if defined(DIFFUSE_TARGET_BINDING) || defined(REFLECTION_TARGET_BINDING)
+#define DEMODULATED_OUTPUT
+#endif
+
 #include "rt.glsl"
+#include "rt_common.glsl"
 #include "sampling.glsl"
+#include "radiance_cascades.glsl"
+#ifdef LIGHT_TREE_SET
+#include "light_tree.glsl"
+#endif
 
 struct pt_vertex_data
 {
@@ -26,14 +41,33 @@ struct intersection_pdf
     float directional_light_pdf;
     float tri_light_pdf;
     float envmap_pdf;
+#ifdef LIGHT_TREE_SET
+    uint instance_id;
+    uint primitive_id;
+#endif
 };
 
 #include "ggx.glsl"
 
+#ifndef USE_RAY_QUERIES
 #include "rt_common_payload.glsl"
+#endif
 
 float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
 {
+#ifdef USE_RAY_QUERIES
+    rayQueryEXT rq;
+    rayQueryInitializeEXT(rq,
+        tlas,
+        gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT|gl_RayFlagsTerminateOnFirstHitEXT,
+        0x02^0xFF, // Exclude lights from shadow rays
+        pos,
+        min_dist,
+        dir,
+        max_dist
+    );
+    return trace_ray_query_visibility(rq);
+#else
     shadow_visibility = 1.0f;
     traceRayEXT(
         tlas,
@@ -49,14 +83,29 @@ float shadow_ray(vec3 pos, float min_dist, vec3 dir, float max_dist)
         1
     );
     return shadow_visibility;
+#endif
 }
 
 float bsdf_mis_pdf(
     intersection_pdf nee_pdf,
-    float bsdf_pdf
+    float bsdf_pdf,
+    vec3 pos,
+    vec3 normal
 ){
     if(bsdf_pdf == 0.0f) return 1.0f;
 
+#ifdef LIGHT_TREE_SET
+    float avg_nee_pdf =
+        calculate_light_pdf(
+            nee_pdf.instance_id,
+            nee_pdf.primitive_id,
+            nee_pdf.directional_light_pdf + nee_pdf.point_light_pdf + nee_pdf.tri_light_pdf,
+            nee_pdf.envmap_pdf,
+            pos,
+            normal,
+            1.0f
+        );
+#else
     float point_prob, triangle_prob, dir_prob, envmap_prob;
     get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
 
@@ -65,6 +114,7 @@ float bsdf_mis_pdf(
         nee_pdf.tri_light_pdf * triangle_prob / max(scene_metadata.tri_light_count, 1) +
         nee_pdf.envmap_pdf * envmap_prob +
         nee_pdf.point_light_pdf * point_prob / max(scene_metadata.point_light_count, 1);
+#endif
 
 #ifdef MIS_POWER_HEURISTIC
     return (avg_nee_pdf * avg_nee_pdf + bsdf_pdf * bsdf_pdf) / bsdf_pdf;
@@ -89,6 +139,7 @@ float nee_mis_pdf(float nee_pdf, float bsdf_pdf)
 }
 
 bool get_intersection_info(
+    hit_info hi,
     vec3 origin,
     vec3 view,
     out pt_vertex_data v,
@@ -100,21 +151,25 @@ bool get_intersection_info(
     nee_pdf.directional_light_pdf = 0;
     nee_pdf.tri_light_pdf = 0;
     nee_pdf.envmap_pdf = 0;
+#ifdef LIGHT_TREE_SET
+    nee_pdf.instance_id = NULL_INSTANCE_ID;
+    nee_pdf.primitive_id = 0;
+#endif
     mat.metallic = 1;
     mat.albedo = vec4(0);
 
-    if(payload.instance_id >= 0)
+    if(hi.instance_id >= 0)
     {
         float pdf = 0.0f;
         vertex_data vd = get_interpolated_vertex(
-            view, payload.barycentrics,
-            payload.instance_id,
-            payload.primitive_id
+            view, hi.barycentrics,
+            hi.instance_id,
+            hi.primitive_id
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
             , origin, pdf
 #endif
         );
-        mat = sample_material(payload.instance_id, vd);
+        mat = sample_material(hi.instance_id, vd);
         mat.albedo.a = 1.0; // Alpha blending was handled by the any-hit shader!
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
         nee_pdf.tri_light_pdf = pdf == 0.0f ? 0.0f : pdf;
@@ -123,6 +178,16 @@ bool get_intersection_info(
 #else
         light = vec3(0);
 #endif
+
+#ifdef LIGHT_TREE_SET
+        int light_base_id = instances.o[hi.instance_id].light_base_id;
+        if (light_base_id >= 0)
+        {
+            nee_pdf.instance_id = hi.instance_id;
+            nee_pdf.primitive_id = hi.primitive_id;
+        }
+#endif
+
         v.pos = vd.pos;
 #ifdef CALC_PREV_VERTEX_POS
         v.prev_pos = vd.prev_pos;
@@ -133,9 +198,9 @@ bool get_intersection_info(
         v.instance_id = vd.instance_id;
         return true;
     }
-    else if(payload.primitive_id >= 0)
+    else if(hi.primitive_id >= 0)
     {
-        point_light pl = point_lights.lights[payload.primitive_id];
+        point_light pl = point_lights.lights[hi.primitive_id];
         vec3 color = get_spotlight_intensity(pl, view) * pl.color / (pl.radius * pl.radius * M_PI);
 #ifdef NEE_SAMPLE_POINT_LIGHTS
         mat.emission = vec3(0);
@@ -146,7 +211,12 @@ bool get_intersection_info(
         mat.emission = color;
 #endif
 
-        v.pos = origin + payload.barycentrics.x * view;
+#ifdef LIGHT_TREE_SET
+        nee_pdf.instance_id = POINT_LIGHT_INSTANCE_ID;
+        nee_pdf.primitive_id = hi.primitive_id;
+#endif
+
+        v.pos = origin + hi.barycentrics.x * view;
         #ifdef CALC_PREV_VERTEX_POS
         v.prev_pos = v.pos; // TODO?
         #endif
@@ -165,6 +235,11 @@ bool get_intersection_info(
             uv.x = atan(view.z, view.x)/(2*M_PI)+0.5f;
             color.rgb *= texture(environment_map_tex, uv).rgb;
         }
+
+#ifdef LIGHT_TREE_SET
+        nee_pdf.instance_id = ENVMAP_INSTANCE_ID;
+        nee_pdf.primitive_id = packSnorm2x16(octahedral_pack(view));
+#endif
 
         mat.emission = vec3(0);
         light = vec3(0);
@@ -200,17 +275,19 @@ bool get_intersection_info(
     }
 }
 
-vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, out float pdf)
+vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out float out_length, out float pdf, out int hit_type)
 {
     float point_prob, triangle_prob, dir_prob, envmap_prob;
     get_nee_sampling_probabilities(point_prob, triangle_prob, dir_prob, envmap_prob);
 
     vec4 u = vec4(rand_uint) * INV_UINT32_MAX;
 
+    hit_type = -1;
     if(false) {}
 #ifdef NEE_SAMPLE_POINT_LIGHTS
     else if((u.w -= point_prob) < 0)
     { // Sample point light
+        hit_type = 0;
         const int light_count = int(scene_metadata.point_light_count);
         int light_index = 0;
         float weight = 0;
@@ -226,6 +303,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
 #ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
     else if((u.w -= triangle_prob) < 0)
     { // Sample triangle light
+        hit_type = 3;
         const int light_count = int(scene_metadata.tri_light_count);
         int light_index = clamp(int(u.z*light_count), 0, light_count-1);
         tri_light tl = tri_lights.lights[light_index];
@@ -265,6 +343,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
 #ifdef NEE_SAMPLE_ENVMAP
     else if((u.w -= envmap_prob) < 0)
     { // Sample envmap
+        hit_type = 2;
         vec3 color = sample_environment_map(rand_uint.xyz, out_dir, out_length, pdf);
         pdf *= envmap_prob;
         return color;
@@ -273,6 +352,7 @@ vec3 sample_explicit_light(uvec4 rand_uint, vec3 pos, out vec3 out_dir, out floa
 #ifdef NEE_SAMPLE_DIRECTIONAL_LIGHTS
     else if((u.w -= dir_prob) < 0)
     { // Sample directional light
+        hit_type = 1;
         const int light_count = int(scene_metadata.directional_light_count);
         int light_index = clamp(int(u.z*light_count), 0, light_count-1);
 
@@ -301,46 +381,71 @@ void correct_lobes_for_normal_map(vec3 sample_dir, vec3 geometric_normal, inout 
 
 vec3 next_event_estimation(
     uvec4 rand_uint,
-    mat3 tbn, vec3 shading_view, sampled_material mat,
+    mat3 tbn, vec3 shading_view, vec3 view, sampled_material mat,
     pt_vertex_data v,
     inout bsdf_lobes lobes
 ){
 #if defined(NEE_SAMPLE_POINT_LIGHTS) || defined(NEE_SAMPLE_DIRECTIONAL_LIGHTS) || defined(NEE_SAMPLE_EMISSIVE_TRIANGLES) || defined(NEE_SAMPLE_ENVMAP)
-    if(false
-#ifdef NEE_SAMPLE_POINT_LIGHTS
-        || scene_metadata.point_light_count > 0
+    vec3 out_dir;
+    float out_length = 0.0f;
+    float light_pdf;
+    // Sample lights
+    int hit_type = -1;
+#ifdef LIGHT_TREE_SET
+    light_sample s = sample_light(
+        rand_uint,
+        v.pos,
+        v.mapped_normal,
+        1.0f,
+        control.min_ray_dist,
+        RAY_MAX_DIST
+    );
+    vec3 contrib = s.color;
+    light_pdf = s.pdf;
+    out_dir = s.dir;
+    out_length = s.dist;
+    hit_type = (s.instance_id == DIRECTIONAL_LIGHT_INSTANCE_ID || s.instance_id == POINT_LIGHT_INSTANCE_ID) ? 0 : 2;
+#else
+    vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf, hit_type);
 #endif
-#ifdef NEE_SAMPLE_DIRECTIONAL_LIGHTS
-        || scene_metadata.directional_light_count > 0
-#endif
-#ifdef NEE_SAMPLE_EMISSIVE_TRIANGLES
-        || scene_metadata.tri_light_count > 0
-#endif
-#ifdef NEE_SAMPLE_ENVMAP
-        || scene_metadata.environment_proj >= 0
-#endif
-    ){
-        vec3 out_dir;
-        float out_length = 0.0f;
-        float light_pdf;
-        // Sample lights
-        vec3 contrib = sample_explicit_light(rand_uint, v.pos, out_dir, out_length, light_pdf);
 
-        vec3 shading_light = out_dir * tbn;
-        lobes = bsdf_lobes(0,0,0,0);
-        float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
+    bool opaque = mat.transmittance < 0.0001f;
+    if(dot(v.hard_normal, out_dir) < 0 && opaque) contrib = vec3(0);
 
-        correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
-
-        // TODO: Check if this conditional just hurts performance
-        if(any(greaterThan(contrib, vec3(0.0001f))))
-            contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
-
-        contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
-        return contrib;
-    }
+    vec3 shading_light = out_dir * tbn;
+    lobes = bsdf_lobes(0,0,0,0);
+#ifdef RADIANCE_CASCADES_SET
+    ggx_brdf(shading_light, shading_view, mat, lobes);
+#else
+    float bsdf_pdf = material_bsdf_pdf(shading_light, shading_view, mat, lobes);
 #endif
+
+    correct_lobes_for_normal_map(out_dir, v.hard_normal, lobes);
+
+    if(any(greaterThan(contrib, vec3(0.0f))))
+        contrib *= shadow_ray(v.pos, control.min_ray_dist, out_dir, out_length);
+
+#ifdef RADIANCE_CASCADES_SET
+#ifdef HAS_AREA_LIGHTS
+    float rc_pdf = radiance_cascades_pdf(v.pos, v.mapped_normal, -view, 
+        hit_type < 2,
+        mat.roughness,
+        mix(0.04, 1.0, mat.metallic),
+        rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic),
+        out_dir
+    );
+    contrib /= nee_mis_pdf(light_pdf, rc_pdf);
+#else
+    contrib /= abs(light_pdf);
+#endif
+#else
+    contrib /= nee_mis_pdf(light_pdf, bsdf_pdf);
+#endif
+
+    return contrib;
+#else
     return vec3(0);
+#endif
 }
 
 // This is used to remove invalid ray directions, which are caused by normal
@@ -364,26 +469,105 @@ float clamp_contribution_mul(vec3 contrib)
     return 1;
 }
 
+#ifdef DISTRIBUTION_DATA_BINDING
+void write_color_outputs(
+#ifdef DEMODULATED_OUTPUT
+    vec4 diffuse,
+    vec4 reflection
+#else
+    vec3 color
+#endif
+){
+    // Write all outputs
+    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+#if DISTRIBUTION_STRATEGY != 0
+    if(p != ivec3(-1))
+#endif
+    {
+        uint prev_samples = distribution.samples_accumulated + control.previous_samples;
+
+#ifdef DEMODULATED_OUTPUT
+        accumulate_gbuffer_diffuse(diffuse, p, control.samples, prev_samples);
+        accumulate_gbuffer_reflection(reflection, p, control.samples, prev_samples);
+#else
+        // TODO: Support transparent backgrounds again, somehow.
+        const float alpha = 1.0;
+        accumulate_gbuffer_color(vec4(color, alpha), p, control.samples, prev_samples);
+#endif
+    }
+}
+
+void write_hit_outputs(
+    pt_vertex_data first_hit_vertex,
+    sampled_material first_hit_material
+){
+    // Write outputs
+    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
+#if DISTRIBUTION_STRATEGY != 0
+    if(p != ivec3(-1))
+#endif
+    {
+        write_gbuffer_albedo(first_hit_material.albedo, p);
+        write_gbuffer_emission(first_hit_material.emission, p);
+        write_gbuffer_material(first_hit_material, p);
+        write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
+        write_gbuffer_pos(first_hit_vertex.pos, p);
+        #ifdef CALC_PREV_VERTEX_POS
+        write_gbuffer_screen_motion(
+            get_camera_projection(get_prev_camera(), first_hit_vertex.prev_pos),
+            p
+        );
+        #endif
+        write_gbuffer_instance_id(first_hit_vertex.instance_id, p);
+    }
+}
+#endif
+
 void evaluate_ray(
     inout local_sampler lsampler,
     vec3 pos,
     vec3 view,
-    out vec4 diffuse,
-    out vec4 reflection,
-    out pt_vertex_data first_hit_vertex,
-    out sampled_material first_hit_material
+#ifdef DEMODULATED_OUTPUT
+    inout vec4 diffuse,
+    inout vec4 reflection,
+#else
+    inout vec3 color,
+#endif
+    bool write_first_hit_info
 ){
+    pcg4d(lsampler.rs.seed);
     vec3 attenuation = vec3(1);
-
-    diffuse = vec4(0,0,0,0);
-    reflection = vec4(0,0,0,0);
 
     float regularization = 1.0f;
     float bsdf_pdf = 0.0f;
+#ifdef DEMODULATED_OUTPUT
     bsdf_lobes primary_lobes = bsdf_lobes(0,0,0,1);
-    payload.random_seed = pcg4d(lsampler.rs.seed).x;
+#endif
+    vec3 prev_normal = vec3(0);
+
     for(uint bounce = 0; bounce < MAX_BOUNCES; ++bounce)
     {
+#ifdef USE_RAY_QUERIES
+        rayQueryEXT rq;
+        rayQueryInitializeEXT(rq,
+            tlas,
+            gl_RayFlagsNoneEXT,
+            //gl_RayFlagsCullNoOpaqueEXT,
+            //gl_RayFlagsOpaqueEXT|gl_RayFlagsSkipAABBEXT,
+            //gl_RayFlagsCullBackFacingTrianglesEXT,
+#ifdef HIDE_LIGHTS
+            bounce == 0 ? 0xFF^0x02 : 0xFF,
+#else
+            0xFF,
+#endif
+            pos,
+            bounce == 0 ? 0.0f : control.min_ray_dist,
+            view,
+            RAY_MAX_DIST
+        );
+
+        hit_info hi = trace_ray_query(rq, lsampler.rs.seed.x);
+#else
         traceRayEXT(
             tlas,
             gl_RayFlagsNoneEXT,
@@ -401,16 +585,21 @@ void evaluate_ray(
             RAY_MAX_DIST,
             0
         );
+        hit_info hi;
+        hi.instance_id = payload.instance_id;
+        hi.primitive_id = payload.primitive_id;
+        hi.barycentrics = payload.barycentrics;
+#endif
 
         pt_vertex_data v;
         sampled_material mat;
         intersection_pdf nee_pdf;
         vec3 light;
-        bool terminal = !get_intersection_info(pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
+        bool terminal = !get_intersection_info(hi, pos, view, v, nee_pdf, mat, light) || bounce == MAX_BOUNCES-1;
 
         // Get rid of the attenuation by multiplying with bsdf_pdf, and use
         // mis_pdf instead.
-        float mis_pdf = bsdf_mis_pdf(nee_pdf, bsdf_pdf);
+        float mis_pdf = bsdf_mis_pdf(nee_pdf, bsdf_pdf, pos, prev_normal);
         float mis_weight = 1.0f;
         if(bsdf_pdf != 0)
         {
@@ -419,20 +608,31 @@ void evaluate_ray(
         }
 
         light = attenuation * mis_weight * (mat.emission + light);
+
 #ifndef INDIRECT_CLAMP_FIRST_BOUNCE
         if(bounce != 0)
 #endif
         {
             light *= clamp_contribution_mul(light);
         }
-        add_demodulated_color(primary_lobes, light, diffuse.rgb, reflection.rgb);
 
-        if(bounce == 0)
+        if(bounce == 0 && write_first_hit_info)
         {
-            first_hit_vertex = v;
-            first_hit_material = mat;
-            first_hit_material.emission = light;
+            mat.emission = light;
+#ifdef DISTRIBUTION_DATA_BINDING
+            write_hit_outputs(v, mat);
+#endif
         }
+
+#ifdef USE_WHITE_ALBEDO_ON_FIRST_BOUNCE
+        mat.albedo.rgb = vec3(1);
+#endif
+
+#ifdef DEMODULATED_OUTPUT
+        add_demodulated_color(primary_lobes, light, diffuse.rgb, reflection.rgb);
+#else
+        color.rgb += light;
+#endif
 
 #ifdef PATH_SPACE_REGULARIZATION
         // Regularization strategy inspired by "Optimised Path Space Regularisation", 2021 Weier et al.
@@ -451,43 +651,57 @@ void evaluate_ray(
             // Do NEE ray
             bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
             vec3 radiance = attenuation * next_event_estimation(
-                generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view,
+                generate_ray_sample_uint(lsampler, bounce*2), tbn, shading_view, view,
                 mat, v, lobes
             );
-            if(bounce != 0)
-            {
-                radiance *= modulate_bsdf(mat, lobes);
-                radiance *= clamp_contribution_mul(radiance);
-            }
+#ifdef DEMODULATED_OUTPUT
+            if(bounce == 0) primary_lobes = lobes;
             else
-            {
-                primary_lobes = lobes;
-#ifdef INDIRECT_CLAMP_FIRST_BOUNCE
-                radiance *= clamp_contribution_mul(radiance);
 #endif
-            }
+                radiance *= modulate_bsdf(mat, lobes);
+#ifdef INDIRECT_CLAMP_FIRST_BOUNCE
+            if(bounce != 0)
+#endif
+                radiance *= clamp_contribution_mul(radiance);
+#ifdef DEMODULATED_OUTPUT
             add_demodulated_color(primary_lobes, radiance, diffuse.rgb, reflection.rgb);
             if(bounce == 1)
                 diffuse.a = reflection.a = 1.0f / length(v.pos - pos);
+#else
+            color.rgb += radiance;
+#endif
         }
 
         if(terminal) break;
 
         // Lastly, figure out the next ray and assign proper attenuation for it.
         bsdf_lobes lobes = bsdf_lobes(0,0,0,0);
+#ifdef RADIANCE_CASCADES_SET
+        uvec4 ray_sample = generate_ray_sample_uint(lsampler, bounce*2+1);
+        view = sample_radiance_cascades(ray_sample.x, v.pos, tbn[2], -view, mat.roughness, mix(0.04, 1.0, mat.metallic),
+            rgb_to_luminance(mat.albedo.rgb) * (1.0-mat.metallic), bsdf_pdf);
+        ggx_bsdf(view * tbn, shading_view, mat, lobes);
+#else
         vec4 ray_sample = generate_ray_sample(lsampler, bounce*2+1);
         material_bsdf_sample(ray_sample, shading_view, mat, view, lobes, bsdf_pdf);
         view = tbn * view;
+#endif
 
-        correct_lobes_for_normal_map(v.hard_normal, view, lobes);
+        correct_lobes_for_normal_map(view, v.hard_normal, lobes);
 
-        if(bounce != 0)
-            attenuation *= modulate_bsdf(mat, lobes);
+        if(bsdf_pdf < 0)
+            break;
+
+#ifdef DEMODULATED_OUTPUT
+        if(bounce == 0) primary_lobes = lobes;
         else
-            primary_lobes = lobes;
+#endif
+            attenuation *= modulate_bsdf(mat, lobes);
 
         float visibility = ray_visibility(view, v);
         pos = v.pos;
+        prev_normal = v.mapped_normal;
+
 #ifdef USE_RUSSIAN_ROULETTE
         // This condition is fairly arbitrary again.
         float qi = min(1.0f, 1.0f / control.russian_roulette_delta);
@@ -530,49 +744,6 @@ void get_world_camera_ray(inout local_sampler lsampler, out vec3 origin, out vec
 #endif
         origin, dir
     );
-}
-
-void write_all_outputs(
-    vec3 color,
-    vec4 diffuse,
-    vec4 reflection,
-    pt_vertex_data first_hit_vertex,
-    sampled_material first_hit_material
-){
-    // Write all outputs
-    ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
-#if DISTRIBUTION_STRATEGY != 0
-    if(p != ivec3(-1))
-#endif
-    {
-        uint prev_samples = distribution.samples_accumulated + control.previous_samples;
-
-        if(prev_samples == 0)
-        { // Only write gbuffer for the first sample.
-            ivec3 p = ivec3(get_write_pixel_pos(get_camera()));
-            write_gbuffer_albedo(first_hit_material.albedo, p);
-            write_gbuffer_material(first_hit_material, p);
-            write_gbuffer_normal(first_hit_vertex.mapped_normal, p);
-            write_gbuffer_pos(first_hit_vertex.pos, p);
-            #ifdef CALC_PREV_VERTEX_POS
-            write_gbuffer_screen_motion(
-                get_camera_projection(get_prev_camera(), first_hit_vertex.prev_pos),
-                p
-            );
-            #endif
-            write_gbuffer_instance_id(first_hit_vertex.instance_id, p);
-        }
-
-#ifdef USE_TRANSPARENT_BACKGROUND
-        const float alpha = first_hit_material.albedo.a;
-#else
-        const float alpha = 1.0;
-#endif
-
-        accumulate_gbuffer_color(vec4(color, alpha), p, control.samples, prev_samples);
-        accumulate_gbuffer_diffuse(diffuse, p, control.samples, prev_samples);
-        accumulate_gbuffer_reflection(reflection, p, control.samples, prev_samples);
-    }
 }
 
 #endif

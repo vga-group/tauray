@@ -36,11 +36,6 @@ public:
     void set_gbuffer_spec(gbuffer_spec& spec) const;
     void set_display(gbuffer_target input_gbuffer);
 
-    // You must wait for these dependencies before writing to the G-Buffer.
-    // There may sometimes be no dependencies, the purpose here is mostly just
-    // to handle temporal algorithms.
-    dependencies get_gbuffer_write_dependencies() const;
-
     dependencies render(dependencies deps);
 
 private:
@@ -72,7 +67,6 @@ private:
 
     // This delayer is for safely getting the gbuffer for the previous frame.
     std::unique_ptr<frame_delay_stage> delay;
-    dependencies delay_deps[MAX_FRAMES_IN_FLIGHT];
 };
 
 }

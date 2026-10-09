@@ -11,17 +11,19 @@ namespace
 {
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-    VkDebugUtilsMessageTypeFlagsEXT type,
-    const VkDebugUtilsMessengerCallbackDataEXT* data,
+    vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
+    vk::DebugUtilsMessageTypeFlagsEXT type,
+    const vk::DebugUtilsMessengerCallbackDataEXT* data,
     void* pUserData
 ){
     // These are usually spammy and useless messages.
-    if(type == VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
+    if(type == vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral)
         return false;
     if(uint32_t(data->messageIdNumber) == 0x912ddde2u) // FIXME: Timer ID error on windows
         return false;
     if(uint32_t(data->messageIdNumber) == 0x211e533bu) // Caused by Monado OpenXR driver
+        return false;
+    if(uint32_t(data->messageIdNumber) == 0xa5625282) // Caused by glslc
         return false;
 
     (void)severity;
@@ -30,7 +32,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
     TR_ERR(data->pMessage);
 
     // Handy assert for debugging where validation errors happen
-    assert(severity != VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
+    //assert(severity != vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
     return false;
 }
 
@@ -127,7 +129,7 @@ size_t context::get_swapchain_image_count() const
 std::vector<render_target> context::get_array_render_target()
 {
     std::vector<render_target> frames;
-    for(size_t i = 0; i < get_swapchain_image_count(); ++i)
+    for(size_t i = 0; i < images.size(); ++i)
     {
         frames.emplace_back(
             image_size,
@@ -159,7 +161,7 @@ dependency context::begin_frame()
 
     timing.host_wait();
     device& d = get_display_device();
-    (void)d.logical.waitForFences(*frame_fences[frame_index], true, UINT64_MAX);
+    (void)d.logical.waitForFences(*frame_fences[frame_index], true, UINT64_MAX-1);
 
     // Get new images
     swapchain_index = prepare_next_image(frame_index);
@@ -183,7 +185,7 @@ dependency context::begin_frame()
     d.graphics_queue.submit(submit_info, {});
 
     if(image_fences[swapchain_index])
-        (void)d.logical.waitForFences(image_fences[swapchain_index], true, UINT64_MAX);
+        (void)d.logical.waitForFences(image_fences[swapchain_index], true, UINT64_MAX-1);
     image_fences[swapchain_index] = frame_fences[frame_index];
 
     d.logical.resetFences(*frame_fences[frame_index]);
@@ -203,14 +205,10 @@ void context::end_frame(const dependencies& deps)
 
     device& d = get_display_device();
 
-    std::vector<vk::PipelineStageFlags> wait_stages(
-        local_deps.size(d.id), vk::PipelineStageFlagBits::eTopOfPipe
-    );
-
     vk::TimelineSemaphoreSubmitInfo timeline_info = local_deps.get_timeline_info(d.id);
     vk::SubmitInfo submit_info = local_deps.get_submit_info(d.id, timeline_info);
     submit_info.signalSemaphoreCount = image_array_layers != 0 ? 1 : 0;
-    submit_info.pSignalSemaphores = frame_finished[frame_index];
+    submit_info.pSignalSemaphores = frame_finished[swapchain_index];
 
     d.graphics_queue.submit(submit_info, frame_fences[frame_index]);
 
@@ -262,9 +260,10 @@ void context::queue_frame_finish_callback(std::function<void()>&& func)
 
 vk::Instance context::create_instance(
     const vk::InstanceCreateInfo& info,
-    PFN_vkGetInstanceProcAddr
+    PFN_vkGetInstanceProcAddr getInstanceProcAddr
 ){
-    return vk::createInstance({info}, nullptr, vk::DispatchLoaderStatic());
+    vk::detail::defaultDispatchLoaderDynamic.init(getInstanceProcAddr);
+    return vk::createInstance({info}, nullptr, vk::detail::defaultDispatchLoaderDynamic);
 }
 
 vk::Device context::create_device(
@@ -276,13 +275,14 @@ vk::Device context::create_device(
 
 void context::init_vulkan(PFN_vkGetInstanceProcAddr getInstanceProcAddr)
 {
+    vk::detail::defaultDispatchLoaderDynamic.init(getInstanceProcAddr);
     if(opt.enable_vulkan_validation)
     {
         validation_layers.push_back("VK_LAYER_KHRONOS_validation");
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
         std::vector<vk::LayerProperties> available_layers =
-            vk::enumerateInstanceLayerProperties(vk::DispatchLoaderStatic());
+            vk::enumerateInstanceLayerProperties(vk::detail::defaultDispatchLoaderDynamic);
 
         for(
             auto it = validation_layers.begin();
@@ -335,7 +335,7 @@ void context::init_vulkan(PFN_vkGetInstanceProcAddr getInstanceProcAddr)
 
     instance = create_instance(instance_info, getInstanceProcAddr);
 
-    vk::defaultDispatchLoaderDynamic.init(instance, getInstanceProcAddr);
+    vk::detail::defaultDispatchLoaderDynamic.init(instance, getInstanceProcAddr);
 
     if(opt.enable_vulkan_validation)
     {
@@ -379,6 +379,7 @@ void context::init_devices()
         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
         VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
         VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,
+        VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME
     };
 
     if(opt.enable_vulkan_validation)
@@ -391,6 +392,7 @@ void context::init_devices()
         required_device_extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
         required_device_extensions.push_back(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
         required_device_extensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+        required_device_extensions.push_back(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
     }
 
     bool use_distribution =
@@ -442,7 +444,8 @@ void context::init_devices()
             vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
             vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
             vk::PhysicalDeviceRayQueryFeaturesKHR,
-            vk::PhysicalDeviceRobustness2FeaturesEXT
+            vk::PhysicalDeviceRobustness2FeaturesEXT,
+            vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR
         >();
         auto& feats = feats_pack.get<vk::PhysicalDeviceFeatures2>();
         auto& vulkan_11_feats = feats_pack.get<vk::PhysicalDeviceVulkan11Features>();
@@ -451,6 +454,8 @@ void context::init_devices()
             feats_pack.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
         auto& rq_feats =
             feats_pack.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+        auto& rp_feats =
+            feats_pack.get<vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR>();
         auto& as_feats =
             feats_pack.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
         auto& robustness_feats =
@@ -465,6 +470,8 @@ void context::init_devices()
 
         // Request anisotropic filtering support
         feats.features.samplerAnisotropy = true;
+        feats.features.shaderStorageImageReadWithoutFormat = true;
+        feats.features.shaderStorageImageWriteWithoutFormat = true;
         vulkan_12_feats.timelineSemaphore = true;
         vulkan_12_feats.shaderSampledImageArrayNonUniformIndexing = true;
         vulkan_11_feats.multiview = true;
@@ -577,7 +584,8 @@ void context::init_devices()
                 vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
                 vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
                 vk::PhysicalDeviceExternalMemoryHostPropertiesEXT,
-                vk::PhysicalDeviceMultiviewProperties
+                vk::PhysicalDeviceMultiviewProperties,
+                vk::PhysicalDeviceConservativeRasterizationPropertiesEXT
             >();
 
             dev_data.id = devices.size();
@@ -587,8 +595,8 @@ void context::init_devices()
                 {},
                 queue_infos.size(),
                 queue_infos.data(),
-                validation_layers.size(),
-                validation_layers.data(),
+                0,
+                nullptr,
                 enabled_device_extensions.size(),
                 enabled_device_extensions.data(),
                 nullptr
@@ -611,9 +619,11 @@ void context::init_devices()
                 props2.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
             dev_data.rt_feats = rt_feats;
             dev_data.rq_feats = rq_feats;
+            dev_data.rp_feats = rp_feats;
             dev_data.as_props = props2.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
             dev_data.as_feats = as_feats;
             dev_data.mv_props = props2.get<vk::PhysicalDeviceMultiviewProperties>();
+            dev_data.cr_props = props2.get<vk::PhysicalDeviceConservativeRasterizationPropertiesEXT>();
             // Potential Nvidia driver bug as of 510.47.03: multiview rendering
             // starts having problems after 20 or so viewports, despite reporting
             // support for 32. So limit it to 16.
@@ -697,19 +707,19 @@ void context::init_resources()
 
     // Create fences & semaphores
     frame_available.resize(MAX_FRAMES_IN_FLIGHT);
-    frame_finished.resize(MAX_FRAMES_IN_FLIGHT);
+    frame_finished.resize(get_swapchain_image_count());
     frame_fences.resize(MAX_FRAMES_IN_FLIGHT);
     image_fences.resize(get_swapchain_image_count());
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         frame_available[i] = create_binary_semaphore(dev_data);
-        frame_finished[i] = create_binary_semaphore(dev_data);
         frame_fences[i] =
             vkm(dev_data, dev_data.logical.createFence({vk::FenceCreateFlagBits::eSignaled}));
     }
 
     for(size_t i = 0; i < get_swapchain_image_count(); ++i)
     {
+        frame_finished[i] = create_binary_semaphore(dev_data);
         image_available.emplace_back(create_timeline_semaphore(dev_data));
     }
 
